@@ -724,56 +724,7 @@ async function openFileContent(file, { existingRecord, forcedId, folderFileName,
 }
 
 function prepareBookOpen(book, { settled } = {}) {
-  if (requestedPreparationId === book.id && preparedBooks.has(book.id)) {
-    // Selected again while its engine is still loaded: the engine is ready,
-    // only the page (dropped when the earlier selection ended) may need redoing.
-    const generation = preparationGeneration
-    const gate = openPageGate(book.id, settled)
-    const again = preparedBooks.get(book.id).then(async ready => {
-      if (ready && generation === preparationGeneration && activePreparedBookId === book.id) {
-        await preparePageStage(book.id, generation, gate)
-      }
-      return ready
-    })
-    readerPreparationQueue = again.catch(() => {})
-    preparedBooks.set(book.id, again)
-    return again
-  }
-  supersedePreparation('new-selection')
-  const generation = preparationGeneration
-  requestedPreparationId = book.id
-  preparedBooks.clear()
-  const fileTask = book.content && (book.sourceType === 'local' || book.sourceType === 'drive')
-    ? Promise.resolve(new File([book.content], book.name || book.title || 'libro', {
-      type: book.mimeType || book.content.type || ''
-    }))
-    : needsDriveDownload(book) && hasDriveSession()
-      ? cloudSync.downloadForOffline(book) : null
-  if (!fileTask) return
-  // A locally cached book opens immediately from its saved position. Remote
-  // progress reconciles in the background sync, never on the opening path.
-  const filesReady = Promise.resolve(fileTask)
-  filesReady.catch(() => {})
-  const gate = openPageGate(book.id, settled)
-  // All preparations share one reader. A newer selection supersedes queued
-  // work, and an already loading engine settles before another replaces it.
-  const task = readerPreparationQueue.catch(() => {}).then(async () => {
-    const file = await filesReady
-    if (generation !== preparationGeneration) return false
-    await progressWrites.get(book.id)?.catch(() => {})
-    const updated = await library.get(book.id)
-    if (!updated) return false
-    if (generation !== preparationGeneration) return false
-    const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true, reuseStoredContent:true })
-    if (generation !== preparationGeneration) return false
-    activePreparedBookId = opened ? book.id : null
-    markTiming('engine-opened')
-    if (opened) await preparePageStage(book.id, generation, gate)
-    return opened
-  })
-  readerPreparationQueue = task.catch(() => {})
-  preparedBooks.set(book.id, task)
-  return task
+  return bookDataModule().app_prepare_book(readerPreparationHost, book, settled)
 }
 
 // ---- Página preparada ----
@@ -789,88 +740,42 @@ const idleSlice = () => new Promise(resolve => {
   else setTimeout(resolve, 50)
 })
 
-function openPageGate(bookId, settled) {
-  const gate = createStageGate(settled, { idle:idleSlice })
-  pageGate = { bookId, gate }
-  return gate
+// Rust owns preparation generations and cache decisions. These factories only
+// adapt Promise callbacks; browser idle work and DOM measurements keep their APIs.
+const readerPreparationHost = {
+  library, preparedBooks, preparedPages, progressWrites, reader, els, window, document,
+  get readingExperience() { return readingExperience },
+  get cloudSync() { return cloudSync },
+  state: {
+    get preparationGeneration() { return preparationGeneration }, set preparationGeneration(value) { preparationGeneration = value },
+    get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
+    get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
+    get currentBookId() { return currentBookId },
+    get readerPreparationQueue() { return readerPreparationQueue }, set readerPreparationQueue(value) { readerPreparationQueue = value },
+    get restoringProgress() { return restoringProgress }, set restoringProgress(value) { restoringProgress = value },
+    get pageGate() { return pageGate }, set pageGate(value) { pageGate = value },
+    get shelf() { return shelf }
+  },
+  needsDriveDownload, hasDriveSession, openFile, markTiming, pageKeyMismatch, idleSlice,
+  getComputedStyle: element => getComputedStyle(element),
+  createStageGate: settled => createStageGate(settled, { idle:idleSlice }),
+  ignorePreparationError: () => {},
+  warnPagePreparation: error => console.warn('No se pudo preparar la página guardada de antemano:', error),
+  reprepareRunner: (book, generation, gate) => ready => bookDataModule().app_reprepare_page(readerPreparationHost, book, generation, gate, ready),
+  preparationRunner: (book, generation, gate, files) => () => bookDataModule().app_run_preparation(readerPreparationHost, book, generation, gate, files)
 }
 
 function releasePageGate(reason, bookId) {
-  if (pageGate && (!bookId || pageGate.bookId === bookId)) pageGate.gate.release(reason)
+  return bookDataModule().app_release_page_gate(readerPreparationHost, reason, bookId)
 }
-
-/** The reader is replaced or closed: whatever was prepared (or waiting to be) belongs to the past. */
 function supersedePreparation(reason) {
-  preparationGeneration++
-  preparedPages.invalidate(reason)
-  releasePageGate(reason)
+  return bookDataModule().app_supersede_preparation(readerPreparationHost, reason)
 }
-
 function dismissPreparedPage() {
-  preparedPages.invalidate('dismissed')
-  releasePageGate('dismissed')
+  return bookDataModule().app_dismiss_prepared_page(readerPreparationHost)
 }
-
-/** Everything the prepared page depends on, as it is right now. */
-function pageKeyFor(bookId, record) {
-  const box = els.readerViewport.getBoundingClientRect()
-  const { fraction, locator } = reader.location
-  return {
-    bookId, epoch:reader.epoch,
-    locator:record?.locator ?? null, fraction:record?.progressFraction || 0,
-    location:{ fraction, locator },
-    viewport:{ left:box.left, top:box.top, width:box.width, height:box.height },
-    pixelRatio:window.devicePixelRatio || 1,
-    preferences:JSON.stringify(readingExperience.preferences),
-    theme:document.documentElement.getAttribute('data-theme') || '',
-    filter:getComputedStyle(els.readerViewport).filter
-  }
-}
-
-async function restoreAndSnapshot(record) {
-  // Restore after both type settings and final viewport dimensions.
-  restoringProgress = true
-  try { await reader.goToLocator(record.locator, record.progressFraction || 0) }
-  finally { restoringProgress = false }
-  markTiming('page-restored')
-  const snapshot = await reader.getPageSnapshot({ reuseSettledLayout:true })
-  markTiming('page-snapshot')
-  return snapshot
-}
-
-async function preparePageStage(bookId, generation, gate) {
-  try {
-    if (!await gate.wait()) return false
-    const current = () => generation === preparationGeneration && activePreparedBookId === bookId && currentBookId === bookId
-    if (!current()) return false
-    // Without the Rust module (still downloading past the reader's deadline, or
-    // unusable) nothing is prepared ahead: the tap computes the page itself.
-    if (!preparedPages.isReady() && !await preparedPages.whenReady()) return false
-    const record = await library.get(bookId)
-    if (!record || !current()) return false
-    const ticket = preparedPages.begin(bookId)
-    const started = pageKeyFor(bookId, record)
-    const snapshot = await restoreAndSnapshot(record)
-    if (!snapshot || !current() || !preparedPages.isCurrent(ticket)) return false
-    const key = pageKeyFor(bookId, record)
-    // Size, preferences or theme moved while the page was being made: it is not the page for either.
-    if (pageKeyMismatch({ ...key, location:started.location }, started)) return false
-    if (!preparedPages.store(ticket, key, snapshot)) return false
-    // Textures and shaders of the 3D page are built now, in idle slices.
-    await shelf?.prepareOpeningPage(bookId, snapshot, idleSlice)
-    return true
-  } catch (error) {
-    // Never fail the preparation for this: the tap computes the page itself.
-    console.warn('No se pudo preparar la página guardada de antemano:', error)
-    return false
-  }
-}
-
-/** The page the opening animation shows: the prepared one while still valid, otherwise computed now. */
 async function openingPageSnapshot(bookId, record) {
-  const prepared = preparedPages.take(pageKeyFor(bookId, record))
-  if (prepared) { markTiming('page-reused'); return prepared }
-  return restoreAndSnapshot(record)
+  return bookDataModule().app_opening_page_snapshot(readerPreparationHost, bookId, record)
 }
 
 // A resized window or a rotated phone changes the page's pixels and layout.
