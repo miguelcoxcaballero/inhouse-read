@@ -26,7 +26,6 @@ import { initAndroidFileImports } from './android-file-import.js'
 import { createNativeImportShelfGate } from './native-import-shelf-gate.js'
 import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
-import { normalizeShelfPosition } from './book-colors.js'
 import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
 import { runAfterFirstFrame } from './idle-startup.js'
 import { loadRustCore, requireRustCore } from './rust-core.js'
@@ -299,12 +298,8 @@ function createShelfForRecords(books) {
       waitForCoverAppearance: true,
       onCoverAppearance: (book, appearance, key) => bookDataModule().app_cover_appearance(shelfRefreshHost, book, appearance, key),
       onBookCustomizationChange: (book, fields) => bookDataModule().app_book_customization(shelfRefreshHost, book, fields),
-      onShelfPlacementChange: ({ books = [] }) => Promise.all(books.map(({ id, shelfPosition }) => {
-        const position = normalizeShelfPosition(shelfPosition)
-        return id && (position || shelfPosition === null)
-          ? persistBookState(id, { shelfPosition:position }) : Promise.resolve()
-      })),
-      onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => persistBookState(id, { shelfOrder })))
+      onShelfPlacementChange: options => bookDataModule().app_placement_changed(shelfRefreshHost, options),
+      onBookOrderChange: order => bookDataModule().app_order_changed(shelfRefreshHost, order)
     })
 }
 
@@ -317,6 +312,8 @@ const shelfRefreshHost = {
   removedPreparationCleanup: (book, generation) => () => bookDataModule().app_finish_removed_preparation(shelfRefreshHost, book, generation),
   warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
   createShelf: createShelfForRecords,
+  placementMapper: () => row => bookDataModule().app_placement_record(shelfRefreshHost, row),
+  orderMapper: () => row => bookDataModule().app_order_record(shelfRefreshHost, row),
   warnPreparation: error => console.warn('Preparación del grosor:', error),
   state: {
     get appDisposed() { return appDisposed },

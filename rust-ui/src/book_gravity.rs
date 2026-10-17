@@ -10,7 +10,7 @@ use crate::scene_view::RustScene;
 const DT:f32=1.0/120.0;
 // Scene input bits: dragging or lifted; a simple press (8) leaves the library asleep.
 const HELD:u32=2|4;
-struct Book{handle:RigidBodyHandle,collider:ColliderHandle,base:[f64;4],size:[f64;3],held:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,contacting:bool,clearance:f32,bay:[f32;4],quiet:Option<(Vector,f32,f32)>}
+struct Book{handle:RigidBodyHandle,collider:ColliderHandle,base:[f64;4],size:[f64;3],held:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
 fn overlapping(a:&RigidBody,sa:[f64;3],b:&RigidBody,sb:[f64;3])->bool{
  let pa=a.translation();let pb=b.translation();
  if (pa.z-pb.z).abs()>(sa[2]+sb[2]) as f32/2.0{return false;}
@@ -76,7 +76,7 @@ impl RustBookGravity{
  }
  /// One batch across the WASM boundary. States use RustScene.stepEntry's 37
  /// numbers. Geometry: thickness, kind (book/plant/lamp/puck), row, pixels/metre,
- /// row left/right/bottom/ceiling, reserved. Output: angle, world dx/dy, active.
+ /// row left/right/bottom/ceiling, grip height as a fraction of book height. Output: angle, world dx/dy, active.
  pub fn step(&mut self,keys:&Array,states:&mut[f64],geometry:&[f64],scene:&RustScene,now:f64,reduced:bool,out:&mut[f64]){
   let count=keys.length() as usize;
   if states.len()!=count*37||geometry.len()!=count*9||out.len()!=count*4{return;}
@@ -130,7 +130,7 @@ impl RustBookGravity{
      .linear_damping(2.2).angular_damping(3.8).ccd_enabled(true);
     let (handle,collider)=self.world.insert(body,ColliderBuilder::cuboid((thickness/2.0) as f32,(h/2.0) as f32,(size[2]/2.0) as f32).density(650.0).friction(0.65).restitution(0.0).collision_groups(InteractionGroups::new(Group::GROUP_1,Group::ALL,InteractionTestMode::And)));
     let b=&mut self.world.bodies[handle];if kind==0&&!held{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
-    self.books.insert(key.clone(),Book{handle,collider,base,size,held:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,contacting:false,clearance:0.0,bay,quiet:None});changed=true;
+    self.books.insert(key.clone(),Book{handle,collider,base,size,held:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }
    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
    if kind!=0{
@@ -139,9 +139,18 @@ impl RustBookGravity{
     if !b.held{
      b.anchor=body.translation()-target;b.grip_angle=body.rotation().to_scaled_axis().z;b.grip_time=0.0;
      b.clearance=(bay[2]+h as f32/2.0+0.001-body.translation().y).max(0.0);
+     b.grip=if g[8].is_finite(){g[8].clamp(-0.48,0.48) as f32}else{0.0};b.motion=0.0;b.direction=0.0;b.release=0.0;b.release_time=0.0;
      b.pointer=[s[3],s[4]];b.fast_until=now+120.0;b.contacting=false;body.wake_up(true);changed=true;
     }
-    let speed=((s[3]-b.pointer[0]).hypot(s[4]-b.pointer[1])/p/frame_dt) as f32;
+    let dx=(s[3]-b.pointer[0])/p;
+    let speed=(dx.hypot((s[4]-b.pointer[1])/p)/frame_dt) as f32;
+    // Recent horizontal travel dominates; a paused finger retains its last
+    // direction, while a deliberate reversal replaces the old gesture.
+    if dx.abs()>0.00001{
+     let blend=(1.0-(-frame_dt/0.07).exp()) as f32;
+     b.motion+=(dx as f32/frame_dt as f32-b.motion)*blend;
+     if b.motion.abs()>0.0005{b.direction=b.motion.signum();}
+    }else{b.motion*=(-frame_dt as f32/0.07).exp();}
     if speed>0.35{b.fast_until=now+160.0;b.contacting=false;}
     b.pointer=[s[3],s[4]];
     let goal=target+b.anchor;
@@ -152,8 +161,12 @@ impl RustBookGravity{
    }else if b.held{
     body.reset_forces(true);body.reset_torques(true);self.world.colliders[b.collider].set_collision_groups(InteractionGroups::new(Group::GROUP_1,Group::ALL,InteractionTestMode::And));
     // Do not impart an unbounded fling from a delayed pointer frame.
-    let v=body.linvel().clamp_length_max(0.12);body.set_linvel(v,true);
-    body.set_angvel(body.angvel().clamp_length_max(0.8),true);
+    // Translation follows the placement, not a skating/fling velocity.
+    // A bounded torque starts the fall; Rapier still resolves every support.
+    body.set_linvel(Vector::new(0.0,body.linvel().y.clamp(-0.12,0.0),0.0),true);
+    body.set_angvel(Vector::ZERO,true);
+    b.release=-b.direction;
+    b.release_time=0.0;
     // The lifted book travels in front of the boards. Re-enter the
     // selected bay at the actual release pose, correcting only a bottom
     // corner below its board; never jump back to its old nominal centre.
@@ -170,6 +183,10 @@ impl RustBookGravity{
    }
    b.base=base;b.held=held;b.bay=bay;
   }
+  // An accidental overlapping drop must resolve its penetration first,
+  // without a powered tilt levering a whole neighbouring row over.
+  let blocked:Vec<Vec<u16>>=self.books.iter().filter(|(key,b)|!b.held&&b.release!=0.0&&self.books.iter().any(|(other,o)|other!=*key&&overlapping(&self.world.bodies[b.handle],b.size,&self.world.bodies[o.handle],o.size))).map(|(key,_)|key.clone()).collect();
+  for key in blocked{self.books.get_mut(&key).unwrap().release=0.0;}
   let mut contacts=Vec::new();
   for (key,b) in &self.books{if b.held{
    let body=&self.world.bodies[b.handle];
@@ -207,12 +224,36 @@ impl RustBookGravity{
     // The grip yields to crowded books; contacts remain dynamic.
     let pickup=crate::scene_view::ease((b.grip_time as f64/0.28).min(1.0)) as f32;
     let mut goal=b.goal;goal.y+=b.clearance*pickup;
+    let sway=(-b.grip*b.motion*0.8).clamp(-0.14,0.14)*pickup;
+    let desired=b.grip_angle*(1.0-pickup)+sway;
+    // Move the centre around the grasped leaf height, rather than rotating
+    // about an unrelated centre. Top and bottom grips have opposite leverage.
+    let grip=b.grip*b.size[1] as f32;
+    let angle=body.rotation().to_scaled_axis().z;
+    goal.x+=grip*angle.sin();goal.y+=grip*(1.0-angle.cos());
     let target=starts[key].lerp(goal,(n+1) as f32/steps as f32);
     let acceleration=((target-body.translation())*1225.0-body.linvel()*70.0).clamp_length_max(if b.contacting{12.0}else{60.0})+Vector::new(0.0,5.5,0.0);
     body.reset_forces(false);body.add_force(acceleration*body.mass(),false);
-    let error=b.grip_angle*(1.0-pickup)-body.rotation().to_scaled_axis().z;
+    let error=desired-body.rotation().to_scaled_axis().z;
     let inertia=body.mass()*(b.size[0]*b.size[0]+b.size[1]*b.size[1]) as f32/12.0;
     body.reset_torques(false);body.add_torque(Vector::new(0.0,0.0,(1600.0*error-80.0*body.angvel().z).clamp(-80.0,80.0)*inertia),false);
+   }else if b.release!=0.0{
+    let supported_by_book=self.world.contact_pairs_with(b.collider).any(|pair|{
+     let other=if pair.collider1==b.collider{pair.collider2}else{pair.collider1};
+     pair.has_any_active_contact()&&self.world.colliders[other].collision_groups().memberships.contains(Group::GROUP_1)
+    });
+    let body=&mut self.world.bodies[b.handle];
+    let angle=body.rotation().to_scaled_axis().z;
+    let tipping=(b.size[0]/b.size[1]).atan() as f32+0.045;
+    b.release_time+=DT;
+    if supported_by_book||angle*b.release>=tipping||b.release_time>0.9{
+     b.release=0.0;body.reset_torques(false);
+    }else{
+     let error=b.release*(tipping+0.07).min(0.8)-angle;
+     let inertia=body.mass()*(b.size[0]*b.size[0]+b.size[1]*b.size[1]) as f32/12.0;
+     body.reset_torques(false);
+     body.add_torque(Vector::new(0.0,0.0,(240.0*error-18.0*body.angvel().z).clamp(-60.0,60.0)*inertia),true);
+    }
    }}
    self.world.step();
    // Quiet kinetic energy and exact cabinet bounds, independent of a thin
@@ -224,7 +265,7 @@ impl RustBookGravity{
      body.set_linvel(body.linvel().clamp_length_max(0.4),false);
      body.set_angvel(body.angvel().clamp_length_max(1.8),false);
      constrain(body,b.size,b.bay);
-     if supported&&!body.is_sleeping(){
+     if supported&&b.release==0.0&&!body.is_sleeping(){
       let position=body.translation();let angle=body.rotation().to_scaled_axis().z;
       let quiet=b.quiet.get_or_insert((position,angle,0.0));
       // Contact islands wedged against a post/pot can retain solver noise.
