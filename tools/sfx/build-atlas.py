@@ -188,6 +188,35 @@ if ITER>=3:
     for ln,i0,lp_ in (('metal',0,4800),('wood',3,3800),('plastic',5,5200)):
         for t in range(2):
             add(f'lamp_move_{ln}_t{t}',decode(f'{src}/scrapes/scrape-{1+(i0+t)%8}.wav') if ln!='wood' else decode(R(f'creak{1+t}')),db=-5.0,kind='rustle',lp=lp_,hp=150,max_len=0.8,soft_in=0.02,tail_db=-36)
+# ======================= camera: switching between the straight and the isometric view, and zooming (original, soft and airy)
+def svf_sweep(x,f0,f1,q):
+    # state-variable band-pass whose centre glides from f0 to f1 (log scale)
+    n=len(x);fs=np.exp(np.linspace(np.log(f0),np.log(f1),n));y=np.zeros(n);lo=bp=0.0
+    for i in range(n):
+        g=2*np.sin(np.pi*fs[i]/RATE);hi=x[i]-lo-bp/q;bp+=g*hi;lo+=g*bp;y[i]=bp
+    return y
+def whoosh(dur,f0,f1,seed,tone=(0.0,0.0),peak=0.45,q=1.7,body=0.5):
+    r=np.random.default_rng(seed);n=int(dur*RATE);t=np.arange(n)/RATE;u=t/dur
+    air=svf_sweep(r.standard_normal(n),f0,f1,q);air/=np.abs(air).max()
+    swell=np.sin(np.pi*np.clip(u/0.95,0,1))**1.6*np.exp(-0.8*u)*(0.35+0.65*np.sin(np.pi*np.clip(u/peak,0,1)/2)**2 if False else 1.0)
+    env=np.where(u<peak,np.sin(np.pi/2*u/peak)**2,np.cos(np.pi/2*(u-peak)/(1-peak))**2)
+    low=signal.sosfilt(sos('lp',420,2),r.standard_normal(n));low/=np.abs(low).max()
+    y=air*env+body*low*env**1.5*0.55
+    if tone[0]:  # a very faint, breathy glide so the motion has a direction, never a clean note
+        f=np.exp(np.linspace(np.log(tone[0]),np.log(tone[1]),n));ph=2*np.pi*np.cumsum(f)/RATE
+        jit=signal.sosfilt(sos('lp',9,2),r.standard_normal(n));jit/=np.abs(jit).max()
+        tn=(np.sin(ph)+0.5*np.sin(2*ph+0.4)+0.25*np.sin(3*ph+1.1))*(1+0.35*jit)
+        y+=0.07*tn*env**1.2
+    return y
+def camera(name,dur,f0,f1,tone,t,peak=0.45):
+    x=whoosh(dur,f0*(1+0.04*t),f1*(1+0.04*t),100+t,tone=(tone[0]*(1+0.03*t),tone[1]*(1+0.03*t)),peak=peak)
+    clips[name]=finish(clean(x,kind='rustle',lp=5200,hp=110,max_len=dur+0.1,soft_in=0.02,tail_db=-40,warm=1.0,pre=0.0),-1.0)
+if ITER>=3:
+    for t in range(3):
+        camera(f'zoom_in_t{t}',0.34,450,1700,(300,430),t,0.5)     # closer: the air opens up
+        camera(f'zoom_out_t{t}',0.34,1700,450,(430,300),t,0.4)    # further away: it closes again
+        camera(f'view_iso_t{t}',0.55,380,2000,(260,470),t,0.55)   # straight to isometric: a longer, rising turn
+        camera(f'view_front_t{t}',0.55,2000,380,(470,260),t,0.4)  # isometric to straight: the turn settles back
 # ======================= take selection: drop outliers within a group (iteration 2+), keep at most 4 (iteration 3)
 import re
 groups={}
