@@ -81,7 +81,7 @@
   </script>
   <!-- The live shelf's pointer controllers (swipe, pinch zoom): a small module compiled with the page
        head. The first shelf render awaits it; rust-shelf.js adopts the compiled module once. -->
-  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-BblJDRHE.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-D87rJH0m.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -136,7 +136,7 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-DViS-ckP.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-CAL-B-0s.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-nNprJxya.js">
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-Cxpc7H2q.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-JwWmTiyy.css">
@@ -205,6 +205,7 @@
             </div>
             <button id="drive-connect-btn" class="drive-menu-btn" type="button" aria-label="Conectar cuenta de Google">Iniciar sesión con Google</button>
             <label class="drive-theme-row" for="drive-theme-toggle"><span>Modo oscuro</span><input id="drive-theme-toggle" type="checkbox" aria-label="Modo oscuro" /></label>
+            <label class="drive-theme-row" for="shelf-sounds-toggle"><span>Sonidos de la estantería</span><input id="shelf-sounds-toggle" type="checkbox" checked aria-label="Sonidos de la estantería" /></label>
             <p id="drive-sync-status" class="drive-sync-status" role="status" aria-live="polite">Conectado</p>
             <div class="drive-profile-actions">
               <button id="drive-sync-btn" class="drive-menu-btn" type="button" aria-label="Sincronizar ahora">Sincronizar</button>
