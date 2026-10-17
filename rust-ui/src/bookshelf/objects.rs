@@ -129,6 +129,7 @@ pub fn toggle_lamp(ctx:&Rc<Ctx>,node:&JsValue)->R{
  let placed:Vec<JsValue>=array_of(&ctx.st("placementObjects")).into_iter().map(|item|if get(&item,"key")==key{spread(&[&item,&obj(&[("isOn",&get(&next,"isOn"))])])}else{item}).collect();
  ctx.st_set("placementObjects",&arr(&placed.iter().collect::<Vec<_>>()));
  update_lamp_control(ctx,node,&next)?;
+ ctx.sound(2.0,0.65);
  ctx.scene_call("setLampPower",&[node,&get(&next,"isOn"),&obj(&[("animate",&b(!prefers_reduced_motion()))])])?;
  Ok(())
 }

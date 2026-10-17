@@ -16,16 +16,21 @@ vi.mock('../../src/js/shelf-plants.js',async importOriginal=>{
   })};
 });
 
-let shelf,stage,scroller,node,entry,layout,frames,jobs;
+let shelf,stage,scroller,node,entry,layout,frames,jobs,clock;
 const rect=(width,height)=>({left:0,top:60,width,height,right:width,bottom:60+height});
 const changed=data=>shelf.updateLayout({...layout,entries:[{...entry,...data}]});
 const finish=async()=>{while(jobs.length)jobs.shift()({timeRemaining:()=>100});await Promise.resolve();await Promise.resolve();};
+function settleFrames(){
+ for(let i=0;i<180&&frames.size;i++){
+  clock+=1000/60;const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(clock);
+ }
+}
 beforeEach(()=>{
-  gpu.scene=null;gpu.models=[];frames=new Map();jobs=[];let serial=0;
+  gpu.scene=null;gpu.models=[];frames=new Map();jobs=[];clock=0;let serial=0;
   vi.stubGlobal('requestAnimationFrame',callback=>{const id=++serial;frames.set(id,callback);return id;});
   vi.stubGlobal('cancelAnimationFrame',id=>frames.delete(id));
   vi.stubGlobal('requestIdleCallback',callback=>{jobs.push(callback);return jobs.length;});
-  vi.spyOn(performance,'now').mockReturnValue(0);vi.stubGlobal('matchMedia',()=>({matches:false}));
+  vi.spyOn(performance,'now').mockImplementation(()=>clock);vi.stubGlobal('matchMedia',()=>({matches:false}));
   vi.spyOn(THREE.TextureLoader.prototype,'load').mockImplementation(()=>new THREE.Texture());
   vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(()=>({
     createImageData:(width,height)=>({data:new Uint8ClampedArray(width*height*4)}),putImageData(){},drawImage(){},clearRect(){}
@@ -92,6 +97,9 @@ describe('shelf color-only plant reconciliation',()=>{
     expect(old).toBeTruthy();await finish();expect(old.ready).toBe(true);
     expect(model.userData.inspectionResolution).toBe(0);
     node.classList.remove('is-dragging');changed({potColorId:'copper'});
+    // Releasing the real solid now settles its body before inspection work
+    // resumes. A permanently frozen clock cannot complete that transition.
+    await Promise.resolve();settleFrames();
     expect(gpu.models.length).toBe(1);expect(gpu.models[0]).toBe(model);
     expect(gpu.models).toEqual([model]);expect(live.plantQuality).not.toBe(old);
     expect(live.plantQuality.resolution).toBe(256);

@@ -211,6 +211,7 @@ impl RustShelfCtx{
 fn destroy_screen(ctx:&Rc<Ctx>)->R{
  method_opt(&ctx.scene(),"setModalBackgroundDeferred",&[&null(),&obj(&[("resumeHidden",&JsValue::TRUE)])])?;
  ctx.st_set("destroyed",&JsValue::TRUE);
+ call_on_present(&get(&ctx.parts,"soundBindings"),"destroy",&[])?;
  returning::finish_return_slot(ctx,false)?;clear_compatibility_tap_refresh(ctx);
  method(&ctx.legacy_value("returnViews"),"clear",&[])?;trash::clear_opening_click(ctx);
  for key in ["plantCatalog","shelfViewGesture","shelfZoom"]{method(&get(&ctx.parts,key),"destroy",&[])?;}

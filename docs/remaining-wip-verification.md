@@ -1,3 +1,19 @@
+# 1.7.277 — sonidos suaves de interacción y materiales
+
+Changelog: «Sonidos acogedores y apoyos precisos».
+
+Rust sintetiza foley breve de papel/tela al coger, apertura de tapas, interruptor e impactos amortiguados. Los contactos físicos leen velocidad de cierre en cada punto, incluida la tapa que golpea una tabla cuando el canto ya mantenía contacto con ella; no dependen solo de CollisionStarted. Se distingue papel, madera, metal, cristal, cerámica y tela mediante la pieza sólida realmente tocada. La intensidad responde a la velocidad/masa, el panorama a la posición y se limita la repetición por libro y el número de eventos por lote. No se analizan impactos durante la carga inicial, en silencio o fuera de pantalla.
+
+El host Web Audio queda separado del audiolibro. Solo se crea tras un gesto real, reutiliza tres variantes PCM por sonido/material y suspende su contexto 180 ms después del último sonido. La polifonía se limita con una salida breve del sonido más antiguo. Ocultar la página detiene las voces; destruir la última estantería desconecta y cierra su contexto. Una opción «Sonidos de la estantería» permite silenciar y conserva la preferencia. El audio no invalida el renderer ni incorpora un bucle continuo. La física, geometría, portadas, materiales y luces mantienen sus parámetros.
+
+Pasa la batería completa: 6558 comprobaciones en 517 archivos, incluidas las 43 regresiones físicas del bloque anterior. Se comprueban PCM finitos, sin clipping y con entrada/salida suave para las 72 combinaciones de sonido/material/variante; diferencias entre materiales, determinismo, contactos reales sobre madera/metal/cristal/cerámica, el golpe posterior de la tapa, ausencia de repeticiones en reposo, caché, suspensión, silencio, disponibilidad opcional y cierre por último propietario. Las sesiones de objetos/apertura y las pruebas de recursos conservan todas sus aserciones.
+
+La verificación completa de 276 en GitHub detectó dos fixtures unitarias desactualizadas: una lámpara dinámica usa el margen físico de 1 mm y una maceta liberada necesita que avance el reloj para asentarse antes de preparar su textura. Se actualizan sus datos/tiempo sin quitar aserciones de textura, color o retención de modelos. La comparación de navegador conserva el panel literal original y las 100 secuencias DOM; el panel vivo se verifica por separado. El corpus físico compara exactamente los objetos que ya caben y añade 72 plantas altas con comprobaciones independientes de ajuste uniforme dentro de su leja; la referencia congelada no se modifica.
+
+Pasan 17 casos E2E distintos sin reintentos automáticos: 16 en la pasada general y el corpus físico en su repetición específica final. Incluyen sonidos PCM reales de interruptor/agarre/apertura y suspensión del audio, zoom con portadas nítidas, luces cálidas, apoyo/dominó, barrido tranquilo, liberación sin patinar, pausa fuera de pantalla, empuje nativo y recarga de las mismas poses, colocación de libro/planta y las 100 secuencias DOM del lector con memoria estable. La prueba física conserva también los registros antiguos del techo y verifica que el único f64 retenido es el scratch compartido del catálogo (16 palabras): ningún buffer de cálculo queda sin liberar ni se libera con otro tamaño.
+
+Build: UI 2983788 B, Shelf 3502917 B, shell 109 archivos / 31176851 B. Inventario 33745 líneas Rust / 20785 JavaScript = 61,88 %, sin equivalencia con funciones terminadas: este bloque añade también el transporte Web Audio del navegador. La migración completa sigue pendiente. No se modifica Android ni el actualizador; preservar WIP, stashes y ramas ready.
+
 # 1.7.276 — contactos sólidos y aterrizaje de la decoración
 
 Changelog: «Apoyos precisos y macetas sin bloqueos».

@@ -1,3 +1,4 @@
+import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
 import {plantGeometrySpec,lampGeometrySpec} from './decor-geometry-spec.js';
 import {projectPlantFoliage} from './foliage-projection.js';
@@ -1412,7 +1413,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           row.left || 0, row.right ?? width, row.bottom ?? entry.y + entry.height / 2, row.ceiling ?? row.top ?? 0, entry.gripHeight || 0],index * 9);
         return entry.key;
       });
+      bookGravity.sound_enabled(shelfSoundsEnabled());
       bookGravity.step(gravityKeys, physicsStates, gravityInput, sceneView, now, reducedMotion.matches, gravityOutput);
+      const sounds=bookGravity.take_sounds();
+      if(sounds)for(let at=0;at<sounds.length;at+=3)playShelfSound(3,sounds[at],sounds[at+1],sounds[at+2]);
     }
     for (const [entryIndex,entry] of bookEntries.entries()) {
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';

@@ -200,6 +200,7 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   cls_add(&ctx.root,&["is-arranging"]);
   cls_remove(&node,PRESSED);
   cls_add(&node,&["is-lifted"]);
+  if cls_has(&node,"ihr-spine"){ctx.sound(0.0,0.75);}
   ctx.scene_call("flush",&[])?;
   Ok(())
  }});

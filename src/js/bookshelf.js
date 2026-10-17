@@ -1,3 +1,4 @@
+import {attachShelfSounds,playShelfSound} from './cozy-sounds.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import { needsDriveDownload } from './book-storage-policy.js';
 /**
@@ -167,6 +168,7 @@ const DEFAULTS = Object.freeze({
 // The functions of other modules the shelf module's parts call, looked up when they are called (a module
 // replaced after the shelf was built is still the one called).
 const shelfEnv = {
+  playShelfSound:(...args)=>playShelfSound(...args),
   displayBookTitle: (...args) => displayBookTitle(...args),
   getBookRenderer: (...args) => getBookRenderer(...args),
   canAdoptShelfMetadata: (...args) => canAdoptShelfMetadata(...args),
@@ -333,6 +335,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
   root.classList.toggle('has-trash', hasTrash);
   root.append(scroller);
+  const soundBindings={destroy:attachShelfSounds(root)};
   const shelfViewGesture = createShelfViewGesture({ root, scroller,
     getMode:() => state.viewMode, setMode:setViewMode,
     isEnabled:() => shelfNative.shelf_can_change_view(state),
@@ -378,7 +381,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   // options and the functions of other modules they call.
   // `legacy` holds what the shelf module still asks of this closure; it shrinks as those parts move.
   const shelfParts = { state, opts, options, env:shelfEnv, root, scroller, container,
-    onOpen, onPickLocal, onDrive, coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, catalogNode, plantCatalog, shelfViewGesture, shelfZoom,
+    onOpen, onPickLocal, onDrive, soundBindings, coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, catalogNode, plantCatalog, shelfViewGesture, shelfZoom,
     get observer() { return observer; },
     get onViewportResize() { return onViewportResize; },
     get onVisualViewportChange() { return onVisualViewportChange; }, legacy:{
