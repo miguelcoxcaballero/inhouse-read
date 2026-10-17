@@ -220,7 +220,7 @@ impl RustScene{
   let b=Box3{min:[io[8],io[9],io[10]],max:[io[11],io[12],io[13]]};
   let rect=corners_of(&b,&Mat4(m));
   let visible=drop||((!away||insertion)&&rect[3]>self.entry_scroll-220.0&&rect[2]<self.entry_scroll+self.viewport_height+220.0);
-  let settled=visible&&!drop&&!insertion&&!away&&!self.moving();
+  let settled=visible&&!drop&&!insertion&&!away&&!self.moving()&&(flags&16==0||!model);
   let (mut overview_out,mut resolution)=(overview,0.0);
   let mut applies=false;
   if settled&&kind==PLANT{
