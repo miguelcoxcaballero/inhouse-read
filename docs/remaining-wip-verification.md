@@ -1,3 +1,33 @@
+# 1.7.280 — colocación próxima y empuje de libros inclinados
+
+Changelog: «Objetos más juntos y empujes suaves».
+
+La escena física deja de reservar intervalos con todo el ancho del follaje o de las pantallas. El planificador Rust conserva los centros explícitos de los objetos de suelo sin recolocar vecinos, también al reconstruir la biblioteca; los elementos nuevos sin posición siguen buscando un hueco. El comportamiento anterior se mantiene para la vista sin física y para los focos de techo, que no tienen cuerpos rígidos y deben conservar su separación.
+
+Antes de confirmar un arrastre, Rust consulta las formas físicas actuales de macetas, patas, cristal y libros. Busca el límite real mediante comprobación de formas y refinamiento, en vez de detenerse en una caja completa. Respeta los límites del hueco, los apoyos y la altura del modelo; una leja realmente llena rechaza la colocación. El teclado usa esa misma validación. El host proyecta el puntero y transporta coordenadas/resultados. Los empujes ya activos guardan el centro que realmente alcanzó el libro, no el destino del dedo que una colisión le impidió alcanzar.
+
+Enderezar un libro inclinado podía dejarlo parcialmente dentro de otro libro y mantener sus contactos desactivados. La recuperación aproxima el seleccionado a un contacto libre con el mismo agarre elástico, vuelve a habilitar el empuje y sostiene su orientación para que empuje el canto de un volumen tumbado en vez de subir sobre él. Se conserva la fuerza horizontal acotada y el aislamiento de barridos rápidos. El espacio entre patas y bajo la pantalla permanece utilizable: no se encogen ni simplifican las colisiones de las decoraciones.
+
+La regresión nueva detectó además un despertar repetido causado por apoyos fijos antiguos marcados como restaurados. Un apoyo fijo no puede despertarse: se excluye del detector que libera las poses dinámicas restauradas. Los libros vuelven a dormir con los mismos umbrales de reposo, sin esconder movimientos ni ampliar tolerancias.
+
+La biblioteca original de 14 libros y dos plantas reveló otro arranque bloqueado: libro y maceta compartían centro, y la expulsión inicial dejaba el libro atrapado entre maceta y lateral, con el pie 14,7 px por encima de la leja. Una regresión conserva su paquete real de geometría y falla con el build anterior. Rust resuelve ese solapamiento antes del calentamiento únicamente en libros nuevos sin pose física guardada que atraviesan sólidos registrados. Las poses guardadas y los contactos válidos se conservan. La validación de teclado permite que el planificador cree una leja nueva todavía vacía.
+
+La suelta real de la maceta sobre varias tapas tumbadas detectó un error de contrato con Rapier 0.36: el motor agrupa contactos de formas compuestas y la aplicación consultaba las listas antiguas para decidir si había apoyo. Rust consulta ahora los contactos que realmente usa el solver. Un libro apoyado deja de despertarse como si estuviera en caída libre. La regresión conserva el snapshot y los movimientos reales de esa suelta. Se mantienen los mismos límites de reposo, iteraciones, fricción y amortiguación.
+
+Los sonidos leen también los contactos agrupados del solver. En lámparas con varios materiales, el punto de contacto vuelve a asociarse con su pieza original antes de elegir cristal/metal o madera/tela; una pieza del mismo grupo no toma el material de la primera. Se conservan intensidad, pausas y límites de voces. La regresión cubre maceta cerámica, base metálica y cristal en ambos órdenes de los cuerpos.
+
+Validación final: 154/154 casos específicos en 15 archivos y nueve E2E distintos con la compilación final, sin reintentos (dos ejecuciones: 1 + 8). Pasan la prueba original íntegra de ambos arrastres y recarga; macetas próximas con poses ajenas exactas; teclado que crea una nueva leja; sonidos nativos y suspensión; zoom nítido; agarre vertical y barrido tranquilo; empuje de vecinos y conservación de poses; suelta junto a una planta en frontal e isométrica. El zoom conserva seis portadas de 1024 px y no añade pasadas GPU durante el gesto de la prueba. No se declara una pasada general completa ni una medición de batería en un teléfono.
+
+La regresión nueva de navegador usa la estantería frontal de nogal, dos macetas, una lámpara y un libro. Comprueba un arrastre real hasta dejar menos de 4 mm entre macetas mientras sus intervalos nominales de follaje se solapan, con apoyo en la leja, posiciones ajenas exactas y restauración tras recargar. Las dimensiones se leen del catálogo Rust compilado. El fixture incluye los campos normalizados del catálogo para plantas y lámpara para que guardar no produzca una diferencia ajena a la colocación; se conservan todas las aserciones de poses.
+
+La prueba nueva de restauración mantiene coordenadas y actividad exactamente iguales. Solo el ángulo admite el redondeo de reconstruir el cuaternión f32: la captura difiere en una ULP (1,19×10⁻⁷ rad); se exige precisión de 10⁻⁶ rad. Las pruebas anteriores permanecen intactas.
+
+Build final: UI 2983788 B, Shelf 3582335 B; shell 109 archivos / 31255433 B, revisión dfaf7d2a768e. Inventario 33999 líneas Rust / 20849 JavaScript = 61,99 %, no porcentaje de funciones terminadas.
+
+No se reducen materiales, geometrías, luces, texturas ni portadas. No se modifican Android, canales, actualizador, vendor ni workflows. La migración completa sigue pendiente y se conservan los WIP anteriores.
+
+---
+
 # 1.7.279 — arrastres locales y sueltas sin dispersar la fila
 
 Changelog: «Arrastre estable sin mover toda la estantería».

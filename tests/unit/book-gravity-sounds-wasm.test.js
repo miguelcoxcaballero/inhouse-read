@@ -51,6 +51,28 @@ it('distinguishes actual glass and ceramic subshapes from their surrounding boxe
  }
 });
 
+it('reports compound pot and lamp impacts from solver contacts in both collider orders',()=>{
+ const cases=[
+  {name:'ceramic pot',kind:1,solid:1,pot:'muskot',profile:'muskot',values:[.05,.12,.18,0],height:180,bookHeight:160,lift:0,material:4},
+  {name:'metal lantern base',kind:2,solid:3,pot:'',profile:'',values:[0,0,0,.0006],height:150,bookHeight:40,lift:0,material:2},
+  {name:'glass lantern chimney',kind:2,solid:3,pot:'',profile:'',values:[0,0,0,.0006],height:150,bookHeight:40,lift:-90,material:3},
+ ];
+ for(const c of cases)for(const reversed of [false,true]){
+  const rows=[{id:'book',x:130,flags:2,height:c.bookHeight},{id:'decor',x:240,kind:c.kind,width:100,height:c.height}];
+  if(reversed)rows.reverse();
+  const f=shelf(false,rows,reversed?1:0);
+  try{
+   f.solver.decoration('decor',c.solid,c.pot,c.profile,Float64Array.from(c.values));
+   f.solver.sound_enabled(true);f.step(90);f.move(0,c.lift);f.step(90);
+   for(let step=1;step<=75;step++){f.move(step*2,c.lift);f.step();}
+   // Inspect the contact while held, before a later board impact could hide
+   // a missing compound hit or use a different material from the same lamp.
+   expect(f.hits.some(hit=>hit[0]===c.material),JSON.stringify({case:c.name,reversed,hits:f.hits})).toBe(true);
+   for(const [,strength,pan] of f.hits){expect(strength).toBeGreaterThan(0);expect(strength).toBeLessThanOrEqual(1);expect(Math.abs(pan)).toBeLessThanOrEqual(.7);}
+  }finally{f.free();}
+ }
+});
+
 it('does no contact audio while disabled and discards pending audio on pause',()=>{
  const f=shelf();f.step(90);for(let i=1;i<=30;i++){f.move(i,-50);f.step();}f.release();f.step(600);
  expect(f.hits).toEqual([]);f.solver.sound_enabled(true);f.step(120);expect(f.hits).toEqual([]);

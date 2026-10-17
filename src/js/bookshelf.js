@@ -170,6 +170,7 @@ const DEFAULTS = Object.freeze({
 // The functions of other modules the shelf module's parts call, looked up when they are called (a module
 // replaced after the shelf was built is still the one called).
 const shelfEnv = {
+  physicalPlacement: createBookshelfScene.physicalPlacement === true,
   playShelfSound:(...args)=>playShelfSound(...args),
   displayBookTitle: (...args) => displayBookTitle(...args),
   getBookRenderer: (...args) => getBookRenderer(...args),

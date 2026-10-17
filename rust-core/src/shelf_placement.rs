@@ -15,6 +15,7 @@ struct Item {
     shelf: usize,
     desired: Option<f64>,
     requested_x: Option<f64>,
+    physical: bool,
     order: f64,
     left: f64,
 }
@@ -118,7 +119,15 @@ fn layout(items: Vec<Item>, pin: Option<usize>, cfg: &Config) -> Layout {
     while index < pending.len() {
         let candidates = std::mem::take(&mut pending[index]);
         let pinned = pin.filter(|pin| candidates.iter().any(|item| item.index == *pin));
-        let (placed, overflow) = if let Some(pin) = pinned { solve_pinned(candidates, pin, cfg) }
+        // A physical scene has already resolved solid contacts. Nominal item
+        // widths include foliage and tilted-book silhouettes; packing those
+        // intervals again would separate real contacts and move other objects.
+        // Unpositioned items still enter the automatic free-space pass below.
+        let (placed, overflow) = if candidates.iter().all(|item| item.physical) {
+            (candidates.into_iter().map(|mut item| {
+                item.left = item.desired.unwrap(); item
+            }).collect(), Vec::new())
+        } else if let Some(pin) = pinned { solve_pinned(candidates, pin, cfg) }
             else { solve_row(candidates, cfg) };
         ensure(&mut solved, index); solved[index] = placed;
         if !overflow.is_empty() {
@@ -151,6 +160,8 @@ fn layout(items: Vec<Item>, pin: Option<usize>, cfg: &Config) -> Layout {
 /// The host owns distinct live input/config/output ranges of `count*7`, 7 and
 /// `output_length` f64 respectively. IDs are implicit input indices; no strings
 /// or browser references cross this boundary. Group 0 is floor, 1 is ceiling.
+/// Input flags: 1 = explicit left, 2 = exact saved x, 4 = physical placement.
+/// The host supplies physical mode consistently within each mounting surface.
 /// Output: counts[items0,rows0,items1,rows1], ordered item tuples
 /// [inputIndex,row,width,left,center,x], then row tuples [used,occupied,free].
 #[no_mangle]
@@ -173,13 +184,14 @@ pub unsafe extern "C" fn shelf_place(
     for (index, row) in input.chunks_exact(INPUT_STRIDE).enumerate() {
         if row.iter().any(|value| !value.is_finite()) || row[0] <= 0.0 || row[0] > cfg.available
             || row[1] < 0.0 || row[1] > 999.0 || row[1].fract() != 0.0
-            || row[4] < 0.0 || row[4] > 3.0 || row[4].fract() != 0.0
+            || row[4] < 0.0 || row[4] > 7.0 || row[4].fract() != 0.0
             || row[5] < 0.0 || row[5].fract() != 0.0
             || row[6] < 0.0 || row[6] >= groups as f64 || row[6].fract() != 0.0 { return 0; }
         let flags = row[4] as u8;
         grouped[row[6] as usize].push(Item { index, width:row[0], shelf:row[1] as usize,
             desired:if flags & 1 != 0 { Some(row[2]) } else { None },
             requested_x:if flags & 2 != 0 { Some(row[3]) } else { None },
+            physical:flags & 4 != 0,
             order:row[5], left:0.0 });
     }
     let layouts: Vec<Layout> = grouped.into_iter().map(|items| layout(items, pin, &cfg)).collect();

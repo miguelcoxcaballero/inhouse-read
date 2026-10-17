@@ -5,6 +5,21 @@ use super::*;
 #[derive(Clone,Copy)]
 pub(super) struct Velocity{centre:Vector,linear:Vector,angular:Vector}
 impl Velocity{fn at(&self,point:Vector)->Vector{self.linear+self.angular.cross(point-self.centre)}}
+// A solver cluster merges contacts from several compound pieces and keeps
+// only the first piece's subshape IDs. Match its actual point back to the raw
+// manifolds before selecting glass/metal or wood/fabric for a mixed lamp.
+fn original_subshape(pair:&ContactPair,m:&ContactManifold,contact:&SolverContact,first:bool)->Option<usize>{
+ let point=m.points.get((contact.contact_id[0]&0x7fff_ffff) as usize)?;
+ let p1=m.subshape_pos1().map_or(point.local_p1,|pose|*pose*point.local_p1);
+ let p2=m.subshape_pos2().map_or(point.local_p2,|pose|*pose*point.local_p2);
+ let mut best=f32::INFINITY;let mut selected=None;
+ for source in pair.manifolds(){for point in &source.points{
+  let q1=source.subshape_pos1().map_or(point.local_p1,|pose|*pose*point.local_p1);
+  let q2=source.subshape_pos2().map_or(point.local_p2,|pose|*pose*point.local_p2);
+  let distance=(p1-q1).length_squared()+(p2-q2).length_squared();
+  if distance<best{best=distance;selected=Some(if first{source.subshape1}else{source.subshape2} as usize);}
+ }}selected
+}
 impl RustBookGravity{
  pub(super) fn prepare_sound_contacts(&mut self){
   self.audio_velocities.clear();
@@ -24,12 +39,17 @@ impl RustBookGravity{
     // velocity and cannot emit this hit. Deduplicate only two active emitters.
     if other_book.is_some_and(|b|b.kind==0&&(now<b.sound_until||pair.collider1!=b.collider&&self.audio_velocities.contains_key(&other))){continue;}
     let mut best=0.055_f32;let mut material=0;
-    for m in pair.manifolds(){for contact in &m.data.solver_contacts{
+    for m in pair.solver_manifolds(){for contact in &m.data.solver_contacts{
      let (p1,p2)=m.data.solver_contact_world_points(contact,&self.world.bodies);let point=(p1+p2)*0.5;
      let speed=(velocity(pair.collider1,point)-velocity(pair.collider2,point)).dot(m.data.normal);
      if speed<=best{continue;}best=speed;
      material=if let Some(o)=other_book{
-      if o.kind==0{0}else{self.solids.get(&o.name.iter().collect::<Vec<u16>>()).and_then(|s|s.materials.get(if pair.collider1==b.collider{m.subshape2}else{m.subshape1} as usize).copied()).unwrap_or(if o.kind==1{4}else{2})}
+      if o.kind==0{0}else{self.solids.get(&o.name.iter().collect::<Vec<u16>>()).and_then(|s|{
+       let material=*s.materials.first()?;
+       if s.materials.iter().all(|value|*value==material){Some(material)}else{
+        original_subshape(pair,m,contact,pair.collider1!=b.collider).and_then(|index|s.materials.get(index).copied())
+       }
+      }).unwrap_or(if o.kind==1{4}else{2})}
      }else{self.world.colliders[other].user_data.saturating_sub(10).min(5) as u32};
     }}
     if best>0.055{
