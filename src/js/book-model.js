@@ -10,7 +10,8 @@ import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-was
 import { rustBookmarkBuffers } from './bookmark-wasm.js';
 import { rustBindingBuffers } from './binding-wasm.js';
 import { rustPageBlockBuffers, rustLeafStackBuffers } from './page-mesh-wasm.js';
-import { reuseCoverRaster, releaseCoverRaster } from './cover-raster-cache.js';
+import { reuseCoverRaster } from './cover-raster-cache.js';
+import {acquireCoverImage} from './book-cover-images.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
@@ -462,48 +463,6 @@ function liftedTextureHeight(height) {
 // Shelf and lifted copies of a book overlap during a transition. Keep the
 // decoded image alive for exactly that overlap, so neither copy has to flash
 // its generated cover while loading the same blob URL again.
-const activeCoverImages = new Map();
-function acquireCoverImage(url, onImage, onError) {
-  let entry = activeCoverImages.get(url);
-  const startLoad = !entry;
-  if (!entry) {
-    entry = { image:null, failed:false, users:0, listeners:new Set(), timer:0 };
-    activeCoverImages.set(url, entry);
-  }
-  const listener = { onImage, onError };
-  entry.users++;
-  if (entry.image) onImage(entry.image, entry);
-  else if (entry.failed) onError();
-  else entry.listeners.add(listener);
-  const fail = () => {
-    clearTimeout(entry.timer); entry.failed = true;
-    if (activeCoverImages.get(url) === entry) activeCoverImages.delete(url);
-    for (const waiting of entry.listeners) waiting.onError();
-    entry.listeners.clear();
-  };
-  if (startLoad) {
-    // A stalled external image must not hold the opening transition forever.
-    // The failed entry is evicted so a later opening may retry the URL.
-    if (!/^(blob:|data:)/i.test(url)) entry.timer = setTimeout(fail, 6000);
-    new THREE.TextureLoader().load(url, map => {
-    clearTimeout(entry.timer);
-    if (entry.failed || !entry.users) { map.dispose(); return; }
-    entry.image = map.image;
-    for (const waiting of entry.listeners) waiting.onImage(entry.image, entry);
-    entry.listeners.clear(); map.dispose();
-    }, undefined, fail);
-  }
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true; entry.listeners.delete(listener); entry.users--;
-    if (!entry.users) {
-      releaseCoverRaster(entry);
-      clearTimeout(entry.timer);
-      if (activeCoverImages.get(url) === entry) activeCoverImages.delete(url);
-    }
-  };
-}
 
 export function createBookModel(book, style, width, height, thickness, coverUrl,
   { shelf = false, overview = false, inspectionResolution = 0, eagerRelief = true } = {}) {

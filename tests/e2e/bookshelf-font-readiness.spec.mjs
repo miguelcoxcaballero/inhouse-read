@@ -11,7 +11,7 @@ const fontPattern = /\/playfair-display-latin-(?!ext-)[\w-]+\.woff2(?:\?.*)?$/;
 
 test.use({ viewport:{ width:390, height:845 }, deviceScaleFactor:2, isMobile:true, hasTouch:true, serviceWorkers:'block' });
 
-test('a real late font refreshes shelf lettering without replacing the focused book or its tap target', async ({ page }, testInfo) => {
+test('the first shelf frame already has its real font and photo, and keeps the same tap target', async ({ page }, testInfo) => {
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
   const originalFont = await readFile(FONT_FILE), fontResponses = [], routeErrors = [], pageErrors = [];
   let releaseFont;
@@ -42,6 +42,35 @@ test('a real late font refreshes shelf lettering without replacing the focused b
       return originalFillText.apply(this, args);
     };
     window.__lateShelfFontDraws = draws;
+    window.__startupAuthorDraws = [];
+    const beforeAuthorText = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (...args) {
+      if (String(args[0]) === 'Autora de prueba') window.__startupAuthorDraws.push({ font:this.font,
+        loaded:document.fonts.check('500 20px "DM Sans"') });
+      return beforeAuthorText.apply(this, args);
+    };
+    window.__startupCoverFallbacks = 0;
+    window.__startupShelfInstances = 0;
+    window.__startupPhotos = 0;
+    const originalDrawImage = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (...args) {
+      if (args[0] instanceof HTMLImageElement && args[0].naturalWidth === 600 && args[0].naturalHeight === 400) window.__startupPhotos++;
+      return originalDrawImage.apply(this, args);
+    };
+    const observe = result => {
+      const instance = result.instance || result, actual = instance.exports;
+      if (!actual.book_cover_case) return result;
+      window.__startupShelfInstances++;
+      const exports = { ...actual, book_cover_case(...args) {
+        window.__startupCoverFallbacks++; return actual.book_cover_case(...args);
+      } };
+      const proxy = new Proxy(instance, { get(target, key) { return key === 'exports' ? exports : Reflect.get(target, key, target); } });
+      return result.instance ? { ...result, instance:proxy } : proxy;
+    };
+    for (const name of ['instantiate', 'instantiateStreaming']) if (WebAssembly[name]) {
+      const original = WebAssembly[name];
+      WebAssembly[name] = async function (...args) { return observe(await Reflect.apply(original, WebAssembly, args)); };
+    }
     const image = document.createElement('canvas'); image.width = 600; image.height = 400;
     const context = image.getContext('2d');
     context.fillStyle = '#41695d'; context.fillRect(0, 0, 600, 400);
@@ -77,20 +106,31 @@ test('a real late font refreshes shelf lettering without replacing the focused b
           else resolve(); };
       };
     });
-  }, { bytes, id:BOOK_ID, geometry:await settledGeometryLength(4, BOOK_ID) });
+  }, { bytes, id:BOOK_ID, geometry:await settledGeometryLength(300_000, BOOK_ID) });
 
   try {
-    // A held font may delay window.load. The actual app must nevertheless
-    // build and paint its real shelf while document.fonts.ready is pending.
+    // A real delayed WOFF2 must never paint temporary letters. Wait beyond
+    // the old one-second matcher cutoff, then deliver the original font bytes.
     await page.goto(process.env.IHR_TEST_URL || './', { waitUntil:'domcontentloaded' });
     await page.evaluate(() => window.__lateShelfFixtureReady);
     const spine = page.locator(`.ihr-spine[data-book-id="${BOOK_ID}"]`), scene = page.locator('.ihr-bookshelf-scene');
-    await expect(spine).toBeVisible();
     await expect.poll(() => fontResponses.length).toBeGreaterThan(0);
+    await page.waitForTimeout(1300);
+    await expect(spine).toHaveCount(0);
+    expect(await page.evaluate(() => window.__lateShelfFontDraws)).toEqual([]);
     expect(routeErrors).toEqual([]);
     for (const response of fontResponses) expect(response).toMatchObject({ status:200, bytes:originalFont.length, sha256:sha256(originalFont) });
-    await expect.poll(() => page.evaluate(() => window.__lateShelfFontDraws.some(draw => !draw.loaded && /Playfair Display/.test(draw.font)))).toBe(true);
+    releaseFont();
+    await expect(spine).toBeVisible();
     await expect(scene).toHaveAttribute('data-render-count', /[1-9]\d*/);
+    await expect.poll(() => page.evaluate(() => window.__lateShelfFontDraws.length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.__lateShelfFontDraws.every(draw => draw.loaded && /Playfair Display/.test(draw.font)))).toBe(true);
+    expect(await page.evaluate(() => window.__startupAuthorDraws.length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.__startupAuthorDraws.every(draw => draw.loaded))).toBe(true);
+    expect(await page.evaluate(() => window.__startupShelfInstances)).toBe(1);
+    expect(await page.evaluate(() => window.__startupPhotos)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.__startupCoverFallbacks)).toBe(0);
+    await page.screenshot({ path:testInfo.outputPath('first-correct-shelf.png') });
     await spine.focus();
     const before = await spine.evaluate(node => {
       const stage = node.closest('.ihr-shelf-stage'), scene = stage.querySelector('.ihr-bookshelf-scene');
@@ -104,16 +144,11 @@ test('a real late font refreshes shelf lettering without replacing the focused b
         modelCreations:Number(scene.dataset.modelCreations), renderCount:Number(scene.dataset.renderCount),
         drawCount:window.__lateShelfFontDraws.length };
     });
-    expect(before.fonts).toBe('loading'); expect(before.focused).toBe(true);
+    expect(before.fonts).toBe('loaded'); expect(before.focused).toBe(true);
     expect(before.rect.width).toBeGreaterThan(0); expect(before.rect.height).toBeGreaterThan(0);
     expect(before.modelCreations).toBeGreaterThan(0);
-    expect(await page.evaluate(() => window.__lateShelfReadyResolved)).toBe(false);
-
-    releaseFont();
     await page.evaluate(() => document.fonts.ready);
-    await expect.poll(() => page.evaluate(start => window.__lateShelfFontDraws.slice(start)
-      .some(draw => draw.loaded && /Playfair Display/.test(draw.font)), before.drawCount)).toBe(true);
-    await expect.poll(async () => Number(await scene.getAttribute('data-render-count'))).toBeGreaterThan(before.renderCount);
+    await page.waitForTimeout(500);
     const after = await spine.evaluate(node => {
       const saved = window.__lateShelfNodes, stage = node.closest('.ihr-shelf-stage'), scene = stage.querySelector('.ihr-bookshelf-scene');
       const rect = node.getBoundingClientRect(), buttons = [...stage.querySelectorAll('button')];

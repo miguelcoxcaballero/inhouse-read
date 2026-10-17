@@ -1,3 +1,8 @@
+// These semantic handoff doubles provide no decoded images. Actual image
+// ownership and first-paint adoption are covered by the image pool and browser tests.
+vi.mock('../../src/js/book-cover-images.js', async original => ({
+  ...await original(), warmShelfCover:vi.fn(async () => null)
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderBookshelf } from '../../src/js/bookshelf.js';
 import { analyzeCoverAppearance } from '../../src/js/cover-appearance.js';

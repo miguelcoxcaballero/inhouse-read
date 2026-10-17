@@ -472,32 +472,29 @@ function visualFallback(gray, width, height) {
   return FONT_CANDIDATES[busy ? 3 : 0];
 }
 
-function loadCandidateFonts() {
+function loadCandidateFonts(text) {
   if (!document.fonts?.load) return Promise.resolve();
   if (!candidateFontsTask) {
     candidateFontsTask = Promise.allSettled(FONT_CANDIDATES.map(candidate =>
       document.fonts.load(`${candidate.weight} 20px "${candidate.family}"`)
     ));
   }
-  return new Promise(resolve => {
-    const timer = setTimeout(resolve, 1000);
-    candidateFontsTask.then(() => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
+  // The default Latin face already covers ASCII/Latin-1. Request additional
+  // unicode subsets only when the actual lettering needs them.
+  return text && /[^\u0000-\u00ff]/u.test(String(text)) ? Promise.allSettled([candidateFontsTask,...FONT_CANDIDATES.map(candidate =>
+    document.fonts.load(`${candidate.weight} 20px "${candidate.family}"`,String(text)))]) : candidateFontsTask;
 }
 
 /** Analyze an already-decodable image URL. Returns null for missing/unsafe images. */
-export async function analyzeCoverAppearance(url, title = '', { matchFont = true } = {}) {
+export async function analyzeCoverAppearance(url, title = '', { matchFont = true, image:decodedImage } = {}) {
   if (!url || typeof Image === 'undefined' || typeof document === 'undefined') return null;
   warmCoverColorCore();
-  const image = new Image();
+  const image = decodedImage || new Image();
   image.decoding = 'async';
-  image.src = url;
+  if (!decodedImage) image.src = url;
   const decodeTimeout = matchFont ? 3000 : 1200;
   try {
-    if (typeof image.decode === 'function') {
+    if (!decodedImage && typeof image.decode === 'function') {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('La portada tardó demasiado')), decodeTimeout);
         Promise.resolve().then(() => image.decode()).then(value => {
@@ -509,7 +506,7 @@ export async function analyzeCoverAppearance(url, title = '', { matchFont = true
         });
       });
     }
-    else await new Promise((resolve, reject) => {
+    else if (!decodedImage) await new Promise((resolve, reject) => {
       image.onload = resolve; image.onerror = reject;
     });
     if (!image.naturalWidth || !image.naturalHeight) return null;
@@ -534,7 +531,7 @@ export async function analyzeCoverAppearance(url, title = '', { matchFont = true
     if (!matchFont) return { ...color, aspectRatio, source: 'cover' };
     // Font loading is already required. Let the numeric module finish loading
     // during that wait, before choosing the native or compatibility path.
-    await loadCandidateFonts();
+    await loadCandidateFonts(title);
     const includeEdges = Boolean(title) && String(title).trim().length >= 3 && width >= 48 && Math.floor(height * .82) >= 48;
     const prepared = width * height >= 4096 && coverColorCore?.prepare(coverColorCore.get(), pixels, width, height, includeEdges);
     const gray = prepared?.gray ?? new Uint8Array(width * height);

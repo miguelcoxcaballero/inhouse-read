@@ -131,6 +131,59 @@ describe('cover matched shelf styling', () => {
     expect(container.querySelector('.ihr-spine').style.getPropertyValue('--ihr-spine-base')).toBe('#3b5268')
     expect(container.querySelector('.ihr-spine canvas').dataset.coverRatio).toBe('0.74')
     expect(onCoverAppearance).toHaveBeenCalledWith(book, expect.objectContaining({ aspectRatio: 0.74 }), expect.stringContaining('drive:cold'))
+    expect(onCoverAppearance).toHaveBeenCalledTimes(1)
+    const analyses = vi.mocked(analyzeCoverAppearance).mock.calls.filter(call => call[1] === 'Cold')
+    expect(analyses).toHaveLength(1)
+    expect(analyses[0][2]?.matchFont).not.toBe(false)
+  })
+
+  it('waits for the saved spine font before constructing any initial lettering', async () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    const load = vi.fn(() => pending)
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load, status: 'loading', ready: pending } })
+    const book = { id: 'cached-font', title: 'Τίτλος', cover: 'blob:cached-font',
+      coverAppearance: { color: '#2f6b4f', fontFamily: 'Lora', source: 'cover' },
+      coverAppearanceKey: 'cached-font|Τίτλος|blob:cached-font' }
+    const calls = vi.mocked(analyzeCoverAppearance).mock.calls.length
+    try {
+      shelf = renderBookshelf(container, [book], { shelfWidth: 390, sections: false, waitForCoverAppearance: true })
+      expect(container.querySelector('.ihr-spine')).toBeNull()
+      await Promise.resolve()
+      expect(load.mock.calls.some(call => call[1]?.includes('Τίτλος'))).toBe(true)
+      release([])
+      await vi.waitFor(() => expect(container.querySelector('.ihr-spine')).not.toBeNull())
+      expect(container.querySelector('.ihr-spine').style.getPropertyValue('--ihr-spine-font')).toContain('Lora')
+      expect(vi.mocked(analyzeCoverAppearance).mock.calls.length).toBe(calls)
+    } finally {
+      release([])
+      if (descriptor) Object.defineProperty(document, 'fonts', descriptor)
+      else delete document.fonts
+    }
+  })
+
+  it('prepares the author weight and the italic face of a generated cover before painting', async () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    const load = vi.fn(async () => [])
+    Object.defineProperty(document, 'fonts', { configurable: true,
+      value: { load, status: 'loaded', ready: Promise.resolve() } })
+    const book = { id: 'generated-font', title: 'Τίτλος', author: 'Автор', spineFontFamily: 'Lora' }
+    const calls = vi.mocked(analyzeCoverAppearance).mock.calls.length
+    try {
+      shelf = renderBookshelf(container, [book], { shelfWidth: 390, sections: false, waitForCoverAppearance: true })
+      await vi.waitFor(() => expect(container.querySelector('.ihr-spine')).not.toBeNull())
+      expect(load).toHaveBeenCalledWith('500 20px "DM Sans"', expect.stringContaining('Автор'))
+      expect(load).toHaveBeenCalledWith('italic 400 20px "Lora"', expect.stringContaining('Автор'))
+      expect(vi.mocked(analyzeCoverAppearance).mock.calls.length).toBe(calls)
+    } finally {
+      if (descriptor) Object.defineProperty(document, 'fonts', descriptor)
+      else delete document.fonts
+    }
   })
 
   it('analyzes a book imported while the shelf is hidden, so its first visible frame is final', async () => {

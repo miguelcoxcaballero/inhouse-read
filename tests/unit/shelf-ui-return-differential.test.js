@@ -1,3 +1,8 @@
+// These semantic handoff doubles provide no decoded images. Actual image
+// ownership and first-paint adoption are covered by the image pool and browser tests.
+vi.mock('../../src/js/book-cover-images.js', async original => ({
+  ...await original(), warmShelfCover:vi.fn(async () => null)
+}));
 import { writeShelfDifference } from './helpers/shelf-differential.js'
 /**
  * The way back from the reader against the frozen JavaScript original (helpers/reference-bookshelf.js): the slot that

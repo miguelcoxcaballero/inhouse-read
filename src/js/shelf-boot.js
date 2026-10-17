@@ -7,6 +7,8 @@ import { withBookDataModule } from './book-data-native.js'
 import { loadRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
 import { loadRustShelf } from './rust-shelf.js'
+import {prepareShelfFonts} from './shelf-startup-resources.js'
+void prepareShelfFonts()
 
 // Adopt the page's parallel compilation before the first library read settles.
 // This is optional: never make displaying saved books await a network request.
