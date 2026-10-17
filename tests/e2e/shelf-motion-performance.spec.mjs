@@ -22,22 +22,22 @@ async function quietShelf(scene) {
   }, { timeout:30_000 }).toBe(true);
 }
 
-async function seedShelf(page) {
-  await page.addInitScript(({ lampKey, plantKey }) => {
+async function seedShelf(page, {domino=false}={}) {
+  await page.addInitScript(({ lampKey, plantKey, domino }) => {
     localStorage.setItem('inhouse-read-shelf-view', 'isometric');
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
     localStorage.setItem(plantKey, JSON.stringify([
       { key:'plant:motion', seed:'motion', catalogId:'sansevieria', variant:'sansevieria',
-        potId:'muskot', width:42, height:124, shelf:0, x:.76 }
+        potId:'muskot', width:42, height:124, shelf:domino?2:0, x:.76 }
     ]));
     localStorage.setItem(lampKey, JSON.stringify([
       { key:'lamp:motion', lampId:'tarnaby', shelf:1, x:.56, isOn:true }
     ]));
-  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY });
+  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino });
   await page.goto(TARGET_URL);
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
-  await page.evaluate(async ({ bytes, prefix, geometry }) => {
+  await page.evaluate(async ({ bytes, prefix, geometry, domino }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read');
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
@@ -59,13 +59,13 @@ async function seedShelf(page) {
       content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }), cover:covers[index],
       coverFinish:index % 2 ? 'satin' : 'glossy', spineSurfaceFinish:index % 2 ? 'satin' : 'glossy',
       spineColorOverride:['#18364b', '#713b42', '#375a46'][Math.floor(index / 2)],
-      shelfPosition:{ shelf:Math.floor(index / 2), x:index % 2 ? .38 : .19 }, shelfOrder:index,
+      shelfPosition:domino ? {shelf:index<5?0:2,x:index<5?.15+index*.04:.2} : { shelf:Math.floor(index / 2), x:index % 2 ? .38 : .19 }, shelfOrder:index,
       addedAt:Date.now(), lastOpenedAt:Date.now() - index, progressFraction:0
     });
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error);
     }); db.close();
-  }, { bytes, prefix:BOOK_PREFIX, geometry:settledGeometryLength(78_000, 'shelf-motion') });
+  }, { bytes, prefix:BOOK_PREFIX, geometry:settledGeometryLength(78_000, 'shelf-motion'), domino });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
   await expect(page.locator('.ihr-spine')).toHaveCount(6);
@@ -346,4 +346,26 @@ test('a released book settles against its neighbour and leaves the GPU idle',asy
  expect(await scene.getAttribute('data-render-count')).toBe(before);
  await expect(book).toHaveAttribute('data-scene-projected','true');
  await page.screenshot({path:testInfo.outputPath('book-gravity-contact.png')});
+});
+
+
+test('legacy books settle on load and dragging one transfers motion to its neighbours',async({page},testInfo)=>{
+ const scene=await seedShelf(page,{domino:true});
+ const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
+ const before=await poses();expect(before.some(b=>Math.abs(b.angle)>.03)).toBe(true);
+ await page.evaluate(async()=>{
+  const node=document.querySelector('[data-book-id="motion:book:4"]');node.classList.add('is-dragging');
+  await new Promise(r=>requestAnimationFrame(r));
+  for(let frame=0;frame<30;frame++){
+   node.style.setProperty('--ihr-drag-x',`${-frame*4}px`);node.style.setProperty('--ihr-drag-y',`${18*Math.min(frame/10,1)}px`);
+   await new Promise(r=>requestAnimationFrame(r));
+  }
+  node.classList.remove('is-dragging');node.style.removeProperty('--ihr-drag-x');node.style.removeProperty('--ihr-drag-y');
+ });
+ await quietShelf(scene);const after=await poses();
+ const neighbours=after.filter(b=>b.id!=='motion:book:4'&&b.id!=='motion:book:5');
+ expect(neighbours.filter(b=>{const old=before.find(a=>a.id===b.id);return Math.abs(b.angle-old.angle)>.03||Math.abs(b.left-old.left)>3;})).toHaveLength(4);
+ const renders=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);expect(await scene.getAttribute('data-render-count')).toBe(renders);
+ await testInfo.attach('rigid-book-contact-poses',{body:JSON.stringify({before,after}),contentType:'application/json'});
+ await page.screenshot({path:testInfo.outputPath('book-domino-rigid-contacts.png')});
 });

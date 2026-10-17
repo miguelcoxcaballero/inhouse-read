@@ -1,3 +1,16 @@
+# 1.7.260 — colisiones y caídas de libros en Rust
+
+Changelog: «Colisiones y caídas de libros en Rust».
+Se sustituye la inclinación objetivo de 258 por cuerpos rígidos Rapier 3D en Rust: volumen, masa, fricción, contactos, apoyos entre libros y pilas. El movimiento está restringido al plano lateral de la leja. El agarre aplica una fuerza elástica limitada; puede empujar vecinos y provocar caídas en cadena. Retirar un libro, incluido abrirlo en el lector, despierta los apoyados. Los libros sostenidos viajan delante de las baldas y recuperan el contacto con ellas al soltarlos, conservando la posición real dentro de la leja elegida.
+
+Las bibliotecas guardadas calculan sus apoyos al abrirse sin tocar los libros. El asentamiento inicial se prepara antes del primer dibujo con un presupuesto de CPU de 80 ms; el trabajo restante se anima. El paso físico sigue siendo 120 Hz, con recuperación limitada y adaptada al número de cuerpos activos cuando el renderizado tarda. Un evento después del reposo no simula el tiempo inactivo como una caída nueva. Los cuerpos duermen al asentarse y también puede dormir un libro sostenido si el dedo no se mueve.
+
+La escena entrega en un lote a Rust el movimiento de todos los libros. No se modifica geometría, materiales, texturas o luz. Se selecciona la calidad del modelo inicial y se difieren las sustituciones durante la caída. El módulo de estantería mide 3 132 KB aproximadamente (sin comprimir; consultar el build para bytes exactos), frente a 1 290 KB antes de incorporar el motor. El motor se incluye únicamente en el módulo de estantería; el módulo del lector conserva 2 879 965 bytes. No es una medición de rendimiento en un móvil físico.
+
+Verificación: 39 pruebas específicas pasan en cuatro archivos con el binario final, incluidos 11 casos físicos, proyección, 100 000 llamadas sin retener handles JS, planificación, calidad inicial y reposo de la malla real. Antes del ajuste final del reloj pasaron las 26 sesiones originales de comparación; conservan la API explícita settleBooks:false y no se modifican sus referencias ni su corpus. Son 65 casos distintos comprobados en este bloque. Tres E2E de Chromium móvil pasan sobre el binario final: soltar y dejar la GPU en reposo; cargar una biblioteca antigua y mover cuatro vecinos; arrastrar realmente libro/planta entre lejas y recargar sus posiciones. Las tres se cerraron en dos ejecuciones sin reintentos automáticos. Se revisó la captura de contactos final.
+
+No se ha repetido la batería general en este bloque; permanece documentado el timeout preexistente de color. Inventario: 31695 líneas Rust / 21332 JS, **59,77 %**. No cuenta dependencias, código generado ni tests y no mide funciones completadas. Siguiente: zoom y selección de calidad de portadas tumbadas, después resto de migración.
+
 # 1.7.259 — pausas entre párrafos y lectura contextual de años
 
 Changelog: «Pausas naturales y años según idioma».

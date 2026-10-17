@@ -58,7 +58,7 @@ beforeEach(async () => {
   scroller.getBoundingClientRect = () => rect(20,60,390,height);
   stage.getBoundingClientRect = () => rect(20,60 - scroll,390,parseFloat(stage.style.height) || 500);
   node = document.createElement('button'); node.className = 'ihr-spine'; node.dataset.bookId = 'one'; stage.append(node);
-  shelf = createBookshelfScene({ stage,scroller,width:390,height:500,
+  shelf = createBookshelfScene({ stage,scroller,width:390,height:500,settleBooks:false,
     rows:[{ top:20,bottom:220 },{ top:260,bottom:460 }],
     entries:[{ node,book:{ id:'one',title:'Same book' },style:{ color:'#41694f',width:28 },x:75,y:130,width:100,height:180,thickness:28 }] });
   shelf.canvas.getBoundingClientRect = () => rect(20,60,390,height);
@@ -221,18 +221,21 @@ describe('shelf presentation and synchronous projection scheduling',() => {
   });
 });
 
-it('animates the actual book pose into contact after release, then stops rendering',async()=>{
+it('renders initially settled rigid book poses, then stops rendering',async()=>{
  const other=document.createElement('button');other.className='ihr-spine';other.dataset.bookId='two';stage.append(other);
  const entries=[{node,book:{id:'one',title:'Same book'},style:{color:'#41694f',width:28},shelf:0,x:75,y:130,width:100,height:180,thickness:28},
   {node:other,book:{id:'two',title:'Support'},style:{color:'#41694f',width:28},shelf:0,x:30,y:130,width:100,height:180,thickness:28}];
- shelf.updateLayout({stage,scroller,width:390,height:500,rows:[{top:20,bottom:220},{top:260,bottom:460}],entries});
- await Promise.resolve();shelf.flush({force:true});drain();
- node.classList.add('is-dragging');shelf.flush({force:true});drain();
- node.classList.remove('is-dragging');shelf.flush({force:true});drain();
- expect(+node.dataset.sceneLean).toBeGreaterThan(0);
+ shelf.dispose();
+ shelf=createBookshelfScene({stage,scroller,width:390,height:500,rows:[{top:20,bottom:220},{top:260,bottom:460}],entries});
+ shelf.canvas.getBoundingClientRect=()=>rect(20,60,390,height);
+ await Promise.resolve();shelf.flush({force:true});
+ for(let frame=0;frames.size&&frame<600;frame++){
+  clock+=16;const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(clock);
+ }
+ expect(Math.abs(+node.dataset.sceneLean)).toBeGreaterThan(.3);
  expect(model().rotation.order).toBe('ZYX');
- expect(model().rotation.z).toBeCloseTo(Math.asin(17/180),5);
- expect(shelf.canvas.dataset.animating).toBe('false');
+ expect(model().rotation.z).toBeCloseTo(+node.dataset.sceneLean,5);
+ expect(shelf.canvas.dataset.animating).toBe('false');expect(frames.size).toBe(0);
  gpu.renderer.render.mockClear();expect(shelf.flush()).toBe(false);expect(renders()).toBe(0);
  shelf.dispose();expect(node.dataset.sceneLean).toBeUndefined();
 });

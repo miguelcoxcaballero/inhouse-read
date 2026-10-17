@@ -310,7 +310,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
   const bookGravity = new rust.RustBookGravity();
-  let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0);
+  let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0), physicsStates = new Float64Array(0);
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   let occluderCabinet = null, occluderDescription = null;
@@ -1400,19 +1400,33 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // a class or drag-variable write) are examined here, as the frame's own read.
     for (const record of mutations.takeRecords()) { const entry = byNode.get(record.target); if (entry) entry.domDirty = true; }
     inverseTurn[0] = inverseRotation.x; inverseTurn[1] = inverseRotation.y; inverseTurn[2] = inverseRotation.z; inverseTurn[3] = inverseRotation.w;
+    sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, window.devicePixelRatio, window.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
     if (settleBooks) {
-      if (gravityInput.length !== bookEntries.length * 6) {
-        gravityInput = new Float64Array(bookEntries.length * 6); gravityOutput = new Float64Array(bookEntries.length * 4);
+      if (gravityInput.length !== bookEntries.length * 9) {
+        gravityInput = new Float64Array(bookEntries.length * 9); gravityOutput = new Float64Array(bookEntries.length * 4);
+        physicsStates = new Float64Array(bookEntries.length * 37);
       }
+      const pixelsPerMetre = unitWidth / SHELF_SPECS[shelfType].width * 1000;
       const gravityKeys = bookEntries.map((entry,index) => {
         if (entry.domDirty) { entry.domDirty = false; entry.state = stateFor(entry); }
-        gravityInput.set([entry.shelf || 0, entry.x, entry.kind === 'plant' || entry.kind === 'lamp' ? entry.width : entry.thickness,
-          entry.height, entry.kind === 'plant' ? 1 : entry.kind === 'lamp' ? entry.mount === 'undershelf' ? 3 : 2 : 0, entry.bits],index * 6);
+        const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
+        const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
+        stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
+        stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
+        stepIo[9] = landing ? 1 : 0;
+        if (landing) { stepIo[10] = landing.from; stepIo[11] = landing.started; stepIo[12] = landing.duration; }
+        stepIo[13] = preview.x; stepIo[14] = preview.y; stepIo[15] = preview.fromX; stepIo[16] = preview.fromY;
+        stepIo[17] = preview.targetX; stepIo[18] = preview.targetY; stepIo[19] = preview.started; stepIo[20] = preview.active ? 1 : 0;
+        stepIo[21] = entry.offset.x; stepIo[22] = entry.offset.y;
+        stepIo[23] = entry.x; stepIo[24] = entry.y; stepIo[25] = entry.width; stepIo[26] = entry.height; stepIo[27] = entry.depth; stepIo[28] = entry.depthInset;
+        physicsStates.set(stepIo,index * 37);
+        const row = rows[entry.shelf || 0] || rows[0] || {};
+        gravityInput.set([plant || lamp ? entry.width : entry.thickness, undershelf ? 3 : kind, entry.shelf || 0, pixelsPerMetre,
+          row.left || 0, row.right ?? width, row.bottom ?? entry.y + entry.height / 2, row.ceiling ?? row.top ?? 0, 0],index * 9);
         return entry.key;
       });
-      bookGravity.step(gravityKeys, gravityInput, now, reducedMotion.matches, gravityOutput);
+      bookGravity.step(gravityKeys, physicsStates, gravityInput, sceneView, now, reducedMotion.matches, gravityOutput);
     }
-    sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, window.devicePixelRatio, window.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
     for (const [entryIndex,entry] of bookEntries.entries()) {
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
       const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
@@ -1421,15 +1435,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const away = entry.flags.away;
       // The lift, the preview and the landing ease, and the pose follows, in Rust.
       const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
-      stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
-      stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
-      stepIo[9] = landing ? 1 : 0;
-      if (landing) { stepIo[10] = landing.from; stepIo[11] = landing.started; stepIo[12] = landing.duration; }
-      stepIo[13] = preview.x; stepIo[14] = preview.y; stepIo[15] = preview.fromX; stepIo[16] = preview.fromY;
-      stepIo[17] = preview.targetX; stepIo[18] = preview.targetY; stepIo[19] = preview.started; stepIo[20] = preview.active ? 1 : 0;
-      stepIo[21] = entry.offset.x; stepIo[22] = entry.offset.y;
-      stepIo[23] = entry.x; stepIo[24] = entry.y; stepIo[25] = entry.width; stepIo[26] = entry.height; stepIo[27] = entry.depth; stepIo[28] = entry.depthInset;
-      sceneView.stepEntry(stepIo);
+      if (settleBooks) stepIo.set(physicsStates.subarray(entryIndex * 37, (entryIndex + 1) * 37));
+      else {
+        stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
+        stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
+        stepIo[9] = landing ? 1 : 0;
+        if (landing) { stepIo[10] = landing.from; stepIo[11] = landing.started; stepIo[12] = landing.duration; }
+        stepIo[13] = preview.x; stepIo[14] = preview.y; stepIo[15] = preview.fromX; stepIo[16] = preview.fromY;
+        stepIo[17] = preview.targetX; stepIo[18] = preview.targetY; stepIo[19] = preview.started; stepIo[20] = preview.active ? 1 : 0;
+        stepIo[21] = entry.offset.x; stepIo[22] = entry.offset.y;
+        stepIo[23] = entry.x; stepIo[24] = entry.y; stepIo[25] = entry.width; stepIo[26] = entry.height; stepIo[27] = entry.depth; stepIo[28] = entry.depthInset;
+        sceneView.stepEntry(stepIo);
+      }
       lift.value = stepIo[5]; lift.from = stepIo[6]; lift.target = stepIo[7]; lift.started = stepIo[8];
       if (!stepIo[9]) entry.landing = null;
       preview.x = stepIo[13]; preview.y = stepIo[14]; preview.active = stepIo[20] !== 0;
@@ -1452,7 +1469,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const gravityAt = entryIndex * 4;
       if (settleBooks && !decorative && node) setData(node, 'sceneLean', gravityOutput[gravityAt].toFixed(6));
       if (!decorative && settleBooks) {
-        entry.pose.position.x += gravityOutput[gravityAt + 1]; entry.pose.position.y += gravityOutput[gravityAt + 2];
+        entry.pose.position.x = entry.x - width / 2 + gravityOutput[gravityAt + 1]; entry.pose.position.y = -entry.y + gravityOutput[gravityAt + 2];
         moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
         entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34] + gravityOutput[gravityAt], gravityOutput[gravityAt] === 0 ? 'XYZ' : 'ZYX');
       } else entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
@@ -1461,7 +1478,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
       const trashDrop = entry.trashDrop;
-      projectIo[0] = kind; projectIo[1] = entry.bits; projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
+      projectIo[0] = kind; projectIo[1] = entry.bits | (settleBooks && gravityOutput[entryIndex * 4 + 3] ? 16 : 0); projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
       projectIo[4] = entry.model ? 1 : 0; projectIo[5] = entry.overview ? 1 : 0; projectIo[6] = trashDrop?.complete ? 1 : 0;
       projectIo[7] = insertion?.overlayCanvas ? 1 : 0;
       projectIo.set(entry.box, 8); projectIo.set(projectedMatrix.elements, 14);
