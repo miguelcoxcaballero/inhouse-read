@@ -14,10 +14,12 @@ const book = (id, lastOpenedAt) => ({ id, title:id, lastOpenedAt, sourceType:'lo
 describe('shelf records read before the app has loaded', () => {
   beforeEach(async () => {
     vi.resetModules()
+    // A new page offers its real compiled shelf module before the boot handoff.
+    globalThis.__inhouseShelfReady = WebAssembly.compile(readFileSync('src/wasm/shelf/inhouse_read_shelf_bg.wasm'))
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok:true, text:async () => '' })))
     await deleteLibrary()
   })
-  afterEach(() => { delete globalThis.__inhouseShelfRead; delete globalThis.__inhouseDeployed; vi.unstubAllGlobals() })
+  afterEach(() => { delete globalThis.__inhouseShelfRead; delete globalThis.__inhouseShelfReady; delete globalThis.__inhouseDeployed; vi.unstubAllGlobals() })
 
   it('hands the first build the page\'s read, in listAll order, once', async () => {
     const store = new LibraryStore()
@@ -44,6 +46,26 @@ describe('shelf records read before the app has loaded', () => {
     const database = (await indexedDB.databases()).find(entry => entry.name === 'inhouse-read')
     expect(database?.version).toBe(2)
     await boot.library.close()
+  })
+
+  it('hands raw records out before a held native module, then preserves its once-only handoff', async () => {
+    const store = new LibraryStore()
+    await store.addOrTouch(book('raw', 1)); await store.close()
+    let release
+    const compiled = globalThis.__inhouseShelfReady
+    globalThis.__inhouseShelfReady = new Promise(resolve => { release = resolve })
+    const boot = await import('../../src/js/shelf-boot.js')
+    try {
+      expect((await boot.takeFirstRawRecords()).map(record => record.id)).toEqual(['raw'])
+      expect(boot.takeFirstRawRecords()).toBeNull()
+      expect(boot.takeFirstRecords()).toBeNull()
+      const { getRustShelf } = await import('../../src/js/rust-shelf.js')
+      expect(getRustShelf()).toBeNull()
+    } finally {
+      release(await compiled)
+      await (await import('../../src/js/rust-shelf.js')).requireRustShelf()
+      await boot.library.close()
+    }
   })
 
   it('reads the store itself when the page could not start the read', async () => {

@@ -82,37 +82,15 @@ function committed(transaction) {
 }
 
 export const idForSource = source => bookDataModule().library_id_for_source(source)
-const libraryHost = { wrap, committed }
-
-const isBlob = value => /^\[object (Blob|File)\]$/.test(Object.prototype.toString.call(value))
-
-function sameValue(a, b) {
-  if (Object.is(a, b)) return true
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
-  // IndexedDB returns fresh Blob objects on every read; type, size and
-  // modification time identify the stored file.
-  if (isBlob(a) || isBlob(b)) return isBlob(a) && isBlob(b) && a.type === b.type && a.size === b.size && a.lastModified === b.lastModified
-  if (a instanceof Date || b instanceof Date) return a instanceof Date && b instanceof Date && a.getTime() === b.getTime()
-  const plain = Array.isArray(a) ? Array.isArray(b) : Object.getPrototypeOf(a) === Object.prototype && Object.getPrototypeOf(b) === Object.prototype
-  if (!plain) return false
-  const keys = Object.keys(a)
-  return keys.length === Object.keys(b).length && keys.every(key => key in b && sameValue(a[key], b[key]))
+// A browser type primitive; comparison and traversal belong to Rust.
+const dateInstance = value => value instanceof Date
+const libraryHost = { wrap, committed,
+  recordComparator:next => { const native = bookDataModule(); return (record, index) => native.library_record_equal(next, record, index, dateInstance) },
+  recentComparator:() => { const native = bookDataModule(); return (a, b) => native.library_recent_order(a, b) }
 }
 
-/**
- * True when two record lists describe the same shelf. A background sync
- * reports a change even when every record came back identical, and drawing
- * the 3D shelf again for it costs a full layout and repaint. Anything this
- * cannot prove equal (any other object type included) counts as different.
- */
-export function sameBookRecords(previous, next) {
-  return previous.length === next.length && previous.every((record, index) => sameValue(record, next[index]))
-}
-
-/** The order listAll() returns: most recently opened first. */
-export function recentFirst(records) {
-  return records.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
-}
+export const sameBookRecords = (previous, next) => bookDataModule().library_same_records(previous, next, libraryHost)
+export const recentFirst = records => bookDataModule().library_recent_first(records, libraryHost)
 
 export class LibraryStore {
   #dbPromise
@@ -139,11 +117,19 @@ export class LibraryStore {
   /** Lista los libros ordenados por apertura más reciente primero. */
   async listRecents(limit = 50) {
     const store = await this.#store('readonly')
-    return recentFirst(await wrap(store.getAll())).slice(0, limit)
+    const records = await wrap(store.getAll())
+    return withBookDataModule(() => recentFirst(records).slice(0, limit))
   }
 
   async listAll() {
     return this.listRecents(Infinity)
+  }
+
+  // The first-frame gate sorts after its existing parallel module/bake wait.
+  // Read bytes now so loading WASM never postpones the IndexedDB request.
+  async listRaw() {
+    const store = await this.#store('readonly')
+    return wrap(store.getAll())
   }
 
   async listRemoved() {

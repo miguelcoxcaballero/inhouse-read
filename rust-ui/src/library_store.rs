@@ -123,3 +123,97 @@ pub fn library_set_cover(database:JsValue,env:JsValue,id:JsValue,cover:JsValue)-
  let existing=request(&env,method(&store,"get",&[&id])).await?;if !truthy(&existing){return Ok(JsValue::NULL);}
  let record=fields(&[&existing,&object(&[("cover",cover),("coverUpdatedAt",now()?)])])?;request(&env,method(&store,"put",&[&record])).await?;wait(Ok(completion)).await?;Ok(record)
 })}
+
+use wasm_bindgen::JsCast;
+use js_sys::{Function,Reflect,Symbol};
+use crate::host::boxed;
+// Direct browser primitives avoid allocating property-name strings and
+// looking up globals for every leaf in a complete library refresh.
+#[wasm_bindgen]
+extern "C" {
+ #[wasm_bindgen(js_namespace=Object,js_name=is,catch)]fn same_identity(a:&JsValue,b:&JsValue)->Result<bool,JsValue>;
+ #[wasm_bindgen(js_namespace=Object,js_name=keys,catch)]fn object_keys(value:&JsValue)->Result<Array,JsValue>;
+ #[wasm_bindgen(js_namespace=Object,js_name=getPrototypeOf,catch)]fn prototype_of(value:&JsValue)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(js_namespace=Array,js_name=isArray,catch)]fn array_value(value:&JsValue)->Result<bool,JsValue>;
+ #[wasm_bindgen(js_namespace=["Object","prototype","toString"],js_name=call,catch)]fn object_tag(value:&JsValue)->Result<JsValue,JsValue>;
+}
+fn blob_tag(value:&JsValue)->R<bool>{
+ let result=object_tag(value)?;Ok(result==s("[object Blob]")||result==s("[object File]"))
+}
+fn date_instance(value:&JsValue,check:&Function)->R<bool>{Ok(truthy(&check.call1(&JsValue::UNDEFINED,value)?))}
+struct CompareFrame{a:JsValue,b:JsValue,keys:Array,index:u32}
+fn same_value(mut a:JsValue,mut b:JsValue,date:&Function)->R<bool>{
+ let mut stack:Vec<CompareFrame>=Vec::new();
+ 'compare:loop{
+  if !same_identity(&a,&b)?{
+   if !truthy(&a)||!truthy(&b)||!a.is_object()||!b.is_object(){return Ok(false);}
+   if blob_tag(&a)?||blob_tag(&b)?{
+    if !(blob_tag(&a)?&&blob_tag(&b)?&&read(&a,"type")?==read(&b,"type")?&&read(&a,"size")?==read(&b,"size")?&&read(&a,"lastModified")?==read(&b,"lastModified")?){return Ok(false);}
+   }else if date_instance(&a,date)?||date_instance(&b,date)?{
+    if !(date_instance(&a,date)?&&date_instance(&b,date)?&&method(&a,"getTime",&[])?==method(&b,"getTime",&[])?){return Ok(false);}
+   }else{
+    let plain=if array_value(&a)?{array_value(&b)?}else{
+     prototype_of(&a)?==read(&read(&global(),"Object")?,"prototype")?
+      &&prototype_of(&b)?==read(&read(&global(),"Object")?,"prototype")?
+    };
+    if !plain{return Ok(false);}
+    let keys=object_keys(&a)?;
+    if keys.length()!=object_keys(&b)?.length(){return Ok(false);}
+    // Clone cycles made the original recursive comparator exhaust its JS stack.
+    // Detect the same unsupported pair without risking the smaller WASM stack.
+    if stack.iter().any(|frame|frame.a==a&&frame.b==b){return Err(js_sys::RangeError::new("Maximum call stack size exceeded").into());}
+    stack.push(CompareFrame{a,b,keys,index:0});
+   }
+  }
+  loop{
+   let Some(frame)=stack.last_mut()else{return Ok(true);};
+   if frame.index>=frame.keys.length(){stack.pop();continue;}
+   let key=frame.keys.get(frame.index);frame.index+=1;
+   if !Reflect::has(&frame.b,&key)?{return Ok(false);}
+   a=Reflect::get(&frame.a,&key)?;b=Reflect::get(&frame.b,&key)?;continue 'compare;
+  }
+ }
+}
+#[wasm_bindgen]
+pub fn library_record_equal(next:JsValue,record:JsValue,index:JsValue,date:Function)->R<bool>{same_value(record,Reflect::get(&boxed(&next),&index)?,&date)}
+#[wasm_bindgen]
+pub fn library_same_records(previous:JsValue,next:JsValue,env:JsValue)->R<JsValue>{
+ if read(&previous,"length")?!=read(&next,"length")?{return Ok(JsValue::FALSE);}
+ let function=read(&previous,"every")?;let compare=callback(&env,"recordComparator",&[&next])?;
+ function.dyn_ref::<Function>().ok_or_else(||js_sys::TypeError::new("every is not a function"))?.call1(&previous,&compare)
+}
+fn to_numeric(value:JsValue)->R<JsValue>{
+ let mut primitive=value;
+ if primitive.is_object()||primitive.is_function(){
+  let hint=s("number");let key:JsValue=Symbol::to_primitive().into();let exotic=Reflect::get(&primitive,&key)?;
+  if !absent(&exotic){
+   let value=exotic.dyn_ref::<Function>().ok_or_else(||js_sys::TypeError::new("Symbol.toPrimitive is not a function"))?.call1(&primitive,&hint)?;
+   if value.is_object()||value.is_function(){return Err(js_sys::TypeError::new("Cannot convert object to primitive value").into());}primitive=value;
+  }else{
+   let object=primitive.clone();let mut result=None;
+   for key in ["valueOf","toString"]{
+    let value=read(&object,key)?;
+    if let Some(function)=value.dyn_ref::<Function>(){
+     let value=function.call0(&object)?;if !value.is_object()&&!value.is_function(){result=Some(value);break;}
+    }
+   }
+   primitive=result.ok_or_else(||js_sys::TypeError::new("Cannot convert object to primitive value"))?;
+  }
+ }
+ if primitive.is_bigint(){Ok(primitive)}else{call(&read(&global(),"Number")?,"Number",&[&primitive])}
+}
+#[wasm_bindgen]
+pub fn library_recent_order(a:JsValue,b:JsValue)->R<JsValue>{
+ let right=read(&b,"lastOpenedAt")?;let left=read(&a,"lastOpenedAt")?;
+ let right=to_numeric(right)?;let left=to_numeric(left)?;
+ match(right.is_bigint(),left.is_bigint()){
+  (true,true)=>Ok((right.unchecked_into::<js_sys::BigInt>()-left.unchecked_into::<js_sys::BigInt>()).into()),
+  (false,false)=>Ok(JsValue::from_f64(crate::host::num(&right)-crate::host::num(&left))),
+  _=>Err(js_sys::TypeError::new("Cannot mix BigInt and other types, use explicit conversions").into())
+ }
+}
+#[wasm_bindgen]
+pub fn library_recent_first(records:JsValue,env:JsValue)->R<JsValue>{
+ let function=read(&records,"sort")?;let compare=callback(&env,"recentComparator",&[])?;
+ function.dyn_ref::<Function>().ok_or_else(||js_sys::TypeError::new("sort is not a function"))?.call1(&records,&compare)
+}
