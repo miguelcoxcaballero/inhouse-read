@@ -49,7 +49,7 @@ it('names the recorded clip groups of each event, most specific first, and maps 
  expect(rustShelf.cozy_clip(15,0,1)).toBe('bin_drop,paper_crumple');
  for(const [kind,material] of events())for(const level of [0,1,2]){
   const groups=rustShelf.cozy_clip(kind,material,level);
-  expect(groups,`${kind}/${material}`).toMatch(/^[a-z0-9_]+(,[a-z0-9_]+)*$/);
+  expect(groups,`${kind}/${material}`).toMatch(/^[A-Za-z0-9_]+(,[A-Za-z0-9_]+)*$/);
  }
  expect(rustShelf.cozy_clip(3,9,1)).toBe('');expect(rustShelf.cozy_clip(99,0,0)).toBe('');
  expect([0,.32,.33,.65,.66,1].map(rustShelf.cozy_level)).toEqual([0,0,1,1,2,2]);

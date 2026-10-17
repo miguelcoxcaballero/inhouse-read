@@ -59,7 +59,9 @@ impl RustBookGravity{
     for m in pair.solver_manifolds(){for contact in &m.data.solver_contacts{
      let (p1,p2)=m.data.solver_contact_world_points(contact,&self.world.bodies);let point=(p1+p2)*0.5;
      let speed=(velocity(pair.collider1,point)-velocity(pair.collider2,point)).dot(m.data.normal);
-     if speed<=best{continue;}best=speed;
+     // A gentle landing counts only on something below it, never a board it still touches above.
+     let toward=if pair.collider1==b.collider{m.data.normal}else{-m.data.normal};
+     if speed<=best||decor&&speed<=0.055&&toward.y>-0.5{continue;}best=speed;
      material=if let Some((name,o))=other_entry{
       if o.kind==0{0}else{self.solid_material(name,pair,m,contact,pair.collider1!=b.collider).unwrap_or(if o.kind==1{4}else{2})}
      }else{self.world.colliders[other].user_data.saturating_sub(10).min(5) as u32};
@@ -96,8 +98,9 @@ impl RustBookGravity{
   }
  }
 }
-/// A lamp or pot meeting a board faster than this (m/s) has fallen rather than been set down.
-const FALL_SPEED:f32=0.4;
+/// A lamp or pot meeting a board faster than this (m/s, after the damped drop of the solver: about 6 cm) has
+/// fallen rather than been set down.
+const FALL_SPEED:f32=0.3;
 /// Numbers per pending sound: material, strength 0..1, pan -0.7..0.7, kind (cozy_synth).
 pub(super) const SOUND_STRIDE:usize=4;
 #[wasm_bindgen]
