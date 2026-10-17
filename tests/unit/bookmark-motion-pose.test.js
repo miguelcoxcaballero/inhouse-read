@@ -28,13 +28,13 @@ function equalGeometry(a,b) {
 
 describe('Rust ribbon integration and one update per displayed pose',()=>{
   it('keeps original geometry bytes and attribute ownership through a full opening and reverse',()=>{
-    const geometry=bookmarkGeometry(264,400,80,.45,16,{seed:12345});
+    const geometry=bookmarkGeometry(264,400,80,.45,16,{seed:12345,legacy:true});
     const position=geometry.attributes.position,normal=geometry.attributes.normal,uv=geometry.attributes.uv,index=geometry.index;
     try {
       for(const [open,withdraw]of [[0,0],[.18,0],[.5,0],[1,0],[1,.35],[1,1],[1,.35],[1,0],[.5,0],[0,0]]) {
         const reference=referenceBookmarkGeometry(264,400,80,.45,16,{open,withdraw,seed:12345});
         try {
-          expect(bookmarkGeometry(264,400,80,.45,16,{open,withdraw,seed:12345,geometry})).toBe(geometry);
+          expect(bookmarkGeometry(264,400,80,.45,16,{open,withdraw,seed:12345,geometry,legacy:true})).toBe(geometry);
           equalGeometry(geometry,reference);
           expect(geometry.attributes.position).toBe(position);expect(geometry.attributes.normal).toBe(normal);
           expect(geometry.attributes.uv).toBe(uv);expect(geometry.index).toBe(index);

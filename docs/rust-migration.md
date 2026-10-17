@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.263: física tranquila, agarre vertical animado, límites reales de madera/BAGGEBO y cinta un 40 % más ancha situada en una sola página; todo en Rust. 114 específicas y seis E2E finales pasan. Inventario 60,35 %, no funciones terminadas. Después: retomar el WIP book-length y corregir la dependencia UI/Shelf de metadatos Drive y el coste de segmentación antes de publicar el contador. Conservar todos los worktrees/stashes.
+
 Entrega 1.7.262: estado, cambios de vista, actualizaciones diferidas y limpieza de la pantalla en Rust. 6465/6466 pruebas generales verificadas (queda el timeout de colores preexistente) y 12 E2E finales pasan. Inventario 60,29 %, no funciones completadas. Se conserva la destrucción repetida y se comprueban los escenarios estáticos por separado de las colisiones. Ver alcance de las pruebas en remaining-wip-verification.md.
 
 Entrega 1.7.261: preparación y sustitución de calidad del zoom en Rust, repintados agrupados, portadas tumbadas nítidas y zonas táctiles de lámparas sin esquinas vacías. 80 pruebas específicas pasan. Inventario 59,92 %, no funciones completadas. Detalle en remaining-wip-verification.md. Se continúa con lifecycle y resto de migración.

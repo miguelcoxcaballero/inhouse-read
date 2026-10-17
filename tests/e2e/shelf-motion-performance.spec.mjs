@@ -369,3 +369,28 @@ test('legacy books settle on load and dragging one transfers motion to its neigh
  await testInfo.attach('rigid-book-contact-poses',{body:JSON.stringify({before,after}),contentType:'application/json'});
  await page.screenshot({path:testInfo.outputPath('book-domino-rigid-contacts.png')});
 });
+
+// The slow-contact/domino case above and the fast lifted case below exercise
+// both intended interaction speeds with the production scene and WASM solver.
+test('pickup smoothly straightens a fallen book and a fast sweep leaves resting neighbours quiet',async({page},testInfo)=>{
+ const scene=await seedShelf(page,{domino:true});
+ const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
+ const resting=await poses(),fallen=resting.find(b=>Math.abs(b.angle)>.1);
+ expect(fallen).toBeTruthy();const held=page.locator(`[data-book-id="${fallen.id}"]`);
+ await held.evaluate(node=>node.classList.add('is-dragging'));
+ await expect.poll(async()=>Math.abs(Number(await held.getAttribute('data-scene-lean')))).toBeLessThan(.025);
+ await quietShelf(scene);const before=await poses();
+ await held.evaluate(async node=>{
+  node.style.setProperty('--ihr-drag-x','85px');node.style.setProperty('--ihr-drag-y','-35px');
+  await new Promise(r=>requestAnimationFrame(r));
+ });
+ await quietShelf(scene);const after=await poses();
+ for(const b of after.filter(b=>b.id!==fallen.id)){
+  const old=before.find(a=>a.id===b.id);
+  expect(Math.abs(b.angle-old.angle)).toBeLessThan(.025);
+  expect(Math.abs(b.left-old.left)).toBeLessThan(1);
+  expect(Math.abs(b.top-old.top)).toBeLessThan(1);
+ }
+ await testInfo.attach('calm-pickup-and-fast-sweep',{body:JSON.stringify({resting,before,after}),contentType:'application/json'});
+ await page.screenshot({path:testInfo.outputPath('upright-pickup-fast-sweep.png')});
+});

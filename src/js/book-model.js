@@ -303,8 +303,8 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
 export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
-  { open = 0, withdraw = 0, segments = 32, seed = 0, geometry: target } = {}) {
-  const pixels = rustBookmarkBuffers(rustCore(), width, height, thickness, progress, peek, open, withdraw, segments, seed);
+  { open = 0, withdraw = 0, segments = 32, seed = 0, geometry: target, legacy = false } = {}) {
+  const pixels = rustBookmarkBuffers(rustCore(), width, height, thickness, progress, peek, open, withdraw, segments, seed, legacy);
   if (!pixels) throw new RangeError('Medidas de cinta no válidas.');
   // Opening and withdrawing only bend the ribbon; its topology stays fixed.
   // Keep the same GPU buffers during the flight instead of deleting and

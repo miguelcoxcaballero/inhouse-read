@@ -2,9 +2,11 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { rustBookmarkBuffers, releaseRustBookmarkBuffers } from '../../src/js/bookmark-wasm.js';
+import { rustBookmarkBuffers as productionBuffers, releaseRustBookmarkBuffers } from '../../src/js/bookmark-wasm.js';
 import { referenceBookmarkGeometry } from './helpers/reference-bookmark-geometry.js';
 
+// Keep every frozen byte comparison; current single-leaf silk is tested separately.
+const rustBookmarkBuffers=(core,width,height,thickness,progress,peek=10,open=0,withdraw=0,segments=32,seed=0)=>productionBuffers(core,width,height,thickness,progress,peek,open,withdraw,segments,seed,true);
 let core;
 beforeAll(async()=>{
   core=await loadRustCore({bytes:readFileSync(new URL('../../src/wasm/inhouse_read_core.wasm',import.meta.url))});

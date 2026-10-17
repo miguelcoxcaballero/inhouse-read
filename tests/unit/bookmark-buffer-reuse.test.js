@@ -22,12 +22,12 @@ function fingerprint(geometry) {
 }
 describe('ribbon animation keeps its original mesh and GPU buffers', () => {
   it('matches the original geometry at every recorded opening and withdrawal pose', () => {
-    const geometry = bookmarkGeometry(264,400,80,.45,16,{segments:32,seed:12345});
+    const geometry = bookmarkGeometry(264,400,80,.45,16,{segments:32,seed:12345,legacy:true});
     const attributes = ['position','uv','normal'].map(key => geometry.getAttribute(key));
     const index = geometry.index, release = vi.spyOn(geometry,'dispose');
     for (const [open,withdraw,hash] of originalPoses) {
       geometry.computeBoundingBox(); geometry.computeBoundingSphere();
-      expect(bookmarkGeometry(264,400,80,.45,16,{open,withdraw,segments:32,seed:12345,geometry})).toBe(geometry);
+      expect(bookmarkGeometry(264,400,80,.45,16,{open,withdraw,segments:32,seed:12345,geometry,legacy:true})).toBe(geometry);
       expect(fingerprint(geometry)).toBe(hash);
       expect(['position','uv','normal'].map(key => geometry.getAttribute(key))).toEqual(attributes);
       for (let i=0;i<attributes.length;i++) expect(geometry.getAttribute(['position','uv','normal'][i])).toBe(attributes[i]);

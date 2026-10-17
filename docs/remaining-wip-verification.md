@@ -1,3 +1,18 @@
+# 1.7.263 — física tranquila y cinta en una sola página
+
+Changelog: «Física más suave y marcapáginas corregidos».
+El agarre de Rust endereza el libro mediante un muelle y una transición de 280 ms, compensando la altura de un ejemplar tumbado. Un toque breve conserva el reposo. Los movimientos rápidos separan temporalmente el libro sostenido de los contactos; al moverlo despacio vuelve a empujar con fuerza limitada cuando está vertical y sin interpenetraciones. Se amortiguan velocidades y giros, se elimina el rebote y se limita el impulso al soltar. Permanecen las colisiones reales, pilas, dominó lento y caída al retirar apoyos.
+
+Los límites físicos usan el grosor de los laterales y baldas dibujados: madera 12/0,65 y 15/0,65 mm; metal BAGGEBO 18 y 16,5 mm. Se añaden los techos de cada hueco y un límite de las esquinas rotadas para libros muy finos. La superficie de contacto conserva 0,6 mm de separación del límite corrector para no provocar vibración ni despertar indefinidamente cuerpos asentados. No cambia el modelo, las texturas, la iluminación ni su resolución.
+
+La geometría Rust del marcapáginas es un 40 % más ancha y conserva su espesor. La parte insertada queda en el plano de una sola página; el giro empieza fuera del canto superior. Se reutilizan las mismas mallas, atributos y materiales al abrir, cerrar y actualizar el progreso. Los exports anteriores conservan sus bytes originales; los corpus congelados completos siguen comprobándolos mediante una opción explícita de compatibilidad. La aplicación usa la geometría nueva.
+
+Build completo correcto y **114 pruebas específicas en 12 archivos pasan sobre el binario final**. Incluyen 17 casos físicos: empujón lento frente a barrido rápido, colocación sobre otro libro, enderezado animado, libros de menos de un milímetro junto a postes de madera y metal, toque que deja dormir, apoyo retirado, separación de cuerpos, reposo, IDs UTF-16 y recuperación tras fotogramas lentos. Se conservan todas las aserciones físicas originales. El escenario sintético de huecos inferiores incorpora ahora el grosor real de la balda en su techo; la comprobación de metadatos aísla dibujo/picking con settleBooks:false, conservando todas sus aserciones y su presupuesto. La física permanece activada en producción y sus escenarios propios.
+
+Seis E2E finales pasan en una ejecución de Chromium sin reintentos (2,1 min): cinta en libro abierto/cerrado con WebGL real, proyección con todos los píxeles idénticos a su referencia, pellizco iniciado sobre libro, seis portadas a 1024 px y luz con efecto medido, reposo tras soltar, cuatro vecinos movidos por un arrastre y enderezado seguido de barrido rápido sin mover los vecinos en reposo. Durante el zoom no hay repintados WebGL ni reasignaciones del buffer. Se revisaron las capturas de la cinta y del agarre. Se usa un servidor nuevo del worktree, sin reutilizar otro build.
+
+Inventario: 32191 líneas Rust / 21146 JavaScript, **60,35 %**. Cuenta fuentes propias, comentarios y compatibilidad; no mide funciones terminadas. No se repite en este bloque la batería general de 6466 casos; permanece documentado su timeout de color preexistente. Siguiente: completar y optimizar el contador de texto y su cola en Rust, y continuar el resto de la migración.
+
 # 1.7.262 — ciclo de vida de la estantería en Rust
 
 Changelog: «Ciclo de vida de la estantería en Rust».

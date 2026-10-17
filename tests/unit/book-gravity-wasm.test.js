@@ -1,8 +1,8 @@
 // @vitest-environment node
 import {expect,it} from 'vitest'
 import {rustShelf} from './helpers/rust-shelf-ready.js'
-function fixture(rows){
- const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,false,false,0);
+function fixture(rows,metal=false){
+ const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,metal,false,0);
  let clock=0;
  return {rows,step(frames=1,reduced=false,frameMs=1000/60){let output;
   for(let frame=0;frame<frames;frame++){
@@ -11,7 +11,7 @@ function fixture(rows){
    rows.forEach((b,i)=>{
     const height=b.height??200,y=(b.floor??300)-height/2;
     states.set([b.kind===3?2:b.kind??0,b.kind===3?1:0,b.flags??0,b.drag??0,b.dragY??0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,b.x,y,150,height,150,0],i*37);
-    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,(b.floor??300)-290,0],i*9);
+    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,(b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0),0],i*9);
    });
    output=new Float64Array(rows.length*4);solver.step(rows.map(b=>b.id),states,geometry,scene,clock,reduced,output);clock+=frameMs;
   }
@@ -109,4 +109,62 @@ it('does not fast-forward a new fall by the time spent idle',()=>{
  const before=f.step(600);f.step(1,false,60_000);f.rows.pop();const first=f.step();
  for(let i=0;i<first.length;i++){expect(Math.abs(first[i].x-before[i].x)).toBeLessThan(2);expect(Math.abs(first[i].angle-before[i].angle)).toBeLessThan(.02);}
  const after=f.step(600);expect(after.some((b,i)=>Math.abs(b.angle-before[i].angle)>.03)).toBe(true);f.free();
+});
+
+it('fast sweeps stay quiet while deliberate slow placement can still push neighbours',()=>{
+ const setup=()=>fixture([book('hand',80,{flags:2,width:16}),...['a','b','c'].map((id,i)=>book(id,135+i*50,{flags:2,width:16}))]);
+ const slow=setup(),fast=setup();slow.step(120);fast.step(120);
+ for(const f of [slow,fast]){for(const b of f.rows.slice(1))b.flags=0;f.step(60);}
+ const beforeSlow=slow.step(),beforeFast=fast.step();
+ for(let i=1;i<=90;i++){slow.rows[0].drag=80*i/90;slow.rows[0].dragY=-10*i/90;slow.step();}
+ fast.rows[0].drag=80;fast.rows[0].dragY=-10;fast.step();
+ const moved=slow.step(120),quiet=fast.step(210);
+ expect(moved.slice(1).some((b,i)=>Math.abs(b.x-beforeSlow[i+1].x)>4||Math.abs(b.angle-beforeSlow[i+1].angle)>.08)).toBe(true);
+ for(let i=1;i<quiet.length;i++){expect(Math.abs(quiet[i].x-beforeFast[i].x)).toBeLessThan(.7);expect(Math.abs(quiet[i].angle-beforeFast[i].angle)).toBeLessThan(.02);}
+ slow.free();fast.free();
+});
+it('animates a fallen book upright on pickup rather than retaining its fallen angle',()=>{
+ const f=fixture([book('fallen',130)]);const resting=f.step(600);expect(Math.abs(resting[0].angle)).toBeGreaterThan(.5);
+ f.rows[0].flags=2;const first=f.step();expect(Math.abs(first[0].angle-resting[0].angle)).toBeLessThan(.12);
+ const upright=f.step(45);expect(Math.abs(upright[0].angle)).toBeLessThan(.025);
+ expect(upright[0].y+100).toBeLessThan(301);expect(f.step(600)[0].active).toBe(0);f.free();
+});
+it('keeps even sub-millimetre books outside the actual posts, boards and ceiling',()=>{
+ const f=fixture([book('left',2,{width:.4,height:12}),book('right',598,{width:.6,height:18})]);
+ for(let frame=0;frame<180;frame++){
+  for(const [i,b]of f.step().entries()){
+   const row=f.rows[i],ex=row.width/2*Math.abs(Math.cos(b.angle))+row.height/2*Math.abs(Math.sin(b.angle));
+   const ey=row.height/2*Math.abs(Math.cos(b.angle))+row.width/2*Math.abs(Math.sin(b.angle));
+   expect(b.x-ex).toBeGreaterThanOrEqual(12/.65-.05);
+   expect(b.x+ex).toBeLessThanOrEqual(600-12/.65+.05);
+   expect(b.y+ey).toBeLessThanOrEqual(300.05);expect(b.y-ey).toBeGreaterThanOrEqual(9.95);
+  }
+ }f.free();
+});
+
+it('touching a resting book without lifting does not wake or rotate the library',()=>{
+ const f=fixture([book('a',100),book('b',140)]),rest=f.step(600);
+ f.rows[0].flags=8;expect(f.step(30)).toEqual(rest);
+ f.rows[0].flags=0;expect(f.step(30)).toEqual(rest);f.free();
+});
+it('fast placement settles quietly even when released over another book',()=>{
+ const f=fixture([book('hand',80,{flags:2,width:16}),...['a','b','c'].map((id,i)=>book(id,135+i*50,{flags:2,width:16}))]);
+ f.step(120);for(const b of f.rows.slice(1))b.flags=0;f.step(60);const before=f.step();
+ f.rows[0].drag=55;f.rows[0].dragY=-10;f.step(120);
+ Object.assign(f.rows[0],{flags:0,x:135,drag:0,dragY:0});const settled=f.step(600);
+ expect(settled.every(b=>b.active===0)).toBe(true);
+ for(let i=1;i<settled.length;i++){
+  expect(Math.abs(settled[i].angle)).toBeLessThan(.02);
+  expect(Math.abs(settled[i].x-before[i].x)).toBeLessThan(20);
+ }
+ expect(Math.abs(settled[0].x-settled[1].x)).toBeGreaterThan(15.2);f.free();
+});
+it('uses the white metal post dimensions for tiny books as well as the wooden walls',()=>{
+ const f=fixture([book('left',2,{width:.4,height:12}),book('right',598,{width:.6,height:18})],true);
+ for(let frame=0;frame<180;frame++)for(const [i,b]of f.step().entries()){
+  const row=f.rows[i],ex=row.width/2*Math.abs(Math.cos(b.angle))+row.height/2*Math.abs(Math.sin(b.angle));
+  const ey=row.height/2*Math.abs(Math.cos(b.angle))+row.width/2*Math.abs(Math.sin(b.angle));
+  expect(b.x-ex).toBeGreaterThanOrEqual(17.95);expect(b.x+ex).toBeLessThanOrEqual(582.05);
+  expect(b.y+ey).toBeLessThanOrEqual(300.05);expect(b.y-ey).toBeGreaterThanOrEqual(9.95);
+ }f.free();
 });
