@@ -316,6 +316,18 @@ pub fn preview_object_placement(ctx:&Ctx,drag:&JsValue,key:&JsValue,destination:
  ctx.env("moveShelfDecoration",&[&objects,key,destination,&cfg])
 }
 
+/// Physical drags keep every unselected layout slot. Rapier owns gentle
+/// pushes; the placement planner must not also rearrange the whole cabinet.
+pub fn local_drag_destination(ctx:&Ctx,node:&JsValue,destination:JsValue)->R<JsValue>{
+ if get(&ctx.scene(),"physicalPlacement")!=JsValue::TRUE||!truthy(&destination){return Ok(destination);}
+ let objects=array_of(&ctx.st("placementObjects"));let key=object_key(node);
+ let Some(index)=objects.iter().position(|o|get(o,"key")==key)else{return Ok(destination);};
+ let values:Vec<f64>=objects.iter().flat_map(|o|[gn(o,"shelf"),gn(o,"left"),gn(o,"width"),if get(o,"mount")==s("undershelf"){1.0}else{0.0}]).collect();
+ let cfg=placement_config(ctx)?;let gap=get(&cfg,"gap").as_f64().filter(|v|v.is_finite()).unwrap_or(3.0).max(0.0);
+ let target=crate::local_drop::shelf_local_drop(&values,index,gn(&destination,"shelf"),gn(&destination,"x"),gn(&cfg,"shelfWidth"),gn(&cfg,"padding"),gap);
+ Ok(if target.len()==2{spread(&[&destination,&obj(&[("shelf",&f(target[0])),("x",&f(target[1]))])])}else{null()})
+}
+
 /// `dropPositionAt(x, y, node)`: the shelf and the position along it a dropped object would take.
 pub fn drop_position_at(ctx:&Ctx,x:f64,y:f64,node:&JsValue)->R<JsValue>{
  let node=if node.is_undefined(){null()}else{node.clone()};

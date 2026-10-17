@@ -7,7 +7,7 @@ use std::f64::consts::PI;
 #[derive(Clone)]
 pub struct Description{pub kind:u32,pub pot:String,pub profile:String,pub values:[f64;4]}
 impl Description{
- pub fn signature(&self)->String{format!("solid-v1:{}:{}:{}:{:?}",self.kind,self.pot,self.profile,self.values.map(f64::to_bits))}
+ pub fn signature(&self)->String{format!("{}:{}:{}:{}:{:?}",if self.kind==2{"solid-v2"}else{"solid-v1"},self.kind,self.pot,self.profile,self.values.map(f64::to_bits))}
  pub fn same(&self,other:&Self)->bool{self.kind==other.kind&&self.pot==other.pot&&self.profile==other.profile&&self.values.iter().zip(other.values).all(|(a,b)|(a-b).abs()<1e-9)}
 }
 #[derive(Clone)]
@@ -43,15 +43,20 @@ impl Solid{
     // Rounded, angled oak planks, using the exact rendered vertices. Each
     // leg is its own convex piece, preserving the empty gaps between them.
     let scale=v[3];
+    let mut legs:Vec<Vec<Vector>>=Vec::new();
     for index in 0..3{
      let (foot,shoulder,angle)=lamp_model::tripod_leg_points(index);
      let mut geo=three_geo::rounded_box(13.0,jsmath::distance(foot,shoulder),9.0,2,1.1);
      let rotation=three_curve::quaternion_multiply(three_geo::quaternion_from_unit_vectors([0.0,1.0,0.0],jsmath::normalize(jsmath::sub(shoulder,foot))),three_curve::quaternion_from_axis_angle([0.0,1.0,0.0],-angle));
      geo.apply_quaternion(rotation);geo.translate((foot[0]+shoulder[0])/2.0,(foot[1]+shoulder[1])/2.0,(foot[2]+shoulder[2])/2.0);
-     let points=geo.position.chunks_exact(3).map(|p|Vector::new(p[0]*scale as f32,p[1].max(0.0)*scale as f32,p[2]*scale as f32)).collect();hull(points,1,&mut parts,&mut materials);
+     legs.push(geo.position.chunks_exact(3).map(|p|Vector::new(p[0],p[1].max(0.0),p[2])).collect());
     }
+    // lamp_model zeroes the combined wooden base after rounding its feet.
+    // Apply that same translation to the colliders, including the centre block.
+    let low=legs.iter().flatten().map(|p|p.y).fold(f32::INFINITY,f32::min);
+    for points in legs{hull(points.into_iter().map(|p|Vector::new(p.x*scale as f32,(p.y-low)*scale as f32,p.z*scale as f32)).collect(),1,&mut parts,&mut materials);}
     let block=SharedShape::cuboid((18.0*scale) as f32,(6.0*scale) as f32,(18.0*scale) as f32);
-    parts.push((Pose::translation(0.0,(167.0*scale) as f32,0.0),block));materials.push(1);
+    parts.push((Pose::translation(0.0,((167.0-low as f64)*scale) as f32,0.0),block));materials.push(1);
     revolved(&[[90.0,175.0],[90.0,280.0]],scale,scale,0.0,5,&mut parts,&mut materials);
    },
    3=>{

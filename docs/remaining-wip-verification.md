@@ -1,3 +1,25 @@
+# 1.7.279 — arrastres locales y sueltas sin dispersar la fila
+
+Changelog: «Arrastre estable sin mover toda la estantería».
+
+Dos reproducciones nuevas fallan con el binario 278: una previsualización mueve una maceta no seleccionada (4,1 px ya en el primer avance) y soltar una mano rápida dentro de una fila de doce libros desplaza vecinos de forma involuntaria. La previsualización y el desplazamiento de retorno visual llegaban al cuerpo sólido como si fueran una colocación real.
+
+Rust separa esos offsets de la física: una decoración no seleccionada solo cambia de sitio cuando cambia su base confirmada. Al soltar una mano que tenía las colisiones desactivadas se busca espacio libre para el objeto seleccionado antes de reactivar contactos, usando las formas reales de maceta/cristal y los límites del hueco. La consulta limita candidatos al hueco y descarta pares por sus cajas antes de consultar la geometría. No se reduce la calidad ni se cambia el renderizado.
+
+En la escena 3D frontal e isométrica, Rust elige para la guía el hueco libre más cercano de la superficie solicitada; una fila llena rechaza esa colocación en lugar de redistribuir vecinos o enviarlos a otra leja. El algoritmo de colocación general y los controles de teclado conservan su contrato. Los empujes cuidadosos siguen siendo contactos dinámicos de Rapier. No cambia el esquema de poses guardadas.
+
+La tercera reproducción cambia la única pieza de una leja a otra vacía: antes se despertaba una isla remota ya dormida y se alteraba su pose. Rust conserva ahora los cuerpos fijos de los huecos cuyo plano de colisión no cambia. Solo recrea los que cambian, incluidos los tableros compartidos cuando corresponde, y despierta sus filas afectadas. La firma persistida conserva su formato y se marca su cambio para guardar el reposo nuevo.
+
+La prueba real de trasladar una planta detectó y cerró un efecto secundario: conservar la elevación de la mano podía dejar la maceta al otro lado del techo del hueco elegido. La suelta coloca la decoración arrastrada en el centro confirmado, conserva la altura de caída dentro de los límites de esa leja y devuelve su colisión al plano de profundidad de reposo. El candidato libre respeta también la altura visual completa para que el follaje no atraviese el tablero. Se conservan los apoyos sobre libros.
+
+El trípode usa ahora en su colisión el mismo desplazamiento a cero de patas y bloque que ya usa el modelo renderizado. Solo su firma sólida pasa a v2; plantas y TÄRNABY conservan v1. Al reparar una firma vieja, solo se simula su fila. Las poses completas de reposo se mantienen confiables hasta un cambio explícito o un contacto físico externo: crear contactos fríos de Rapier no debe mover pilas guardadas de otra leja. Se verifica también que retirar su apoyo siga haciéndolas caer.
+
+Validación final: 83/83 pruebas específicas en seis ficheros, incluidas física, sonidos, controles y las regresiones nuevas. La general anterior cubrió 6571 casos en 520 ficheros (6570 aprobados y una diferencia de traza del doble de escena, cerrada en la reverificación final sin alterar la referencia congelada). Cinco casos nuevos posteriores elevan la cobertura distinta a 6576; no se declara una segunda general completa con el binario final. Cuatro E2E distintos pasan con el build final y un solo worker, sin reintentos: traslado real de libro y planta con persistencia; empuje de vecinos y poses exactas al recargar; suelta junto a planta sin cambiar posiciones ajenas, en frontal y en isométrica. Son dos ejecuciones aprobadas (1 + 3). Las comprobaciones anteriores de zoom, sonido, caída y documento oculto no se vuelven a contar como E2E del último binario. El primer intento del traslado de planta detectó la suelta sobre la leja equivocada; queda cerrado con la prueba original íntegra, sin instrumentación temporal ni cambios de expectativas. Build final UI 2983788 bytes, Shelf 3563829 bytes; shell 109 archivos/31239089 bytes, manifiesto f0c68aa255fc. No se reducen materiales, luces, geometrías renderizadas ni resoluciones de portada.
+
+No se modifican Android, el actualizador, los canales, vendor ni workflows. Se conservan todos los WIP y referencias congeladas.
+
+---
+
 # 1.7.278 — primer fotograma con fuentes y fotos definitivas
 
 Changelog: «Arranque con fuentes y portadas listas».

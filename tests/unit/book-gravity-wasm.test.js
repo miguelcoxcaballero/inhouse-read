@@ -15,6 +15,7 @@ function fixture(rows,metal=false,animated=false){
    rows.forEach((b,i)=>{
     const height=b.height??200,y=(b.floor??300)-height/2;
     states.set([b.kind===3?2:b.kind??0,b.kind===3?1:0,b.flags??0,b.drag??0,b.dragY??0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,b.x,y,150,height,150,0],i*37);
+    states[i*37+13]=b.previewX??0;states[i*37+14]=b.previewY??0;states[i*37+21]=b.offsetX??0;states[i*37+22]=b.offsetY??0;
     if(animated&&previous.has(b.id))states.set(previous.get(b.id).subarray(5,23),i*37+5);
     geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,b.ceiling??((b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0)),b.grip??0],i*9);
    });
@@ -448,4 +449,66 @@ it('corrects a saved false metal-floor support once without reseeding the rememb
  const corrected=fixture(rows(),true);expect(corrected.restore(JSON.stringify(saved))).toBe(true);const pose=corrected.step(600)[0];
  const foot=pose.y+80*Math.abs(Math.cos(pose.angle))+10*Math.abs(Math.sin(pose.angle));expect(foot).toBeGreaterThan(298.5);expect(foot).toBeLessThan(300.5);expect(pose.angle).toBeCloseTo(original.angle,3);expect(pose.active).toBe(0);
  const current=corrected.snapshot();corrected.free();const reopened=fixture(rows(),true);expect(reopened.restore(current)).toBe(true);expect(reopened.step()[0]).toEqual(pose);expect(reopened.step(180)[0]).toEqual(pose);reopened.free();
+});
+
+
+it('keeps resting solid decorations fixed during another objects placement preview and return animation',()=>{
+ const f=fixture([book('hand',80,{flags:2}),book('pot',300,{kind:1,width:90,height:160}),book('support',350,{width:14})]);
+ f.decoration('pot',1,'muskot','muskot',Float64Array.of(.045,.07,.16,0));const before=f.step(600);
+ for(let frame=0;frame<60;frame++){
+  Object.assign(f.rows[1],{previewX:60*Math.sin(frame/20),previewY:-50*Math.sin(frame/20),offsetX:10*Math.sin(frame/9)});
+  const now=f.step();expect(now[1].x).toBeCloseTo(before[1].x,4);expect(now[1].y).toBeCloseTo(before[1].y,4);
+ }
+ f.free();
+});
+it('does not scatter a dense resting row when a fast ghost grip is dropped inside it',()=>{
+ const f=fixture([book('hand',80,{flags:2,width:16}),...Array.from({length:12},(_,i)=>book(`near:${i}`,180+i*18,{flags:2,width:16}))]);
+ f.step(120);for(const b of f.rows.slice(1))b.flags=0;const before=f.step(120);
+ f.rows[0].drag=190;f.rows[0].dragY=-8;f.step(120);Object.assign(f.rows[0],{flags:0,x:270,drag:0,dragY:0});
+ const after=f.step(600);console.info('DENSE_DROP',JSON.stringify({before,after}));
+ expect(after.every(b=>b.active===0)).toBe(true);
+ for(let i=1;i<after.length;i++){expect(Math.abs(after[i].x-before[i].x)).toBeLessThan(3);expect(Math.abs(after[i].angle-before[i].angle)).toBeLessThan(.03);}
+ f.free();
+});
+
+it('retains unrelated sleeping contact islands when a last item vacates a bay or occupies an empty bay',()=>{
+ for(const metal of [false,true]){
+  const f=fixture([book('hand',100),book('remote:a',100,{shelf:3,floor:1260}),book('remote:b',140,{shelf:3,floor:1260})],metal);
+  f.step(600);f.rows[0].flags=2;f.step(90);const before=f.step();
+  const same=values=>{expect(values[1]).toEqual(before[1]);expect(values[2]).toEqual(before[2]);};
+  Object.assign(f.rows[0],{shelf:1,floor:620,dragY:320});same(f.step());same(f.step(120));
+  Object.assign(f.rows[0],{flags:0,dragY:0});same(f.step());same(f.step(600));
+  f.rows.shift();const removed=f.step();expect(removed[0]).toEqual(before[1]);expect(removed[1]).toEqual(before[2]);f.free();
+ }
+});
+
+it('releases a solid inside the chosen bay when its held pot still crosses the upper board',()=>{
+ const f=fixture([book('plant',100,{flags:2,kind:1,width:140,height:180})]);
+ f.decoration('plant',1,'akerbar','akerbar',Float64Array.of(.07,.12,.18,0));f.step(90);f.rows[0].dragY=45;f.step(60);
+ Object.assign(f.rows[0],{flags:0,dragY:0,x:400,shelf:1,floor:620});const rest=f.step(600)[0];
+ expect(rest.x).toBeCloseTo(400,2);expect(rest.y+90).toBeGreaterThan(618);expect(rest.y+90).toBeLessThan(621);expect(rest.active).toBe(0);f.free();
+});
+it('returns an animated lifted pots collision depth before landing on a fallen cover',()=>{
+ const f=fixture([book('hand',100,{flags:2,width:20,height:160}),book('plant',360,{kind:1,width:80,height:150})],false,true);
+ f.decoration('plant',1,'muskot','muskot',Float64Array.of(.03,.07,.15,0));f.step(90);
+ f.rows[0].drag=30;f.step(60);Object.assign(f.rows[0],{flags:0,x:130,drag:0});const flat=f.step(600)[0];expect(Math.abs(flat.angle)).toBeGreaterThan(1.5);
+ f.rows[1].flags=2;f.step(60);f.rows[1].x=flat.x;f.rows[1].dragY=-60;f.step(60);f.rows[1].flags=0;f.rows[1].dragY=0;
+ const rest=f.step(600);expect(rest.every(b=>b.active===0)).toBe(true);expect(rest[1].y+75).toBeGreaterThan(278);expect(rest[1].y+75).toBeLessThan(282);f.free();
+});
+it('lands either table lamp inside the chosen bay using its bottom origin',()=>{
+ for(const lampId of ['tarnaby','tripod']){
+  const native=lampGeometrySpec({lampId}).native,height=250,width=height*native.width/native.height;
+  const f=fixture([book('lamp',100,{flags:2,kind:2,width,height})]);
+  const spec=lampGeometrySpec({lampId,width,height});f.decoration('lamp',spec.kind===1?2:3,'','',Float64Array.of(0,0,0,spec.scale/1000));
+  f.step(90);f.rows[0].dragY=45;f.step(60);Object.assign(f.rows[0],{flags:0,dragY:0,x:400,shelf:1,floor:620});const rest=f.step(600)[0];
+  expect(rest.x).toBeCloseTo(400,2);expect(rest.y+height/2).toBeGreaterThan(618);expect(rest.y+height/2).toBeLessThan(621);expect(rest.active).toBe(0);f.free();
+ }
+});
+it('repairs an obsolete tripod foot without resimulating the other saved bays',()=>{
+ const native=lampGeometrySpec({lampId:'tripod'}).native,height=250,width=height*native.width/native.height;
+ const rows=()=>[book('lamp',400,{kind:2,width,height}),book('remote:a',300,{height:100,shelf:2,floor:940}),book('remote:slab',300,{kind:1,width:180,height:20,shelf:2,floor:940})];
+ const spec=lampGeometrySpec({lampId:'tripod',width,height}),register=f=>f.decoration('lamp',2,'','',Float64Array.of(0,0,0,spec.scale/1000));
+ const oldRows=rows();oldRows[1].flags=2;const old=fixture(oldRows);register(old);old.step(90);old.rows[1].dragY=-25;old.step(120);old.rows[1].flags=0;old.rows[1].dragY=0;const before=old.step(600),saved=JSON.parse(old.snapshot());expect(before[1].y+50).toBeLessThan(925);old.free();const pose=saved[2].find(row=>row[0]==='lamp');pose[8]=pose[8].replace(/^solid-v\d+:/,'solid-v1:');pose[6]-=.0018;
+ const f=fixture(rows());register(f);expect(f.restore(JSON.stringify(saved))).toBe(true);const first=f.step();
+ expect(first[1]).toEqual(before[1]);expect(first[2]).toEqual(before[2]);const rest=f.step(600);expect(rest[1]).toEqual(before[1]);expect(rest[2]).toEqual(before[2]);expect(rest[0].active).toBe(0);expect(rest[0].y+height/2).toBeLessThan(301);expect(typeof f.snapshot()).toBe('string');f.rows[0].flags=2;const held=f.step(60);expect(held[1]).toEqual(before[1]);f.rows.pop();const fallen=f.step(600)[1];const foot=fallen.y+50*Math.abs(Math.cos(fallen.angle))+10*Math.abs(Math.sin(fallen.angle));expect(foot).toBeGreaterThan(938);expect(foot).toBeLessThan(941);expect(fallen.active).toBe(0);f.free();
 });

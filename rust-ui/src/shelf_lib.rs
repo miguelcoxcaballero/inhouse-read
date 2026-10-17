@@ -8,6 +8,7 @@ mod shelf_trash;
 mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;
+mod local_drop;
 mod scene_view;
 mod scene_frame;
 mod scene_entries;

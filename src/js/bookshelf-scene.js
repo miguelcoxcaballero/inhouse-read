@@ -2634,6 +2634,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   return {
     canvas,
+    physicalPlacement: settleBooks,
     getNativeRoomBackground,
     setModalBackgroundDeferred(node, { resumeHidden = false } = {}) {
       const previous = modalDeferredEntry;
