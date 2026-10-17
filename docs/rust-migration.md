@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.271: selección de acabados, posiciones y lista de personalización en Rust UI/Shelf. Pasan 152 específicas con los corpus completos de colores/lomos y 500 registros comparados, y seis E2E finales en una ejecución. Tablas y calidad visual intactas, lecturas/coerciones/UTF-16 preservadas. Inventario 61,77 %, no funciones terminadas. Siguiente: callbacks de colocación/orden y coordinación restante; preservar WIP/stashes y ramas ready.
+
 Entrega 1.7.270: guardado, nombres/apariencia y retirada con limpieza diferida del lector en Rust UI/Shelf. Pasan 96 específicas en 12 archivos, incluidas diez sesiones de retirada y 30 ciclos de recursos, y ocho E2E finales en una ejecución. Se mantiene el contrato síncrono de errores previos y no se espera una descarga para completar la papelera. Inventario 61,69 %, no funciones terminadas. Siguiente: validación de apariencia/posición y coordinación restante; preservar WIP/stashes y ramas ready.
 
 Entrega 1.7.269: coordinación de refresco posterior a la carga en Rust: normalización, guardado, cuenta, recuento y reutilización/actualización de escena. Pasan 71 específicas con 17 sesiones comparadas y 40 ciclos de recursos, y siete E2E finales en una ejecución. La espera paralela y fábrica de opciones se conservan. Inventario 61,59 %, no funciones terminadas. Siguiente: acciones de libros y resto de coordinación de la aplicación; preservar WIP/stashes y ramas ready.

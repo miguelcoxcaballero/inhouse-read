@@ -1,3 +1,16 @@
+# 1.7.271 — validación de apariencia y posiciones en Rust
+
+Changelog: «Apariencia y posiciones validadas en Rust».
+Rust asume la selección de acabados, sus valores predeterminados, la validación de posiciones y la lista de campos de personalización que puede conservar un libro. Los kernels de color y relieve ya migrados permanecen en Core; el adaptador solo conecta esos módulos y las tablas exportadas. Se conserva la normalización de autores, recortes UTF-16, reseteos explícitos y límites de fuentes/posición.
+
+Las primitivas numéricas mantienen las lecturas repetidas y coerciones del código anterior, incluyendo cambios de valor entre getters, BigInt, símbolos, signos de cero, NaN y errores. Los campos que no pertenecen a la lista —incluidos bytes, páginas y progreso— no se copian. UI y Shelf compilan el mismo módulo, sin exigir cargar Shelf para validar metadatos del lector. No se cambian tablas de materiales, shaders, geometrías o resolución.
+
+Build completo correcto y **152 pruebas específicas en diez archivos pasan**. La nueva comparación cubre todas las combinaciones de acabados/fallbacks, límites numéricos, 500 registros con campos permitidos, metadatos anidados/UTF-16, getters con trazas, errores, 100 ciclos de handles estables y UI sin Shelf. Permanecen los corpus completos de colores (incluidos todos los caracteres UTF-16 y 400 000 colores aleatorios), la pintura idéntica de 1500 lomos, modelo 3D, sincronización/limpieza, acciones de libros y ciclo del lector. La nueva referencia solo adapta las rutas de importación; las referencias anteriores no se modifican. No se cambia el corpus o límites existentes ni se repite la batería general; el timeout antiguo de color sigue documentado.
+
+Seis E2E finales pasan en una ejecución sin reintentos (2,2 min): nombres editados en ficha/lector/Escuchar; lomo con volumen real y redimensionado, también reteniendo la descarga de UI; zoom que reutiliza su imagen y restaura seis portadas a 1024 px; colocación real de libro/planta conservada al recargar; y edición de colores, mate/satinado/brillante, metales, fuentes y grabado con preferencias conservadas al recargar. El gesto no repinta WebGL ni reasigna el buffer y las luces mantienen su efecto. Se revisa la captura final de material plateado.
+
+Inventario: 33243 líneas Rust / 20577 JavaScript, **61,77 %**, incluidos comentarios y compatibilidad; no mide funciones terminadas. Siguiente: guardado de colocación/orden desde los callbacks de la estantería y resto de coordinación de la aplicación. Se preservan WIP, stashes y ramas ready.
+
 # 1.7.270 — guardado y retirada de libros en Rust
 
 Changelog: «Guardado y retirada de libros en Rust».
