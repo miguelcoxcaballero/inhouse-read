@@ -17,6 +17,7 @@ import json,os,subprocess,sys,wave
 import numpy as np
 from scipy import signal
 RATE=24000
+OUT_RATE=16000  # stored rate: everything is band-limited under 7 kHz, and the browser resamples on decode
 src,out=sys.argv[1],sys.argv[2]
 ITER=int(sys.argv[3]) if len(sys.argv)>3 else 3
 rng=np.random.default_rng(20261017)
@@ -250,7 +251,7 @@ if ITER>=3:
         camera(f'zoom_out_t{t}',0.34,1700,450,(430,300),t,0.4)    # further away: it closes again
         camera(f'view_iso_t{t}',0.55,380,2000,(260,470),t,0.55)   # straight to isometric: a longer, rising turn
         camera(f'view_front_t{t}',0.55,2000,380,(470,260),t,0.4)  # isometric to straight: the turn settles back
-# ======================= take selection: drop outliers within a group (iteration 2+), keep at most 4 (iteration 3)
+# ======================= take selection: drop outliers within a group (iteration 2+), keep at most 3 (iteration 3)
 import re
 groups={}
 for n in clips:groups.setdefault(re.sub(r'_t\d+$','',n),[]).append(n)
@@ -265,14 +266,14 @@ if ITER>=2:
         if len(names)>3 and ITER>=3:
             med=np.median(feats,axis=0);sd=feats.std(axis=0)+1e-6
             dist={n:float(np.abs((f-med)/sd).sum()) for n,f in zip(names,feats) if n in keep}
-            while len(keep)>4:keep.discard(max(dist,key=lambda k:dist[k] if k in keep else -1))
+            while len(keep)>3:keep.discard(max(dist,key=lambda k:dist[k] if k in keep else -1))
         for n in names:
             if n not in keep:dropped.append(n);del clips[n]
 os.makedirs(f'{out}/clips',exist_ok=True)
 index={};blob=bytearray()
 for name,x in sorted(clips.items()):
-    pcm=(np.clip(x,-1,1)*32767).astype('<i2');index[name]={'offset':len(blob)//2,'length':len(pcm),'rate':RATE}
+    x=signal.resample_poly(x,OUT_RATE,RATE);pcm=(np.clip(x,-1,1)*32767).astype('<i2');index[name]={'offset':len(blob)//2,'length':len(pcm),'rate':OUT_RATE}
     blob+=pcm.tobytes()
-    w=wave.open(f'{out}/clips/{name}.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(RATE);w.writeframes(pcm.tobytes());w.close()
+    w=wave.open(f'{out}/clips/{name}.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(OUT_RATE);w.writeframes(pcm.tobytes());w.close()
 open(f'{out}/atlas.bin','wb').write(bytes(blob));json.dump(index,open(f'{out}/atlas.json','w'),indent=0)
 print(f'iteration {ITER}:',len(clips),'clips',round(len(blob)/1024),'KB; dropped',len(dropped),dropped[:12])
