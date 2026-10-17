@@ -59,7 +59,8 @@ beforeEach(async () => {
     const node = document.createElement('button'); node.className = 'ihr-spine'; node.dataset.bookId = book.id; stage.append(node);
     return { node, book, style:{ color:'#41694f', width:28 }, x:75 + i * 130, y:130, width:100, height:180, thickness:28 };
   });
-  shelf = createBookshelfScene({ stage, scroller, entries, width:390, height:500,
+  // Isolate metadata ownership/paint scheduling from the separately tested dynamic contacts.
+  shelf = createBookshelfScene({ stage, scroller, entries, width:390, height:500, settleBooks:false,
     rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }] });
   shelf.canvas.getBoundingClientRect = () => rect(20, 60, 390, height);
   await Promise.resolve(); shelf.flush({ force:true }); drain(); gpu.renderer.render.mockClear();

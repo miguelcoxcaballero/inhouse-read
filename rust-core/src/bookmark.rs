@@ -40,17 +40,17 @@ pub extern "C" fn bookmark_steps(segments: f64) -> u32 {
 
 /// Everything the plan derives from the book and the pose before it looks at one section.
 struct Ribbon {
-    steps: usize, ribbon_width: f64, fabric_depth: f64, lay: f64, flop: f64, x: f64, head: f64, depth: f64, height: f64,
+    refined: bool, steps: usize, ribbon_width: f64, fabric_depth: f64, lay: f64, flop: f64, x: f64, head: f64, depth: f64, height: f64,
     upper: f64, back: f64, drift: f64, arc: f64, reach_back: f64, twist_max: f64, leaves: f64, body_length: f64,
     wander: f64, splay: f64, start: f64, cut: f64, split: f64, half: f64, fold: f64, folded: f64, vary5: f64,
 }
 impl Ribbon {
     /// `p`: width, height, thickness, progress, peek, open, withdraw, segments, seed.
-    fn new(p: &[f64]) -> Option<Ribbon> {
+    fn new(p: &[f64], refined: bool) -> Option<Ribbon> {
         let (width, height, thickness, progress, peek, open, withdraw, seed) = (p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[8]);
         let steps = bookmark_steps(p[7]) as usize;
         if steps == 0 { return None; }
-        let ribbon_width = min(width * 0.09, max(height * 0.035, min(height * 0.055, thickness * 0.42)));
+        let ribbon_width = min(width * 0.09, max(height * 0.035, min(height * 0.055, thickness * 0.42))) * if refined { 1.4 } else { 1.0 };
         // Each copy of a book falls the same way; different books do not.
         let seeded = seed != 0.0 && !seed.is_nan();
         let vary = |k: f64| if seeded { lattice(seed % 65521.0, k, 17.0) } else { 0.5 };
@@ -86,8 +86,14 @@ impl Ribbon {
         let half = steps as f64 / 2.0;
         let fold = max(1.0, round(steps as f64 * 0.19));
         let folded = min(cut, split + arc * 1.1);
-        Some(Ribbon { steps, ribbon_width, fabric_depth: height * 0.0018, lay, flop, x, head, depth, height, upper, back, drift, arc,
+        Some(Ribbon { refined, steps, ribbon_width, fabric_depth: height * 0.0018, lay, flop, x, head, depth, height, upper, back, drift, arc,
             reach_back, twist_max, leaves, body_length, wander, splay, start, cut, split, half, fold, folded, vary5: vary(5.0) })
+    }
+    /// Keep the entire inserted strip in one leaf plane. Only silk already
+    /// beyond the book's head may turn toward the viewer.
+    fn turn(&self, s:f64)->f64 {
+        if self.refined { smoothstep(s,self.height*0.012,self.height*0.07) }
+        else { smoothstep(s,-self.height*0.006,self.height*0.0025) }
     }
     /// The arc length past the head of section `i`, negative inside the book or on the page. Samples
     /// are laid on the path, not on the sliding silk: half on the page, the rest from the head on, a
@@ -120,8 +126,12 @@ pub unsafe extern "C" fn bookmark_constants(steps: usize, requests: *mut f64) ->
 /// # Safety
 /// `params` holds 9 f64, `crowd` the powers of `bookmark_constants`, `requests` 3 f64 per request.
 #[no_mangle]
-pub unsafe extern "C" fn bookmark_plan_a(params: *const f64, crowd: *const f64, requests: *mut f64) -> u32 {
-    let Some(r) = Ribbon::new(std::slice::from_raw_parts(params, 9)) else { return 0 };
+pub unsafe extern "C" fn bookmark_plan_a(params: *const f64, crowd: *const f64, requests: *mut f64) -> u32 { bookmark_plan_a_policy(params,crowd,requests,false) }
+#[no_mangle]
+pub unsafe extern "C" fn bookmark_plan_a_refined(params: *const f64, crowd: *const f64, requests: *mut f64) -> u32 { bookmark_plan_a_policy(params,crowd,requests,true) }
+
+unsafe fn bookmark_plan_a_policy(params: *const f64, crowd: *const f64, requests: *mut f64, refined:bool) -> u32 {
+    let Some(r) = Ribbon::new(std::slice::from_raw_parts(params, 9), refined) else { return 0 };
     let crowd = std::slice::from_raw_parts(crowd, r.fold as usize);
     let count = 1 + 7 * (r.steps + 1);
     let out = std::slice::from_raw_parts_mut(requests, count * 3);
@@ -129,7 +139,7 @@ pub unsafe extern "C" fn bookmark_plan_a(params: *const f64, crowd: *const f64, 
     for i in 0..=r.steps {
         let s = r.along(i, crowd);
         let base = 1 + 7 * i;
-        let turned = r.twist_max * smoothstep(s, -r.height * 0.006, r.height * 0.0025);
+        let turned = r.twist_max * r.turn(s);
         put(out, base, SIN, turned, 0.0);
         if s <= 0.0 {
             let u = -s / r.body_length;
@@ -155,8 +165,14 @@ pub unsafe extern "C" fn bookmark_plan_a(params: *const f64, crowd: *const f64, 
 /// As `bookmark_plan_a`; `results` holds one f64 per request of the first stage.
 #[no_mangle]
 pub unsafe extern "C" fn bookmark_plan_b(params: *const f64, crowd: *const f64, results: *const f64,
-    coefficients: *mut f64, requests: *mut f64) -> u32 {
-    let Some(r) = Ribbon::new(std::slice::from_raw_parts(params, 9)) else { return 0 };
+    coefficients: *mut f64, requests: *mut f64) -> u32 { bookmark_plan_b_policy(params,crowd,results,coefficients,requests,false) }
+#[no_mangle]
+pub unsafe extern "C" fn bookmark_plan_b_refined(params: *const f64, crowd: *const f64, results: *const f64,
+    coefficients: *mut f64, requests: *mut f64) -> u32 { bookmark_plan_b_policy(params,crowd,results,coefficients,requests,true) }
+
+unsafe fn bookmark_plan_b_policy(params: *const f64, crowd: *const f64, results: *const f64,
+    coefficients: *mut f64, requests: *mut f64, refined:bool) -> u32 {
+    let Some(r) = Ribbon::new(std::slice::from_raw_parts(params, 9), refined) else { return 0 };
     let crowd = std::slice::from_raw_parts(crowd, r.fold as usize);
     let results = std::slice::from_raw_parts(results, 1 + 7 * (r.steps + 1));
     let data = std::slice::from_raw_parts_mut(coefficients, (r.steps + 1) * 7);
@@ -165,12 +181,12 @@ pub unsafe extern "C" fn bookmark_plan_b(params: *const f64, crowd: *const f64, 
     // leaf: the ribbon moves inward by exactly what it gains.
     let sine_max = results[0];
     let reach = sine_max * r.ribbon_width / 2.0;
-    let inward = (clamp(r.depth, -r.leaves + reach, r.leaves - reach) - r.depth) * (1.0 - r.lay);
+    let inward = if r.refined { 0.0 } else { (clamp(r.depth, -r.leaves + reach, r.leaves - reach) - r.depth) * (1.0 - r.lay) };
     for i in 0..=r.steps {
         let s = r.along(i, crowd);
         let base = 1 + 7 * i;
         let (mut px, mut py, mut pz) = (r.x, r.head, r.depth);
-        let turned = r.twist_max * smoothstep(s, -r.height * 0.006, r.height * 0.0025);
+        let turned = r.twist_max * r.turn(s);
         // A sideways shift, kept out of the direction the cross-sections face.
         let tuck = inward * results[base] / if sine_max != 0.0 && !sine_max.is_nan() { sine_max } else { 1.0 };
         let mut twist = turned * (1.0 - r.lay);
@@ -188,7 +204,8 @@ pub unsafe extern "C" fn bookmark_plan_b(params: *const f64, crowd: *const f64, 
             // Past the gathering's depth the rest is tucked under, out of sight.
             let run = min(s - bent, r.reach_back + (1.0 - r.flop) * r.height * 4.0);
             // A cantilever's sag: nothing at the root, most of it toward the end.
-            let fall = smoothstep(min(1.0, s / r.upper), 0.0, 1.0) * (1.0 - r.flop);
+            let fraction = if r.refined { (s-r.height*0.012)/max(0.001,r.upper-r.height*0.012) } else { s/r.upper };
+            let fall = smoothstep(min(1.0, fraction), 0.0, 1.0) * (1.0 - r.flop);
             px += r.back * fall;
             py += (if k > 1e-6 { results[base + 5] / k } else { bent }) + run * results[base + 6];
             pz += (if k > 1e-6 { (results[base + 6] - 1.0) / k } else { 0.0 }) - run * results[base + 5] + r.drift * fall;
@@ -205,8 +222,14 @@ pub unsafe extern "C" fn bookmark_plan_b(params: *const f64, crowd: *const f64, 
 /// As `bookmark_mesh`; `results` holds 2 f64 per section.
 #[no_mangle]
 pub unsafe extern "C" fn bookmark_finish(params: *const f64, results: *const f64, coefficients: *mut f64, distances: *mut f64,
-    positions: *mut f32, uvs: *mut f32, normals: *mut f32, indices: *const u16) {
-    let Some(r) = Ribbon::new(std::slice::from_raw_parts(params, 9)) else { return };
+    positions: *mut f32, uvs: *mut f32, normals: *mut f32, indices: *const u16) { bookmark_finish_policy(params,results,coefficients,distances,positions,uvs,normals,indices,false) }
+#[no_mangle]
+pub unsafe extern "C" fn bookmark_finish_refined(params: *const f64, results: *const f64, coefficients: *mut f64, distances: *mut f64,
+    positions: *mut f32, uvs: *mut f32, normals: *mut f32, indices: *const u16) { bookmark_finish_policy(params,results,coefficients,distances,positions,uvs,normals,indices,true) }
+
+unsafe fn bookmark_finish_policy(params: *const f64, results: *const f64, coefficients: *mut f64, distances: *mut f64,
+    positions: *mut f32, uvs: *mut f32, normals: *mut f32, indices: *const u16, refined:bool) {
+    let Some(r) = Ribbon::new(std::slice::from_raw_parts(params, 9), refined) else { return };
     let results = std::slice::from_raw_parts(results, (r.steps + 1) * 2);
     let data = std::slice::from_raw_parts_mut(coefficients, (r.steps + 1) * 7);
     for i in 0..=r.steps { data[i * 7 + 3] = results[i * 2]; data[i * 7 + 4] = results[i * 2 + 1]; }

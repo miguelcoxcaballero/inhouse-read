@@ -1,5 +1,7 @@
 # Traspaso: migración a Rust de Inhouse Read
 
+Entrega 1.7.263: física tranquila, agarre vertical animado, límites reales de madera/BAGGEBO y cinta un 40 % más ancha situada en una sola página; todo en Rust. 114 específicas y seis E2E finales pasan. Inventario 60,35 %, no funciones terminadas. Después: retomar el WIP book-length y corregir la dependencia UI/Shelf de metadatos Drive y el coste de segmentación antes de publicar el contador. Conservar todos los worktrees/stashes.
+
 Último bloque: 1.7.262, lifecycle y despacho interno de la pantalla en Rust. 6465/6466 generales verificadas (timeout preexistente de colores) y 12 E2E finales pasan. Inventario 60,29 %. La limpieza repetida crea contexto temporal solo tras liberar el original y no retiene callbacks. Las pruebas estáticas conservan aserciones con settleBooks:false; batchQuality sigue activado. Siguiente: worktree book-length contiene contador + cola Rust nuevos, sin publicar; conservar sus WIP/stashes y comprobar compilación, equivalencia, memoria e importación antes de la siguiente entrega.
 
 Último bloque: 1.7.261, calidad de zoom y silueta táctil de lámparas en Rust. 80 específicas finales pasan; inventario 59,92 %. Conservar batchQuality/settleBooks activados en producción y desactivados solo en la comparación heredada completa. Siguiente lifecycle: WIP en shelf-lifecycle con destroy repetible y recorrido vivo de objectUrls; aún sin compilar. Preservar WIP, stashes y ramas ready.

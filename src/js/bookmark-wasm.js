@@ -55,7 +55,7 @@ export function releaseRustBookmarkBuffers(core) {
 }
 
 export function rustBookmarkBuffers(core, width, height, thickness, progress, peek = 10,
-  open = 0, withdraw = 0, segments = 32, seed = 0) {
+  open = 0, withdraw = 0, segments = 32, seed = 0, legacy = false) {
   if (!core?.bookmark_plan_a || !core.bookmark_topology || !core.memory || !core.alloc_f64 || !core.free_f64) return null;
   // Production has 8/32 segments; the scratch cache is bounded by the core's 256 sections.
   if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(thickness)
@@ -68,11 +68,11 @@ export function rustBookmarkBuffers(core, width, height, thickness, progress, pe
   new Float64Array(core.memory.buffer, pointer + layout.params, 9)
     .set([width, height, thickness, progress, peek, open, withdraw, Number(segments), seed]);
   const params = pointer + layout.params, crowd = pointer + layout.crowd;
-  const asked = core.bookmark_plan_a(params, crowd, pointer + layout.requests);
+  const asked = (legacy ? core.bookmark_plan_a : core.bookmark_plan_a_refined)(params, crowd, pointer + layout.requests);
   resolveHostMath(core, pointer + layout.requests, pointer + layout.results, asked);
-  const twisted = core.bookmark_plan_b(params, crowd, pointer + layout.results, pointer + layout.coefficients, pointer + layout.twistRequests);
+  const twisted = (legacy ? core.bookmark_plan_b : core.bookmark_plan_b_refined)(params, crowd, pointer + layout.results, pointer + layout.coefficients, pointer + layout.twistRequests);
   resolveHostMath(core, pointer + layout.twistRequests, pointer + layout.twistResults, twisted);
-  core.bookmark_finish(params, pointer + layout.twistResults, pointer + layout.coefficients, pointer + layout.distances,
+  (legacy ? core.bookmark_finish : core.bookmark_finish_refined)(params, pointer + layout.twistResults, pointer + layout.coefficients, pointer + layout.distances,
     pointer + layout.positions, pointer + layout.uvs, pointer + layout.normals, pointer + layout.indices);
   return state;
 }
