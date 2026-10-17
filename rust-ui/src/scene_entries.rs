@@ -22,7 +22,7 @@ pub fn scene_class_flags(classes:&str)->u32{
  let mut bits=0;
  let (mut pressed,mut pending)=(false,false);
  for token in classes.split([' ','\t','\n','\u{c}','\r']){
-  match token{"is-away"=>bits|=AWAY,"is-dragging"=>bits|=DRAGGING,"is-lifted"=>bits|=LIFTED,"is-pressed"=>pressed=true,"is-press-pending"=>pending=true,_=>{}}
+  match token{"is-reader-origin"=>bits|=64,"is-away"=>bits|=AWAY,"is-dragging"=>bits|=DRAGGING,"is-lifted"=>bits|=LIFTED,"is-pressed"=>pressed=true,"is-press-pending"=>pending=true,_=>{}}
  }
  if pressed&&!pending{bits|=PRESSED;}
  bits

@@ -77,9 +77,9 @@ export function playShelfSound(kind,material=0,strength=1,pan=0){
  // A view switch (33, 34) owns its whoosh: zoom whooshes (31, 32) wait until it has played.
  if((kind===31||kind===32)&&performance.now()<viewUntil)return;
  if(kind===33||kind===34)viewUntil=performance.now()+550;
- const audio=context,requested=performance.now(),variant=serial++%3,level=shelfSoundLevel(strength);
+ const audio=context,requested=performance.now(),variant=serial++%3,level=shelfSoundLevel(strength),resuming=audio.state==='suspended';
  const play=()=>{
-  if(context!==audio||!shelfSoundsEnabled()||audio.state!=='running'||performance.now()-requested>180)return;
+  if(context!==audio||!shelfSoundsEnabled()||audio.state!=='running'&&!(resuming&&audio.state==='suspended')||performance.now()-requested>180)return;
   try{
    let buffer,rate=1;const takes=takesFor(kind,material,level);
    if(takes){
@@ -105,7 +105,10 @@ export function playShelfSound(kind,material=0,strength=1,pan=0){
    source.onended=()=>{voices.delete(voice);tails.delete(voice);source.disconnect();gain.disconnect();stereo?.disconnect();park();};source.start();
   }catch{park();}
  };
- if(audio.state==='suspended')audio.resume().then(play,()=>{unlocked=false;});else play();
+ // Web Audio accepts scheduled sources while resuming. Queue now, before a
+ // synchronous cover render can delay the resume callback and discard the cue.
+ if(resuming)audio.resume().catch(()=>{unlocked=false;stop();});
+ play();
 }
 export function setShelfSoundsEnabled(enabled){
  muted=!enabled;try{localStorage.setItem(KEY,muted?'off':'on');}catch{}

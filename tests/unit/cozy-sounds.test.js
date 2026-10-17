@@ -125,3 +125,20 @@ it('lets a view switch own its whoosh before zoom whooshes resume',async()=>{
  await vi.advanceTimersByTimeAsync(600);module.playShelfSound(31,0,.5);expect(started(audio)).toHaveLength(2);
  module.setShelfSoundsEnabled(false);module.playShelfSound(34,0,.6);expect(started(audio)).toHaveLength(2);
 });
+
+it('queues a pickup before a delayed resume callback so cover work cannot discard it',async()=>{
+ own();module.unlockShelfSounds();await flush();
+ const audio=contexts[0];audio.state='suspended';let resolveResume;
+ audio.resume.mockImplementation(()=>new Promise(resolve=>{resolveResume=resolve;}));
+ module.playShelfSound(17,0,.65);
+ expect(synth).toHaveBeenCalledWith(17,0,0,1);
+ const voice=audio.sources.at(-1);expect(voice.start).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(500);audio.state='running';resolveResume();await flush();
+ expect(voice.start).toHaveBeenCalledTimes(1);
+});
+it('stops a queued pickup if resuming audio is rejected',async()=>{
+ own();module.unlockShelfSounds();await flush();
+ const audio=contexts[0];audio.state='suspended';audio.resume.mockRejectedValue(new Error('blocked'));
+ module.playShelfSound(17,0,.65);const voice=audio.sources.at(-1);await flush();
+ expect(voice.stop).toHaveBeenCalledTimes(1);expect(module.shelfSoundsEnabled()).toBe(false);
+});

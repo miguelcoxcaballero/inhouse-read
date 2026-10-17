@@ -24,8 +24,8 @@ pub fn set_returning_book(ctx:&Rc<Ctx>,book_id:&JsValue)->R{
  method_opt(&scene,"setPaintHeld",&[&b(next!=null())])?;
  for node in qsa(&ctx.root,SPINE){
   let id=data_get(&node,"bookId");
-  if previous!=next&&id==previous{cls_remove(&node,&["is-away"]);}
-  if id==next{cls_add(&node,&["is-away"]);}
+  if previous!=next&&id==previous{cls_remove(&node,&["is-away","is-reader-origin"]);}
+  if id==next{cls_add(&node,&["is-away","is-reader-origin"]);}
  }
  Ok(())
 }
@@ -101,7 +101,7 @@ impl Closing{
  fn restore_spine(&self,flush:bool)->R<JsValue>{
   let id=book_id_text(&self.book_id);
   let current=spine_of(&self.ctx,&id).unwrap_or(self.spine.clone());
-  cls_remove(&current,&["is-away"]);
+  cls_remove(&current,&["is-away","is-reader-origin"]);
   // A queued record refresh rebuilds the resting spine before the caller's final cleanup. Release this return's
   // marker with its actual landing so that rebuilt DOM cannot briefly hide the already inserted book again.
   if self.ctx.st("returningBookId")==id{
@@ -258,7 +258,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
   append_all(&book_node,&[&pages,&leaf]);
  }
  append(&get(&document(),"body"),&flyout);
- cls_add(&spine,&["is-away"]);
+ cls_add(&spine,&["is-away","is-reader-origin"]);
  method_opt(&ctx.scene(),"updateEntry",&[&spine,&book,&get(&previous,"style"),&cover_url])?;
  ctx.scene_call("flush",&[])?;
  let duration=num(&get(&durations,"flight"));

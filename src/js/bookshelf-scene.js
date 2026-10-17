@@ -2774,7 +2774,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp' || disposed) return null;
       flushScene();
-      const dock = shelfBookInsertion(shelfBookSlot(entry, width), entry.width);
+      const dock = shelfBookInsertion(shelfBookSlot(entry, width, settleBooks && physicsStarted ? entry.pose.matrix.elements : null), entry.width);
       return projectShelfBookPose(furniture.matrixWorld, dock, entry, stage.getBoundingClientRect());
     },
     returnBook(node, { duration = 180, overlayCanvas = null, nativePresentation = null } = {}) {
@@ -2786,7 +2786,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       cancelInsertion(entry);
       let resolve;
       const finished = new Promise(done => { resolve = done; });
-      const insertion = { slot:shelfBookSlot(entry, width), started:performance.now(),
+      const insertion = { slot:shelfBookSlot(entry, width, settleBooks && physicsStarted ? entry.pose.matrix.elements : null), started:performance.now(),
         duration:reducedMotion.matches ? 0 : Math.max(0, Number(duration) || 0), resolve, complete:false, overlayCanvas,
         elapsed:0, lastFrame:performance.now(), nativePresentation };
       if (nativePresentation) {

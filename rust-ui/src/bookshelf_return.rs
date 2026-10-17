@@ -174,7 +174,13 @@ fn matrix(list:&[f64])->Mat4{let mut elements=[0.0;16];for (at,slot) in elements
 /// turned a quarter about Y, centred on its slot and `depth_inset` into the shelf. The rotation is
 /// the quaternion of `Euler(0, PI / 2, 0, 'XYZ')`, whose half-angle sine and cosine are the host's.
 #[wasm_bindgen]
-pub fn shelf_book_slot(entry:&JsValue,cabinet_width:f64)->Result<Vec<f64>,JsValue>{
+pub fn shelf_book_slot(entry:&JsValue,cabinet_width:f64,physical:JsValue)->Result<Vec<f64>,JsValue>{
+ if !physical.is_null()&&!physical.is_undefined(){
+  let values=js_sys::Array::from(&physical);if values.length()==16{
+   let matrix:Option<Vec<f64>>=values.iter().map(|v|v.as_f64().filter(|n|n.is_finite())).collect();
+   if let Some(matrix)=matrix{return Ok(matrix);}
+  }
+ }
  let x=num(&read(entry,"x")?);let y=num(&read(entry,"y")?);let width=num(&read(entry,"width")?);
  let inset=read(entry,"depthInset")?;
  let inset=if truthy(&inset){num(&inset)}else{0.0};

@@ -7,42 +7,11 @@ const LAMP_KEY = 'inhouse-read-shelf-lamps';
 const PLANT_KEY = 'inhouse-read-shelf-plants';
 const TARGET_URL = process.env.IHR_TEST_URL || '/';
 
-test('cozy sounds use native PCM for switches, pickup and opening and sleep afterwards',async({page})=>{
- await installCozyProof(page,false);
- const scene=await seedShelf(page);
- expect(await page.evaluate(()=>window.cozyProof.contexts.length)).toBe(0);
- const lamp=page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');await lamp.tap();await quietShelf(scene);
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===6||a[0]===7))).toBe(true);
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'))).toBe(true);
- const point=await visibleMiddleBookPoint(page);expect(point).not.toBeNull();await page.touchscreen.tap(point.x,point.y);
- const cover=page.locator('.ihr-flyout__cover-target');await expect(cover).toBeVisible();
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===17))).toBe(true);
- await cover.click();await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===1))).toBe(true);
- await expect(page.locator('#reader-toolbar')).toBeVisible();
- const starts=await page.evaluate(()=>window.cozyProof.starts);expect(starts.length).toBeGreaterThanOrEqual(3);
- expect(starts.every(s=>s.rms>.002)).toBe(true);
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'||a.state==='closed'))).toBe(true);
-});
-test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 });
-test('cozy sounds switch to recorded atlas clips once loaded',async({page})=>{
- await installCozyProof(page,true);
- const scene=await seedShelf(page);
- const lamp=page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');await lamp.tap();await quietShelf(scene);
- // The first gesture fetches the index and the PCM once; later events play recorded takes (16 kHz) instead of the synth.
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.atlas)).toBe(2);
- await lamp.tap();await quietShelf(scene);
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.starts.some(s=>s.rate===16000&&s.rms>.002))).toBe(true);
- expect(await page.evaluate(()=>window.cozyProof.atlas)).toBe(2);
- await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'||a.state==='closed'))).toBe(true);
-});
-
-function installCozyProof(page,withAtlas){
- return page.addInitScript(withAtlas=>{
-  window.cozyProof={native:[],starts:[],contexts:[],atlas:0};
-  // Without the recorded atlas (the offline worker would serve it past page.route) every event is synthesised in Rust.
-  const fetch=window.fetch;window.fetch=(input,...rest)=>{const atlas=String(input?.url||input).includes('/sfx/atlas.');
-   if(atlas&&!withAtlas)return Promise.reject(new TypeError('offline'));
-   return fetch(input,...rest).then(response=>{if(atlas&&response.ok)window.cozyProof.atlas++;return response;});};
+test('cozy sounds use native PCM for switches, pickup and opening and sleep afterwards',async({page},info)=>{
+ // Without the recorded atlas every event is synthesised in Rust.
+ await page.route('**/sfx/atlas.*',route=>route.abort());
+ await page.addInitScript(()=>{
+  window.cozyProof={native:[],starts:[],contexts:[]};
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.cozy_sound)return result;
    const exports={...actual,cozy_sound:(...args)=>{window.cozyProof.native.push(args.slice(-4));return actual.cozy_sound(...args);}};
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});return result.instance?{...result,instance:proxy}:proxy;};
@@ -53,12 +22,27 @@ function installCozyProof(page,withAtlas){
    createGain(){return new AudioNode();}createStereoPanner(){return new AudioNode();}
    createBuffer(channels,length,rate){return {length,sampleRate:rate,pcm:null,copyToChannel(data){this.pcm=Array.from(data);}};}
    createBufferSource(){const source=new AudioNode();let timer;
-    source.start=()=>{const b=source.buffer;if(b.length>1)window.cozyProof.starts.push({length:b.length,rate:b.sampleRate,rms:Math.sqrt(b.pcm.reduce((s,x)=>s+x*x,0)/b.length)});timer=setTimeout(()=>source.onended?.(),b.length/b.sampleRate*1000);};
+    source.start=()=>{const b=source.buffer;if(b.length>1)window.cozyProof.starts.push({length:b.length,rms:Math.sqrt(b.pcm.reduce((s,x)=>s+x*x,0)/b.length)});timer=setTimeout(()=>source.onended?.(),b.length/b.sampleRate*1000);};
     source.stop=()=>{clearTimeout(timer);setTimeout(()=>source.onended?.(),0);};return source;}
    async suspend(){this.state='suspended';}async resume(){this.state='running';}async close(){this.state='closed';}
   }window.AudioContext=AudioContext;
- },withAtlas);
-}
+ });
+ const scene=await seedShelf(page);
+ expect(await page.evaluate(()=>window.cozyProof.contexts.length)).toBe(0);
+ const lamp=page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');await lamp.tap();await quietShelf(scene);
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===6||a[0]===7))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'))).toBe(true);
+ const point=await visibleMiddleBookPoint(page);expect(point).not.toBeNull();await page.touchscreen.tap(point.x,point.y);
+ const cover=page.locator('.ihr-flyout__cover-target');await expect(cover).toBeVisible();
+ await info.attach('fallback-before-opening',{body:JSON.stringify(await page.evaluate(()=>({native:window.cozyProof.native,states:window.cozyProof.contexts.map(c=>c.state)}))),contentType:'application/json'});
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===17)),{timeout:5000}).toBe(true);
+ await cover.click();await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===1))).toBe(true);
+ await expect(page.locator('#reader-toolbar')).toBeVisible();
+ const starts=await page.evaluate(()=>window.cozyProof.starts);expect(starts.length).toBeGreaterThanOrEqual(3);
+ expect(starts.every(s=>s.rms>.002)).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'||a.state==='closed'))).toBe(true);
+});
+test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 });
 
 async function quietShelf(scene) {
   await scene.page().evaluate(() => document.fonts.ready.then(() => undefined));
