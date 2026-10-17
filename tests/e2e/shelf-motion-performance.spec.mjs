@@ -148,10 +148,10 @@ async function warmth(scene) {
   });
 }
 
-async function visibleMiddleBookPoint(page, fractions=[.5,.65,.35]) {
-  return page.evaluate(fractions => {
+async function visibleMiddleBookPoint(page, fractions=[.5,.65,.35], row=1) {
+  return page.evaluate(({fractions,row}) => {
     const scroller = document.querySelector('.ihr-bookshelf__scroll').getBoundingClientRect();
-    for (const node of document.querySelectorAll('.ihr-spine[data-shelf-index="1"]')) {
+    for (const node of document.querySelectorAll(`.ihr-spine[data-shelf-index="${row}"]`)) {
       // The book's binding target is its native padded tap rectangle. A
       // tilted cover's envelope also contains empty space; prefer the binding
       // before considering the broader cover envelope.
@@ -170,7 +170,7 @@ async function visibleMiddleBookPoint(page, fractions=[.5,.65,.35]) {
       }
     }
     return null;
-  }, fractions);
+  }, {fractions,row});
 }
 
 async function pinchStartingOnBook(page, scene) {
@@ -503,4 +503,35 @@ test('mobile room stays idle and suspends active physics while the document is h
  expect(resumed.textures).toBe(before.textures);await expect(scene).toHaveAttribute('data-active-lamp-lights','1');
  const resting=await counts();await page.waitForTimeout(1000);expect(await counts()).toEqual(resting);
  await testInfo.attach('mobile-energy-work',{body:JSON.stringify({before,idle,parked,resumed,idleTaskSeconds:second.TaskDuration-first.TaskDuration,idleScriptSeconds:second.ScriptDuration-first.ScriptDuration},null,2),contentType:'application/json'});
+});
+
+test('native dragging pushes neighbours and preserves the settled poses across reload',async({page},testInfo)=>{
+ const scene=await seedShelf(page,{domino:true});
+ const point=await visibleMiddleBookPoint(page,[.5,.7,.3],0);expect(point).not.toBeNull();
+ const held=page.locator(`[data-book-id="${point.id}"]`);
+ const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
+ await page.mouse.move(point.x,point.y);await page.mouse.down();await expect(held).toHaveClass(/is-lifted/);await quietShelf(scene);
+ const before=await poses();
+ const savedBefore=await page.evaluate(()=>localStorage.getItem('inhouse-read-shelf-physics-v1'));expect(savedBefore).not.toBeNull();
+ await page.evaluate(async({x,y,id})=>{
+  const node=document.querySelector(`[data-book-id="${id}"]`);
+  for(let frame=1;frame<=36;frame++){
+   node.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,pointerType:'mouse',buttons:1,clientX:x+frame*2,clientY:y-6*Math.min(1,frame/6),bubbles:true,cancelable:true}));
+   await new Promise(resolve=>requestAnimationFrame(resolve));
+  }
+ },point);
+ const during=await poses();
+ expect(await page.evaluate(()=>localStorage.getItem('inhouse-read-shelf-physics-v1'))).toBe(savedBefore);
+ await expect(held).toHaveClass(/is-dragging|is-lifted/);
+ const moved=during.filter(b=>b.id!==point.id&&b.id!=='motion:book:5').filter(b=>{const old=before.find(a=>a.id===b.id);return Math.abs(b.angle-old.angle)>.03||Math.abs(b.left-old.left)>3;});
+ console.info('NATIVE_BOOK_PUSH',JSON.stringify({id:point.id,before,during,moved:moved.map(b=>b.id)}));
+ expect(moved.length).toBeGreaterThan(0);
+ await page.mouse.move(point.x+72,point.y-6);await page.mouse.up();await quietShelf(scene);
+ const frames=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);expect(await scene.getAttribute('data-render-count')).toBe(frames);
+ const resting=await poses();
+ const saved=await page.evaluate(()=>localStorage.getItem('inhouse-read-shelf-physics-v1'));expect(saved).not.toBe(savedBefore);expect(JSON.parse(saved)[2]).toHaveLength(8);
+ await page.reload();await expect(page.locator('.ihr-spine')).toHaveCount(6);await quietShelf(page.locator('.ihr-bookshelf-scene'));
+ const reopened=await poses();
+ for(const actual of reopened){const old=resting.find(b=>b.id===actual.id);expect(actual.angle).toBeCloseTo(old.angle,5);expect(Math.abs(actual.left-old.left)).toBeLessThan(1);expect(Math.abs(actual.top-old.top)).toBeLessThan(1);}
+ await testInfo.attach('native-push-before-release',{body:JSON.stringify({point,before,during,moved,resting,reopened}),contentType:'application/json'});
 });

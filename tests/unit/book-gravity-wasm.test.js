@@ -4,7 +4,7 @@ import {rustShelf} from './helpers/rust-shelf-ready.js'
 function fixture(rows,metal=false){
  const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,metal,false,0);
  let clock=0;
- return {rows,step(frames=1,reduced=false,frameMs=1000/60){let output;
+ return {rows,snapshot:()=>solver.snapshot(),restore:value=>solver.restore(value),step(frames=1,reduced=false,frameMs=1000/60){let output;
   for(let frame=0;frame<frames;frame++){
    scene.beginEntries(clock,reduced,1,new Float64Array([0,0,0,1]),1,600,0,18);
    const states=new Float64Array(rows.length*37),geometry=new Float64Array(rows.length*9);
@@ -267,4 +267,66 @@ it('keeps unrelated shelves asleep through pickup, pushing, release and removal'
  for(let frame=1;frame<=30;frame++){rows[0].drag=frame*2;rows[0].dragY=-20;unchanged(f.step());}
  rows[0].flags=0;rows[0].x+=60;rows[0].drag=rows[0].dragY=0;unchanged(f.step());unchanged(f.step(600));
  rows[0].flags=1;unchanged(f.step());unchanged(f.step(600));f.free();
+});
+
+it('a normal deliberate drag pushes neighbours without needing an extremely slow gesture',()=>{
+ const f=fixture([book('hand',80,{flags:2,width:16}),...['a','b','c'].map((id,i)=>book(id,135+i*50,{flags:2,width:16}))]);
+ f.step(120);for(const b of f.rows.slice(1))b.flags=0;const before=f.step(60);
+ // 0.48 m/s is an ordinary ~200 px/s drag on a phone, not a rapid sweep.
+ for(let i=1;i<=10;i++){f.rows[0].drag=8*i;f.rows[0].dragY=-i;f.step();}
+ const after=f.step(180);
+ expect(after.slice(1).some((b,i)=>Math.abs(b.x-before[i+1].x)>4||Math.abs(b.angle-before[i+1].angle)>.08)).toBe(true);f.free();
+});
+it('slow movement restores resting contacts after a quick vertical pickup adjustment',()=>{
+ const f=fixture([book('hand',100,{flags:2}),book('support',119.5,{kind:1,width:20,height:200})]);
+ f.step(90);f.rows[0].dragY=-20;f.step();f.step(20);
+ for(let frame=1;frame<=30;frame++){f.rows[0].drag=frame*.5;f.step();}
+ const after=f.step(180);expect(after[0].x).toBeLessThan(100.4);expect(after[1].x).toBeCloseTo(119.5,3);f.free();
+});
+
+it('keeps an animated isometric pickup in its real depth plane and preserves deliberate contacts',()=>{
+ const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,false,true,0);
+ const q=[-.25,.32,.1,.91],norm=Math.hypot(...q),inverse=Float64Array.from(q,v=>v/norm);
+ const states=new Float64Array(74),geometry=new Float64Array(18),out=new Float64Array(8);
+ states.set([0,0,4,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,100,200,150,200,150,0]);
+ states.set([1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,119.5,200,150,200,150,0],37);
+ geometry.set([20,0,0,1000,0,600,300,10,0]);geometry.set([20,1,0,1000,0,600,300,10,0],9);
+ const step=frame=>{scene.beginEntries(frame*1000/60,false,1,inverse,1,600,0,18);solver.step(['hand','support'],states,geometry,scene,frame*1000/60,false,out);};
+ for(let frame=0;frame<=120;frame++)step(frame);
+ expect(states[5]).toBe(1);expect(Math.abs(out[1])).toBeLessThan(1);expect(states[31]).toBe(-75);expect(states[33]).toBe(Math.PI/2);
+ states[2]=6;
+ for(let frame=121;frame<=160;frame++){states[3]=(frame-120)*.5;step(frame);}
+ expect(100+out[1]).toBeLessThan(100.4);expect(100+out[1]).toBeGreaterThan(98);solver.free();scene.free();
+});
+
+it('slides down side contacts to the board instead of sleeping while wedged in mid-air',()=>{
+ const f=fixture([book('hand',150,{flags:2,width:20,height:160}),book('left',130.25,{kind:1,width:20,height:200}),book('right',169.75,{kind:1,width:20,height:200})]);
+ f.step(90);f.rows[0].dragY=-40;f.step(120);f.rows[0].flags=0;f.rows[0].dragY=0;
+ const rest=f.step(600)[0];console.info('SIDE_SUPPORT_REST',JSON.stringify(rest));
+ expect(rest.y+80).toBeGreaterThan(299);expect(rest.y+80).toBeLessThan(301);expect(rest.active).toBe(0);f.free();
+});
+
+it('restores a complete resting scene without reseeding its position or orientation',()=>{
+ const rows=()=>[book('a',100),book('b',140),book('pot',210,{kind:1,width:50,height:100})];
+ const first=fixture(rows()),before=first.step(600),saved=first.snapshot();expect(typeof saved).toBe('string');expect(first.snapshot()).toBeUndefined();first.free();
+ const reopened=fixture(rows());expect(reopened.restore(saved)).toBe(true);const after=reopened.step();
+ for(let i=0;i<after.length;i++){expect(after[i].x).toBeCloseTo(before[i].x,5);expect(after[i].y).toBeCloseTo(before[i].y,5);expect(after[i].angle).toBeCloseTo(before[i].angle,6);expect(after[i].active).toBe(0);}
+ expect(reopened.step(180)).toEqual(after);reopened.free();
+});
+it('restores UTF-16 identities distinctly, rejects malformed poses atomically and lets missing supports fall',()=>{
+ const rows=()=>[book('\ud800',100),book('\udfff',140),book('�',210,{kind:1,width:50,height:100})];
+ const original=fixture(rows()),before=original.step(600),saved=original.snapshot();original.free();
+ const names=JSON.parse(saved)[2].map(row=>row[0]);expect(new Set(names).size).toBe(3);
+ const same=fixture(rows());expect(same.restore(saved)).toBe(true);expect(same.restore('{bad')).toBe(false);expect(same.restore(JSON.stringify([1,[],[[1]]]))).toBe(false);expect(same.step().every(b=>b.active===0)).toBe(true);same.free();
+ const removed=fixture(rows().slice(0,2));expect(removed.restore(saved)).toBe(true);const after=removed.step(600);
+ expect(after.some((b,i)=>Math.abs(b.angle-before[i].angle)>.03)).toBe(true);expect(after.every(b=>b.active===0)).toBe(true);removed.free();
+});
+it('does not overwrite the complete saved scene while a book is held or in the reader',()=>{
+ const f=fixture([book('a',100),book('b',140)]);f.step(600);expect(typeof f.snapshot()).toBe('string');
+ f.rows[0].flags=2;f.step(180);expect(f.snapshot()).toBeUndefined();f.rows[0].flags=1;f.step(600);expect(f.snapshot()).toBeUndefined();f.free();
+});
+it('preserves real upward support on another object instead of forcing every book through it',()=>{
+ const f=fixture([book('hand',300,{flags:2,width:20,height:100}),book('slab',300,{kind:1,width:180,height:20})]);
+ f.step(90);f.rows[0].dragY=-25;f.step(120);f.rows[0].flags=0;f.rows[0].dragY=0;const rest=f.step(600)[0];
+ expect(rest.y+50).toBeGreaterThan(279);expect(rest.y+50).toBeLessThan(281);expect(rest.active).toBe(0);f.free();
 });

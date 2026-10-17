@@ -73,7 +73,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  let fragment=method(&document(),"createDocumentFragment",&[])?;
  let text=if count>0.0{format!("{} {}",ns(count),if count==1.0{"libro"}else{"libros"})}else{String::new()};
  let heading=screen_nodes::build_library_heading(&s(&text));append(&fragment,&heading);
- if pending.length()>0{append(&fragment,&screen_nodes::build_geometry_status(ctx,&pending.into())?);}
+ if pending.length()>0{append(&fragment,&screen_nodes::build_geometry_status(ctx,pending.as_ref())?);}
  if count==0.0{append(&fragment,&screen_nodes::build_library_empty(ctx)?);}
  let stage=screen_nodes::build_stage(ctx,width)?;
  let trash=get(&ctx.parts,"trashNode");let catalogue=get(&ctx.parts,"catalogNode");
@@ -102,6 +102,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  append(&ctx.scroller,&fragment);
  if ctx.st_true("useScene"){
   let layout=screen_plan::read_shelf_layout(ctx,&stage,width)?;
+  putb(&layout,"physicsReady",pending.length()==0);
   style_prop(&stage,"cssText",&format!("--ihr-cabinet-width:{}px",ns(width)));style_prop(&heading,"cssText","");
   for child in previous{remove(&child);}
   if truthy(&retained){method(&retained,"updateLayout",&[&layout])?;}else{ctx.st_set("shelfScene",&ctx.env("createBookshelfScene",&[&layout])?);}
