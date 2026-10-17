@@ -123,6 +123,7 @@ async fn remove_flight(ctx:&Rc<Ctx>,operation:&JsValue,node:&JsValue,rect_value:
  let landed=if truthy(&flying){wait_for_motion(&flying,duration).await?}else{true};
  if !landed{putb(operation,"cancelled",true);cls_remove(node,&["is-away"]);return Ok(());}
  if gb(operation,"cancelled")||ctx.st("trashRemoval")!=*operation||ctx.st_true("destroyed"){return Ok(());}
+ ctx.sound_of(15,0,0.7);
  // Delete the app's record only after the model has landed. External originals are managed by the application
  // callback and stay intact.
  putb(operation,"persisting",true);

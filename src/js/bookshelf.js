@@ -352,7 +352,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   });
   const shelfZoom = createShelfZoom({root,scroller,getScene:()=>state.shelfScene,
     isEnabled:()=>shelfNative.shelf_can_zoom(state),
-    onGestureStart:()=>shelfLifecycle.beginZoomGesture()});
+    onGestureStart:()=>shelfLifecycle.beginZoomGesture(),onSound:(kind,strength)=>playShelfSound(kind,0,strength,0)});
   if (trashStatus) root.append(trashStatus, trashAnnounce);
   const plantCatalog = createLazyPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
     onShelfChange:({ shelfType }, { whenClosed = run => run() } = {}) => {

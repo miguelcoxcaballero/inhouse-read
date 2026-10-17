@@ -233,8 +233,8 @@ describe('atomic offline app shell',()=>{
 
 describe('shell generation and registration',()=>{
   it('includes reader/worker/ORT/phon resources and excludes models, maps, dictionaries and update metadata',()=>{
-    for(const path of ['index.html','download-android.html','assets/worker-hash.js','assets/pdf.worker-hash.mjs','assets/image-hash.webp','neural-voice/ort/ort-wasm-simd-threaded.wasm','neural-voice/phon/piper_phonemize.data','licenses/piper.txt'])expect(isShellFile(path)).toBe(true)
-    for(const path of ['android-update.json','assets/main-hash.js.map','assets/voice.onnx','models/file.onnx','neural-voice/phon/dict/bg_dict','neural-voice/phon/README.md'])expect(isShellFile(path)).toBe(false)
+    for(const path of ['index.html','download-android.html','assets/worker-hash.js','assets/pdf.worker-hash.mjs','assets/image-hash.webp','neural-voice/ort/ort-wasm-simd-threaded.wasm','neural-voice/phon/piper_phonemize.data','licenses/piper.txt','sfx/atlas.json','sfx/atlas.bin'])expect(isShellFile(path)).toBe(true)
+    for(const path of ['android-update.json','assets/main-hash.js.map','assets/voice.onnx','models/file.onnx','neural-voice/phon/dict/bg_dict','neural-voice/phon/README.md','sfx/clips/book_set_t0.wav','sfx/CREDITS.txt'])expect(isShellFile(path)).toBe(false)
   })
   it('generates a deterministic standalone worker and changes the version when any runtime bytes change',async()=>{
     temp=await mkdtemp(join(tmpdir(),'ihr-offline-'));await mkdir(join(temp,'assets'))

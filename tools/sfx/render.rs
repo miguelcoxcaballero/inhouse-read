@@ -19,7 +19,7 @@ fn main(){
  let pots=["muskot","muskotblomma","akerbar","gradvis","muskot-small"];
  let mut list:Vec<(String,u32,u32,u32,u32)>=Vec::new();
  for (k,name) in [(0,"book-pickup"),(1,"book-cover-open"),(2,"switch-generic"),(14,"leaves-brush"),(15,"bin-drop"),(17,"book-pull-out"),(18,"book-slide-back"),
-  (19,"book-cover-close"),(20,"pages-flutter"),(21,"bookmark-ribbon"),(25,"leaves-settle"),(26,"soil-crumble"),(28,"bin-lid"),(29,"shelf-creak")]{list.push((name.into(),k,0,1,1));}
+  (19,"book-cover-close"),(20,"pages-flutter"),(21,"bookmark-ribbon"),(25,"leaves-settle"),(26,"soil-crumble"),(28,"bin-lid"),(29,"shelf-creak"),(31,"zoom-in"),(32,"zoom-out"),(33,"view-iso"),(34,"view-front")]{list.push((name.into(),k,0,1,1));}
  for (m,n) in ["tap","back","toggle"].iter().enumerate(){list.push((format!("ui-{n}"),30,m as u32,1,1));}
  for (m,n) in mats.iter().enumerate(){for (l,ln) in [(0,"soft"),(1,"medium"),(2,"hard")]{list.push((format!("impact-{n}-{ln}"),3,m as u32,1,l));}}
  for (m,n) in ["wood","metal"].iter().enumerate(){list.push((format!("book-slide-{n}"),4,m as u32,1,1));}

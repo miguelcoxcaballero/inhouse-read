@@ -21,8 +21,9 @@
 //! 20 pages flutter  21 bookmark ribbon  22 lamp jiggled [lamp]  23 light bloom [lamp]
 //! 24 lamp knocks a book [lamp]  25 leaves settle  26 soil crumbles  27 pot clinks a pot [pot]
 //! 28 bin lid  29 shelf board creaks  30 soft UI tap [0 tap, 1 back, 2 toggle]
+//! 31 zoom in  32 zoom out  33 view turns isometric  34 view turns straight (soft airy whooshes)
 use std::f64::consts::{PI,TAU};
-pub const KINDS:u32=31;
+pub const KINDS:u32=35;
 pub const RATE:f64=24000.0;
 /// Longest sound: 0.625 s, 60 KB as f32.
 pub const MAX_SAMPLES:usize=15000;
@@ -356,6 +357,9 @@ pub fn render(kind:u32,material:u32,variant:u32,level:u32)->Vec<f32>{
    let mut b=Mix::new(0.42);b.add(0.0,&puff(r,0.06,500.0),0.2);b.add(0.05,&strike(r,PLASTIC,0.55*size,0.75),0.85);
    b.add(0.1+0.02*r.unit(),&strike(r,PLASTIC,0.6,0.25),0.25);room(&mut b.0,0.16);finish(b.0,0.75,4200.0)}
   29=>{let mut b=Mix::new(0.48);b.add(0.0,&creak(r,0.42,60.0,140.0,0.85*size),1.0);room(&mut b.0,0.16);finish(b.0,0.42,3600.0)}
+  31..=34=>{ // soft airy whooshes: breath-like noise whose band drifts up (in, to isometric) or down (out, straight)
+   let up=kind==31||kind==33;let dur=if kind>=33{0.5}else{0.3};let mut b=Mix::new(dur+0.12);
+   b.add(0.0,&whoosh(r,dur*size,up),1.0);room(&mut b.0,0.18);finish(b.0,if kind>=33{0.45}else{0.38},4200.0)}
   _=>{ // 30 a soft tap under the finger
    let mut b=Mix::new(0.2);
    match material{1=>{b.add(0.0,&strike(r,WOOD,1.25,0.3),0.6);b.add(0.045,&strike(r,WOOD,1.1,0.22),0.4);}
@@ -363,6 +367,16 @@ pub fn render(kind:u32,material:u32,variant:u32,level:u32)->Vec<f32>{
     _=>b.add(0.0,&strike(r,WOOD,1.4*size,0.3),0.7)}
    b.add(0.0,&strike(r,LINEN,1.2,0.3),0.35);room(&mut b.0,0.08);finish(b.0,0.38,4000.0)}
  }
+}
+/// Air moving past: noise through a gentle band that drifts by about an octave, swelling and fading smoothly.
+fn whoosh(r:&Rng,dur:f64,up:bool)->Vec<f64>{
+ let n=len_of(dur);let mut out=vec![0.0;n];let (from,to):(f64,f64)=if up{(500.0,1300.0)}else{(1300.0,500.0)};
+ let mut f=Bq::bp(from,0.8);let mut l=Bq::lp(3000.0,0.7);
+ for (i,o) in out.iter_mut().enumerate(){
+  let x=i as f64/n as f64;if i%32==0{let z=(f.z1,f.z2);f=Bq::bp(from*(to/from).powf(x),0.8);f.z1=z.0;f.z2=z.1;}
+  *o=l.run(f.run(r.next()))*(PI*x).sin().powf(1.6);
+ }
+ normalized(out)
 }
 /// Light coming on: warm low-passed noise swelling and fading, no tone.
 fn bloom(r:&Rng,dur:f64)->Vec<f64>{

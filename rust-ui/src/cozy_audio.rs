@@ -1,54 +1,81 @@
-//! Short, deterministic foley. No running oscillator, audio thread or network
-//! asset survives a sound. The host caches these PCM variants and sleeps its
-//! AudioContext between interactions.
-struct Mode{a:f64,b:f64,y:f64,z:f64,gain:f64}
-impl Mode{
- fn new(hz:f64,decay:f64,gain:f64,rate:f64)->Self{
-  let angle=std::f64::consts::TAU*hz/rate;let r=(-1.0/(rate*decay)).exp();
-  Self{a:2.0*r*angle.cos(),b:r*r,y:0.0,z:-angle.sin()/r,gain}
- }
- fn tick(&mut self)->f64{let next=self.a*self.y-self.b*self.z;self.z=self.y;self.y=next;next*self.gain}
-}
-fn noise(seed:&mut u32)->f64{*seed^=*seed<<13;*seed^=*seed>>17;*seed^=*seed<<5;*seed as f64/2147483648.0-1.0}
-fn pulse(t:f64,start:f64,duration:f64)->f64{let q=(t-start)/duration;if !(0.0..1.0).contains(&q){0.0}else{q*(1.0-q).powi(3)*9.48}}
-/// 0 cloth/paper pickup, 1 opening, 2 switch, 3 material-dependent book impact.
-/// Material: 0 paper, 1 wood, 2 metal, 3 glass, 4 ceramic, 5 linen.
-pub fn synth(out:&mut[f32],kind:u32,material:u32,variant:u32,rate:f64){
- out.fill(0.0);if !(16000.0..=96000.0).contains(&rate)||out.len()>96000{return;}
- let mut seed=0x91e1_0da5_u32.wrapping_add(variant.wrapping_mul(0x9e37_79b9)).max(1);
- let jitter=1.0+noise(&mut seed)*0.018;
- let surface:&[(f64,f64,f64)]=match material{
-  1=>&[(172.0,0.065,0.16),(348.0,0.038,0.075),(706.0,0.022,0.025)],
-  2=>&[(532.0,0.09,0.055),(1278.0,0.065,0.027),(2243.0,0.038,0.014),(3267.0,0.025,0.006)],
-  3=>&[(823.0,0.11,0.045),(1667.0,0.075,0.024),(2903.0,0.045,0.012),(4091.0,0.03,0.004)],
-  4=>&[(383.0,0.08,0.07),(917.0,0.06,0.036),(1793.0,0.035,0.014)],
-  5=>&[(131.0,0.035,0.12),(237.0,0.025,0.04)],
-  _=>&[(123.0,0.055,0.13),(249.0,0.035,0.035)]};
- let mut modes:Vec<Mode>=if kind==3{surface.iter().map(|&(f,d,g)|Mode::new(f*jitter,d,g,rate)).collect()}
-  else if kind==2{vec![Mode::new(187.0*jitter,0.018,0.10,rate),Mode::new(1040.0*jitter,0.012,0.018,rate)]}
-  else{vec![Mode::new(142.0*jitter,0.045,0.033,rate),Mode::new(267.0*jitter,0.024,0.012,rate)]};
- if kind==3{modes.push(Mode::new(137.0*jitter,0.065,0.16,rate));}
- let (mut low,mut body)=(0.0,0.0);
- let a=1.0-(-std::f64::consts::TAU*if material==5{1400.0}else{4200.0}/rate).exp();
- let b=1.0-(-std::f64::consts::TAU*250.0/rate).exp();
- let duration=out.len() as f64/rate;
- for (i,sample) in out.iter_mut().enumerate(){
-  let t=i as f64/rate;low+=a*(noise(&mut seed)-low);body+=b*(low-body);let brush=low-body;
-  let (paper,bass)=match kind{
-   0=>(0.16*pulse(t,0.0,0.12)+0.04*pulse(t,0.035,0.10),1.0),
-   1=>(0.12*pulse(t,0.005,0.30)+0.075*pulse(t,0.13,0.28)+0.035*pulse(t,0.29,0.15),0.65),
-   2=>(0.14*pulse(t,0.0,0.018)+0.065*pulse(t,0.026,0.016),1.0),
-   _=>(0.11*pulse(t,0.0,0.045),1.0)};
-  let attack=(t/0.003).min(1.0);let fade=((duration-t)/0.025).clamp(0.0,1.0);
-  let value=(paper*brush+bass*modes.iter_mut().map(Mode::tick).sum::<f64>())*attack*fade;
-  *sample=(value/(1.0+value.abs()*0.7)) as f32;
+//! The shelf's sound events. Each event is (kind, material, level); the kinds and materials are listed in
+//! cozy_synth. The host plays a recorded clip from the sound atlas when `cozy_clip` names one it holds, and
+//! otherwise the deterministic synthesised fallback from `cozy_sound`. No oscillator, audio thread or loop runs
+//! here: both are short PCM buffers the host caches, and it sleeps its AudioContext between sounds.
+use crate::cozy_synth;
+
+/// Lamp identity used by the lamp kinds: 0 MITTLED, 1 tripod, 2 TÄRNABY (the lantern, also the default).
+pub fn lamp_index(id:&str)->u32{match id{"mittled"=>0,"tripod"=>1,_=>2}}
+/// Pot identity used by the plant kinds: 0 MUSKOT, 1 MUSKOTBLOMMA, 2 ÅKERBÄR, 3 GRADVIS, 4 the compact MUSKOT.
+pub fn pot_index(id:&str)->u32{match id{"muskotblomma"=>1,"akerbar"=>2,"gradvis"=>3,"muskot9"=>4,_=>0}}
+/// Volume of an event as the strength the host passes: soft below 0.33, medium below 0.66, otherwise hard.
+pub fn level_of(strength:f64)->u32{if !(strength>=0.33){0}else if strength<0.66{1}else{2}}
+
+const MATERIALS:[&str;6]=["paper","wood","metal","glass","ceramic","linen"];
+const LAMPS:[&str;3]=["mittled","tripod","tarnaby"];
+const POTS:[&str;5]=["muskot","muskotblomma","akerbar","gradvis","muskot"];
+/// What each lamp's base and each pot is made of, as a material of kind 3.
+const LAMP_BASE:[usize;3]=[2,1,2];
+const POT_MATERIAL:[usize;5]=[4,4,2,4,4];
+/// The atlas' generic lamp and pot families.
+const LAMP_FAMILY:[&str;3]=["plastic","wood","metal"];
+const POT_FAMILY:[&str;5]=["glazed","terracotta","zinc","glazed","glazed"];
+
+/// The atlas clip groups for an event, most specific first, comma separated. A group is a clip name without its
+/// take suffix (`book_set_wood` holds `book_set_wood_t0`, `book_set_wood_t1`…). The host plays a random take of
+/// the first group its atlas holds; an empty string (or no group present) means the synthesised sound.
+pub fn clip_groups(kind:u32,material:u32,level:u32)->String{
+ let level=level.min(2);let m=material as usize;
+ let surface=MATERIALS.get(m).copied().unwrap_or("wood");
+ let lamp=LAMPS.get(m).copied().unwrap_or("tarnaby");let pot=POTS.get(m).copied().unwrap_or("muskot");
+ let (lamp_family,pot_family)=(LAMP_FAMILY[m.min(2)],POT_FAMILY[m.min(4)]);
+ let impact=|name:&str|format!("impact_{name}_L{level},impact_{name}_L1");
+ match kind{
+  0=>"book_pickup".into(),
+  1=>"book_cover_open".into(),
+  2=>"switch_plastic,switch_ui".into(),
+  3=>if m<6{impact(surface)}else{String::new()},
+  4=>if m==1{"book_slide_metal,scrape_owl,scrape".into()}else{"book_slide_wood,scrape".into()},
+  5=>match m{0|1|5=>format!("book_set_{surface},book_set"),_=>format!("book_set_{surface},{}",impact(surface))},
+  6=>format!("lamp_{lamp}_switch_on,{}",if m==2{"switch_metal_click,switch_light_on"}else{"switch_light_on"}),
+  7=>format!("lamp_{lamp}_switch_off,{}",if m==2{"switch_metal_click,switch_light_off"}else{"switch_light_off"}),
+  8=>format!("lamp_{lamp}_move,lamp_move_{lamp_family},scrape"),
+  9=>format!("lamp_{lamp}_set,lamp_setdown_{lamp_family},{}",impact(MATERIALS[LAMP_BASE[m.min(2)]])),
+  10=>format!("lamp_{lamp}_fall,{}",if m==1{"lamp_fall_wood"}else{"lamp_fall_metal"}),
+  11=>format!("pot_{pot}_move,pot_move_{pot_family},scrape"),
+  12=>format!("pot_{pot}_set,pot_setdown_{pot_family},{}",if m==2{"metal_pot".into()}else{impact(MATERIALS[POT_MATERIAL[m.min(4)]])}),
+  13=>format!("pot_{pot}_fall,pot_fall"),
+  14=>"leaves_brush,leaves_rustle".into(),
+  15=>"bin_drop,paper_crumple".into(),
+  16=>"book_return,book_set".into(),
+  17=>"book_pull,book_pickup".into(),
+  18=>"book_slide_back,scrape".into(),
+  19=>"book_cover_close".into(),
+  20=>"book_flip,book_pageturn".into(),
+  21=>"bookmark_ribbon".into(),
+  22=>format!("lamp_{lamp}_jiggle{}",if m==2{",switch_metal_latch"}else{""}),
+  23=>format!("lamp_{lamp}_glow"),
+  24=>format!("lamp_{lamp}_knock,impact_paper_L{level}"),
+  25=>"leaves_settle,leaves_rustle".into(),
+  26=>"soil_crumble".into(),
+  27=>format!("pot_{pot}_clink,{}",if m==2{"metal_pot".into()}else{impact("ceramic")}),
+  28=>"bin_lid".into(),
+  29=>"creak".into(),
+  30=>match m{2=>"ui_toggle,toggle_ui".into(),_=>"ui_tap,switch_plastic,switch_ui".into()},
+  31=>"zoom_in".into(),
+  32=>"zoom_out".into(),
+  33=>"view_iso".into(),
+  34=>"view_front".into(),
+  _=>String::new(),
  }
 }
 
+/// The synthesised fallback at 24 kHz: (kind, material, variant 0..2, level 0..2). Unknown events are empty.
 #[wasm_bindgen::prelude::wasm_bindgen]
-pub fn cozy_sound(kind:u32,material:u32,variant:u32)->Vec<f32>{
- if kind>3||material>5{return Vec::new();}
- let length=match kind{0=>4320,1=>12000,2=>3840,_=>10800};
- let mut out=vec![0.0;length];synth(&mut out,kind,material,variant%3,24000.0);
- if let Some(last)=out.last_mut(){*last=0.0;}out
-}
+pub fn cozy_sound(kind:u32,material:u32,variant:u32,level:u32)->Vec<f32>{cozy_synth::render(kind,material,variant%3,level.min(2))}
+/// The atlas clip groups for an event (see `clip_groups`).
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn cozy_clip(kind:u32,material:u32,level:u32)->String{clip_groups(kind,material,level)}
+/// The level (0 soft, 1 medium, 2 hard) of an event played with `strength`.
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn cozy_level(strength:f64)->u32{level_of(strength)}
