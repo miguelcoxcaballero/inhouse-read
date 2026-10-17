@@ -31,7 +31,7 @@ export function createLampCatalogPreview(host) {
   };
   function render() {
     frame = 0;
-    if (disposed || !active || !renderer) return;
+    if (disposed || !active || !renderer || document.visibilityState === 'hidden') return;
     if (pending && !building) building = setTimeout(build);
     const tinting = model && shown ? tint.advance(performance.now()) : false;
     if (model && shown && tint.state.value.join() !== shownTint) { applyTint(); dirty = true; }
@@ -59,7 +59,7 @@ export function createLampCatalogPreview(host) {
     if (fixture) tintColor(fixture.color.set(model.userData.lightEmitter.color),tint.state.value);
   }
   function request() {
-    if (!disposed && active && !frame) frame = requestAnimationFrame(render);
+    if (!disposed && active && !frame && document.visibilityState !== 'hidden') frame = requestAnimationFrame(render);
   }
   function invalidate() { dirty = true; request(); }
   function removeModel() {
@@ -79,7 +79,7 @@ export function createLampCatalogPreview(host) {
   }
   function build() {
     building = 0;
-    if (disposed || !active || !pending) return;
+    if (disposed || document.visibilityState === 'hidden' || !active || !pending) return;
     const lamp = pending; pending = null;
     cancelLink?.(); cancelLink = null; shown = false;
     removeModel(); display.position.set(0,0,0);
@@ -139,6 +139,13 @@ export function createLampCatalogPreview(host) {
       cancelLink = null; shown = true; invalidate();
     });
   }
+  const visibilityChanged = () => {
+    if (document.visibilityState === 'hidden') {
+      if (frame) cancelAnimationFrame(frame); frame = 0;
+      if (building) clearTimeout(building); building = 0;
+    } else if (active) invalidate();
+  };
+  document.addEventListener('visibilitychange', visibilityChanged);
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true,alpha:true });
@@ -196,6 +203,7 @@ export function createLampCatalogPreview(host) {
       request();
     },
     dispose() {
+      document.removeEventListener('visibilitychange', visibilityChanged);
       if (disposed) return; disposed = true;
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);

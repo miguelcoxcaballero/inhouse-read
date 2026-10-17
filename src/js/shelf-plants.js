@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { idleWork } from './idle-startup.js';
 import { getRustDecorCore } from './rust-decor-core.js';
 import { needRustShelf } from './rust-shelf.js';
 import { openPacket } from './geo-packet.js';
@@ -53,8 +54,7 @@ function dataTexture(bytes, width, height, colorSpace, repeat) {
 // Full-resolution painting runs in idle slices, so the first plant of a kind
 // never blocks the frame that shows it; a coarse preview stands in meanwhile.
 const surfaces = new Map(), queue = [], settled = [], redraws = new Set();
-const idle = callback => typeof requestIdleCallback === 'function' ? requestIdleCallback(callback, { timeout:200 })
-  : setTimeout(() => callback({ timeRemaining:() => 0 }), 16);
+const idle = callback => idleWork(callback, { timeout:200,fallbackMs:16 });
 const SURFACE_ERROR = 'Las texturas de la planta no se pudieron calcular. Recarga la página.';
 const deferPlantPaint = createPlantPaintGate();
 

@@ -413,6 +413,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0;
   let reorderItems = [];
   let bookPresentationScheduled = false;
+  let pageSuspended = false;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
   // This separate modal gate never changes home/reader presentation ownership.
   let modalDeferredEntry = null, inactiveModalEntry = null, paintedModalView = null;
@@ -2058,7 +2059,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // Cheap readiness check between frames; the scene is only redrawn once ready.
   function pollPrograms() {
     programsPoll = 0;
-    if (disposed || programsReady === true) return;
+    if (disposed || programsReady === true || pageSuspended || document.visibilityState === 'hidden') return;
     if (!canPresent() && !hasOngoingMotion()) return;
     if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
   }
@@ -2066,6 +2067,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function draw(now = performance.now(), force = false) {
     raf = 0;
     if (disposed) return;
+    if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return; }
     if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
     if (!batchQuality) hideInspectionSnapshot();
@@ -2412,7 +2414,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
     drawPending = true;
-    if (!disposed && !raf && !paintHeld && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
+    if (!disposed && !raf && !paintHeld && !pageSuspended && document.visibilityState !== 'hidden' && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
   }
 
   function canDeferModalPaint() {
@@ -2454,7 +2456,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function canPresent() {
-    return presentationActive && document.visibilityState !== 'hidden';
+    return presentationActive && !pageSuspended && document.visibilityState !== 'hidden';
   }
 
   function canPreparePresentation() {
@@ -2476,7 +2478,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function presentationChanged() {
     if (disposed) return;
-    if (!canPresent() && !hasOngoingMotion()) {
+    if (pageSuspended || document.visibilityState === 'hidden' || !canPresent() && !hasOngoingMotion()) {
+      if (raf) drawPending = true;
       releaseUnusedNativeRoomFrames();
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
@@ -2504,6 +2507,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // in the same task, before MutationObserver's asynchronous notification.
     observeEntryChanges(mutations.takeRecords());
     if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); }
+    if (pageSuspended || document.visibilityState === 'hidden') return false;
     if (!force && (!canPresent() && !hasOngoingMotion() || canDeferModalPaint())) return false;
     if (!force && !drawPending && viewportChanged()) invalidate(true, false, 'viewport-sync');
     if (!force && !drawPending && !hasOngoingMotion()) return false;
@@ -2573,6 +2577,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style', 'disabled'] });
   scroller.addEventListener('scroll', scrolled, { passive:true });
   window.addEventListener('resize', invalidate, { passive:true });
+  const pageHidden = () => { pageSuspended = true; presentationChanged(); };
+  const pageShown = () => { pageSuspended = false; presentationChanged(); };
+  window.addEventListener('pagehide', pageHidden);
+  window.addEventListener('pageshow', pageShown);
   document.addEventListener('visibilitychange', presentationChanged);
   updateWoodTheme();
   draw();
@@ -2665,6 +2673,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setInspectionView(view,{moving=false,renderNow=false}={}) {
       if (disposed || !sceneView.canInspect()) return getInspectionView();
       sceneView.setInspection(view.zoom, view.panX, view.panY, Boolean(moving));
+      if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return getInspectionView(); }
       if (!sceneView.moving && inspectionQualityDirty) {
         inspectionQualityDirty = false; shadowDirty = true;
       }
@@ -3026,6 +3035,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       document.removeEventListener('visibilitychange', presentationChanged);
+      window.removeEventListener('pagehide', pageHidden);
+      window.removeEventListener('pageshow', pageShown);
       if (programsPoll) clearTimeout(programsPoll);
       clearTimeout(veneerTimer); clearTimeout(qualityPaintTimer); clearTimeout(qualityHoldTimer);
       for (const entry of bookEntries) releaseEntry(entry);

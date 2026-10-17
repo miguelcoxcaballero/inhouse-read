@@ -24,7 +24,7 @@ export function createShelfCatalogPreview(host) {
   };
   function render() {
     frame = 0;
-    if (disposed || !active || !renderer) return;
+    if (disposed || !active || !renderer || document.visibilityState === 'hidden') return;
     if (pending && !building) building = setTimeout(build);
     if (!model || !shown || !dirty) return;
     dirty = false;
@@ -43,7 +43,7 @@ export function createShelfCatalogPreview(host) {
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   }
   function request() {
-    if (!disposed && active && !frame) frame = requestAnimationFrame(render);
+    if (!disposed && active && !frame && document.visibilityState !== 'hidden') frame = requestAnimationFrame(render);
   }
   function invalidate() { dirty = true; request(); }
   function removeModel() {
@@ -76,7 +76,7 @@ export function createShelfCatalogPreview(host) {
   }
   function build() {
     building = 0;
-    if (disposed || !active || !pending) return;
+    if (disposed || document.visibilityState === 'hidden' || !active || !pending) return;
     const type = pending; pending = null;
     cancelLink?.(); cancelLink = null; shown = false;
     removeModel();
@@ -105,6 +105,13 @@ export function createShelfCatalogPreview(host) {
       cancelLink = null; shown = true; invalidate();
     });
   }
+  const visibilityChanged = () => {
+    if (document.visibilityState === 'hidden') {
+      if (frame) cancelAnimationFrame(frame); frame = 0;
+      if (building) clearTimeout(building); building = 0;
+    } else if (active) invalidate();
+  };
+  document.addEventListener('visibilitychange', visibilityChanged);
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true,alpha:true });
@@ -151,6 +158,7 @@ export function createShelfCatalogPreview(host) {
       request();
     },
     dispose() {
+      document.removeEventListener('visibilitychange', visibilityChanged);
       if (disposed) return; disposed = true;
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);

@@ -138,11 +138,19 @@ export function whenProgramsReady(renderer, scene, camera, object, done, { inter
   object.traverse(node => { if ((node.isMesh || node.isPoints || node.isLine) && node.material) meshes.push(node); });
   let ready, timer = 0, cancelled = false;
   try { ready = compilePrograms(renderer, scene, camera, meshes); } catch { ready = () => true; }
+  const owner = globalThis.document;
+  let parked = false;
+  const unpark = () => { if (parked) owner.removeEventListener('visibilitychange', wake); parked = false; };
+  const wake = () => { if (owner.visibilityState !== 'hidden') { unpark(); check(); } };
   const check = () => {
     timer = 0;
     if (cancelled) return;
+    if (owner?.visibilityState === 'hidden') {
+      if (!parked) { parked = true; owner.addEventListener('visibilitychange', wake); }
+      return;
+    }
     if (ready()) { cancelled = true; done(); } else timer = setTimeout(check, interval);
   };
   check();
-  return () => { cancelled = true; if (timer) clearTimeout(timer); timer = 0; };
+  return () => { cancelled = true; if (timer) clearTimeout(timer); timer = 0; unpark(); };
 }

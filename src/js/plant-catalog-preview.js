@@ -20,7 +20,7 @@ export function createPlantCatalogPreview(host) {
   };
   const render = () => {
     frame = 0;
-    if (disposed || !active || !renderer) return;
+    if (disposed || !active || !renderer || document.visibilityState === 'hidden') return;
     // A task after this frame: the pressed choice paints before the build.
     if (pending && !building && !incoming) building = setTimeout(build);
     if (!model || !dirty) return;
@@ -41,11 +41,11 @@ export function createPlantCatalogPreview(host) {
     if (renderer.info) retainPrograms(renderer);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   };
-  const request = () => { if (!disposed && active && !frame) frame = requestAnimationFrame(render); };
+  const request = () => { if (!disposed && active && !frame && document.visibilityState !== 'hidden') frame = requestAnimationFrame(render); };
   const invalidate = () => { dirty = true; request(); };
   function build(prepare = false) {
     building = 0;
-    if (disposed || (!active && !prepare) || !pending || incoming || !renderer) return;
+    if (disposed || document.visibilityState === 'hidden' || (!active && !prepare) || !pending || incoming || !renderer) return;
     const selection = pending; pending = null;
     const next = incoming = createShelfPlant({ ...selection,seed:`catalog:${selection.catalogId}` });
     next.userData.invalidate = invalidate; next.visible = false; scene.add(next);
@@ -57,6 +57,13 @@ export function createPlantCatalogPreview(host) {
       invalidate();
     });
   }
+  const visibilityChanged = () => {
+    if (document.visibilityState === 'hidden') {
+      if (frame) cancelAnimationFrame(frame); frame = 0;
+      if (building) clearTimeout(building); building = 0;
+    } else if (active) invalidate();
+  };
+  document.addEventListener('visibilitychange', visibilityChanged);
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
@@ -109,6 +116,7 @@ export function createPlantCatalogPreview(host) {
     /** Build the queued plant and link its shaders now, even while hidden. */
     prepare() { if (building) clearTimeout(building); build(true); },
     dispose() {
+      document.removeEventListener('visibilitychange', visibilityChanged);
       if (disposed) return; disposed = true;
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);

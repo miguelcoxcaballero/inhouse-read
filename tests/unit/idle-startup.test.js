@@ -46,3 +46,14 @@ describe('startup tasks belong to their document', () => {
     await vi.advanceTimersByTimeAsync(50); await pending; expect(order).toEqual([1,2]); expect(warning).toHaveBeenCalledOnce();
   });
 });
+
+it('parks optional work without background polling and rechecks a queued idle callback',async()=>{
+ let visibility='hidden';vi.spyOn(document,'visibilityState','get').mockImplementation(()=>visibility);
+ const complete=vi.fn();const pending=startup.idleSlice().then(complete);
+ expect(vi.getTimerCount()).toBe(0);await vi.advanceTimersByTimeAsync(60_000);expect(complete).not.toHaveBeenCalled();
+ document.dispatchEvent(new Event('visibilitychange'));expect(vi.getTimerCount()).toBe(0);
+ visibility='visible';document.dispatchEvent(new Event('visibilitychange'));expect(vi.getTimerCount()).toBe(1);
+ visibility='hidden';await vi.advanceTimersByTimeAsync(50);expect(complete).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
+ visibility='visible';document.dispatchEvent(new Event('visibilitychange'));await vi.advanceTimersByTimeAsync(50);
+ await pending;expect(complete).toHaveBeenCalledOnce();expect(vi.getTimerCount()).toBe(0);
+});
