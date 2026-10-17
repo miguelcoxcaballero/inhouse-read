@@ -1,3 +1,22 @@
+# 1.7.266 — operaciones atómicas de biblioteca en Rust
+
+Changelog: «Biblioteca en Rust y reposo más estable».
+Rust asume la creación del ID de origen, consulta por ID, detección de retiradas, mezcla de campos al abrir/importar, progreso, metadatos condicionados, portadas, retirada y asociación de subidas tardías de Drive. Se conserva el criterio para reconocer alias del mismo libro y la marca mínima de retirada, sin bytes, portada, texto ni estado de lectura. Una reimportación explícita restaura sus alias; una subida tardía no vuelve a ocultar un libro ya restaurado.
+
+Las lecturas, decisiones y escrituras permanecen en la misma transacción y esperan su confirmación como el original. Se carga el módulo antes de abrir una transacción de escritura; no se espera una descarga dentro de ella. La conexión inicial de IndexedDB, esquema 2, peticiones, promesas de confirmación, lecturas de listas, orden inicial y comparación de registros mantienen su adaptador actual. Estas dos últimas decisiones síncronas quedan para el siguiente bloque, para conservar el paralelismo del primer dibujo y las lecturas de mallas. No se presenta toda la biblioteca como ya migrada.
+
+La prueba real de arrastre detectó además un libro apoyado entre poste y maceta que conservaba ruido mínimo del solver y no dejaba dormir al renderizador. Rust reconoce ahora un apoyo cuya pose permanece dentro de 0,25 mm y 0,002 rad durante 0,75 s de simulación, y lo pone en reposo sin cambiar su pose. Desplazarse, empujar, levantar o retirar un apoyo reinicia esa ventana. No se congela una caída libre ni se modifica geometría, textura o resolución.
+
+Los helpers mantienen la evaluación perezosa de campos, null frente a undefined, plantillas de ID con UTF-16 y conversiones que pueden fallar. Se usa el módulo compartido ya cargado de UI o Shelf. No se crean callbacks Rust persistentes que retengan conexiones o bibliotecas.
+
+Build completo correcto. Las 50 pruebas específicas iniciales pasan en cinco archivos, incluidas sesiones con IndexedDB real de prueba comparadas con la clase congelada, bytes, guardas atómicas, retirada, alias/cuentas, reimportación, subidas tardías, conversiones/getters de ID y 30 ciclos de transacciones aceptadas/rechazadas sin handles retenidos.
+
+La batería general completa se ejecutó antes del ajuste final aislado de reposo físico, en cuatro bloques seriales: **6488 casos distintos**. Tras reverificar los siete archivos específicos (141 casos pasan sobre el mismo binario), quedan **6487/6488** verificados correctamente. Solo persiste el timeout de 5000 ms preexistente del corpus de 200 000 perfiles de color (6,31 s en esta ejecución), sin cambiar corpus, aserciones o límite. La otra discrepancia era una aserción de anchura anterior a la petición de 263: esperaba 11 en vez de 15,4. Se comprueba ahora el ancho un 40 % mayor con la misma precisión y todas las poses; no se cambia la geometría ni se relaja la comprobación de continuidad. Los hashes/corpus de compatibilidad siguen intactos. No hay fallos nuevos de biblioteca. Tras el ajuste final de física, 142 casos específicos pasan en siete archivos sobre el binario final: incluyen 18 casos físicos y el nuevo apoyo poste/maceta seguido de retirada y caída. No se repite la batería general para ese ajuste aislado; la biblioteca no cambia después de ella.
+
+Ocho E2E distintos pasan sobre el binario final en dos ejecuciones sin reintentos: colocación real de libro y planta con posiciones conservadas al recargar (39,4 s), seguida de siete casos en una ejecución (3,8 min). Cubren importación/reapertura PDF y EPUB, regreso nativo con framebuffer intacto, zoom sin repintados WebGL ni cambios de buffer durante el gesto y seis portadas a 1024 px, reposo tras soltar, empujón lento que mueve cuatro vecinos, enderezado y barrido rápido tranquilo, y papelera sin shaders nuevos ni reconstrucción de escena. Se revisa la captura del agarre vertical. La prueba de colocación había detectado la vibración de contacto corregida; conserva sus aserciones y límite original. No se cambian calidad o materiales.
+
+Inventario: 32832 líneas Rust / 20758 JavaScript, **61,27 %**; incluye comentarios y compatibilidad, no funciones terminadas. Se continúa con comparación/orden de registros, arranque y coordinación de la aplicación.
+
 # 1.7.265 — almacenamiento y nombres seleccionados en Rust
 
 Changelog: «Almacenamiento y nombres del lector en Rust».

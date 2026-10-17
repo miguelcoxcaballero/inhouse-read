@@ -128,9 +128,9 @@ describe('3D reading ribbon', () => {
       const ys = Array.from({ length:p.count }, (_, i) => p.getY(i)), low = Math.min(...ys);
       expect(Math.max(...ys)).toBeLessThanOrEqual(100 + 200 * .04);
       expect(low).toBeGreaterThan(previous); previous = low;
-      // The width never changes while it slides.
+      // The ribbon is 40% wider since 263 and never scales while it slides.
       const q = new THREE.Vector3(), r = new THREE.Vector3();
-      for (let i = 0; i < p.count; i += 4) expect(q.fromBufferAttribute(p, i).distanceTo(r.fromBufferAttribute(p, i + 1))).toBeCloseTo(ribbonWidth(132, 200, 40), 4);
+      for (let i = 0; i < p.count; i += 4) expect(q.fromBufferAttribute(p, i).distanceTo(r.fromBufferAttribute(p, i + 1))).toBeCloseTo(ribbonWidth(132, 200, 40) * 1.4, 4);
       // Wherever it is over the page, no segment of the sliding strip cuts under the paper.
       const c = sections(geometry);
       for (let i = 1; i < c.length; i++) {

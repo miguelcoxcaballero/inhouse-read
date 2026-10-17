@@ -10,7 +10,7 @@ use crate::scene_view::RustScene;
 const DT:f32=1.0/120.0;
 // Scene input bits: dragging or lifted; a simple press (8) leaves the library asleep.
 const HELD:u32=2|4;
-struct Book{handle:RigidBodyHandle,collider:ColliderHandle,base:[f64;4],size:[f64;3],held:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,contacting:bool,clearance:f32,bay:[f32;4]}
+struct Book{handle:RigidBodyHandle,collider:ColliderHandle,base:[f64;4],size:[f64;3],held:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,contacting:bool,clearance:f32,bay:[f32;4],quiet:Option<(Vector,f32,f32)>}
 fn overlapping(a:&RigidBody,sa:[f64;3],b:&RigidBody,sb:[f64;3])->bool{
  let pa=a.translation();let pb=b.translation();
  if (pa.z-pb.z).abs()>(sa[2]+sb[2]) as f32/2.0{return false;}
@@ -37,7 +37,7 @@ fn constrain(body:&mut RigidBody,size:[f64;3],bay:[f32;4]){
 #[wasm_bindgen]
 pub struct RustBookGravity{world:PhysicsWorld,books:BTreeMap<Vec<u16>,Book>,walls:Vec<RigidBodyHandle>,layout:Vec<f64>,last:Option<f64>,carry:f64,initialized:bool}
 impl RustBookGravity{
- fn wake(&mut self){for (_,body) in self.world.bodies.iter_mut(){if body.is_dynamic(){body.wake_up(true);}}}
+ fn wake(&mut self){for (_,body) in self.world.bodies.iter_mut(){if body.is_dynamic(){body.wake_up(true);}}for b in self.books.values_mut(){b.quiet=None;}}
  fn cabinet(&mut self,g:&[f64],metal:bool){
   let side=if metal{crate::cabinet::BAGGEBO.post_size/1000.0}else{12.0/0.65/1000.0};
   let board=if metal{crate::cabinet::BAGGEBO.shelf_rim_height/1000.0}else{15.0/0.65/1000.0};
@@ -130,7 +130,7 @@ impl RustBookGravity{
      .linear_damping(2.2).angular_damping(3.8).ccd_enabled(true);
     let (handle,collider)=self.world.insert(body,ColliderBuilder::cuboid((thickness/2.0) as f32,(h/2.0) as f32,(size[2]/2.0) as f32).density(650.0).friction(0.65).restitution(0.0).collision_groups(InteractionGroups::new(Group::GROUP_1,Group::ALL,InteractionTestMode::And)));
     let b=&mut self.world.bodies[handle];if kind==0&&!held{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
-    self.books.insert(key.clone(),Book{handle,collider,base,size,held:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,contacting:false,clearance:0.0,bay});changed=true;
+    self.books.insert(key.clone(),Book{handle,collider,base,size,held:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,contacting:false,clearance:0.0,bay,quiet:None});changed=true;
    }
    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
    if kind!=0{
@@ -180,7 +180,7 @@ impl RustBookGravity{
   for (key,contacting) in contacts{let b=self.books.get_mut(&key).unwrap();b.contacting=contacting;
    self.world.colliders[b.collider].set_collision_groups(InteractionGroups::new(Group::GROUP_1,if contacting{Group::ALL & !Group::GROUP_2}else{Group::empty()},InteractionTestMode::And));
   }
-  if changed{self.wake();}else if !disturbed.is_empty(){for b in self.books.values(){if disturbed.contains(&(b.base[2] as i64)){self.world.bodies[b.handle].wake_up(true);}}}
+  if changed{self.wake();}else if !disturbed.is_empty(){for b in self.books.values_mut(){if disturbed.contains(&(b.base[2] as i64)){self.world.bodies[b.handle].wake_up(true);b.quiet=None;}}}
   let has_books=self.books.values().any(|b|b.kind==0);
   let initial=has_books&&!self.initialized;if has_books{self.initialized=true;}
   // A saved library is already a resting scene at first paint. Solve its
@@ -217,13 +217,24 @@ impl RustBookGravity{
    self.world.step();
    // Quiet kinetic energy and exact cabinet bounds, independent of a thin
    // book's mass or the contact solver's tolerance. No bounce or fling.
-   for b in self.books.values(){if b.kind==0{
+   for b in self.books.values_mut(){if b.kind==0{
+    let supported=self.world.contact_pairs_with(b.collider).any(|pair|pair.has_any_active_contact());
     let body=&mut self.world.bodies[b.handle];
     if !b.held{
      body.set_linvel(body.linvel().clamp_length_max(0.4),false);
      body.set_angvel(body.angvel().clamp_length_max(1.8),false);
      constrain(body,b.size,b.bay);
-    }
+     if supported&&!body.is_sleeping(){
+      let position=body.translation();let angle=body.rotation().to_scaled_axis().z;
+      let quiet=b.quiet.get_or_insert((position,angle,0.0));
+      // Contact islands wedged against a post/pot can retain solver noise.
+      // Sleep only after a supported pose stays within 0.25 mm / 0.11 deg
+      // for 0.75 simulation seconds; drift/falling/pushing resets the window.
+      if (position-quiet.0).length_squared()>0.00025_f32.powi(2)||(angle-quiet.1).abs()>0.002{
+       *quiet=(position,angle,0.0);
+      }else{quiet.2+=DT;if quiet.2>=0.75{body.sleep();b.quiet=None;}}
+     }else{b.quiet=None;}
+    }else{b.quiet=None;}
    }}
    if warming&&n%16==15&&js_sys::Date::now()-warm_start>80.0{break;}
   }
