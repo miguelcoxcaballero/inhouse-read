@@ -28,4 +28,7 @@ mod app_refresh;
 mod app_actions;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_reader_preparation;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod book_customization;
