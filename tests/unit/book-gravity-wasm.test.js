@@ -225,3 +225,36 @@ it('eases an off-centre pickup without a sudden sideways or upward lurch',()=>{
   expect(upright.y+100).toBeLessThan(301);f.free();
  }
 });
+
+it('keeps the supporting bottom corner planted throughout a free fall on either shelf material',()=>{
+ for(const metal of [false,true])for(const direction of [-1,1]){
+  const f=fixture([book('hand',300,{flags:2,width:18})],metal);f.step(90);
+  for(let frame=1;frame<=30;frame++){f.rows[0].drag=direction*frame;f.step();}
+  const held=f.step(30)[0];Object.assign(f.rows[0],{flags:0,drag:0,x:300+direction*30});
+  const points=[];let final;
+  for(let frame=0;frame<600;frame++){
+   final=f.step()[0];const a=final.angle;
+   // The toe under a falling book must stay put; its centre necessarily
+   // follows an arc, so measuring only the centre would miss skating.
+   const toe=final.x+direction*9*Math.cos(a)+100*Math.sin(a);
+   points.push(toe);
+  }
+  const drift=Math.max(...points)-Math.min(...points);
+  console.log('TOE_DRIFT',JSON.stringify({metal,direction,drift,held,final}));
+  expect(final.angle*direction).toBeLessThan(-.7);expect(final.active).toBe(0);
+  expect(drift).toBeLessThan(1.5);f.free();
+ }
+});
+
+
+it('a careful pickup retains a shallow resting contact instead of crossing the adjacent support',()=>{
+ const f=fixture([book('hand',100,{flags:2}),book('support',119.5,{kind:1})]);
+ const before=f.step(90);
+ for(let frame=1;frame<=30;frame++){f.rows[0].drag=frame*3;f.step();}
+ const after=f.step(300);
+ // A fixed support isolates the contact being tested: it cannot topple
+ // before the push and turn this into a test of an unrelated initial fall.
+ expect(after[0].x).toBeLessThan(100.4);
+ expect(Math.abs(after[0].x-before[0].x)).toBeLessThan(2);
+ expect(after[1].x).toBe(before[1].x);f.free();
+});

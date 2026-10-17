@@ -152,8 +152,11 @@ async function visibleMiddleBookPoint(page, fractions=[.5,.65,.35]) {
   return page.evaluate(fractions => {
     const scroller = document.querySelector('.ihr-bookshelf__scroll').getBoundingClientRect();
     for (const node of document.querySelectorAll('.ihr-spine[data-shelf-index="1"]')) {
-      const rect = node.querySelector('[data-shelf-cover-hit]')?.getBoundingClientRect();
-      if (!rect) continue;
+      // The book's binding target is its native padded tap rectangle. A
+      // tilted cover's envelope also contains empty space; prefer the binding
+      // before considering the broader cover envelope.
+      const rectangles=[node.getBoundingClientRect(),node.querySelector('[data-shelf-cover-hit]')?.getBoundingClientRect()].filter(Boolean);
+      for(const rect of rectangles){
       const left = Math.max(rect.left, scroller.left, 8), right = Math.min(rect.right, scroller.right, innerWidth - 8);
       const top = Math.max(rect.top, scroller.top + 8), bottom = Math.min(rect.bottom, scroller.bottom - 8, innerHeight - 8);
       if (right - left <= 12 || bottom - top <= 20) continue;
@@ -163,6 +166,7 @@ async function visibleMiddleBookPoint(page, fractions=[.5,.65,.35]) {
         const x = left + (right - left) * fraction, y = (top + bottom) / 2;
         if (document.elementFromPoint(x, y)?.closest('.ihr-spine') === node)
           return { x, y, id:node.dataset.bookId };
+      }
       }
     }
     return null;
@@ -349,7 +353,7 @@ test('a released book settles against its neighbour and leaves the GPU idle',asy
 });
 
 
-test('legacy books settle on load and dragging one transfers motion to its neighbours',async({page},testInfo)=>{
+test('legacy books settle on load, standing neighbours topple and a fallen support stays planted',async({page},testInfo)=>{
  const scene=await seedShelf(page,{domino:true});
  const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
  const before=await poses();expect(before.some(b=>Math.abs(b.angle)>.03)).toBe(true);
@@ -367,7 +371,14 @@ test('legacy books settle on load and dragging one transfers motion to its neigh
  await quietShelf(scene);const after=await poses();
  await testInfo.attach('rigid-book-contact-poses',{body:JSON.stringify({before,after}),contentType:'application/json'});
  const neighbours=after.filter(b=>b.id!=='motion:book:0'&&b.id!=='motion:book:5');
- expect(neighbours.filter(b=>{const old=before.find(a=>a.id===b.id);return Math.abs(b.angle-old.angle)>.03||Math.abs(b.left-old.left)>3;})).toHaveLength(4);
+ // Every neighbour remains checked. The three standing volumes topple;
+ // the fourth was already lying down and now supplies a firm, non-sliding
+ // support. Requiring that flat book to slide would contradict the grip fix.
+ const standing=neighbours.filter(b=>Math.abs(before.find(a=>a.id===b.id).angle)<.25);
+ expect(standing).toHaveLength(3);
+ for(const b of standing){const old=before.find(a=>a.id===b.id);expect(Math.abs(b.angle-old.angle)>.03||Math.abs(b.left-old.left)>3).toBe(true);}
+ const supports=neighbours.filter(b=>!standing.includes(b));expect(supports).toHaveLength(1);
+ for(const b of supports){const old=before.find(a=>a.id===b.id);expect(Math.abs(b.angle-old.angle)).toBeLessThan(.01);expect(Math.abs(b.left-old.left)).toBeLessThan(1);expect(Math.abs(b.top-old.top)).toBeLessThan(1);}
  const renders=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);expect(await scene.getAttribute('data-render-count')).toBe(renders);
  await page.screenshot({path:testInfo.outputPath('book-domino-rigid-contacts.png')});
 });
@@ -401,18 +412,26 @@ test('pickup smoothly straightens a fallen book and a fast sweep leaves resting 
 test('real pointer releases tip both ways without coasting and the renderer sleeps afterwards',async({page},testInfo)=>{
  const samples=[];
  await page.addInitScript(()=>{
-  window.gripProof=[];
+  window.gripProof=[];window.toeProof=[];window.releaseDirection=0;
   const observe=result=>{
    const instance=result.instance||result,actual=instance.exports;
    if(typeof actual?.rustbookgravity_step!=='function')return result;
    const exports={...actual,rustbookgravity_step(...args){
-    const states=new Float64Array(actual.memory.buffer,args[2],args[3]);
-    const geometry=new Float64Array(actual.memory.buffer,args[5],args[6]);
+    const states=new Float64Array(actual.memory.buffer,args[2],args[3]).slice();
+    const geometry=new Float64Array(actual.memory.buffer,args[5],args[6]).slice();
     for(let i=0;i<geometry.length/9;i++)if(states[i*37+2]&6){
      window.gripProof.push(geometry[i*9+8]);
      if(window.gripProof.length>100)window.gripProof.shift();
     }
-    return actual.rustbookgravity_step(...args);
+    const result=actual.rustbookgravity_step(...args);
+    if(geometry.length===9&&window.releaseDirection&&!(states[2]&6)){
+     const out=new Float64Array(actual.memory.buffer,args[10],args[11]);
+     const angle=out[0],scale=geometry[3],width=geometry[0],height=states[26];
+     const toe=states[23]+out[1]+window.releaseDirection*width/2*Math.cos(angle)+height/2*Math.sin(angle);
+     const bottom=states[24]-out[2]+height/2*Math.abs(Math.cos(angle))+width/2*Math.abs(Math.sin(angle));
+     window.toeProof.push({angle,toe:toe/scale,gap:(geometry[6]-bottom)/scale});
+    }
+    return result;
    }};
    const observed=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});
    return result.instance?{...result,instance:observed}:observed;
@@ -436,7 +455,9 @@ test('real pointer releases tip both ways without coasting and the renderer slee
    }
   },{...point,direction});
   const before=await book.boundingBox();
-  await page.mouse.move(point.x+direction*24,point.y);await page.mouse.up();
+  await page.mouse.move(point.x+direction*24,point.y);
+  await page.evaluate(direction=>{window.releaseDirection=direction;window.toeProof=[]},direction);
+  await page.mouse.up();
   await expect(book).not.toHaveClass(/is-dragging|is-lifted/);
   await expect.poll(async()=>Number(await book.getAttribute('data-scene-lean'))*direction).toBeLessThan(-.5);
   await quietShelf(scene);
@@ -445,7 +466,13 @@ test('real pointer releases tip both ways without coasting and the renderer slee
   expect(await scene.getAttribute('data-render-count')).toBe(renders);
   const grips=await page.evaluate(()=>window.gripProof);
   expect(grips.length).toBeGreaterThan(0);expect(grips.some(value=>Math.abs(value)>.02)).toBe(true);
-  samples.push({direction,before,after,angle,grips});
+  const toes=await page.evaluate(()=>window.toeProof);
+  const planted=toes.filter(sample=>sample.gap<=.0015&&sample.gap>=-.0005);
+  // A software GPU can render only the final ground-contact frame. Keep
+  // the display samples as evidence; the 600-step WASM regression measures
+  // every contact throughout the fall rather than certifying one still pose.
+  const drift=planted.length>1?Math.max(...planted.map(sample=>sample.toe))-Math.min(...planted.map(sample=>sample.toe)):null;
+  samples.push({direction,before,after,angle,grips,toes,drift});
  }
  await testInfo.attach('finger-release-direction',{body:JSON.stringify(samples),contentType:'application/json'});
  await page.screenshot({path:testInfo.outputPath('directional-book-release.png')});
