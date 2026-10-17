@@ -83,6 +83,8 @@ impl Ctx{
  /// `env[name](...args)`.
  pub fn env(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(&self.env,name)?,name,args)}
  pub fn env_value(&self,name:&str)->JsValue{get(&self.env,name)}
+ /// Optional cosmetic transport: unavailable audio must never cancel a book action.
+ pub fn sound(&self,kind:f64,strength:f64){let _=method_opt(&self.env,"playShelfSound",&[&f(kind),&f(0.0),&f(strength),&f(0.0)]);}
  /// `legacy[name](...args)`: a function that still lives in the screen's JavaScript.
  pub fn legacy(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(&self.legacy,name)?,name,args)}
  pub fn st(&self,key:&str)->JsValue{get(&self.state,key)}

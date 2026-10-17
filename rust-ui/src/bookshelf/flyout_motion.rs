@@ -197,6 +197,7 @@ impl Flyout{
   put(&self.session,"coverOpeningDuration",&cover_duration);
   // The restored page is uploaded BEFORE its cover moves. Starting the hinge while the renderer loaded exposed a
   // blank, generic page block.
+  self.ctx.sound(1.0,0.8);
   let opening=if self.has_view(){
    method(&self.view,"animateCoverOpen",&[&obj(&[("duration",&cover_duration),("targetPose",&reading)])])?
   }else{

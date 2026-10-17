@@ -6,6 +6,39 @@ const BOOK_PREFIX = 'motion:book:';
 const LAMP_KEY = 'inhouse-read-shelf-lamps';
 const PLANT_KEY = 'inhouse-read-shelf-plants';
 const TARGET_URL = process.env.IHR_TEST_URL || '/';
+
+test('cozy sounds use native PCM for switches, pickup and opening and sleep afterwards',async({page})=>{
+ await page.addInitScript(()=>{
+  window.cozyProof={native:[],starts:[],contexts:[]};
+  const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.cozy_sound)return result;
+   const exports={...actual,cozy_sound:(...args)=>{window.cozyProof.native.push(args.slice(-3));return actual.cozy_sound(...args);}};
+   const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});return result.instance?{...result,instance:proxy}:proxy;};
+  for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args));};}
+  class AudioNode{gain={value:0,setTargetAtTime(){}};pan={value:0};connect(){}disconnect(){}}
+  class AudioContext{
+   state='running';currentTime=0;destination={};constructor(){window.cozyProof.contexts.push(this);}
+   createGain(){return new AudioNode();}createStereoPanner(){return new AudioNode();}
+   createBuffer(channels,length,rate){return {length,sampleRate:rate,pcm:null,copyToChannel(data){this.pcm=Array.from(data);}};}
+   createBufferSource(){const source=new AudioNode();let timer;
+    source.start=()=>{const b=source.buffer;if(b.length>1)window.cozyProof.starts.push({length:b.length,rms:Math.sqrt(b.pcm.reduce((s,x)=>s+x*x,0)/b.length)});timer=setTimeout(()=>source.onended?.(),b.length/b.sampleRate*1000);};
+    source.stop=()=>{clearTimeout(timer);setTimeout(()=>source.onended?.(),0);};return source;}
+   async suspend(){this.state='suspended';}async resume(){this.state='running';}async close(){this.state='closed';}
+  }window.AudioContext=AudioContext;
+ });
+ const scene=await seedShelf(page);
+ expect(await page.evaluate(()=>window.cozyProof.contexts.length)).toBe(0);
+ const lamp=page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');await lamp.tap();await quietShelf(scene);
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===2))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'))).toBe(true);
+ const point=await visibleMiddleBookPoint(page);expect(point).not.toBeNull();await page.touchscreen.tap(point.x,point.y);
+ const cover=page.locator('.ihr-flyout__cover-target');await expect(cover).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===0))).toBe(true);
+ await cover.click();await expect.poll(()=>page.evaluate(()=>window.cozyProof.native.some(a=>a[0]===1))).toBe(true);
+ await expect(page.locator('#reader-toolbar')).toBeVisible();
+ const starts=await page.evaluate(()=>window.cozyProof.starts);expect(starts.length).toBeGreaterThanOrEqual(3);
+ expect(starts.every(s=>s.rms>.002)).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.cozyProof.contexts.every(a=>a.state==='suspended'||a.state==='closed'))).toBe(true);
+});
 test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 });
 
 async function quietShelf(scene) {

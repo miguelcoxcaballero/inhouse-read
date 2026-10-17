@@ -164,7 +164,9 @@ describe('warm lamps in the retained shelf scene', () => {
   it('mounts a round light under the ceiling and stands the tabletop lamp on the board', () => {
     const data = layout(); mount(data);
     const table = gpu.scene.getObjectByName('lamp:tarnaby'), puck = gpu.scene.getObjectByName('lamp:mittled');
-    expect(table.position.y).toBe(-data.rows[0].bottom);
+    // Dynamic solids rest on the solver's 1 mm board clearance, rather
+    // than retaining an authored fixed transform through the surface.
+    expect(table.position.y).toBeCloseTo(-data.rows[0].bottom + 390 / 600,1);
     expect(puck.position.y).toBe(-data.rows[0].ceiling);
     // Both shelves are the same 250 mm deep unit: the underside diffuser
     // is centred on the board, like the BAGGEBO's.

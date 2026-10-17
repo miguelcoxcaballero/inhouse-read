@@ -10,6 +10,7 @@ use crate::scene_view::RustScene;
 use crate::decor_contacts::{Description,Solid};
 #[path="book_gravity_snapshot.rs"]mod snapshot;
 use snapshot::RestPose;
+#[path="book_gravity_audio.rs"]mod audio;
 struct GentleSideContacts;
 impl PhysicsHooks for GentleSideContacts{
  fn modify_solver_contacts(&self,context:&mut ContactModificationContext){
@@ -24,7 +25,7 @@ impl PhysicsHooks for GentleSideContacts{
 const DT:f32=1.0/120.0;
 // Scene input bits: dragging or lifted; a simple press (8) leaves the library asleep.
 const HELD:u32=2|4;
-struct Book{name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
+struct Book{sound_until:f64,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
 fn overlapping(a:&RigidBody,sa:[f64;3],b:&RigidBody,sb:[f64;3],resting:bool)->bool{
  let pa=a.translation();let pb=b.translation();
  if (pa.z-pb.z).abs()>(sa[2]+sb[2]) as f32/2.0{return false;}
@@ -53,7 +54,7 @@ fn constrain(body:&mut RigidBody,size:[f64;3],bay:[f32;4]){
  }
 }
 #[wasm_bindgen]
-pub struct RustBookGravity{world:PhysicsWorld,plane:RigidBodyHandle,books:BTreeMap<Vec<u16>,Book>,walls:Vec<RigidBodyHandle>,layout:Vec<f64>,last:Option<f64>,carry:f64,initialized:bool,saved:BTreeMap<Vec<u16>,RestPose>,saved_layout:Vec<f64>,snapshot_dirty:bool,snapshot_allowed:bool,solids:BTreeMap<Vec<u16>,Solid>,shape_cache:Vec<Solid>}
+pub struct RustBookGravity{world:PhysicsWorld,plane:RigidBodyHandle,books:BTreeMap<Vec<u16>,Book>,walls:Vec<RigidBodyHandle>,layout:Vec<f64>,last:Option<f64>,carry:f64,initialized:bool,saved:BTreeMap<Vec<u16>,RestPose>,saved_layout:Vec<f64>,snapshot_dirty:bool,snapshot_allowed:bool,solids:BTreeMap<Vec<u16>,Solid>,shape_cache:Vec<Solid>,sounds_enabled:bool,audio_velocities:std::collections::HashMap<ColliderHandle,audio::Velocity>,pending_sounds:Vec<f64>}
 impl RustBookGravity{
  fn intersects(&self,a:&Book,b:&Book,resting:bool)->bool{
   if !self.world.colliders[a.collider].is_enabled()||!self.world.colliders[b.collider].is_enabled(){return false;}
@@ -112,7 +113,7 @@ impl RustBookGravity{
     (right-side/2.0,(bottom+top)/2.0,side/2.0+0.0010,(top-bottom)/2.0)].into_iter().enumerate(){
     if index==1&&ceiling_owned{continue;}
     let (h,_)=self.world.insert(RigidBodyBuilder::fixed().translation(Vector::new(x as f32,y as f32,-0.15)),
-     ColliderBuilder::cuboid(hx as f32,hy as f32,0.6).friction(if index==0{1.2}else{0.65}).friction_combine_rule(if index==0{CoefficientCombineRule::Max}else{CoefficientCombineRule::Average}).collision_groups(InteractionGroups::new(Group::GROUP_2,Group::ALL,InteractionTestMode::And)));self.walls.push(h);
+     ColliderBuilder::cuboid(hx as f32,hy as f32,0.6).user_data(10+if metal{2}else{1}).friction(if index==0{1.2}else{0.65}).friction_combine_rule(if index==0{CoefficientCombineRule::Max}else{CoefficientCombineRule::Average}).collision_groups(InteractionGroups::new(Group::GROUP_2,Group::ALL,InteractionTestMode::And)));self.walls.push(h);
    }
   }
   self.layout=signature;self.wake();
@@ -129,7 +130,7 @@ impl RustBookGravity{
   world.integration_parameters.normalized_contact_recycle_distance=0.0005;
   world.integration_parameters.normalized_prediction_distance=0.0005;
   let plane=world.insert_body(RigidBodyBuilder::fixed());
-  Self{world,plane,books:BTreeMap::new(),walls:Vec::new(),layout:Vec::new(),last:None,carry:0.0,initialized:false,saved:BTreeMap::new(),saved_layout:Vec::new(),snapshot_dirty:false,snapshot_allowed:true,solids:BTreeMap::new(),shape_cache:Vec::new()}
+  Self{world,plane,books:BTreeMap::new(),walls:Vec::new(),layout:Vec::new(),last:None,carry:0.0,initialized:false,saved:BTreeMap::new(),saved_layout:Vec::new(),snapshot_dirty:false,snapshot_allowed:true,solids:BTreeMap::new(),shape_cache:Vec::new(),sounds_enabled:false,audio_velocities:std::collections::HashMap::new(),pending_sounds:Vec::new()}
  }
  /// Register the fitted solid before the first physics step. No meshes,
  /// leaves or per-frame hull construction cross into the contact solver.
@@ -150,7 +151,7 @@ impl RustBookGravity{
  }
  /// A hidden document resumes its existing poses, without simulating the
  /// elapsed time in the background as one expensive catch-up frame.
- pub fn pause(&mut self){self.last=None;self.carry=0.0;}
+ pub fn pause(&mut self){self.last=None;self.carry=0.0;self.pending_sounds.clear();self.audio_velocities.clear();}
  /// One batch across the WASM boundary. States use RustScene.stepEntry's 37
  /// numbers. Geometry: thickness, kind (book/plant/lamp/puck), row, pixels/metre,
  /// row left/right/bottom/ceiling, grip height as a fraction of book height. Output: angle, world dx/dy, active.
@@ -255,7 +256,7 @@ impl RustBookGravity{
     }
     let b=&mut self.world.bodies[handle];if kind==0&&!held{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
     let name=keys.get(i as u32);let name=if name.is_string(){name.unchecked_into::<JsString>()}else{JsString::from("")};
-    self.books.insert(key.clone(),Book{name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
+    self.books.insert(key.clone(),Book{sound_until:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }
    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
    if kind!=0{
@@ -421,7 +422,10 @@ impl RustBookGravity{
      body.add_torque(Vector::new(0.0,0.0,(240.0*error-18.0*body.angvel().z).clamp(-60.0,60.0)*inertia*crate::scene_view::ease((b.release_time as f64/0.16).min(1.0)) as f32),true);
     }
    }}
+   let sound_step=self.sounds_enabled&&!warming;
+   if sound_step{self.prepare_sound_contacts();}
    self.world.step_with_events(&GentleSideContacts,&());
+   if sound_step{self.record_sound_contacts(now);}
    // Quiet kinetic energy and exact cabinet bounds, independent of a thin
    // book's mass or the contact solver's tolerance. No bounce or fling.
    for b in self.books.values_mut(){if self.world.bodies[b.handle].is_dynamic(){

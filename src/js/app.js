@@ -1,3 +1,4 @@
+import {bindShelfSoundPreference} from './cozy-sounds.js'
 import { bookDataModule } from './book-data-native.js'
 import { library, takeFirstRawRecords } from './shelf-boot.js'
 import { version as APP_VERSION } from '../../package.json'
@@ -43,6 +44,7 @@ import { createProfileView } from './profile-view.js'
 
 const reader = new ReaderController()
 const profileView = createProfileView(document)
+const releaseShelfSoundPreference=bindShelfSoundPreference(document)
 
 const els = {
   homeScreen: document.getElementById('home-screen'),
@@ -221,6 +223,7 @@ addEventListener('pagehide', event => {
   if (event.persisted) return
   appDisposed = true
   profileView.destroy()
+  releaseShelfSoundPreference()
   nativeImportShelfGate.destroy()
   shelfRefreshQueue.dispose()
   clearTimeout(lengthRefreshTimer)
