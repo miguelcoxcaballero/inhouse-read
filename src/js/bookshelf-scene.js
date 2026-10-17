@@ -194,7 +194,7 @@ const darkPage = () => document.documentElement.dataset.theme === 'dark';
  * hit targets, projected from the meshes after every camera/group update.
  */
 export function createBookshelfScene({ stage, scroller, entries, rows, width, height, sceneWidth = width,
-  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1, settleBooks = true, batchQuality = true }) {
+  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1, settleBooks = true, batchQuality = true, physicsReady = true }) {
   shelfType = normalizeShelfType(shelfType);
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
@@ -310,6 +310,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
   const bookGravity = new rust.RustBookGravity();
+  const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
+  let physicsStarted = false;
+  if (settleBooks) { try { bookGravity.restore(localStorage.getItem(physicsStorageKey) || ''); } catch {} }
   let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0), physicsStates = new Float64Array(0);
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
@@ -1367,7 +1370,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const record of mutations.takeRecords()) { const entry = byNode.get(record.target); if (entry) entry.domDirty = true; }
     inverseTurn[0] = inverseRotation.x; inverseTurn[1] = inverseRotation.y; inverseTurn[2] = inverseRotation.z; inverseTurn[3] = inverseRotation.w;
     sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, window.devicePixelRatio, window.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
-    if (settleBooks) {
+    const usePhysics = settleBooks && (physicsReady || physicsStarted);
+    if (usePhysics) {
+      physicsStarted = true;
       if (gravityInput.length !== bookEntries.length * 9) {
         gravityInput = new Float64Array(bookEntries.length * 9); gravityOutput = new Float64Array(bookEntries.length * 4);
         physicsStates = new Float64Array(bookEntries.length * 37);
@@ -1401,7 +1406,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const away = entry.flags.away;
       // The lift, the preview and the landing ease, and the pose follows, in Rust.
       const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
-      if (settleBooks) stepIo.set(physicsStates.subarray(entryIndex * 37, (entryIndex + 1) * 37));
+      if (usePhysics) stepIo.set(physicsStates.subarray(entryIndex * 37, (entryIndex + 1) * 37));
       else {
         stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
         stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
@@ -1433,8 +1438,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfMoving ||= !away && Boolean(motion & 24);
       entry.pose.position.set(stepIo[29], stepIo[30], stepIo[31]);
       const gravityAt = entryIndex * 4;
-      if (settleBooks && !decorative && node) setData(node, 'sceneLean', gravityOutput[gravityAt].toFixed(6));
-      if (!decorative && settleBooks) {
+      if (usePhysics && !decorative && node) setData(node, 'sceneLean', gravityOutput[gravityAt].toFixed(6));
+      if (!decorative && usePhysics) {
         entry.pose.position.x = entry.x - width / 2 + gravityOutput[gravityAt + 1]; entry.pose.position.y = -entry.y + gravityOutput[gravityAt + 2];
         moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
         entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34] + gravityOutput[gravityAt], gravityOutput[gravityAt] === 0 ? 'XYZ' : 'ZYX');
@@ -1444,7 +1449,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
       const trashDrop = entry.trashDrop;
-      projectIo[0] = kind; projectIo[1] = entry.bits | (settleBooks && gravityOutput[entryIndex * 4 + 3] ? 16 : 0) | (settleBooks && Math.abs(gravityOutput[entryIndex * 4]) > .001 ? 32 : 0); projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
+      projectIo[0] = kind; projectIo[1] = entry.bits | (usePhysics && gravityOutput[entryIndex * 4 + 3] ? 16 : 0) | (usePhysics && Math.abs(gravityOutput[entryIndex * 4]) > .001 ? 32 : 0); projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
       projectIo[4] = entry.model ? 1 : 0; projectIo[5] = entry.overview ? 1 : 0; projectIo[6] = trashDrop?.complete ? 1 : 0;
       projectIo[7] = insertion?.overlayCanvas ? 1 : 0;
       projectIo.set(entry.box, 8); projectIo.set(projectedMatrix.elements, 14);
@@ -1532,7 +1537,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         let written = entry.written;
         if (written?.node !== node) written = entry.written = entryStyleCache(node);
         const style = node.style;
-        if (settleBooks && lamp && !undershelf && entry.model) {
+        if (usePhysics && lamp && !undershelf && entry.model) {
           entry.model.updateMatrixWorld(true);
           const clip = rust.scene_lamp_hit_hull(entry.model,tapLeft,tapTop);
           if (clip !== written.clip) style.clipPath = written.clip = clip;
@@ -2358,6 +2363,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'plantGeometry', 'catalog-3d');
     setData(canvas, 'animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
     lastSceneMoving = Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving);
+    if (settleBooks && physicsReady && !lastSceneMoving && !sceneView.moving &&
+      !bookEntries.some(entry => entry.insertion || entry.trashDrop || entry.landing || entry.preview.active)) {
+      const saved = bookGravity.snapshot();
+      if (saved !== undefined && saved !== null) { try { localStorage.setItem(physicsStorageKey, saved); } catch {} }
+    }
     paintedViewport = { width:window.innerWidth, height:window.innerHeight,
       ratio:window.devicePixelRatio || 1, clientHeight:scroller.clientHeight, scrollTop:scroller.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
@@ -2868,6 +2878,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     updateLayout(next) {
       if (disposed) return false;
+      physicsReady = next.physicsReady !== false;
       noteInspectionDirty('layout');
       // A fresh semantic layout already contains the current book records.
       inspectionEntryUpdates.clear(); canvas.dataset.inspectionPendingEntries = '0';

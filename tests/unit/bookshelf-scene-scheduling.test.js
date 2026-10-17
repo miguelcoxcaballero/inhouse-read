@@ -1,5 +1,6 @@
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import * as THREE from 'three';
+import { needRustShelf } from '../../src/js/rust-shelf.js';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 
 const gpu = vi.hoisted(() => ({ renderer:null,scene:null,holdQuality:false,decodes:[] }));
@@ -75,6 +76,19 @@ afterEach(() => {
 });
 
 describe('shelf presentation and synchronous projection scheduling',() => {
+  it('waits for complete book geometry before simulating or replacing saved poses',()=>{
+    shelf.dispose();localStorage.setItem('inhouse-read-shelf-physics-v1','last complete scene');
+    const step=vi.spyOn(needRustShelf().RustBookGravity.prototype,'step');
+    const options={stage,scroller,width:390,height:500,physicsReady:false,
+      rows:[{top:20,bottom:220}],entries:[{node,book:{id:'one'},style:{width:28},x:75,y:130,width:100,height:180,thickness:28}]};
+    shelf=createBookshelfScene(options);shelf.flush({force:true});drain();
+    expect(step).not.toHaveBeenCalled();expect(localStorage.getItem('inhouse-read-shelf-physics-v1')).toBe('last complete scene');
+    shelf.updateLayout({...options,physicsReady:true});shelf.flush({force:true});drain();expect(step).toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('inhouse-read-shelf-physics-v1'))[2]).toHaveLength(1);
+    const count=step.mock.calls.length;
+    shelf.updateLayout(options);shelf.flush({force:true});drain();expect(step.mock.calls.length).toBeGreaterThan(count);
+    localStorage.removeItem('inhouse-read-shelf-physics-v1');
+  });
   it('reuses a clean painted scene for repeated flush and docking-pose requests',() => {
     const original = model(), count = shelf.canvas.dataset.renderCount;
     const first = shelf.getReturnPose(node);

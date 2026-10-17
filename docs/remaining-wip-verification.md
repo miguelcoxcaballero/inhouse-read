@@ -1,3 +1,19 @@
+# 1.7.275 — empuje, reposo guardado y apoyos reales
+
+Changelog: «Libros estables al reabrir y al moverlos».
+
+El gesto real en isométrica exponía una diferencia entre la pose pintada y su cubo físico: invertir una elevación de pantalla en 3D y después descartar Z desplazaba el libro unos 26 mm lateralmente nada más cogerlo. La penetración resultante aislaba sus contactos. Rust invierte ahora la proyección XY del plano físico, eleva verticalmente y mantiene profundidad, escala y giro Y acordes con el collider. Se conserva la animación de enderezado y balanceo. Además, el umbral de barrido pasa de 0,35 a 0,8 m/s y un nuevo movimiento lento recupera contactos después de una corrección rápida; detener un barrido no activa contactos peligrosos. Las dos regresiones de velocidad fallaban con el WASM 274. La primera prueba de gesto nativo seguía fallando con ese arreglo aislado y motivó la corrección del plano; no se rebaja la aserción de empujar antes de soltar.
+
+La pose completa de reposo (centro y ángulo) se serializa y valida en Rust con identidades UTF-16 originales, firma del mueble y medidas/posición nominal de cada objeto. Una escena completa coincidente se restaura dormida desde el primer dibujo: no se vuelve a sembrar una inclinación. La inicialización espera a que todos los metadatos geométricos estén disponibles; arrastre, lectura y carga parcial nunca sustituyen la última escena completa. El host solo transporta una escritura localStorage por asentamiento real. Si falta un apoyo o cambia el mueble, se recalculan los contactos en lugar de conservar poses inválidas.
+
+Una regresión reproducía un libro colgado unos 41,4 mm por encima de la tabla entre dos vecinos. El hook de contactos Rust elimina la fricción de sus caras laterales casi verticales; el apoyo superior y el rozamiento sobre la leja se mantienen. El reposo exige una normal ascendente real o el pie sobre la tabla. Se prueba también un libro apoyado sobre otro objeto, que debe permanecer encima y no atravesarlo. Siguen pasando todas las aserciones anteriores de apoyo sin patinar, dominó, barrido tranquilo y aislamiento de otras lejas.
+
+Build completo: UI 2983788 B, Shelf 3402166 B, shell 109 archivos / 31070800 B. Pasan **171 pruebas en 17 archivos**, incluidas 33 físicas, restauración exacta, UTF-16, rechazo atómico de datos corruptos, retirada de apoyos, bloqueo del guardado durante lectura/agarre y espera de geometría. Las sesiones completas de interfaz heredada conservan sus aserciones.
+
+Diez E2E finales pasan en una sola ejecución sin reintentos. Incluyen carga fría/caliente, zoom (20 fotogramas del gesto sin nuevos dibujos GPU), seis portadas nítidas, luz cálida, contacto/dominó, barrido rápido, liberación real en ambos sentidos, suspensión/reanudación durante física activa y colocación/persistencia de libro y planta. La nueva sesión nativa empuja tres vecinos antes de soltar, comprueba que agarrar no sobrescribe el guardado y recarga después del asentamiento: cada libro mantiene ángulo (tolerancia 0,00001 rad) y posición visible (<1 px). El renderer vuelve a quedar inactivo. Captura de apoyos revisada.
+
+Colisionadores detallados de plantas/lámparas: WIP local separado bfec7769, todavía sin publicar ni pruebas finales. Los sonidos aún no están implementados ni publicados; se ha informado al usuario. El despliegue Pages de 274 está verificado; el de esta entrega se comprobará tras la publicación. Inventario **33467 líneas Rust / 20660 JavaScript = 61,83 %**, no funciones terminadas. No se modifican Android ni el actualizador.
+
 # 1.7.274 — menos trabajo físico y pausa real en segundo plano
 
 Changelog: «Menor consumo sin reducir calidad visual».
