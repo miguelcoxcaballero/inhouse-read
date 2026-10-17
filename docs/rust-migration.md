@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.264: recuento completo multilingüe, selección/limpieza de parsers, cola serial y metadatos compartidos UI/Shelf en Rust. 236 específicas finales y ocho E2E verificadas pasan; alcance de las dos ejecuciones y del escenario corregido en remaining-wip-verification.md. Inventario 60,93 %, no funciones terminadas. El contador agrupa respuestas Intl y conserva el contexto UTF-16; Drive no requiere cargar Shelf ni espera dentro de IDB. Siguiente: políticas de almacenamiento y coordinación de la aplicación. Conservar todos los WIP/stashes y ramas ready.
+
 Entrega 1.7.263: física tranquila, agarre vertical animado, límites reales de madera/BAGGEBO y cinta un 40 % más ancha situada en una sola página; todo en Rust. 114 específicas y seis E2E finales pasan. Inventario 60,35 %, no funciones terminadas. Después: retomar el WIP book-length y corregir la dependencia UI/Shelf de metadatos Drive y el coste de segmentación antes de publicar el contador. Conservar todos los worktrees/stashes.
 
 Entrega 1.7.262: estado, cambios de vista, actualizaciones diferidas y limpieza de la pantalla en Rust. 6465/6466 pruebas generales verificadas (queda el timeout de colores preexistente) y 12 E2E finales pasan. Inventario 60,29 %, no funciones completadas. Se conserva la destrucción repetida y se comprueban los escenarios estáticos por separado de las colisiones. Ver alcance de las pruebas en remaining-wip-verification.md.

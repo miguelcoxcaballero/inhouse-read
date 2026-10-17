@@ -354,19 +354,21 @@ test('legacy books settle on load and dragging one transfers motion to its neigh
  const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
  const before=await poses();expect(before.some(b=>Math.abs(b.angle)>.03)).toBe(true);
  await page.evaluate(async()=>{
-  const node=document.querySelector('[data-book-id="motion:book:4"]');node.classList.add('is-dragging');
+  const node=document.querySelector('[data-book-id="motion:book:0"]');node.classList.add('is-dragging');
   await new Promise(r=>requestAnimationFrame(r));
-  for(let frame=0;frame<30;frame++){
-   node.style.setProperty('--ihr-drag-x',`${-frame*4}px`);node.style.setProperty('--ihr-drag-y',`${18*Math.min(frame/10,1)}px`);
+  // Push toward the free half: the fallen leftmost volume may already touch
+  // the fixed post, which should stay fixed rather than satisfy a movement count.
+  for(let frame=0;frame<60;frame++){
+   node.style.setProperty('--ihr-drag-x',`${frame*160/59}px`);node.style.setProperty('--ihr-drag-y',`${18*Math.min(frame/10,1)}px`);
    await new Promise(r=>requestAnimationFrame(r));
   }
   node.classList.remove('is-dragging');node.style.removeProperty('--ihr-drag-x');node.style.removeProperty('--ihr-drag-y');
  });
  await quietShelf(scene);const after=await poses();
- const neighbours=after.filter(b=>b.id!=='motion:book:4'&&b.id!=='motion:book:5');
+ await testInfo.attach('rigid-book-contact-poses',{body:JSON.stringify({before,after}),contentType:'application/json'});
+ const neighbours=after.filter(b=>b.id!=='motion:book:0'&&b.id!=='motion:book:5');
  expect(neighbours.filter(b=>{const old=before.find(a=>a.id===b.id);return Math.abs(b.angle-old.angle)>.03||Math.abs(b.left-old.left)>3;})).toHaveLength(4);
  const renders=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);expect(await scene.getAttribute('data-render-count')).toBe(renders);
- await testInfo.attach('rigid-book-contact-poses',{body:JSON.stringify({before,after}),contentType:'application/json'});
  await page.screenshot({path:testInfo.outputPath('book-domino-rigid-contacts.png')});
 });
 
