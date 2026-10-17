@@ -55,9 +55,9 @@ async function quietShelf(scene) {
   }, { timeout:30_000 }).toBe(true);
 }
 
-async function seedShelf(page, {domino=false,single=false}={}) {
-  await page.addInitScript(({ lampKey, plantKey, domino, single }) => {
-    localStorage.setItem('inhouse-read-shelf-view', 'isometric');
+async function seedShelf(page, {domino=false,single=false,mode='isometric'}={}) {
+  await page.addInitScript(({ lampKey, plantKey, domino, single, mode }) => {
+    localStorage.setItem('inhouse-read-shelf-view', mode);
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
     localStorage.setItem(plantKey, JSON.stringify(single ? [] : [
       { key:'plant:motion', seed:'motion', catalogId:'sansevieria', variant:'sansevieria',
@@ -66,7 +66,7 @@ async function seedShelf(page, {domino=false,single=false}={}) {
     localStorage.setItem(lampKey, JSON.stringify(single ? [] : [
       { key:'lamp:motion', lampId:'tarnaby', shelf:1, x:.56, isOn:true }
     ]));
-  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino, single });
+  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino, single, mode });
   await page.goto(TARGET_URL);
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
@@ -105,7 +105,7 @@ async function seedShelf(page, {domino=false,single=false}={}) {
   await expect(page.locator('.ihr-plant')).toHaveCount(single ? 0 : 1);
   await expect(page.locator('.ihr-lamp')).toHaveCount(single ? 0 : 1);
   await expect(scene).toHaveAttribute('data-shelf-type', 'baggebo');
-  await expect(scene).toHaveAttribute('data-view-progress', '1');
+  await expect(scene).toHaveAttribute('data-view-progress', mode === 'isometric' ? '1' : '0');
   await quietShelf(scene);
   return scene;
 }
@@ -567,4 +567,25 @@ test('native dragging pushes neighbours and preserves the settled poses across r
  const reopened=await poses();
  for(const actual of reopened){const old=resting.find(b=>b.id===actual.id);expect(actual.angle).toBeCloseTo(old.angle,5);expect(Math.abs(actual.left-old.left)).toBeLessThan(1);expect(Math.abs(actual.top-old.top)).toBeLessThan(1);}
  await testInfo.attach('native-push-before-release',{body:JSON.stringify({point,before,during,moved,resting,reopened}),contentType:'application/json'});
+});
+
+for(const mode of ['isometric','spine'])test(`a ${mode} drop near a plant preserves every unselected slot and solid pose`,async({page},testInfo)=>{
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const scene=await seedShelf(page,{mode});const point=await visibleMiddleBookPoint(page,[.5,.7,.3],2);expect(point).not.toBeNull();
+ const slots=()=>page.locator('[data-object-id]').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.objectId,shelf:n.dataset.shelfIndex,x:n.dataset.shelfX})).sort((a,b)=>a.id.localeCompare(b.id)));
+ const solids=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('inhouse-read-shelf-physics-v1'))[2].filter(row=>row[1]!==0));
+ const before=await slots(),restingSolids=await solids();
+ const plant=page.locator('.ihr-plant'),bounds=await plant.boundingBox();expect(bounds).not.toBeNull();
+ const target={x:bounds.x+bounds.width*.5,y:bounds.y+bounds.height*.92};
+ await page.mouse.move(point.x,point.y);await page.mouse.down();
+ await expect(page.locator(`[data-book-id="${point.id}"]`)).toHaveClass(/is-lifted/);await quietShelf(scene);
+ await page.mouse.move(target.x,target.y);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ await expect(scene).toHaveAttribute('data-drop-shelf','0');
+ await page.mouse.up();await quietShelf(scene);
+ const after=await slots();
+ expect(after.find(o=>o.id===`book:${point.id}`).shelf).toBe('0');
+ for(const old of before.filter(o=>o.id!==`book:${point.id}`))expect(after.find(o=>o.id===old.id)).toEqual(old);
+ const settledSolids=await solids();
+ for(const old of restingSolids){const actual=settledSolids.find(row=>row[0]===old[0]);expect(actual[5]).toBeCloseTo(old[5],6);expect(actual[6]).toBeCloseTo(old[6],6);expect(actual[7]).toBeCloseTo(old[7],6);}
+ expect(errors).toEqual([]);await testInfo.attach('isolated-object-drop',{body:JSON.stringify({before,after,restingSolids,settledSolids}),contentType:'application/json'});
 });

@@ -54,6 +54,7 @@ impl RustBookGravity{
    row.push(&array(b.base));row.push(&array(b.size));row.push(&array(b.bay.map(|v|v as f64)));
    row.push(&JsValue::from_f64(p.x as f64));row.push(&JsValue::from_f64(p.y as f64));row.push(&JsValue::from_f64(angle as f64));row.push(&self.solids.get(&b.name.iter().collect::<Vec<u16>>()).map_or(JsValue::NULL,|s|JsValue::from_str(&s.description.signature())));rows.push(&row);
   }
-  root.push(&rows);let json=JSON::stringify(&root).ok()?.as_string()?;self.snapshot_dirty=false;Some(json)
+  root.push(&rows);let json=JSON::stringify(&root).ok()?.as_string()?;self.snapshot_dirty=false;
+  for b in self.books.values_mut(){b.restored=true;}Some(json)
  }
 }

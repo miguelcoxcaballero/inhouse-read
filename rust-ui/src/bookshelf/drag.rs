@@ -51,9 +51,13 @@ pub fn update_drop_preview(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
   ctx.scene_call("previewPlacements",&[&null()])?;
   return Ok(());
  }
- let destination=drop_position_at(ctx,gn(drag,"x"),gn(drag,"y"),node)?;
+ let destination=local_drag_destination(ctx,node,drop_position_at(ctx,gn(drag,"x"),gn(drag,"y"),node)?)?;
  put(drag,"destination",&destination);
  ctx.scene_call("setDropPosition",&[&destination])?;
+ if !truthy(&destination)&&get(&ctx.scene(),"physicalPlacement")==JsValue::TRUE{
+  ctx.cancel_frame_id(&get(drag,"previewFrame"));put(drag,"previewFrame",&f(0.0));
+  ctx.scene_call("previewPlacements",&[&null()])?;return Ok(());
+ }
  if truthy(&destination)&&!truthy(&get(drag,"previewFrame")){
   let (drag,node)=(drag.clone(),node.clone());
   let id=ctx.set_frame({let drag=drag.clone();move|ctx|{
