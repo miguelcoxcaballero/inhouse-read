@@ -4,6 +4,8 @@ import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 
 // A frame that changes nothing must leave the DOM alone, and a frame that
 // changes something must still leave it exactly as a full rewrite would.
+// This renderer fixture keeps authored book poses fixed. Real contact/settling
+// remains enabled in physics tests and mobile shelf-motion E2E scenarios.
 const gpu = vi.hoisted(() => ({ scene:null, renders:0, key:null }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
@@ -73,7 +75,7 @@ beforeEach(() => {
   const plant = { kind:'plant', node:plantNode, key:'plant:fixture', seed:'fixture', variant:'monstera', catalogId:'monstera', potId:'muskot',
     x:90, y:165, width:86, height:110 };
   layoutData = { stage, scroller, width:390, sceneWidth:390, height:750, rows, trashNode, catalogNode, entries:[...books, plant] };
-  shelf = createBookshelfScene(layoutData);
+  shelf = createBookshelfScene({ ...layoutData, settleBooks:false });
   shelf.canvas.getBoundingClientRect = () => { reads.canvas++; return shelf.canvas.closest('[hidden]') ? rect(0,0,0,0) : rect(20, 60, 390, 700); };
   shelf.flush(); flushFrames();
 });

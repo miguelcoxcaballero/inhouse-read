@@ -3,9 +3,10 @@ import {it,expect,beforeAll,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {normalizeSpeech} from '../../src/js/readers/speech-text.js'
-import {planSpeech} from './helpers/reference-speech-plan.js'
+import {planSpeech} from './helpers/paragraph-speech-oracle.js'
 import {makeCases,invoke,properties} from '../helpers/speech-plan-cases.js'
-// The oracle is the frozen JavaScript (reference-speech-plan.js over reference-speech-text.js), independent of Rust.
+// The untouched frozen planner receives the intentional paragraph policy through
+// the test-only adapter. The complete corpus, offsets and memory checks remain.
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const cases=makeCases(),blocks=Math.ceil(cases.length/100);let core,retained,capacity

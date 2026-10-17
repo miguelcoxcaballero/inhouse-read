@@ -130,12 +130,7 @@ import { readerBookTiming } from './reader-book-timing.js';
 import { persistablePosition } from './readers/persistable-position.js';
 import { needRustShelf } from './rust-shelf.js';
 
-const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
-const SHELF_TYPE_STORAGE_KEY = 'inhouse-read-shelf-type';
 
-function storedShelfType() { return needRustShelf().shelf_stored_type(shelfEnv); }
-function savedShelfPlants() { return needRustShelf().shelf_saved_plants(shelfEnv); }
-function savedShelfLamps() { return needRustShelf().shelf_saved_lamps(shelfEnv); }
 const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 
 export const DEFAULT_TEXTS = Object.freeze({
@@ -173,6 +168,7 @@ const DEFAULTS = Object.freeze({
 // replaced after the shelf was built is still the one called).
 const shelfEnv = {
   displayBookTitle: (...args) => displayBookTitle(...args),
+  getBookRenderer: (...args) => getBookRenderer(...args),
   canAdoptShelfMetadata: (...args) => canAdoptShelfMetadata(...args),
   planBookshelf: (...args) => planBookshelf(...args),
   batchSpineStyles: (...args) => batchSpineStyles(...args),
@@ -279,7 +275,6 @@ function prefersReducedMotion() {
   );
 }
 
-function storedShelfViewMode(fallback = SHELF_VIEW_MODES.SPINE) { return needRustShelf().shelf_stored_view(fallback); }
 function normalizeArgs(second, third) { return needRustShelf().shelf_normalize_args(second, third); }
 
 /* ------------------------------------------------------------------ *
@@ -308,53 +303,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const onOpen = options.onOpenBook || options.onBookOpen;
   const onPickLocal = options.onPickLocalFile || options.onAddBooks;
   const onDrive = options.onOpenDrive;
-  const savedPlants = savedShelfPlants();
-
-  const state = {
-    books: Array.isArray(books) ? books.slice() : [],
-    shelfWidth: 0,
-    metadataContext: null,
-    shelfType:options.shelfType ? normalizeShelfType(options.shelfType) : storedShelfType(),
-    busy: false,
-    session: null,
-    pendingSelection: null,
-    objectUrls: new Set(),
-    destroyed: false,
-    frame: 0,
-    coverAppearances: new Map(),
-    reliefProposals: new Map(),
-    appearanceTasks: new Map(),
-    itemsById: new Map(),
-    placementObjects: [],
-    plants: savedPlants || [],
-    lamps: savedShelfLamps(),
-    plantsInitialized: savedPlants !== null,
-    appearanceRefreshPending: false,
-    pressedBookId: null,
-    lastOpened: null,
-    returnMotion: null,
-    arranging: false,
-    dragSession: null,
-    trashRemoval: null,
-    trashStatusTimer: 0,
-    suppressOpenBookId: null,
-    suppressLampClickKey: null,
-    queuedBooks: null,
-    compatibilityTapTimer: 0,
-    pendingRemovals: new Set(),
-    renderQueued: false,
-    reorderTimer: 0,
-    appearancesReady: true,
-    appearanceGeneration: 0,
-    shelfScene: null,
-    presentationActive: true,
-    returningBookId: null,
-    returnSlotWaiter: null,
-    useScene: Boolean((globalThis.WebGLRenderingContext || globalThis.WebGL2RenderingContext) && getBookRenderer()),
-    viewMode: Object.values(SHELF_VIEW_MODES).includes(options.viewMode)
-      ? options.viewMode
-      : storedShelfViewMode()
-  };
+  const shelfNative = needRustShelf();
+  const state = shelfNative.shelf_screen_state(shelfEnv, books, options);
   const returnViews = createBookReturnCache();
   forgetBootPoster();
 
@@ -385,58 +335,31 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   root.append(scroller);
   const shelfViewGesture = createShelfViewGesture({ root, scroller,
     getMode:() => state.viewMode, setMode:setViewMode,
-    isEnabled:() => !state.destroyed && !state.busy && !state.session && !state.returnMotion &&
-      !state.trashRemoval && !state.arranging && (state.shelfScene?.getInspectionZoom?.() || 1) <= 1.001,
-    onGestureStart:event => {
-      if (state.dragSession) {
-        state.dragSession.cancelled = true;
-        finishSpineDrag(event, state.dragSession.node, true);
-      }
-      state.pressedBookId = null;
-      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed', 'is-press-pending');
-    }
+    isEnabled:() => shelfNative.shelf_can_change_view(state),
+    onGestureStart:event => shelfLifecycle.beginViewGesture(event)
   });
   const shelfZoom = createShelfZoom({root,scroller,getScene:()=>state.shelfScene,
-    isEnabled:()=>Boolean(state.shelfScene && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC &&
-      !state.busy && !state.session && !state.returnMotion && !state.trashRemoval),
-    onGestureStart:()=>{
-      if (state.dragSession) finishSpineDrag({pointerId:state.dragSession.pointerId},state.dragSession.node,true);
-      state.pressedBookId = null;
-      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed', 'is-press-pending');
-      state.shelfScene?.beginInspectionGesture?.();
-    }});
+    isEnabled:()=>shelfNative.shelf_can_zoom(state),
+    onGestureStart:()=>shelfLifecycle.beginZoomGesture()});
   if (trashStatus) root.append(trashStatus, trashAnnounce);
   const plantCatalog = createLazyPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
     onShelfChange:({ shelfType }, { whenClosed = run => run() } = {}) => {
-      state.shelfType = normalizeShelfType(shelfType);
-      try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); notifyCloudSettingsChanged(SHELF_TYPE_STORAGE_KEY); } catch { /* Local preference only. */ }
+      shelfLifecycle.setCatalogShelfType(shelfType);
       whenClosed(() => { if (!state.destroyed) render(); });
     },
     // The camera flies from the booklet in the room into the catalogue page.
     // The room is a scaled picture meanwhile: hold its repaints, whose
     // measurements would include that scale, until it is back in place.
     motionTarget:() => root.closest('.screen') || root,
-    onMotion:phase => { state.shelfScene?.setPaintHeld?.(phase === 'start'); } });
-  let catalogPrepare = 0;
+    onMotion:phase => shelfLifecycle.setCatalogMotion(phase) });
   // Fetch the catalogue when the shelf settles, but leave its GPU studio for
   // the first open, after the camera flight. Hidden PMREM/shader work competes
   // with shelf redraws even when scheduled in an idle callback.
-  function prepareCatalogWhenIdle(delay = 0) {
-    if (catalogPrepare || !catalogNodeEnabled() || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) return;
-    const run = () => { if (!state.destroyed) plantCatalog.prefetch(); };
-    const idle = () => typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout:4000 }) : setTimeout(run, 1500);
-    catalogPrepare = delay ? setTimeout(idle, delay) : idle();
-  }
-  function catalogNodeEnabled() { return !opts.sections; }
+  function prepareCatalogWhenIdle(delay = 0) { if (shelfCtxLive) shelfLifecycle.prepareCatalogWhenIdle(delay); }
   const catalogNode = !opts.sections ? el('button', {
     type:'button', class:'ihr-shelf-catalog', hidden:'', tabindex:'-1',
     'aria-label':'Abrir catálogo IKEA de plantas, estanterías e iluminación', title:'Catálogo · IKEA',
-    onClick:() => {
-      if (!state.busy && !state.session && !state.dragSession && !state.returnMotion && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) {
-        plantCatalog.setShelfType(state.shelfType);
-        plantCatalog.open(catalogNode);
-      }
-    }
+    onClick:() => shelfLifecycle.openCatalog()
   }, [el('span', { class:'ihr-shelf-catalog__brand', text:'IKEA', 'aria-hidden':'true' }),
     el('span', { class:'ihr-shelf-catalog__title', text:'PLANTAS', 'aria-hidden':'true' }),
     svgIcon(['M7 15h10l-1.5 7h-7L7 15Z', 'M12 15V4',
@@ -453,22 +376,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const savedCoverUrls = new Map();
   // The shelf screen's parts that live in the shelf module share this context: the state object, the
   // options and the functions of other modules they call.
-  const shelfNative = needRustShelf();
   // `legacy` holds what the shelf module still asks of this closure; it shrinks as those parts move.
-  const shelfCtx = new shelfNative.RustShelfCtx({ state, opts, options, env:shelfEnv, root, scroller, container,
-    onOpen, onPickLocal, onDrive, coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, catalogNode, legacy:{
+  const shelfParts = { state, opts, options, env:shelfEnv, root, scroller, container,
+    onOpen, onPickLocal, onDrive, coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, catalogNode, plantCatalog, shelfViewGesture, shelfZoom,
+    get observer() { return observer; },
+    get onViewportResize() { return onViewportResize; },
+    get onVisualViewportChange() { return onVisualViewportChange; }, legacy:{
     returnViews,
-    prepareInitialAppearances: () => prepareInitialAppearances(),
     syncShelfZoom: () => shelfZoom.sync(),
-    clearCompatibilityTapRefresh: () => clearCompatibilityTapRefresh(),
-    deferCompatibilityTapRefresh: () => deferCompatibilityTapRefresh(),
-    applyDeferredShelfUpdates: () => applyDeferredShelfUpdates(),
-    scheduleRender: () => scheduleRender(),
-    render: () => render(),
-    refresh: books => refresh(books),
-    measure: () => measure()
-  } });
+  } };
+  const shelfCtx = new shelfNative.RustShelfCtx(shelfParts);
   let shelfCtxLive = true;
+  const shelfLifecycle = shelfCtx.lifecycleCallbacks();
   if (showActions) {
     root.append(buildActionBar());
     root.classList.add('ihr-bookshelf--with-actions');
@@ -507,7 +426,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function shelfPadding() { return shelfCtx.shelfPadding(); }
 
 
-  function spineBodyView(body, item) { return shelfCtx.spineBodyView(body, item); }
 
   /* --------------------------- render --------------------------- */
 
@@ -519,17 +437,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   /** Los lomos tienen su grosor real (15-45 mm) a la escala de la balda. */
 
-  function setViewMode(mode) {
-    if (state.trashRemoval) return;
-    if (!Object.values(SHELF_VIEW_MODES).includes(mode) || state.viewMode === mode) return;
-    state.viewMode = mode;
-    try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); notifyCloudSettingsChanged(SHELF_VIEW_STORAGE_KEY); } catch { /* Preferencias no bloquean la biblioteca. */ }
-    prepareCatalogWhenIdle();
-    if (state.shelfScene) {
-      root.dataset.viewMode = mode;
-      state.shelfScene.setMode(mode); shelfZoom.sync();
-    } else render();
-  }
+  function setViewMode(mode) { if (shelfCtxLive) shelfLifecycle.setViewMode(mode); }
 
 
   // Rust owns the render transaction, rows and input bindings.
@@ -548,27 +456,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /* --------------------------- ciclo de vida --------------------------- */
 
   let observer = null;
-  const onViewportResize = () => {
-    finishReturnSlot(false);
-    returnViews.clear();
-    cancelTrashRemoval();
-    if (state.session?.handleViewportResize?.()) return;
-    if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
-    state.pendingSelection?.cancel();
-    state.session?.close({ instant:true, silent:true });
-    state.returnMotion?.cancel();
-    scheduleRender();
-  };
-  const onVisualViewportChange = () => { clearPlacementPreview(); state.session?.handleViewportResize?.(); };
+  const onViewportResize = () => { if (shelfCtxLive) shelfLifecycle.viewportResize(); };
+  const onVisualViewportChange = () => { if (shelfCtxLive) shelfLifecycle.visualViewportChange(); };
   window.addEventListener('resize', onViewportResize);
   window.visualViewport?.addEventListener('resize', onVisualViewportChange);
   window.visualViewport?.addEventListener('scroll', onVisualViewportChange);
   if (typeof ResizeObserver === 'function') {
-    observer = new ResizeObserver(() => {
-      const width = measure();
-      // Umbral: evita re-empaquetar por el scrollbar o por 1px de reflow.
-      if (Math.abs(width - state.shelfWidth) >= 8) { clearPlacementPreview(); scheduleRender(); }
-    });
+    observer = new ResizeObserver(() => { if (shelfCtxLive) shelfLifecycle.observedResize(); });
     observer.observe(scroller);
   }
 
@@ -578,19 +472,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   // its semantic buttons: rebuilding them here can detach a visible spine
   // between pointerdown/measurement and the following event. The legacy
   // canvas snapshots need only new artwork; DOM lettering reflows itself.
-  refreshCanvasFontsAfterPaint(() => {
-    if (state.destroyed || state.session || state.useScene) return;
-    for (const node of scroller.querySelectorAll('.ihr-spine')) {
-      const body = node.querySelector('.ihr-spine__body');
-      const item = state.itemsById.get(node.dataset.bookId);
-      if (!item || !body?.querySelector('canvas')) continue;
-      const replacement = el('span', { class:'ihr-spine__body', 'aria-hidden':'true' });
-      const view = spineBodyView(replacement, item);
-      if (!view) continue;
-      view.dispose(false);
-      body.replaceWith(replacement);
-    }
-  });
+  refreshCanvasFontsAfterPaint(() => { if (shelfCtxLive) shelfLifecycle.refreshFonts(); });
 
 
   /** Refresh decisions and metadata adoption live in Rust; the host keeps the public option shape. */
@@ -598,31 +480,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (shelfCtxLive) shelfCtx.refresh(nextBooks, defer);
   }
 
-  function clearCompatibilityTapRefresh() {
-    clearTimeout(state.compatibilityTapTimer);
-    state.compatibilityTapTimer = 0;
-  }
+  function clearCompatibilityTapRefresh() { if (shelfCtxLive) shelfLifecycle.clearCompatibilityTapRefresh(); }
 
-  function deferCompatibilityTapRefresh() {
-    clearCompatibilityTapRefresh();
-    state.compatibilityTapTimer = setTimeout(() => {
-      state.compatibilityTapTimer = 0;
-      applyDeferredShelfUpdates();
-    }, 0);
-  }
+  function deferCompatibilityTapRefresh() { if (shelfCtxLive) shelfLifecycle.deferCompatibilityTapRefresh(); }
 
-  function applyDeferredShelfUpdates() {
-    if (state.destroyed || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) return;
-    maybeRefreshAppearanceStyles();
-    if (state.queuedBooks) {
-      const nextBooks = state.queuedBooks;
-      state.queuedBooks = null;
-      refresh(nextBooks);
-    } else if (state.renderQueued) {
-      state.renderQueued = false;
-      scheduleRender();
-    }
-  }
+  function applyDeferredShelfUpdates() { if (shelfCtxLive) shelfLifecycle.applyDeferredShelfUpdates(); }
 
   // Non-WebGL pages: the white-paper variant sits under the reader's own canvas,
   // which fades over it (opacity 0 = white paper, 1 = the reading theme).
@@ -640,54 +502,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     queueRefresh:nextBooks => refresh(nextBooks, { defer:true }),
     update: refresh,
     returnToShelf: (bookId, returnOptions) => shelfCtxLive ? shelfCtx.returnToShelf(bookId, returnOptions) : Promise.resolve(false),
-    updateCloudRecord(record) { if (state.session?.book.id === record.id) state.session.updateCloudRecord?.(record); },
-    setPresentationActive(value) {
-      state.presentationActive = Boolean(value);
-      state.shelfScene?.setPresentationActive?.(state.presentationActive);
-    },
+    updateCloudRecord:record => shelfNative.shelf_update_cloud_record(state, record),
+    setPresentationActive:value => shelfNative.shelf_set_presentation_active(state, value),
     setReturningBook,
-    hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
+    hasReaderOrigin:bookId => shelfNative.shelf_has_reader_origin(state, bookId),
 
     /** Hands the page a lifted book will open on to its 3D model ahead of the tap. */
     prepareOpeningPage(bookId, snapshot, idle = () => new Promise(resolve => setTimeout(resolve, 0))) {
-      const session = state.session;
-      if (!session?.warmOpeningPage || session.cancelled || session.book.id !== bookId) return Promise.resolve(false);
-      return session.warmOpeningPage(snapshot, idle);
+      return shelfNative.shelf_prepare_opening_page(state, bookId, snapshot, idle);
     },
 
     /** Repliega la portada abierta, si la hay. */
     close() {
       finishReturnSlot(false);
-      state.pendingSelection?.cancel();
-      return state.session?.close() ?? Promise.resolve();
+      return shelfNative.shelf_public_close(state);
     },
 
     destroy() {
-      state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
-      state.destroyed = true;
-      finishReturnSlot(false);
-      clearCompatibilityTapRefresh();
-      returnViews.clear();
-      if (shelfCtxLive) shelfCtx.clearOpeningClick();
-      plantCatalog.destroy(); shelfViewGesture.destroy(); shelfZoom.destroy();
-      cancelTrashRemoval();
-      if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
-      state.pendingSelection?.cancel();
-      state.returnMotion?.cancel();
-      state.session?.close({ instant: true, silent: true });
-      if (state.frame) cancelAnimationFrame(state.frame);
-      if (shelfCtxLive) { shelfCtx.clearTimer(state.reorderTimer); shelfCtx.clearTimer(state.trashStatusTimer); }
-      observer?.disconnect();
-      state.shelfScene?.dispose();
-      window.removeEventListener('resize', onViewportResize);
-      window.visualViewport?.removeEventListener('resize', onVisualViewportChange);
-      window.visualViewport?.removeEventListener('scroll', onVisualViewportChange);
-      if (typeof URL?.revokeObjectURL === 'function') {
-        for (const url of state.objectUrls) URL.revokeObjectURL(url);
-      }
-      state.objectUrls.clear();
-      if (shelfCtxLive) shelfCtx.clearViewBindings();
-      root.remove();
+      shelfNative.shelf_destroy_dispatch(shelfParts, shelfCtxLive ? shelfLifecycle.destroy : null);
       if (shelfCtxLive) { shelfCtxLive = false; shelfCtx.free(); }
     }
   };

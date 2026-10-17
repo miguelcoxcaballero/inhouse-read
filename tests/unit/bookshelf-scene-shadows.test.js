@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 
+// This renderer fixture keeps authored book poses fixed. Real contact/settling
+// remains enabled in physics tests and mobile shelf-motion E2E scenarios.
 const gpu = vi.hoisted(() => ({ renderer:null, passes:null, key:null, samples:null }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
@@ -80,7 +82,7 @@ beforeEach(() => {
     return { node, book:{ id:String(index), title:`Book ${index}`, author:'Author' }, style:{ color:'#41694f', width:28 },
       x:44 + index % 5 * 72, y:rows[Math.floor(index / 5)].bottom - 90, width:100, height:180, thickness:28 };
   });
-  shelf = createBookshelfScene({ stage, scroller, width:390, sceneWidth:390, height:rows.at(-1).bottom + 35, rows, entries });
+  shelf = createBookshelfScene({ settleBooks:false, stage, scroller, width:390, sceneWidth:390, height:rows.at(-1).bottom + 35, rows, entries });
   shelf.canvas.getBoundingClientRect = () => rect(20, 60, 390, 700);
   scroll = 1300; shelf.flush(); flushFrames();
 });
@@ -294,6 +296,8 @@ describe('shelf shadows while scrolling', () => {
     expect(gpu.samples).toHaveLength(0);
     expect([detailed.width, detailed.height, overview.width, overview.height]).toEqual(dimensions);
     shelf.setInspectionView({...shelf.getInspectionView(),panX:100000},{moving:false,renderNow:true});
+    // Quality is committed after the final zoom's candidate promises settle.
+    await Promise.resolve(); flushFrames();
     expect(gpu.samples).toHaveLength(1);
     expect(detailed.style.display).toBe('none');
     expect(overview.style.display).toBe('none');
@@ -341,6 +345,7 @@ describe('shelf shadows while scrolling', () => {
     expect(shelf.canvas.dataset.inspectionCacheActive).toBe('true');
     expect(stage.querySelector('.ihr-bookshelf-inspection-overview').style.display).toBe('block');
     shelf.setInspectionView(shelf.getInspectionView(),{moving:false,renderNow:true});
+    await Promise.resolve(); flushFrames();
     expect(gpu.samples).toHaveLength(1);
     expect(nodes[30].classList.contains('is-pressed')).toBe(false);
     expect(shelf.canvas.dataset.animating).toBe('false');
@@ -362,6 +367,7 @@ describe('shelf shadows while scrolling', () => {
     expect(gpu.samples).toHaveLength(0);
     expect(frames.size).toBe(0);
     shelf.setInspectionView(shelf.getInspectionView(),{moving:false,renderNow:true});
+    await Promise.resolve(); flushFrames();
     expect(gpu.samples).toHaveLength(1);
     expect(shelf.canvas.dataset.inspectionCacheActive).toBe('false');
     gpu.samples = gpu.passes = null;

@@ -1,3 +1,18 @@
+# 1.7.262 — ciclo de vida de la estantería en Rust
+
+Changelog: «Ciclo de vida de la estantería en Rust».
+La inicialización del estado, cambios de vista, preparación diferida del catálogo, gestos, redimensionado, fuentes, actualizaciones aplazadas, acciones públicas y limpieza pasan a Rust. Los módulos nativos se llaman entre sí sin volver a los antiguos wrappers de JavaScript. El host conserva el registro de eventos DOM y los adaptadores de las APIs del navegador. La destrucción repetida conserva las llamadas de limpieza originales y libera el contexto nativo una sola vez; no se retiene otro contexto para llamadas posteriores. La revocación de URL recorre el Set vivo, como el original.
+
+Build completo correcto. Las 681 pruebas específicas se han comprobado en varias ejecuciones sobre el mismo binario, tras actualizar los escenarios de renderizado descritos a continuación. Incluyen sesiones enteras frente a la referencia congelada, destrucción repetida, regreso del lector y ciclos de apertura/cierre sin acumular handles ni callbacks.
+
+La batería ampliada detectó escenarios de renderizado que presuponían posiciones inmóviles. Se reprodujeron los mismos 41 fallos en ocho archivos de main 261. Estos escenarios conservan sus entradas y aserciones, pero usan settleBooks:false para aislar dibujo y picking; la simulación sigue activada de forma predeterminada y se verifica por separado. Las pruebas de sombras esperan ahora que terminen las promesas de calidad tras soltar el gesto, manteniendo el límite de un repintado. Otros escenarios estáticos de picking/papelera y la prueba puntual de solapamiento entre libro y foco recibieron el mismo aislamiento; las demás pruebas de lámparas conservan la física activada. El corpus completo del plan de voz usa el adaptador de párrafos intencional de 259 sobre sus referencias congeladas; se conservan todos los textos, índices y comprobaciones de memoria.
+
+La batería general completa se ejecutó en cuatro bloques seriales: 6466 pruebas distintas. Tras reverificar los cinco archivos ajustados (145 pruebas pasan en una ejecución), quedan **6465/6466** comprobadas correctamente sobre el mismo binario. Solo falla el timeout de 5000 ms ya documentado del perfil de 200 000 colores en cover-relief-job-wasm.test.js. No se amplía ese límite ni se reduce el corpus. Los casos de marcadores de página comprueban ahora los dos fragmentos separados por la línea vacía y el offset relativo correcto del segundo párrafo; se añade la comprobación de ausencia de marcador en el primero.
+
+Las 12 E2E finales pasan en una ejecución de Chromium sin reintentos (3,9 min): catálogo perezoso, apertura y retorno PDF conservando canvas/framebuffer, ausencia de repintados ocultos, bordes móviles de madera y BAGGEBO, límite de escritorio, pellizco iniciado sobre libro y calidad recuperada, luz encendida/apagada, reposo tras soltar, biblioteca antigua con cuatro vecinos movidos y cambio de estantería conservado al recargar. El servidor se crea desde este worktree; se desactiva su reutilización para evitar comprobar otro build.
+
+Inventario: 32102 líneas Rust / 21146 JS, **60,29 %**; incluye comentarios y compatibilidad, no mide funciones completadas. Siguiente: recuento completo de texto, cola de metadatos y resto de migración.
+
 # 1.7.261 — zoom y sustitución de calidad en Rust
 
 Changelog: «Zoom más fluido y portadas nítidas».

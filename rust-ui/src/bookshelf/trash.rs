@@ -26,7 +26,7 @@ pub fn cancel_trash_removal(ctx:&Rc<Ctx>)->R{
  ctx.st_set("trashRemoval",&null());ctx.st_set("busy",&JsValue::FALSE);
  cls_remove(&ctx.root,&["is-discarding"]);
  ctx.scene_call("flush",&[])?;
- ctx.legacy("applyDeferredShelfUpdates",&[])?;
+ super::screen_lifecycle::apply_deferred_updates(&ctx)?;
  Ok(())
 }
 
@@ -77,9 +77,9 @@ pub async fn remove_in_trash(ctx:Rc<Ctx>,node:JsValue,motion:JsValue,rect_value:
     let queued=ctx.st("queuedBooks");
     if truthy(&queued){
      ctx.st_set("queuedBooks",&null());
-     ctx.legacy("refresh",&[&queued])?;
-    }else{ctx.legacy("render",&[])?;}
-    ctx.legacy("applyDeferredShelfUpdates",&[])?;
+     super::screen_plan::refresh(&ctx,&queued,false)?;
+    }else{super::screen_render::render(&ctx)?;}
+    super::screen_lifecycle::apply_deferred_updates(&ctx)?;
    }
   }
   Ok(())
@@ -208,7 +208,7 @@ async fn remove_flight(ctx:&Rc<Ctx>,operation:&JsValue,node:&JsValue,rect_value:
   // built from state.books, dropping any book a sync queued in the meantime.
   let queued=ctx.st("queuedBooks");
   if truthy(&queued){ctx.st_set("queuedBooks",&restore(queued));}
-  else{ctx.legacy("refresh",&[&restore(ctx.st("books"))])?;}
+  else{super::screen_plan::refresh(&ctx,&restore(ctx.st("books")),false)?;}
   Ok(())
  })?;
  Ok(())

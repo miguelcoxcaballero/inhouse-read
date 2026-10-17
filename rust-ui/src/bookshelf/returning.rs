@@ -58,7 +58,7 @@ pub fn settle_return_slot(ctx:&Rc<Ctx>,before_render:bool)->R{
  // constructed the semantic slot yet. Full font matching is independent and never keeps this gate waiting.
  if !ctx.st_true("appearancesReady")||before_render{return Ok(());}
  let spine=spine_of(ctx,&wanted);
- let measured=num(&ctx.legacy("measure",&[])?)>0.0;
+ let measured=num(&f(super::screen_plan::measure(&ctx)))>0.0;
  let known=map_has(&ctx.st("itemsById"),&wanted);
  finish_return_slot(ctx,measured&&known&&spine.map(|node|is_connected(&node)).unwrap_or(false))
 }
@@ -121,7 +121,7 @@ impl Closing{
   if truthy(&self.view){method(&self.view,"dispose",&[])?;}
   remove(&self.flyout);
   if self.ctx.st("returnMotion")==self.motion{self.ctx.st_set("returnMotion",&null());}
-  self.ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&self.ctx)?;
   Ok(())
  }
  /// `releaseFrame?.()` as it stands, without forgetting it.
@@ -416,7 +416,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   // A queued layout paints the landed book itself. Keep the insertion owner alive until that paint instead of
   // drawing the old room first.
   closing.restore_spine(false)?;
-  ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&ctx)?;
   // With no queued layout, this flush still paints the restored spine.
   ctx.scene_call("flush",&[])?;
   if has_view{method(&view,"dispose",&[])?;}

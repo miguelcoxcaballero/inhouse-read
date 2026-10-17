@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
 import { minimumBookTapWidth } from '../../src/js/plant-dimensions.js';
 
+// Static renderer/picking fixture: physical contacts are covered with the
+// default simulation in book-gravity tests and the mobile motion suite.
 const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0, readyFor:null }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
@@ -130,7 +132,7 @@ beforeEach(() => {
   trashNode.getBoundingClientRect = () => rect(20 + parseFloat(trashNode.style.left),
     60 - scroll + parseFloat(trashNode.style.top), parseFloat(trashNode.style.width), parseFloat(trashNode.style.height));
   stage.append(bookNode, trashNode);
-  shelf = createBookshelfScene({ stage, scroller, width:390, sceneWidth:390, height:750,
+  shelf = createBookshelfScene({ settleBooks:false, stage, scroller, width:390, sceneWidth:390, height:750,
     rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], trashNode,
     entries:[{ node:bookNode, book:{ id:'a', title:'Book', author:'Author' }, style:{ color:'#3c6548', width:28 },
       x:60, y:130, width:100, height:180, thickness:28 }] });

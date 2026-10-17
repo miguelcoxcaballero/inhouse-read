@@ -299,3 +299,16 @@ describe('the lifted book against the frozen original', () => {
     expect(log.join('\n')).toContain('duration:1,')
   }, 60_000)
 })
+
+// Repeated route teardown must preserve the original cleanup calls while
+// releasing the native screen after the first destruction.
+it('cleans up a shelf repeatedly like the frozen screen', async () => {
+  const script = () => [
+    ['destroy screen', () => shelf.destroy()],
+    ['destroy same screen again', () => shelf.destroy()]
+  ];
+  const expected = await session(frozen, script);
+  const actual = await session(production, script);
+  expect(firstDifference(expected, actual)).toBeNull();
+  expect(document.querySelector('.ihr-bookshelf')).toBeNull();
+}, 60_000);

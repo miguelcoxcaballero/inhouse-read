@@ -72,8 +72,11 @@ describe('page-aware spoken fragments', () => {
     const raw = 'Lee [12] esta\n\n información y con\u00adtinúa aquí.'
     const cut = raw.indexOf('y con')
     const items = planSpeech(raw, {footnotes:false, pageBreaks:[cut, cut, -1, NaN, 9999]})
-    expect(items.map(item => item.text)).toEqual(['Lee esta información y continúa aquí.'])
-    expect(items[0].marks).toEqual([{offset:21,start:cut}])
+    // A blank line now ends the first utterance; its page marker belongs to
+    // the following paragraph at that paragraph's own normalized offset.
+    expect(items.map(item => item.text)).toEqual(['Lee esta.', 'información y continúa aquí.'])
+    expect(items[0].marks).toBeUndefined()
+    expect(items[1].marks).toEqual([{offset:12,start:cut}])
   })
   it('resumes inside the current page without repeating previous text', () => {
     const raw = 'Una frase que sigue aquí y acaba allá.'

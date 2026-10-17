@@ -146,7 +146,9 @@ describe('warm lamps in the retained shelf scene', () => {
     // A tall book right under the light: its top reaches into the switch's square.
     initial.entries.push({ node:book, book:{ id:'tall', title:'Alto' }, style:{ color:'#41694f', width:20, heightRatio:1.6 }, shelf:0,
       x:puckX, y:initial.rows[0].bottom - 100, width:120, height:200, thickness:20 });
-    const data = shelfModelLayout(initial,'walnut'); mount(data);
+    const data = shelfModelLayout(initial,'walnut');
+    // Keep this authored overlap fixed while testing which semantic surface wins.
+    data.settleBooks = false; mount(data);
     const node = data.entries[1].node;
     const lampBox = { left:parseFloat(node.style.left), top:60 + parseFloat(node.style.top),
       width:parseFloat(node.style.width), height:parseFloat(node.style.height) };

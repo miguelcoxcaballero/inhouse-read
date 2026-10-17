@@ -195,7 +195,7 @@ pub async fn add_catalog_lamp(ctx:Rc<Ctx>,request:JsValue,options:JsValue)->R<Js
  let after_ctx=ctx.clone();
  when_closed(&options,move||{
   if after_ctx.st_true("destroyed"){return Ok(());}
-  after_ctx.legacy("render",&[])?;
+  super::screen_render::render(&after_ctx)?;
   after_ctx.scene_call("animateFromRects",&[&old_rects])?;
   puts(&dataset(&after_ctx.root),"lastAddedLamp",&key);
   Ok(())
@@ -233,7 +233,7 @@ pub async fn add_catalog_plant(ctx:Rc<Ctx>,request:JsValue,options:JsValue)->R<J
  let after_ctx=ctx.clone();
  when_closed(&options,move||{
   if after_ctx.st_true("destroyed"){return Ok(());}
-  after_ctx.legacy("render",&[])?;
+  super::screen_render::render(&after_ctx)?;
   after_ctx.scene_call("animateFromRects",&[&old_rects])?;
   puts(&dataset(&after_ctx.root),"lastAddedPlant",&key);
   let added=qsa(&after_ctx.scroller,".ihr-plant").into_iter().find(|node|object_key(node)==s(&key));
@@ -362,11 +362,11 @@ pub fn persist_object_placement(ctx:&Rc<Ctx>,node:&JsValue,destination:&JsValue,
  then_map(&pending,Ok,|error|{warn("No se pudo guardar la posición en la estantería:",&error);Ok(undef())})?;
  ctx.clear_timeout(&ctx.st("reorderTimer"));
  ctx.st_set("reorderTimer",&f(-1.0));
- ctx.legacy("render",&[])?;
+ super::screen_render::render(&ctx)?;
  ctx.scene_call("animateFromRects",&[&old_rects,&obj(&[("draggedKey",&object_key(node))])])?;
  let timer=ctx.set_timeout(if prefers_reduced_motion(){0.0}else{560.0},|ctx|{
   ctx.st_set("reorderTimer",&f(0.0));
-  ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&ctx)?;
   Ok(())
  });
  ctx.st_set("reorderTimer",&timer);
