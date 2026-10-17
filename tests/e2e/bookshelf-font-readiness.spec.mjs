@@ -77,7 +77,7 @@ test('a real late font refreshes shelf lettering without replacing the focused b
           else resolve(); };
       };
     });
-  }, { bytes, id:BOOK_ID, geometry:settledGeometryLength(4, BOOK_ID) });
+  }, { bytes, id:BOOK_ID, geometry:await settledGeometryLength(4, BOOK_ID) });
 
   try {
     // A held font may delay window.load. The actual app must nevertheless

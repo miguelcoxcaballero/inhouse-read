@@ -340,7 +340,7 @@ pub fn cactus_geometry(length: f64, radius: f64, bend: f64, rng: &mut Rng) -> Bu
 }
 
 /// The profile of a pot, the unit radius and height of its wall, rim and inside (`potProfile`).
-fn pot_profile(pot_id: &str) -> Vec<[f64; 2]> {
+pub(crate) fn pot_profile(pot_id: &str) -> Vec<[f64; 2]> {
     if pot_id == "muskot" {
         // Broad lower horizontal bands, as on the real white MUSKOT.
         let mut profile = vec![[0.76, 0.0], [0.80, 0.025]];

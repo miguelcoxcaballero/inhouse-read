@@ -65,7 +65,7 @@ async function seedShelf(page, {domino=false,single=false}={}) {
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error);
     }); db.close();
-  }, { bytes, prefix:BOOK_PREFIX, geometry:settledGeometryLength(78_000, 'shelf-motion'), domino, single });
+  }, { bytes, prefix:BOOK_PREFIX, geometry:await settledGeometryLength(78_000, 'shelf-motion'), domino, single });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
   await expect(page.locator('.ihr-spine')).toHaveCount(single ? 1 : 6);

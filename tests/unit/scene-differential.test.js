@@ -3,6 +3,9 @@ import { createBookshelfScene as liveScene } from '../../src/js/bookshelf-scene.
 import { createBookshelfScene as frozen } from './helpers/reference-bookshelf-scene.js'
 import { runScenario } from './helpers/scene-differential.js'
 
+// The independent JS reference adopts the explicitly requested hidden-page
+// pause policy only; arithmetic, geometry, the 24 seeded scripts and strict
+// frame-by-frame comparisons remain intact.
 // New settling is enabled in production by default and covered by contact/idle
 // regressions. Keep the complete original scene corpus as an independent check
 // of the optional non-settling, immediate-paint API, without changing its frozen

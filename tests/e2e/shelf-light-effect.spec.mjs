@@ -23,7 +23,7 @@ test('la luz cálida ilumina las superficies de nogal y de la BAGGEBO abierta, y
     await new Promise(resolve => { transaction.oncomplete = resolve; }); db.close();
     localStorage.setItem('inhouse-read-shelf-view', 'isometric');
     localStorage.setItem('inhouse-read-shelf-plants', '[]');
-  }, { bytes, geometry:settledGeometryLength(30_000, 'shelf-light-effect') });
+  }, { bytes, geometry:await settledGeometryLength(30_000, 'shelf-light-effect') });
   const lamps = [
     { key:'lamp:pool', lampId:'mittled', shelf:0, x:.58 },
     { key:'lamp:retro', lampId:'tarnaby', shelf:1, x:.76 },

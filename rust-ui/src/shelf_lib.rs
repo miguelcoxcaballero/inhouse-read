@@ -12,6 +12,7 @@ mod scene_view;
 mod scene_frame;
 mod scene_entries;
 mod book_gravity;
+mod decor_contacts;
 mod scene_plan;
 mod scene_quality;
 mod scene_hit_hull;

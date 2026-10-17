@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { plantGeometrySpec } from './decor-geometry-spec.js';
 import { idleWork } from './idle-startup.js';
 import { getRustDecorCore } from './rust-decor-core.js';
 import { needRustShelf } from './rust-shelf.js';
@@ -9,9 +10,8 @@ import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
 import { rustPlantSoilRows } from './plant-soil-wasm.js';
 import { rustPlantFoliageRows } from './plant-foliage-wasm.js';
-import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
-import { resolveCatalogPlant } from './plant-records.js';
-import { plantDimensions, POT_SOIL_FRACTION } from './plant-dimensions.js';
+import { getPotColor } from './plant-catalog-data.js';
+import { POT_SOIL_FRACTION } from './plant-dimensions.js';
 import { addShelfBakeSource, loadedShelfBakes, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
 const srgb = hex => { const n = parseInt(hex.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
@@ -191,7 +191,6 @@ const cactusMaterial = () => new THREE.MeshStandardMaterial({ color:0xffffff, ve
 const needleMaterial = () => new THREE.LineBasicMaterial({ color:'#d9cda9', transparent:true, opacity:.8 });
 
 /** Scene units per millimetre of a plant shown without a shelf (the catalogue preview). */
-const PREVIEW_SCALE = .5;
 
 // A bake is the finished plant content as plain data: every object in its
 // creation order (ids decide the draw order of equal sort keys), its parent
@@ -309,12 +308,8 @@ addShelfBakeSource({ collect:shelfPlantBakeRecord, settled:plantSurfacesReady })
  */
 export function createShelfPlant(entry, { persist = false } = {}) {
   const quality = entry.inspectionResolution ? 2 : 1;
-  const catalogPlant = resolveCatalogPlant(entry);
+  const {catalogPlant,potId,potModelId,real,height,unit}=plantGeometrySpec(entry);
   const variant = variantFor(catalogPlant?.variant || entry.variant), seed = entry.seed ?? entry.key ?? entry.node?.dataset.objectId ?? variant;
-  const potId = getCatalogPot(entry.potId)?.id ?? catalogPlant?.defaultPotId ?? null;
-  const potModelId = getCatalogPot(potId)?.modelId || potId;
-  const real = plantDimensions(catalogPlant.id, potId);
-  const height = Math.max(1, Number(entry.height) || real.height * PREVIEW_SCALE), unit = height / real.height;
   // The canopy and the pot share one mm scale, including the pot's outer rim.
   const width = real.canopy * unit;
   const detailed = Boolean(catalogPlant || potId || ['palm','fern','ivy','zz'].includes(variant));

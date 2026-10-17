@@ -71,7 +71,7 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
       coverAppearance:{color:'#2350b5',shade:'#152f6c',ink:'#fffaf0',aspectRatio:1.5,fontFamily:'Lora',fontCanvasFamily:'Lora',source:'cover'},
       coverAppearanceKey:`${id}|${title}|${cover.type}|${cover.size}|`,spineColorOverride:'#2350b5'});
     await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
-  },{bytes,geometry:settledGeometryLength(4,'palette-editor'),colors});
+  },{bytes,geometry:await settledGeometryLength(4,'palette-editor'),colors});
   await page.reload();await page.waitForFunction(()=>window.paletteProof?.available);
   const spine=page.locator('.ihr-spine').first();
   const cards=page.getByRole('group',{name:'Propuestas de relieve'}).getByRole('checkbox');

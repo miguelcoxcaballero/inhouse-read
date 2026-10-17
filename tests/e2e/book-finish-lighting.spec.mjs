@@ -151,7 +151,7 @@ test('mate, satinado y brillante cambian el libro real en la estantería, reflej
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
     localStorage.setItem('inhouse-read-shelf-plants', '[]');
     localStorage.setItem(lampKey, JSON.stringify([{ key:'lamp:finish-retro', lampId:'tarnaby', shelf:0, x:.72, isOn:false }]));
-  }, { bytes, id:BOOK_ID, lampKey:LAMP_KEY, geometry:settledGeometryLength(120_000, BOOK_ID) });
+  }, { bytes, id:BOOK_ID, lampKey:LAMP_KEY, geometry:await settledGeometryLength(120_000, BOOK_ID) });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene'), spine = page.locator(`.ihr-spine[data-book-id="${BOOK_ID}"]`);
   const lamp = page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');

@@ -39,7 +39,7 @@ async function seedShelf(page) {
       addedAt:Date.now(), lastOpenedAt:Date.now() - index, progressFraction:0
     });
     await new Promise(resolve => { transaction.oncomplete = resolve; }); db.close();
-  }, { bytes, geometry:settledGeometryLength(30_000, 'lamp-switches') });
+  }, { bytes, geometry:await settledGeometryLength(30_000, 'lamp-switches') });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
   await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:30_000 });

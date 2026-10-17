@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {plantGeometrySpec,lampGeometrySpec} from './decor-geometry-spec.js';
 import {projectPlantFoliage} from './foliage-projection.js';
 import { configureShelfRendererSize } from './shelf-renderer-size.js';
 import { shelfPixelOffset } from './shelf-pixel-origin.js';
@@ -1382,6 +1383,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry.domDirty) { entry.domDirty = false; entry.state = stateFor(entry); }
         const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
         const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
+        if ((plant || lamp) && !undershelf) {
+          const stamp = [entry.height,entry.width,entry.catalogId,entry.variant,entry.potId,entry.lampId,pixelsPerMetre].join('|');
+          if (entry.collisionStamp !== stamp) {
+            entry.collisionStamp = stamp;
+            if (plant) {
+              const spec = plantGeometrySpec(entry);
+              bookGravity.decoration(entry.key,1,spec.potId || '',spec.potModelId || '',
+                new Float64Array([spec.real.potDiameter / 2 * spec.unit / pixelsPerMetre,spec.real.potHeight * spec.unit / pixelsPerMetre,spec.height / pixelsPerMetre,0]));
+            } else {
+              const spec = lampGeometrySpec(entry);
+              bookGravity.decoration(entry.key,spec.kind === 1 ? 2 : 3,'','',new Float64Array([0,0,0,spec.scale / pixelsPerMetre]));
+            }
+          }
+        }
+
         stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
         stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
         stepIo[9] = landing ? 1 : 0;
@@ -1443,7 +1459,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         entry.pose.position.x = entry.x - width / 2 + gravityOutput[gravityAt + 1]; entry.pose.position.y = -entry.y + gravityOutput[gravityAt + 2];
         moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
         entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34] + gravityOutput[gravityAt], gravityOutput[gravityAt] === 0 ? 'XYZ' : 'ZYX');
-      } else entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
+      } else {
+        entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
+        if (usePhysics && decorative && !undershelf && entry.collisionStamp) {
+          entry.pose.position.x = entry.x - width / 2 + gravityOutput[gravityAt + 1];
+          entry.pose.position.y = -entry.y - (lamp ? entry.height / 2 : 0) + gravityOutput[gravityAt + 2];
+          moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
+        }
+      }
       entry.pose.scale.setScalar(stepIo[35]);
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
@@ -2489,6 +2512,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function presentationChanged() {
     if (disposed) return;
     if (pageSuspended || document.visibilityState === 'hidden' || !canPresent() && !hasOngoingMotion()) {
+      bookGravity.pause();
       if (raf) drawPending = true;
       releaseUnusedNativeRoomFrames();
       if (raf) cancelAnimationFrame(raf);

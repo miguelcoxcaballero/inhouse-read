@@ -1,8 +1,8 @@
 import * as THREE from 'three';
+import {lampGeometrySpec} from './decor-geometry-spec.js';
 import {rustLampSurface} from './lamp-surface-wasm.js';
 import { needRustShelf } from './rust-shelf.js';
 import { geometryOf, openPacket } from './geo-packet.js';
-import { getCatalogLamp } from './lamp-catalog-data.js';
 import { lampTint, normalizeLampKelvin, tintColor } from './lamp-kelvin.js';
 import { addShelfBakeSource, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
@@ -194,13 +194,8 @@ function tripod(group,quality,lamp) {
  * Emissive meshes belong here; budgeted real lights belong to the scene.
  */
 export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high',isOn=true,persist=false,kelvin}={}) {
-  const lamp = getCatalogLamp(lampId) || getCatalogLamp('tarnaby');
-  const native = lamp.dimensions;
-  const widthScale = Number.isFinite(width) && width > 0 ? width / native.width : 1;
-  const heightScale = Number.isFinite(height) && height > 0 ? height / native.height : Infinity;
-  const scale = Math.min(widthScale,heightScale);
+  const {lamp,native,scale,kind}=lampGeometrySpec({lampId,width,height});
   const group = new THREE.Group(); group.name = `shelf-lamp-${lamp.id}`;
-  const kind = lamp.id === 'mittled' ? 0 : lamp.id === 'tripod' ? 1 : 2;
   const geometry = lampGeometry(kind,quality === 'low' ? 40 : 72,scale);
   const used = building = persist ? new Set() : null;
   try { (kind === 0 ? puck : kind === 1 ? tripod : lantern)(group,quality,geometry); }

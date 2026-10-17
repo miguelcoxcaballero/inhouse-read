@@ -41,7 +41,7 @@ test('real book and plant drags use the compiled placement job and persist the c
       {key:'plant:rust-a',seed:'rust-a',variant:'cactus',width:42,shelf:0,x:.85},
       {key:'plant:rust-b',seed:'rust-b',variant:'suculenta',width:48,shelf:1,x:.18},
     ]));localStorage.setItem('inhouse-read-shelf-view','spine');
-  },{bytes,geometry:settledGeometryLength(30_000,'rust-placement')});
+  },{bytes,geometry:await settledGeometryLength(30_000,'rust-placement')});
   await page.reload();await expect(page.locator('.ihr-spine')).toHaveCount(14);
   const scene=page.locator('.ihr-bookshelf-scene');await expect(scene).toHaveAttribute('data-animating','false');
   await page.waitForFunction(()=>window.placementProof?.ready);

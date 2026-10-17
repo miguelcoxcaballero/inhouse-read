@@ -1,3 +1,5 @@
+// Reference geometry and arithmetic stay independent of Rust. Only the
+// visibility scheduling follows the requested background pause (1.7.274).
 // Frozen original of src/js/bookshelf-scene.js from before its maths and decisions moved to Rust
 // (rust-ui/src/scene_*.rs, the shelf module). Do not update to match the Rust implementation.
 // Tests only: scene-differential.test.js replays the same scripts against this scene and the live one.
@@ -419,6 +421,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   rebuildFurniture();
   prelinkPrograms(renderer, scene, camera, furniture.children.filter(child => child !== catalog));
 
+  let pageSuspended = false;
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let bookPresentationScheduled = false;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
@@ -2187,7 +2190,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // Cheap readiness check between frames; the scene is only redrawn once ready.
   function pollPrograms() {
     programsPoll = 0;
-    if (disposed || programsReady === true) return;
+    if (disposed || programsReady === true || pageSuspended || document.visibilityState === 'hidden') return;
     if (!canPresent() && !hasOngoingMotion()) return;
     if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
   }
@@ -2195,6 +2198,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function draw(now = performance.now(), force = false) {
     raf = 0;
     if (disposed) return;
+    if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return; }
     if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
     hideInspectionSnapshot();
@@ -2543,7 +2547,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
     drawPending = true;
-    if (!disposed && !raf && !paintHeld && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
+    if (!disposed && !raf && !paintHeld && !pageSuspended && document.visibilityState !== 'hidden' && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
   }
 
   function canDeferModalPaint() {
@@ -2585,7 +2589,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function canPresent() {
-    return presentationActive && document.visibilityState !== 'hidden';
+    return presentationActive && !pageSuspended && document.visibilityState !== 'hidden';
   }
 
   function canPreparePresentation() {
@@ -2607,7 +2611,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function presentationChanged() {
     if (disposed) return;
-    if (!canPresent() && !hasOngoingMotion()) {
+    if (pageSuspended || document.visibilityState === 'hidden' || !canPresent() && !hasOngoingMotion()) {
+      if (raf) drawPending = true;
       releaseUnusedNativeRoomFrames();
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
@@ -2635,6 +2640,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // in the same task, before MutationObserver's asynchronous notification.
     observeEntryChanges(mutations.takeRecords());
     if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); }
+    if (pageSuspended || document.visibilityState === 'hidden') return false;
     if (!force && (!canPresent() && !hasOngoingMotion() || canDeferModalPaint())) return false;
     if (!force && !drawPending && viewportChanged()) invalidate(true, false, 'viewport-sync');
     if (!force && !drawPending && !hasOngoingMotion()) return false;
@@ -2707,6 +2713,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style', 'disabled'] });
   scroller.addEventListener('scroll', scrolled, { passive:true });
   window.addEventListener('resize', invalidate, { passive:true });
+  const pageHidden = () => { pageSuspended = true; presentationChanged(); };
+  const pageShown = () => { pageSuspended = false; presentationChanged(); };
+  window.addEventListener('pagehide', pageHidden);
+  window.addEventListener('pageshow', pageShown);
   document.addEventListener('visibilitychange', presentationChanged);
   updateWoodTheme();
   draw();
@@ -2798,13 +2808,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (disposed || desiredMode !== 'isometric' || transition || progress !== 1) return getInspectionView();
       const previousInspection = [inspectionZoom, panX, panY];
       inspectionZoom=clamp(Number(view.zoom) || 1,1,4); inspectionMoving=Boolean(moving);
-      if (!inspectionMoving && inspectionQualityDirty) {
-        inspectionQualityDirty = false; shadowDirty = true;
-      }
       const slack=inspectionMoving ? 80 : 0;
       panX=clamp(Number(view.panX) || 0,-(inspectionZoom-1)*sceneWidth/2-slack,(inspectionZoom-1)*sceneWidth/2+slack);
       panY=clamp(Number(view.panY) || 0,-(inspectionZoom-1)*sceneFitHeight/2-slack,(inspectionZoom-1)*sceneFitHeight/2+slack);
       inspectionShadowRefit ||= previousInspection.some((value,index)=>value!==[inspectionZoom,panX,panY][index]);
+      if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return getInspectionView(); }
+      if (!inspectionMoving && inspectionQualityDirty) {
+        inspectionQualityDirty = false; shadowDirty = true;
+      }
       if (inspectionMoving && paintInspectionSnapshot()) {
         cancelAnimationFrame(raf); raf = 0;
         return getInspectionView();
@@ -3163,6 +3174,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       document.removeEventListener('visibilitychange', presentationChanged);
+      window.removeEventListener('pagehide', pageHidden);
+      window.removeEventListener('pageshow', pageShown);
       if (programsPoll) clearTimeout(programsPoll);
       clearTimeout(veneerTimer);
       for (const entry of bookEntries) releaseEntry(entry);
