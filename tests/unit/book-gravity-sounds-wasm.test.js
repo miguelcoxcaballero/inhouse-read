@@ -94,7 +94,8 @@ it('lets a lamp or pot land with its own set-down, or tumble when it drops from 
   {name:'tripod',kind:2,solid:2,pot:'',values:[0,0,0,.0006],height:150,material:1,set:9,fall:10},
  ];
  for(const c of cases)for(const [lift,expected] of [[-4,c.set],[-150,c.fall]]){
-  const f=shelf(false,[{id:'decor',x:300,kind:c.kind,width:100,height:c.height,flags:2}]);
+  // A small resting box keeps the world awake: a scene of only a held object would warm up instantly on release.
+  const f=shelf(false,[{id:'decor',x:300,kind:c.kind,width:100,height:c.height,flags:2},{id:'box',x:60,width:60,height:60}]);
   try{
    f.solver.decoration('decor',c.solid,c.pot,c.pot,Float64Array.from(c.values));
    f.solver.sound_enabled(true);f.step(60);f.move(0,lift);f.step(30);const before=f.hits.length;f.release();f.step(240);
@@ -110,7 +111,7 @@ it('lets a lamp or pot land with its own set-down, or tumble when it drops from 
 });
 
 it('forgets a pending landing sound while muted',()=>{
- const f=shelf(false,[{id:'decor',x:300,kind:1,width:100,height:180,flags:2}]);
+ const f=shelf(false,[{id:'decor',x:300,kind:1,width:100,height:180,flags:2},{id:'box',x:60,width:60,height:60}]);
  f.solver.decoration('decor',1,'muskot','muskot',Float64Array.from([.05,.12,.18,0]));
  f.step(60);f.move(0,-4);f.step(30);f.release();f.step(240);expect(f.hits).toEqual([]);
  f.solver.sound_enabled(true);f.step(300);expect(f.hits).toEqual([]);f.free();

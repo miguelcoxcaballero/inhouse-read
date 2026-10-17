@@ -4,7 +4,7 @@ import {rustShelf} from './helpers/rust-shelf-ready.js';
 
 // Materials per kind (cozy_synth): surfaces for impacts and books, lamps, pots, UI taps.
 const MATERIALS={3:6,4:2,5:6,16:6,6:3,7:3,8:3,9:3,10:3,22:3,23:3,24:3,11:5,12:5,13:5,27:5,30:3};
-const events=function*(){for(let kind=0;kind<31;kind++)for(let material=0;material<(MATERIALS[kind]||1);material++)yield [kind,material];};
+const events=function*(){for(let kind=0;kind<35;kind++)for(let material=0;material<(MATERIALS[kind]||1);material++)yield [kind,material];};
 const stats=pcm=>{let peak=0,power=0,sum=0,finite=true;for(const x of pcm){finite&&=Number.isFinite(x);peak=Math.max(peak,Math.abs(x));power+=x*x;sum+=x;}return {finite,peak,rms:Math.sqrt(power/pcm.length),mean:sum/pcm.length};};
 
 it('synthesises every event as short, bounded, balanced PCM that starts and ends in silence',()=>{
@@ -19,7 +19,7 @@ it('synthesises every event as short, bounded, balanced PCM that starts and ends
   expect(Math.max(...pcm.slice(-120).map(Math.abs)),label).toBeLessThan(.01);
  }
  expect(count).toBeGreaterThan(120);
- expect(rustShelf.cozy_sound(31,0,0,1)).toHaveLength(0);
+ expect(rustShelf.cozy_sound(35,0,0,1)).toHaveLength(0);
 });
 
 it('keeps variants deterministic but different, and harder hits brighter and louder at their onset',()=>{
@@ -43,7 +43,8 @@ it('names the recorded clip groups of each event, most specific first, and maps 
  expect(rustShelf.cozy_clip(6,2,1)).toBe('lamp_tarnaby_switch_on,switch_metal_click,switch_light_on');
  expect(rustShelf.cozy_clip(7,0,1)).toBe('lamp_mittled_switch_off,switch_light_off');
  expect(rustShelf.cozy_clip(10,1,2)).toBe('lamp_tripod_fall,lamp_fall_wood');
- expect(rustShelf.cozy_clip(12,2,1)).toBe('pot_akerbar_set,metal_pot');
+ expect(rustShelf.cozy_clip(12,2,1)).toBe('pot_akerbar_set,pot_setdown_zinc,metal_pot');
+ expect([31,32,33,34].map(kind=>rustShelf.cozy_clip(kind,0,1))).toEqual(['zoom_in','zoom_out','view_iso','view_front']);
  expect(rustShelf.cozy_clip(13,1,2)).toBe('pot_muskotblomma_fall,pot_fall');
  expect(rustShelf.cozy_clip(15,0,1)).toBe('bin_drop,paper_crumple');
  for(const [kind,material] of events())for(const level of [0,1,2]){

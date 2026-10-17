@@ -49,7 +49,10 @@ impl RustBookGravity{
     let other_entry=self.books.iter().find(|(_,o)|o.collider==other);let other_book=other_entry.map(|(_,o)|o);
     // If only collider2 was moving, collider1 has no captured pre-impact
     // velocity and cannot emit this hit. Deduplicate only two active emitters.
-    if other_book.is_some_and(|o|o.kind<=2&&(now<o.sound_until||pair.collider1!=b.collider&&self.audio_velocities.contains_key(&other))){continue;}
+    // A moving book reports its own contact with a lamp or pot, with the touched piece's material.
+    let moving=self.audio_velocities.contains_key(&other);
+    if if decor{other_book.is_some_and(|o|now<o.sound_until||o.kind==0&&moving||o.kind!=0&&pair.collider1!=b.collider&&moving)}
+     else{other_book.is_some_and(|o|o.kind==0&&(now<o.sound_until||pair.collider1!=b.collider&&moving))}{continue;}
     // A landing after the hand lets go always sounds, even when it is gentle.
     let floor=if decor&&b.landing_sound{-1.0}else{0.055_f32};
     let mut best=floor;let mut material=0;let mut own=0;
@@ -94,7 +97,7 @@ impl RustBookGravity{
  }
 }
 /// A lamp or pot meeting a board faster than this (m/s) has fallen rather than been set down.
-const FALL_SPEED:f32=1.1;
+const FALL_SPEED:f32=0.4;
 /// Numbers per pending sound: material, strength 0..1, pan -0.7..0.7, kind (cozy_synth).
 pub(super) const SOUND_STRIDE:usize=4;
 #[wasm_bindgen]

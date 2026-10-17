@@ -33,7 +33,7 @@ pub fn clip_groups(kind:u32,material:u32,level:u32)->String{
  match kind{
   0=>"book_pickup".into(),
   1=>"book_cover_open".into(),
-  2=>"switch_plastic,switch_ui".into(),
+  2=>"switch_plastic".into(),
   3=>if m<6{impact(surface)}else{String::new()},
   4=>if m==1{"book_slide_metal,scrape_owl,scrape".into()}else{"book_slide_wood,scrape".into()},
   5=>match m{0|1|5=>format!("book_set_{surface},book_set"),_=>format!("book_set_{surface},{}",impact(surface))},
@@ -61,7 +61,7 @@ pub fn clip_groups(kind:u32,material:u32,level:u32)->String{
   27=>format!("pot_{pot}_clink,{}",if m==2{"metal_pot".into()}else{impact("ceramic")}),
   28=>"bin_lid".into(),
   29=>"creak".into(),
-  30=>match m{2=>"ui_toggle,toggle_ui".into(),_=>"ui_tap,switch_plastic,switch_ui".into()},
+  30=>match m{2=>"ui_toggle,switch_plastic".into(),_=>"ui_tap,switch_plastic".into()},
   31=>"zoom_in".into(),
   32=>"zoom_out".into(),
   33=>"view_iso".into(),
