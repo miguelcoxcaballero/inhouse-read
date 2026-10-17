@@ -1,3 +1,16 @@
+# 1.7.270 — guardado y retirada de libros en Rust
+
+Changelog: «Guardado y retirada de libros en Rust».
+Rust asume el guardado de cambios con su copia de seguridad posterior, las acciones de apariencia/nombres y la retirada completa del libro. Cancela recuento y página preparada, invalida las cachés y la generación que le pertenece, espera el guardado de la retirada y mantiene los registros recordados de la escena. La liberación del lector pendiente se programa sin hacer esperar a la papelera por una descarga. Una generación, selección o libro actual más reciente conserva su lector.
+
+Las acciones se compilan en UI y Shelf; un cambio del lector usa UI cuando Shelf no está cargado. Los callbacks JavaScript de continuación solo encaminan la llamada al código nativo y son recogibles por el GC, sin un contexto Rust persistente que retenga bibliotecas. La parte previa al primer await mantiene la cancelación inmediata. Las excepciones síncronas previas a la petición de guardado siguen siendo síncronas; los rechazos posteriores conservan su promesa. La apariencia crea propiedades de datos propias, sin activar setters heredados. No se cambian animaciones, tiempos, materiales, geometrías o calidad.
+
+Build completo correcto y **96 pruebas específicas en 12 archivos pasan**. Incluyen diez sesiones de retirada comparadas con la instantánea congelada: preparación pendiente, propiedad activa o solicitada, cambios posteriores de generación/selección/libro, preparación fallida, rechazo de Drive y cancelación fallida. Se comparan además nombre/apariencia, errores antes y después del guardado, orden de copias, 30 ciclos sin handles/callbacks retenidos y uso desde UI sin Shelf. Permanecen las 17 sesiones completas de refresco, cola de progreso, biblioteca, arranque, importaciones y ciclo de vida del lector. La primera comparación detectó una excepción de cancelación convertida en rechazo de promesa; el binario final conserva el contrato original. No se cambia el corpus o límites existentes ni se repite la batería general; el timeout antiguo de color sigue documentado.
+
+Ocho E2E finales pasan en una ejecución sin reintentos (4,0 min): PDF/EPUB reales y reapertura, edición de nombres en ficha/lector/Escuchar, regreso con el mismo framebuffer/canvas, dos importaciones consecutivas en rutas caliente/fría, colocación de libro/planta conservada al recargar, retirada sin shaders nuevos ni reconstrucción, y retirada de un libro de Drive seguida de sincronización y reimportación explícita. El libro permanece en Drive, la sincronización automática no lo vuelve a añadir y sus bytes/progreso siguen disponibles.
+
+Inventario: 33183 líneas Rust / 20607 JavaScript, **61,69 %**, incluidos comentarios y compatibilidad; no mide funciones terminadas. Siguiente: validación de apariencia/posición y resto de coordinación de la aplicación. Se preservan WIP, stashes y ramas ready.
+
 # 1.7.269 — coordinación de actualización de estantería en Rust
 
 Changelog: «Actualización de estantería coordinada en Rust».

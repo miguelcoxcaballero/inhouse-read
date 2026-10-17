@@ -1,3 +1,4 @@
+import { bookDataModule } from './book-data-native.js'
 import { library, takeFirstRawRecords } from './shelf-boot.js'
 import { version as APP_VERSION } from '../../package.json'
 import { libraryHost, recentFirst } from './library-store.js'
@@ -165,10 +166,10 @@ const wordCountQueue = createBookLengthQueue(library, {
   },
   onError: error => console.warn('No se pudo contar el texto del libro:', error)
 })
-async function persistBookState(bookId, fields) {
-  await progressWrites.patch(bookId, fields)
-  scheduleLibraryBackup()
+function persistBookState(bookId, fields) {
+  return bookDataModule().app_persist_book_state(shelfRefreshHost, bookId, fields)
 }
+
 // The reading panel and voice code load after the shelf has settled (see the
 // end of this file); a book never opens before they are in.
 const readingExperience = createLazyReaderExperience(reader, { persist:persistBookState })
@@ -292,30 +293,12 @@ function createShelfForRecords(books) {
       onBookGeometryRetry: book => wordCountQueue.retry(book.id),
       onBookAction: handleCoverAction,
       getBookCloudState: book => bookCloudState(book, { connected:hasDriveSession() }),
-      onBookRemove: book => {
-        wordCountQueue.cancel(book.id)
-        preparedPages.invalidateBook(book.id, 'removed')
-        releasePageGate('removed', book.id)
-        return removeBookFromShelf(book).then(removal => {
-          // The shelf already dropped the book: keep the remembered record set
-          // in step so the next identical sync is recognised as "no change"
-          // instead of repainting the whole shelf.
-          if (shelfRecords) shelfRecords = shelfRecords.filter(record => record.id !== book.id)
-          return removal
-        })
-      },
+      onBookRemove: book => bookDataModule().app_book_remove(shelfRefreshHost, book),
       onAddBooks: pickLocalFile,
       coverSrcFor: book => book.cover ?? null,
       waitForCoverAppearance: true,
-      onCoverAppearance: (book, appearance, key) => library.patch(book.id, {
-        coverAppearance: appearance,
-        coverAppearanceKey: key
-      }).then(record => { scheduleLibraryBackup(); return record }),
-      onBookCustomizationChange: (book, fields) => {
-        // A prepared reader already shows this book: its title and author follow the spine.
-        if ('spineTitleOverride' in fields || 'author' in fields) readingExperience.refreshNames(book.id, fields)
-        return persistBookState(book.id, fields)
-      },
+      onCoverAppearance: (book, appearance, key) => bookDataModule().app_cover_appearance(shelfRefreshHost, book, appearance, key),
+      onBookCustomizationChange: (book, fields) => bookDataModule().app_book_customization(shelfRefreshHost, book, fields),
       onShelfPlacementChange: ({ books = [] }) => Promise.all(books.map(({ id, shelfPosition }) => {
         const position = normalizeShelfPosition(shelfPosition)
         return id && (position || shelfPosition === null)
@@ -327,10 +310,21 @@ function createShelfForRecords(books) {
 
 const shelfRefreshHost = {
   library, libraryHost, nativeImportShelfGate, els, wordCountQueue,
+  progressWrites, preparedBooks, coverUpgrades, cloudSync, preparedPages, reader,
+  get readingExperience() { return readingExperience },
+  scheduleLibraryBackup, releasePageGate,
+  ignoreRemovalPreparationError: () => {},
+  removedPreparationCleanup: (book, generation) => () => bookDataModule().app_finish_removed_preparation(shelfRefreshHost, book, generation),
+  warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
   createShelf: createShelfForRecords,
   warnPreparation: error => console.warn('Preparación del grosor:', error),
   state: {
     get appDisposed() { return appDisposed },
+    get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
+    get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
+    get preparationGeneration() { return preparationGeneration }, set preparationGeneration(value) { preparationGeneration = value },
+    get readerPreparationQueue() { return readerPreparationQueue },
+    get currentBookId() { return currentBookId }, set currentBookId(value) { currentBookId = value },
     get closingReader() { return closingReader },
     get cloudRoomChanged() { return cloudRoomChanged }, set cloudRoomChanged(value) { cloudRoomChanged = value },
     get shelf() { return shelf }, set shelf(value) { shelf = value },
@@ -375,38 +369,6 @@ document.addEventListener('keydown', event => {
   }
 })
 
-async function removeBookFromShelf(book) {
-  const ownsPreparation = requestedPreparationId === book.id || activePreparedBookId === book.id
-  if (requestedPreparationId === book.id) {
-    preparationGeneration += 1
-    requestedPreparationId = null
-  }
-  const cancelledGeneration = preparationGeneration
-  preparedBooks.delete(book.id)
-  coverUpgrades.delete(book.id)
-  const preparingTask = readerPreparationQueue
-  const removal = await cloudSync.removeFromShelf(book)
-  scheduleLibraryBackup()
-  // A selected book may already have a reader engine preloaded in memory.
-  // Release it once it settles, without keeping the shelf drop waiting for
-  // a file download. A newer selection owns its own reader generation.
-  if (ownsPreparation) {
-    preparingTask.catch(() => {}).then(() => {
-      if (preparationGeneration !== cancelledGeneration || requestedPreparationId ||
-          (currentBookId && currentBookId !== book.id) || !els.readerScreen.classList.contains('is-preparing')) return
-      reader.close()
-      readingExperience.reset()
-      currentBookId = null
-      activePreparedBookId = null
-      els.readerScreen.hidden = true
-      els.readerScreen.classList.remove('is-preparing')
-      els.readerViewport.innerHTML = ''
-    }).catch(error => console.warn('No se pudo liberar la preparación del libro retirado:', error))
-  }
-  // The shelf removes its model after the drop animation has finished.
-  // Refreshing here would interrupt that animation and dispose its scene.
-  return removal
-}
 
 async function animateReaderPageFromBook({ duration, animateBookToPage, pageSnapshot, isActive }) {
   const screen = els.readerScreen
