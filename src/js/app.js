@@ -1,6 +1,6 @@
-import { library, takeFirstRecords } from './shelf-boot.js'
+import { library, takeFirstRawRecords } from './shelf-boot.js'
 import { version as APP_VERSION } from '../../package.json'
-import { sameBookRecords } from './library-store.js'
+import { sameBookRecords, recentFirst } from './library-store.js'
 import { createReadingProgressQueue } from './reading-progress-queue.js'
 import { bookCloudState, isBookVisible, storeBookFile, needsDriveDownload } from './book-storage-policy.js'
 import { refreshSelectedBookNames } from './selected-book-names.js'
@@ -243,7 +243,7 @@ function refreshShelf(options) {
 }
 
 async function performShelfRefresh({ immediate = false } = {}) {
-  const firstRecords = takeFirstRecords()
+  const firstRecords = takeFirstRawRecords()
   // A native import changes the library after the boot snapshot was taken.
   // Discard that one-shot snapshot even when its room is deferred, so returning
   // from the reader fetches the newly committed book instead of an empty shelf.
@@ -264,13 +264,14 @@ async function performShelfRefresh({ immediate = false } = {}) {
     return
   }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
-  const storedBooks = await (firstRecords ?? library.listAll())
+  let storedBooks = await (firstRecords ?? library.listAll())
   // Saved plant meshes and plant/lamp paint are read in parallel. A late read
   // must not hold the shelf back for long: they are generated instead.
   // Layout, lighting and the pointer controllers of the live shelf are Rust-only: the render waits
   // for their modules, fetched with the page head and already compiled by now in practice,
   // alongside the baked reads.
   await Promise.all([shelfBakesSettled(120), requireRustShelf(), requireRustCore()])
+  if (firstRecords) storedBooks = recentFirst(storedBooks)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
   if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {

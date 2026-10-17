@@ -3,6 +3,7 @@
 // still missing (the store's own connection, or the whole read where the page
 // could not start it) is requested before the rest of the app is evaluated.
 import { LibraryStore, recentFirst } from './library-store.js'
+import { withBookDataModule } from './book-data-native.js'
 import { loadRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
 import { loadRustShelf } from './rust-shelf.js'
@@ -17,14 +18,21 @@ void loadRustShelf()
 export const library = new LibraryStore()
 const early = globalThis.__inhouseShelfRead
 delete globalThis.__inhouseShelfRead
-let firstRecords = early?.done.then(records => records ? recentFirst(records) : library.listAll()) ?? library.listAll()
+let firstRecords = early?.done.then(records => records ? records : library.listRaw()) ?? library.listRaw()
 // Awaited by the first shelf refresh, which reports a failure as before.
 firstRecords.catch(() => {})
 
 /** The start-up read, handed out once: the shelf's first build uses it and
  * every later refresh reads the store again. */
-export function takeFirstRecords() {
+export function takeFirstRawRecords() {
   const records = firstRecords
   firstRecords = null
   return records
+}
+
+/** Default public handoff keeps its sorted-once contract; the app's own gate
+ * takes raw records to preserve its original parallel bake/module timing. */
+export function takeFirstRecords() {
+  const records = takeFirstRawRecords()
+  return records && records.then(records => withBookDataModule(() => recentFirst(records)))
 }

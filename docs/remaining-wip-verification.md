@@ -1,3 +1,18 @@
+# 1.7.267 — comparación y orden de biblioteca en Rust
+
+Changelog: «Comparación y orden de biblioteca en Rust».
+Rust asume la comparación completa de registros, tipos de metadatos, archivos Blob/File, fechas, prototipos, campos, listas dispersas y orden de apertura reciente. No se sustituyen los metadatos por JSON ni hashes parciales. Los tipos que no se pueden demostrar iguales conservan su decisión anterior; los clones cíclicos no admitidos producen RangeError sin desbordar la pila menor de WASM. Se conserva el orden de getters, coerciones numéricas, BigInt, errores y llamadas SDK every/sort. Sus callbacks JavaScript solo encaminan la llamada al algoritmo Rust; la comprobación instanceof Date queda como primitiva del navegador.
+
+El primer arranque recibe ahora la lectura cruda una sola vez y ordena después de la espera paralela ya existente de WASM y mallas guardadas. IndexedDB no espera esa descarga para comenzar, y el presupuesto de lectura de mallas sigue arrancando después de los registros. La API pública de entrega ordenada conserva su contrato y el resto de lecturas de biblioteca sigue devolviendo libros ordenados. No cambia el esquema, bytes o persistencia.
+
+Build completo correcto. Pasan 73 pruebas específicas en nueve archivos sobre el binario final, más una medición temporal de rendimiento. Incluyen todas las entradas del comparador previo, metadatos anidados y tipados, getters con trazas, listas dispersas, orden y conversión numérica, 200 ciclos sin handles/callbacks retenidos y el arranque con módulo nativo retenido. El fixture Node de arranque ofrece el módulo compilado real como hace la página; dos escenarios de importación solo cambian el nombre del lector crudo inyectado, manteniendo sus aserciones y límites. No se repite la batería general; permanece documentado el timeout antiguo del corpus de color.
+
+Una primera medición detectó demasiado coste de frontera y se corrigió con bindings directos a las primitivas del navegador. Medición final Node/jsdom, tres repeticiones de treinta comparaciones, 200 libros con bytes Blob, portadas y metadatos: mediana nativa **5,24 ms** frente a **0,34 ms** de la referencia JavaScript. El prototipo inicial tenía 19,01 ms; no se publicó. La migración conserva decisiones, pero no se presenta como una mejora de velocidad del comparador aislado ni como una medición de móvil físico.
+
+Cinco E2E finales pasan en una ejecución sin reintentos (1,8 min): PDF/EPUB reales y reapertura conservando recuentos, regreso del lector con el mismo canvas y página, dos importaciones consecutivas tanto con UI precargada como con descarga nativa retenida, y retirada persistida sin shaders nuevos ni reconstrucción de la escena. Todos los bytes originales coinciden y el estado importado sustituye correctamente la instantánea inicial. No se cambian materiales, resolución ni calidad.
+
+Inventario: 32925 líneas Rust / 20754 JavaScript, **61,34 %**, incluidos comentarios y compatibilidad; no mide funciones terminadas. Sigue pendiente migrar coordinación de la aplicación y otras decisiones propias que permanecen en JavaScript. Se preservan todos los WIP, stashes y ramas ready.
+
 # 1.7.266 — operaciones atómicas de biblioteca en Rust
 
 Changelog: «Biblioteca en Rust y reposo más estable».
