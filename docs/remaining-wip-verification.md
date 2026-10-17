@@ -1,3 +1,21 @@
+# 1.7.281 — preparación del lector en Rust
+
+Changelog: «Preparación del lector en Rust».
+
+La coordinación que prepara el libro seleccionado pasa de app.js a Rust compartido por los módulos UI y Shelf. Decide cuándo reutilizar el motor ya cargado, leer los bytes locales o descargar la copia remota, esperar el progreso pendiente y serializar las preparaciones que usan el mismo lector. Mantiene la identidad y generación de la selección a través de cada espera: una carga antigua no sustituye el libro elegido después. Las factorías JavaScript solo adaptan callbacks de Promise; File, DOM e idle conservan sus APIs del navegador.
+
+Rust también controla la compuerta de preparación, su cancelación y la clave de la página guardada: identidad UTF-16, época del lector, localizador, progreso, posición actual, tamaño del viewport, densidad de píxeles, preferencias, tema y filtro. Restaura la página con el indicador de progreso protegido por finally, descarta trabajos caducados o de tamaño distinto y entrega una sola vez la instantánea vigente. La preparación anticipada fallida no bloquea la apertura normal. Los materiales, las texturas, los shaders y las animaciones no cambian.
+
+Validación específica: 426/426 casos en 23 archivos. Las 36 pruebas nuevas comparan contra la implementación íntegra de 1.7.280, incluyendo bytes locales/remotos, descargas fallidas, cambios de selección en distintas esperas, motores reutilizados, página caducada, giro/preferencias, restauración fallida y liberación de handles/callbacks tras 60 ciclos. También se ejecutan importación, persistencia, cancelación de apertura, caché preparada y las 56 comprobaciones físicas actuales de libros. La referencia JavaScript solo existe en tests; no hay motor alternativo de preparación en producción.
+
+Pasan once E2E con la compilación final, en una sola ejecución y sin reintentos: preparación y reutilización de PDF/EPUB, cambio de posición guardada de Drive, giro, cierre sin lectura, apertura rápida, regreso a la última página, cambios de tema/preferencias y carga normal/retrasada del módulo. Las dos pruebas compiladas verifican además que se ejecutan app_prepare_book, app_run_preparation y app_opening_page_snapshot reales del WASM. Las aperturas preparadas reutilizan una instantánea y no enlazan nuevos shaders. No se declara batería general completa ni medición en teléfono físico.
+
+Build: UI 3019313 B, SHA256 5b0c39f57b872bbce63721a1b49a6a068eadd70d9933a2a847fa6b918526a5a4; Shelf 3618251 B, SHA256 fb1f147f07a1905826d1f477ec243998dd5ddd85053b7c99d2708fc16e90e805. Shell 109 archivos / 31330207 B, revisión 1e36749cccc1. No se atribuye una mejora de velocidad global ni ahorro de batería a esta migración.
+
+Inventario: 34207 líneas Rust / 20760 JavaScript = 62,23 %. Es un recuento de fuentes, no un porcentaje de funciones completadas. La apertura final del archivo, el tránsito a lectura, el cierre y otras partes de app.js siguen pendientes; se continuará con ellas. No se modifica audio, Android, actualizador, vendor ni workflows, y se conservan las ramas y WIP anteriores.
+
+---
+
 # 1.7.280 — colocación próxima y empuje de libros inclinados
 
 Changelog: «Objetos más juntos y empujes suaves».
