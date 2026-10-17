@@ -174,6 +174,9 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
    if inside(get(&selection,"anchorNode"))?||inside(get(&selection,"focusNode"))?{method(&selection,"removeAllRanges",&[])?;}
   }
  }
+ if !background_only&&!absent(&ctx.scene()){
+  method_opt(&ctx.scene(),"setObjectGrip",&[&node,&get(event,"clientX"),&get(event,"clientY")])?;
+ }
  let drag=obj(&[
   ("node",&node),("pointerId",&get(event,"pointerId")),("startX",&get(event,"clientX")),("startY",&get(event,"clientY")),
   ("x",&get(event,"clientX")),("y",&get(event,"clientY")),("scrollTop",&get(&ctx.scroller,"scrollTop")),
@@ -299,6 +302,7 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
   discard_rect=rect(node)?;
   discard_motion=ctx.scene_call("animateObjectToTrash",&[node,&obj(&[("duration",&f(discard_duration))])])?;
  }
+ if active_moved&&!discard{ctx.scene_call("flush",&[])?;}
  let old_rects=if active_moved{object_rects(ctx)?}else{null()};
  ctx.st_set("dragSession",&null());
  if cls_has(node,"ihr-lamp")&&(gb(&drag,"active")||gb(&drag,"scrolling")||gb(&drag,"cancelled")||cancelled){

@@ -1,3 +1,18 @@
+# 1.7.272 — agarre y caída de libros en Rust
+
+Changelog: «Caída según el gesto, agarre y frenado».
+Al soltar un libro, Rust utiliza el movimiento horizontal reciente del dedo para iniciar una caída suave en esa dirección. Una inversión del gesto sustituye la dirección anterior y una pausa conserva la última intención. Se elimina la velocidad horizontal heredada del arrastre para evitar que el libro patine por la leja. Un par acotado inicia la inclinación hasta superar el punto de equilibrio; después actúan la gravedad y los contactos de Rapier. La ayuda cesa al encontrar otro libro y no se aplica a una colocación que se solapa accidentalmente, preservando el comportamiento tranquilo de los movimientos rápidos.
+
+El rayo y las matrices de Three solo proporcionan la altura local del toque. Rust calcula la palanca, el balanceo y el desplazamiento del centro alrededor del agarre: coger arriba o abajo produce giros opuestos al mover el dedo. Una mano quieta recupera la vertical y se mantiene la recogida animada de libros caídos. Antes de retirar los offsets de arrastre se consume el último movimiento pendiente, de modo que una liberación entre dos fotogramas no pierda el gesto.
+
+También se migran los callbacks de guardado de colocación/orden a Rust compartido por UI y Shelf. Conservan arrays dispersos, map personalizado, iterables, campos leídos por getters, rechazos y orden de copias de seguridad. JavaScript conecta los callbacks de Array.map al módulo nativo; no contiene decisiones de guardado ni retiene un contexto Rust. Las instantáneas anteriores no cambian.
+
+Build completo correcto: UI 2983788 B y Shelf 3381013 B. **196 pruebas específicas en 12 archivos pasan**, incluidas las 18 comprobaciones físicas anteriores y cuatro nuevas: caída a ambos lados con reversión/pausa, palanca superior/inferior, liberación rápida sin patinaje y recogida fuera del centro sin desplazamiento brusco. Se mantienen retirada de apoyos, dominó, barridos rápidos tranquilos, límites de libros diminutos, reposo, fotogramas lentos y cambio de leja. Las pruebas de guardado comparan sesiones completas, getters, map/iteradores, 40 ciclos de handles y uso desde UI sin Shelf. También pasan las 74 del modelo y las 43 de marcapáginas/movimiento. El primer ajuste de rozamiento afectaba a apoyos existentes y la primera ayuda de caída empujaba al soltar sobre un vecino; el binario final conserva todas las aserciones anteriores sin relajarlas.
+
+Ocho E2E finales pasan en una ejecución sin reintentos (3,9 min): dos importaciones Android caliente/fría, zoom con cero repintados WebGL y cero reasignaciones de buffer durante el gesto, seis portadas restauradas a 1024 px y luces conservadas; caída/apoyo con GPU en reposo; dominó; recogida vertical y barrido rápido sin mover vecinos; dos liberaciones reales en direcciones opuestas; y arrastre de libro/planta conservado al recargar. La instrumentación del módulo compilado confirma que la altura local del toque llega al solver; se revisa la captura del libro en reposo sobre la leja. Después se añade y ejecuta la comprobación de recogida fuera del centro, completando las 22 de física sobre el mismo binario.
+
+Inventario: 33318 líneas Rust / 20586 JavaScript, **61,81 %**, incluidos comentarios y compatibilidad; no mide funciones terminadas. No se repite la batería general ni se modifica su timeout de color preexistente. Siguiente: coordinación pendiente de apertura/preparación del lector. WIP, stashes y ramas ready preservados.
+
 # 1.7.271 — validación de apariencia y posiciones en Rust
 
 Changelog: «Apariencia y posiciones validadas en Rust».

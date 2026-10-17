@@ -1387,7 +1387,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         physicsStates.set(stepIo,index * 37);
         const row = rows[entry.shelf || 0] || rows[0] || {};
         gravityInput.set([plant || lamp ? entry.width : entry.thickness, undershelf ? 3 : kind, entry.shelf || 0, pixelsPerMetre,
-          row.left || 0, row.right ?? width, row.bottom ?? entry.y + entry.height / 2, row.ceiling ?? row.top ?? 0, 0],index * 9);
+          row.left || 0, row.right ?? width, row.bottom ?? entry.y + entry.height / 2, row.ceiling ?? row.top ?? 0, entry.gripHeight || 0],index * 9);
         return entry.key;
       });
       bookGravity.step(gravityKeys, physicsStates, gravityInput, sceneView, now, reducedMotion.matches, gravityOutput);
@@ -2767,6 +2767,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const node = objectAtPoint(clientX, clientY);
       const entry = node && byNode.get(node);
       return entry && entry.kind !== 'plant' && entry.kind !== 'lamp' ? node : null;
+    },
+    setObjectGrip(node, clientX, clientY) {
+      const entry = byNode.get(node);
+      if (!entry?.model || entry.kind === 'plant' || entry.kind === 'lamp') return;
+      // Three owns only the ray/matrix conversion. The native solver clamps
+      // the local grip and computes its leverage, swing and release torque.
+      const hit = pointerRay(clientX, clientY).intersectObject(entry.model, true)[0];
+      if (hit) entry.gripHeight = entry.model.worldToLocal(hit.point.clone()).y / entry.height;
+      else {
+        const bounds = node.getBoundingClientRect();
+        entry.gripHeight = bounds.height ? .5 - (clientY - bounds.top) / bounds.height : 0;
+      }
     },
     getObjectAtPoint(clientX, clientY) {
       return objectAtPoint(clientX, clientY);

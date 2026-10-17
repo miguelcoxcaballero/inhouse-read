@@ -1,6 +1,6 @@
 //! Shared root book actions. Native futures start synchronously until their
 //! first await, preserving cancellation and selection-generation ownership.
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Object,Promise,Reflect};
 use crate::host::{read,method,truthy,set};
 use crate::cloud_host;
@@ -80,3 +80,34 @@ pub fn app_book_customization(host:JsValue,book:JsValue,fields:JsValue)->R<JsVal
  }
  Ok(app_persist_book_state(host,read(&book,"id")?,fields).into())
 }
+
+// Native book-placement/order callbacks. The host adapters only connect SDK
+// Array.map callbacks to these decisions; arrays keep holes and custom methods.
+#[wasm_bindgen]
+pub fn app_placement_record(host:JsValue,row:JsValue)->R<JsValue>{
+ let id=read(&row,"id")?;let source=read(&row,"shelfPosition")?;
+ let position=crate::book_customization::book_shelf_position(source.clone())?;
+ if truthy(&id)&&(truthy(&position)||source.is_null()){
+  let entries=Array::new();cloud_host::data_entry(&entries,&"shelfPosition".into(),&position);
+  let fields:JsValue=Object::from_entries(entries.as_ref())?.into();
+  Ok(app_persist_book_state(host,id,fields).into())
+ }else{Ok(Promise::resolve(&JsValue::UNDEFINED).into())}
+}
+#[wasm_bindgen]
+pub fn app_order_record(host:JsValue,row:JsValue)->R<JsValue>{
+ let id=read(&row,"id")?;let order=read(&row,"shelfOrder")?;let entries=Array::new();
+ cloud_host::data_entry(&entries,&"shelfOrder".into(),&order);
+ Ok(app_persist_book_state(host,id,Object::from_entries(entries.as_ref())?.into()).into())
+}
+fn mapped(host:&JsValue,rows:&JsValue,key:&str)->R<Promise>{
+ let function=read(rows,"map")?;let callback=method(host,key,&[])?;
+ let function=function.dyn_ref::<js_sys::Function>().ok_or_else(||js_sys::TypeError::new("map is not a function"))?;
+ let values=function.call1(rows,&callback)?;Ok(Promise::all(values.unchecked_ref()))
+}
+#[wasm_bindgen]
+pub fn app_placement_changed(host:JsValue,options:JsValue)->R<Promise>{
+ let rows=read(&options,"books")?;let rows=if rows.is_undefined(){Array::new().into()}else{rows};
+ mapped(&host,&rows,"placementMapper")
+}
+#[wasm_bindgen]
+pub fn app_order_changed(host:JsValue,rows:JsValue)->R<Promise>{mapped(&host,&rows,"orderMapper")}

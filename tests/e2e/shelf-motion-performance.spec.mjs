@@ -22,22 +22,22 @@ async function quietShelf(scene) {
   }, { timeout:30_000 }).toBe(true);
 }
 
-async function seedShelf(page, {domino=false}={}) {
-  await page.addInitScript(({ lampKey, plantKey, domino }) => {
+async function seedShelf(page, {domino=false,single=false}={}) {
+  await page.addInitScript(({ lampKey, plantKey, domino, single }) => {
     localStorage.setItem('inhouse-read-shelf-view', 'isometric');
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
-    localStorage.setItem(plantKey, JSON.stringify([
+    localStorage.setItem(plantKey, JSON.stringify(single ? [] : [
       { key:'plant:motion', seed:'motion', catalogId:'sansevieria', variant:'sansevieria',
         potId:'muskot', width:42, height:124, shelf:domino?2:0, x:.76 }
     ]));
-    localStorage.setItem(lampKey, JSON.stringify([
+    localStorage.setItem(lampKey, JSON.stringify(single ? [] : [
       { key:'lamp:motion', lampId:'tarnaby', shelf:1, x:.56, isOn:true }
     ]));
-  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino });
+  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino, single });
   await page.goto(TARGET_URL);
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
-  await page.evaluate(async ({ bytes, prefix, geometry, domino }) => {
+  await page.evaluate(async ({ bytes, prefix, geometry, domino, single }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read');
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
@@ -52,25 +52,25 @@ async function seedShelf(page, {domino=false}={}) {
       covers.push(await new Promise(resolve => canvas.toBlob(resolve, 'image/png')));
     }
     const transaction = db.transaction('books', 'readwrite'), books = transaction.objectStore('books');
-    for (let index = 0; index < 6; index++) books.put({
+    for (let index = 0; index < (single ? 1 : 6); index++) books.put({
       id:`${prefix}${index}`, title:`Libro ${index + 1}`, name:`motion-${index}.pdf`,
       format:'PDF', sourceType:'local', mimeType:'application/pdf', pageCount:260,
       ...geometry,
       content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }), cover:covers[index],
       coverFinish:index % 2 ? 'satin' : 'glossy', spineSurfaceFinish:index % 2 ? 'satin' : 'glossy',
       spineColorOverride:['#18364b', '#713b42', '#375a46'][Math.floor(index / 2)],
-      shelfPosition:domino ? {shelf:index<5?0:2,x:index<5?.15+index*.04:.2} : { shelf:Math.floor(index / 2), x:index % 2 ? .38 : .19 }, shelfOrder:index,
+      shelfPosition:single ? {shelf:1,x:.5} : domino ? {shelf:index<5?0:2,x:index<5?.15+index*.04:.2} : { shelf:Math.floor(index / 2), x:index % 2 ? .38 : .19 }, shelfOrder:index,
       addedAt:Date.now(), lastOpenedAt:Date.now() - index, progressFraction:0
     });
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error);
     }); db.close();
-  }, { bytes, prefix:BOOK_PREFIX, geometry:settledGeometryLength(78_000, 'shelf-motion'), domino });
+  }, { bytes, prefix:BOOK_PREFIX, geometry:settledGeometryLength(78_000, 'shelf-motion'), domino, single });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
-  await expect(page.locator('.ihr-spine')).toHaveCount(6);
-  await expect(page.locator('.ihr-plant')).toHaveCount(1);
-  await expect(page.locator('.ihr-lamp')).toHaveCount(1);
+  await expect(page.locator('.ihr-spine')).toHaveCount(single ? 1 : 6);
+  await expect(page.locator('.ihr-plant')).toHaveCount(single ? 0 : 1);
+  await expect(page.locator('.ihr-lamp')).toHaveCount(single ? 0 : 1);
   await expect(scene).toHaveAttribute('data-shelf-type', 'baggebo');
   await expect(scene).toHaveAttribute('data-view-progress', '1');
   await quietShelf(scene);
@@ -148,8 +148,8 @@ async function warmth(scene) {
   });
 }
 
-async function visibleMiddleBookPoint(page) {
-  return page.evaluate(() => {
+async function visibleMiddleBookPoint(page, fractions=[.5,.65,.35]) {
+  return page.evaluate(fractions => {
     const scroller = document.querySelector('.ihr-bookshelf__scroll').getBoundingClientRect();
     for (const node of document.querySelectorAll('.ihr-spine[data-shelf-index="1"]')) {
       const rect = node.querySelector('[data-shelf-cover-hit]')?.getBoundingClientRect();
@@ -159,14 +159,14 @@ async function visibleMiddleBookPoint(page) {
       if (right - left <= 12 || bottom - top <= 20) continue;
       // Check a painted book's native target, rather than an empty corner of
       // a projected rectangle or a neighbouring lamp in front of the cover.
-      for (const fraction of [.5, .65, .35]) {
+      for (const fraction of fractions) {
         const x = left + (right - left) * fraction, y = (top + bottom) / 2;
         if (document.elementFromPoint(x, y)?.closest('.ihr-spine') === node)
           return { x, y, id:node.dataset.bookId };
       }
     }
     return null;
-  });
+  }, fractions);
 }
 
 async function pinchStartingOnBook(page, scene) {
@@ -395,4 +395,58 @@ test('pickup smoothly straightens a fallen book and a fast sweep leaves resting 
  }
  await testInfo.attach('calm-pickup-and-fast-sweep',{body:JSON.stringify({resting,before,after}),contentType:'application/json'});
  await page.screenshot({path:testInfo.outputPath('upright-pickup-fast-sweep.png')});
+});
+
+
+test('real pointer releases tip both ways without coasting and the renderer sleeps afterwards',async({page},testInfo)=>{
+ const samples=[];
+ await page.addInitScript(()=>{
+  window.gripProof=[];
+  const observe=result=>{
+   const instance=result.instance||result,actual=instance.exports;
+   if(typeof actual?.rustbookgravity_step!=='function')return result;
+   const exports={...actual,rustbookgravity_step(...args){
+    const states=new Float64Array(actual.memory.buffer,args[2],args[3]);
+    const geometry=new Float64Array(actual.memory.buffer,args[5],args[6]);
+    for(let i=0;i<geometry.length/9;i++)if(states[i*37+2]&6){
+     window.gripProof.push(geometry[i*9+8]);
+     if(window.gripProof.length>100)window.gripProof.shift();
+    }
+    return actual.rustbookgravity_step(...args);
+   }};
+   const observed=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});
+   return result.instance?{...result,instance:observed}:observed;
+  };
+  for(const name of ['instantiate','instantiateStreaming'])if(typeof WebAssembly[name]==='function'){
+   const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))};
+  }
+ });
+ for(const direction of [-1,1]){
+  const scene=await seedShelf(page,{single:true});
+  const point=await visibleMiddleBookPoint(page,[.7,.3,.5]);expect(point).not.toBeNull();
+  const book=page.locator(`[data-book-id="${point.id}"]`);
+  await page.mouse.move(point.x,point.y);await page.mouse.down();
+  await expect(book).toHaveClass(/is-lifted/);
+  await expect.poll(async()=>Math.abs(Number(await book.getAttribute('data-scene-lean')))).toBeLessThan(.025);
+  await page.evaluate(async({x,y,direction})=>{
+   const node=document.querySelector('.ihr-spine');
+   for(let frame=1;frame<=24;frame++){
+    node.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,pointerType:'mouse',buttons:1,clientX:x+direction*frame,clientY:y,bubbles:true,cancelable:true}));
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+   }
+  },{...point,direction});
+  const before=await book.boundingBox();
+  await page.mouse.move(point.x+direction*24,point.y);await page.mouse.up();
+  await expect(book).not.toHaveClass(/is-dragging|is-lifted/);
+  await expect.poll(async()=>Number(await book.getAttribute('data-scene-lean'))*direction).toBeLessThan(-.5);
+  await quietShelf(scene);
+  const after=await book.boundingBox(),angle=Number(await book.getAttribute('data-scene-lean'));
+  const renders=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);
+  expect(await scene.getAttribute('data-render-count')).toBe(renders);
+  const grips=await page.evaluate(()=>window.gripProof);
+  expect(grips.length).toBeGreaterThan(0);expect(grips.some(value=>Math.abs(value)>.02)).toBe(true);
+  samples.push({direction,before,after,angle,grips});
+ }
+ await testInfo.attach('finger-release-direction',{body:JSON.stringify(samples),contentType:'application/json'});
+ await page.screenshot({path:testInfo.outputPath('directional-book-release.png')});
 });

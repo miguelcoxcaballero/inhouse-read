@@ -11,7 +11,7 @@ function fixture(rows,metal=false){
    rows.forEach((b,i)=>{
     const height=b.height??200,y=(b.floor??300)-height/2;
     states.set([b.kind===3?2:b.kind??0,b.kind===3?1:0,b.flags??0,b.drag??0,b.dragY??0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,b.x,y,150,height,150,0],i*37);
-    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,(b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0),0],i*9);
+    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,(b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0),b.grip??0],i*9);
    });
    output=new Float64Array(rows.length*4);solver.step(rows.map(b=>b.id),states,geometry,scene,clock,reduced,output);clock+=frameMs;
   }
@@ -176,4 +176,52 @@ it('rests against a post and a large plant, then wakes and falls when the suppor
  f.rows.splice(1,1);const after=f.step(600);
  expect(after[0].active).toBe(0);expect(Math.abs(after[0].angle-supported[0].angle)).toBeGreaterThan(.03);
  f.free();
+});
+
+
+it('tips in the recent finger direction on release, including a reversal and a paused finger',()=>{
+ for(const direction of [-1,1])for(const pause of [0,30]){
+  const f=fixture([book('hand',300,{flags:2,width:18})]);f.step(90);
+  // Earlier travel in the opposite direction must not override the release.
+  for(let i=1;i<=12;i++){f.rows[0].drag=-direction*i;f.step();}
+  for(let i=1;i<=30;i++){f.rows[0].drag=-direction*12+direction*i;f.step();}
+  if(pause)f.step(pause);const held=f.step()[0];
+  Object.assign(f.rows[0],{flags:0,x:318,drag:0});const first=f.step()[0];
+  expect(Math.abs(first.angle-held.angle)).toBeLessThan(.05);
+  const final=f.step(600)[0];expect(final.angle*direction).toBeLessThan(-.7);
+  expect(final.active).toBe(0);expect(f.step(60)[0]).toEqual(final);f.free();
+ }
+});
+it('top and bottom grips swing oppositely while the pickup still straightens the book',()=>{
+ const poses=[];
+ for(const grip of [-.4,.4]){
+  const f=fixture([book('hand',300,{flags:2,width:18,grip})]);f.step(90);
+  let pose;for(let i=1;i<=30;i++){f.rows[0].drag=i*2;pose=f.step()[0];}
+  poses.push(pose);expect(Math.abs(pose.angle)).toBeLessThan(.15);
+  // A stationary finger recovers a calm, vertical hold.
+  expect(Math.abs(f.step(90)[0].angle)).toBeLessThan(.01);f.free();
+ }
+ expect(poses[0].angle).toBeGreaterThan(.015);expect(poses[1].angle).toBeLessThan(-.015);
+});
+it('drops a fast drag without skating along the board before it tips',()=>{
+ for(const direction of [-1,1]){
+  const f=fixture([book('hand',300,{flags:2,width:18})]);f.step(90);
+  f.rows[0].drag=direction*100;const held=f.step(3)[0];
+  Object.assign(f.rows[0],{flags:0,x:300+direction*100,drag:0});
+  const first=f.step()[0];expect(Math.abs(first.x-held.x)).toBeLessThan(.5);
+  // Before gravity has tipped the centre, it must not coast across the shelf.
+  const early=f.step(6)[0];expect(Math.abs(early.x-first.x)).toBeLessThan(3);
+  const final=f.step(600)[0];expect(final.angle*direction).toBeLessThan(-.7);
+  expect(final.active).toBe(0);f.free();
+ }
+});
+
+it('eases an off-centre pickup without a sudden sideways or upward lurch',()=>{
+ for(const grip of [-.4,.4]){
+  const f=fixture([book('fallen',300,{width:18,grip})]);const rest=f.step(600)[0];
+  expect(Math.abs(rest.angle)).toBeGreaterThan(.7);f.rows[0].flags=2;
+  const first=f.step()[0];expect(Math.abs(first.x-rest.x)).toBeLessThan(2);expect(Math.abs(first.y-rest.y)).toBeLessThan(2);
+  const upright=f.step(90)[0];expect(Math.abs(upright.angle)).toBeLessThan(.01);
+  expect(upright.y+100).toBeLessThan(301);f.free();
+ }
 });
