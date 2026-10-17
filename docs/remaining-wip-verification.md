@@ -1,3 +1,18 @@
+# 1.7.268 — títulos y autores en Rust
+
+Changelog: «Títulos y autores en Rust».
+La limpieza de nombres, selección de autor, deduplicación, siglas, palabras breves, mayúsculas, puntuación, extensiones y truncamiento pasan a Rust. También la elección del título escrito en el lomo. Se mantienen primitivas Unicode y de cadenas del navegador para conservar NFKC, mayúsculas y posiciones UTF-16, incluidos sustitutos aislados y recortes que separan un par. No se convierte el texto de trabajo a String de Rust. El recorrido de metadatos de autor es iterativo y admite estructuras profundas sin consumir la pila de WASM; los ciclos no admitidos devuelven RangeError.
+
+UI y Shelf compilan el mismo módulo. Un consumidor usa su instancia ya cargada y el lector no necesita descargar Shelf para normalizar nombres. Los cambios de tipo entre lecturas de un campo mantienen los receptores y excepciones de sus métodos, liberando los handles temporales incluso al fallar. Las expresiones regulares se construyen una vez por instancia, sin callbacks persistentes.
+
+Build completo correcto. Pasan **197 pruebas específicas en 14 archivos**, más una medición temporal (198 casos en la ejecución). Se comparan más de 1500 combinaciones de títulos multilingües, metadatos, deduplicación, recortes, UTF-16 mal formado, coerciones y getters con la instantánea anterior congelada. También un autor anidado a 1500 niveles, 100 ciclos de éxito/error sin handles retenidos, uso de UI sin Shelf, biblioteca, sincronización/limpieza de Drive, nombres del lector, colores, geometría y pintura de 1500 lomos aleatorios con operaciones de canvas idénticas. No se cambian corpus o límites existentes.
+
+Medición Node/jsdom, tres repeticiones de diez recorridos sobre 200 títulos/autores variados: mediana nativa **6,08 ms** frente a **1,57 ms** de JavaScript. No se presenta el traslado como una mejora de velocidad de estas funciones aisladas. No se modifican resolución, materiales, geometrías ni gestos.
+
+Cuatro E2E finales pasan en una ejecución sin reintentos (56,8 s): importación/reapertura PDF y EPUB, título y autor editados desde el lomo visibles en ficha/lector/Escuchar, y dos importaciones consecutivas tanto con UI precargada como con descarga nativa retenida. Se conservan los bytes originales y los recuentos después de recargar.
+
+Inventario: 33060 líneas Rust / 20659 JavaScript, **61,54 %**, incluidos comentarios y compatibilidad; no mide funciones terminadas. Siguiente: coordinación de refresco de la aplicación después de su espera paralela, conservando adaptadores y WIP existentes.
+
 # 1.7.267 — comparación y orden de biblioteca en Rust
 
 Changelog: «Comparación y orden de biblioteca en Rust».

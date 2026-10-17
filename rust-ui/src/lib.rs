@@ -17,3 +17,6 @@ mod book_data;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod library_store;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod book_title;
