@@ -19,5 +19,6 @@ mod trash;
 mod screen_plan;
 mod screen_render;
 mod screen_nodes;
+mod screen_lifecycle;
 mod screen_prefs;
 pub use ctx::RustShelfCtx;

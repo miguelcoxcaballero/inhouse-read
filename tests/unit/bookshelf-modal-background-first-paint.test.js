@@ -4,6 +4,8 @@ import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 
 // The renderer double links programs "in the background": they report ready
 // only once the test says so, like KHR_parallel_shader_compile's completion.
+// This renderer fixture keeps authored book poses fixed. Real contact/settling
+// remains enabled in physics tests and mobile shelf-motion E2E scenarios.
 const gpu = vi.hoisted(() => ({ renders:0, compiles:0, linked:{ ready:false, isReady() { return this.ready; } } }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
@@ -72,7 +74,7 @@ function layout() {
 
 describe('modal deferral waits for an actual initial room commit', () => {
   it('continues program readiness after an unpainted successful flush, then defers later stationary decodes', () => {
-    const data = layout(); shelf = createBookshelfScene(data);
+    const data = layout(); shelf = createBookshelfScene({ ...data, settleBooks:false });
     shelf.canvas.getBoundingClientRect = () => rect(0, 60, 390, 700);
     const selected = data.entries[0].node;
     selected.classList.add('is-away');

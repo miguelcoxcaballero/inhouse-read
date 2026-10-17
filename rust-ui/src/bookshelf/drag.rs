@@ -116,12 +116,12 @@ pub fn persist_shelf_dom_order(ctx:&Rc<Ctx>,old_rects:&JsValue)->R{
  let order:Vec<JsValue>=array_of(&ctx.st("books")).iter().map(|book|obj(&[("id",&get(book,"id")),("shelfOrder",&get(book,"shelfOrder"))])).collect();
  let saved=ctx.option_call("onBookOrderChange",&[&arr(&order.iter().collect::<Vec<_>>())])?;
  then_map(&promise_resolve(&saved),Ok,|error|{warn("No se pudo guardar el orden de la estantería:",&error);Ok(undef())})?;
- ctx.legacy("render",&[])?;
+ super::screen_render::render(&ctx)?;
  // Start the quiet period after constructing the scene: on slower phones its first frame can take a significant
  // part of the animation duration.
  let timer=ctx.set_timeout(if prefers_reduced_motion(){0.0}else{560.0},|ctx|{
   ctx.st_set("reorderTimer",&f(0.0));
-  ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&ctx)?;
   Ok(())
  });
  ctx.st_set("reorderTimer",&timer);
@@ -154,7 +154,7 @@ pub fn reorder_spine(ctx:&Rc<Ctx>,source:&JsValue,target:&JsValue,after:bool)->R
 /// `startSpineDrag(event, node)`: the press that may become a hold, a scroll or a tap.
 pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  if other_button(event)||ctx.st_true("dragSession")||ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("returnMotion"){return Ok(());}
- ctx.legacy("clearCompatibilityTapRefresh",&[])?;
+ super::screen_lifecycle::clear_compatibility_tap_refresh(&ctx);
  ctx.st_set("suppressLampClickKey",&null());
  let mut background_only=false;
  let pressed=node.clone();
@@ -322,16 +322,16 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
  if gb(&drag,"scrolling")||gb(&drag,"cancelled"){
   ctx.st_set("suppressOpenBookId",&string_value(&or(data_get(node,"bookId"),s(""))));
   ctx.set_timeout(0.0,|ctx|{ctx.st_set("suppressOpenBookId",&null());Ok(())});
-  ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&ctx)?;
   return Ok(());
  }
  if !gb(&drag,"active"){
   // Keep the validated semantic hit alive until its compatibility click or synchronous touch activation. A WebGL
   // refresh replaces it too.
   if !cancelled&&!gb(&drag,"cancelled")&&!gb(&drag,"moved")&&gb(&drag,"bookTapValid")&&(text(&get(&drag,"pointerType"))=="mouse"||activate_touch){
-   ctx.legacy("deferCompatibilityTapRefresh",&[])?;
+   super::screen_lifecycle::defer_compatibility_tap_refresh(&ctx);
   }else{
-   ctx.legacy("applyDeferredShelfUpdates",&[])?;
+   super::screen_lifecycle::apply_deferred_updates(&ctx)?;
   }
   return Ok(());
  }
@@ -350,7 +350,7 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
   reorder_spine(ctx,node,&target,gb(&drag,"after"))?;
  }else{
   ctx.scene_call("flush",&[])?;
-  ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&ctx)?;
  }
  Ok(())
 }

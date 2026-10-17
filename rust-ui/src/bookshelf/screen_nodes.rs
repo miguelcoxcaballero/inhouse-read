@@ -124,7 +124,7 @@ fn open_book(ctx:&Rc<Ctx>,node:&JsValue,item:&JsValue){
  let (ctx,node,item)=(ctx.clone(),node.clone(),item.clone());
  spawn(async move{super::flyout::open(ctx,node,item).await?;Ok(undef())});
 }
-fn spine_body_view(ctx:&Ctx,body:&JsValue,item:&JsValue)->R<JsValue>{
+pub(super) fn spine_body_view(ctx:&Ctx,body:&JsValue,item:&JsValue)->R<JsValue>{
  let book=get(item,"book");let style=get(item,"style");let height=(if inner_width()>=600.0{200.0}else{172.0})*gn(&style,"heightRatio");
  let width=coalesce(get(item,"displayWidth"),get(&style,"width"));
  ctx.env("bookView",&[body,&book,&style,&obj(&[("width",&f(height*num(&super::covers::cover_ratio_for(ctx,&style,&undef())?))),

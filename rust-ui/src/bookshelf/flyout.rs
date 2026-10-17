@@ -57,7 +57,7 @@ impl Pending{
   self.ctx.option_call("onBookDismiss",&[&self.book])?;
   self.finish();
   self.ctx.st_set("busy",&JsValue::FALSE);
-  self.ctx.legacy("applyDeferredShelfUpdates",&[])?;Ok(())
+  super::screen_lifecycle::apply_deferred_updates(&self.ctx)?;Ok(())
  }
 }
 
@@ -109,7 +109,7 @@ impl Flyout{
   // The session is over: nothing keeps the lifted book alive but the code still running on its behalf.
   self.slot.clear();
   super::covers::maybe_refresh_appearance_styles(&self.ctx)?;
-  self.ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&self.ctx)?;
   Ok(())
  }
  pub(super) fn view_do(&self,name:&str,args:&[&JsValue])->R<JsValue>{if self.has_view(){method(&self.view,name,args)}else{Ok(undef())}}
@@ -204,12 +204,12 @@ impl RustShelfCtx{
 
 pub async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
  if ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("returnMotion")||ctx.st_true("destroyed"){return Ok(());}
- ctx.legacy("clearCompatibilityTapRefresh",&[])?;
+ super::screen_lifecycle::clear_compatibility_tap_refresh(&ctx);
  if ctx.st_true("queuedBooks"){
   // The validated painted hit selects the ID. Commit the accepted list through the original path before
   // using its current source/style/pose.
   let id=item_id(&item);
-  ctx.legacy("applyDeferredShelfUpdates",&[])?;
+  super::screen_lifecycle::apply_deferred_updates(&ctx)?;
   // A reordering animation can still own the queued list. Keep it intact and do not open the stale source
   // or geometry from the painted hit.
   if ctx.st_true("queuedBooks"){return Ok(());}

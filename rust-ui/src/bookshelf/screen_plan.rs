@@ -24,13 +24,14 @@ pub fn consume_render_requests(ctx:&Ctx){
 }
 
 pub fn schedule_render(ctx:&Rc<Ctx>){
+ if ctx.st_true("destroyed"){return;}
  if ["returnMotion","reorderTimer","busy","session","dragSession","compatibilityTapTimer"].iter().any(|key|ctx.st_true(key)){
   ctx.st_set("renderQueued",&JsValue::TRUE);return;
  }
  if ctx.st_true("frame"){return;}
  let frame=ctx.set_frame(|ctx|{
   ctx.st_set("frame",&f(0.0));
-  if ctx.st_true("queuedBooks"){ctx.legacy("applyDeferredShelfUpdates",&[])?;}else{ctx.legacy("render",&[])?;}
+  if ctx.st_true("queuedBooks"){super::screen_lifecycle::apply_deferred_updates(&ctx)?;}else{super::screen_render::render(&ctx)?;}
   Ok(())
  });
  ctx.st_set("frame",&frame);
@@ -156,11 +157,11 @@ pub fn refresh(ctx:&Rc<Ctx>,next_books:&JsValue,defer:bool)->R{
  if !ctx.st_true("appearancesReady")&&truthy(&ctx.option("waitForCoverAppearance")){
   ctx.st_set("appearanceGeneration",&f(num(&ctx.st("appearanceGeneration"))+1.0));
   ctx.st_set("appearancesReady",&JsValue::TRUE);
-  ctx.legacy("prepareInitialAppearances",&[])?;
+  super::screen_plan::prepare_initial_appearances(&ctx)?;
  }
  ctx.st_set("shelfWidth",&f(0.0));
  super::returning::settle_return_slot(ctx,true)?;
- ctx.legacy("render",&[])?;
+ super::screen_render::render(&ctx)?;
  put(&ctx.scroller,"scrollTop",&top);
  Ok(())
 }
@@ -221,6 +222,7 @@ impl RustShelfCtx{
 
 /// Enough appearance information for the first stable shelf frame; full font matching follows it.
 pub fn prepare_initial_appearances(ctx:&Rc<Ctx>)->R{
+ if ctx.st_true("destroyed"){return Ok(());}
  if !truthy(&ctx.option("waitForCoverAppearance"))||gn(&ctx.st("books"),"length")==0.0{return Ok(());}
  let pending=Array::new();
  for book in array_of(&ctx.st("books")){

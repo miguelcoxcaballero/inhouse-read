@@ -5,7 +5,9 @@ import { layoutShelves } from '../../src/js/bookshelf-layout.js';
 import { bookSpineOptions, minimumBookCellWidth, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare, MINIMUM_LAMP_TAP_SIZE } from '../../src/js/plant-dimensions.js';
 
 vi.mock('../../src/js/book-model.js', async () => {
-  const Three = await import('three');
+  // Static renderer/picking fixture: physical contacts are covered with the
+// default simulation in book-gravity tests and the mobile motion suite.
+const Three = await import('three');
   let ratio = 1, size = new Three.Vector2();
   const renderer = { domElement:document.createElement('canvas'), shadowMap:{},
     capabilities:{ getMaxAnisotropy:() => 1 }, getPixelRatio:() => ratio,
@@ -73,7 +75,7 @@ beforeEach(() => {
   scroller.getBoundingClientRect = () => rect(STAGE.left, STAGE.top, 390, 700);
   stage.getBoundingClientRect = () => rect(STAGE.left, STAGE.top, 390, 750);
   const first = document.createElement('button'); stage.append(first);
-  shelf = createBookshelfScene({ stage, scroller, width:390, sceneWidth:390, height:750,
+  shelf = createBookshelfScene({ settleBooks:false, stage, scroller, width:390, sceneWidth:390, height:750,
     rows:[{ top:20, bottom:220 }], entries:[{ node:first, book:{ id:'a', title:'Book', author:'Autor' }, style:{ color:'#3c6548', width:28 },
       x:60, y:130, width:100, height:172, thickness:28 }] });
   shelf.canvas.getBoundingClientRect = () => rect(STAGE.left, STAGE.top, 390, 700);

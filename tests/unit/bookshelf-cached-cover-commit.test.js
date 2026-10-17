@@ -2,6 +2,8 @@ import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 
+// This renderer fixture keeps authored book poses fixed. Real contact/settling
+// remains enabled in physics tests and mobile shelf-motion E2E scenarios.
 const gpu = vi.hoisted(() => ({ renderer:null,scene:null,models:[],plans:[],paints:[] }));
 vi.mock('../../src/js/book-model.js',async () => {
   const Three = await import('three');
@@ -74,7 +76,7 @@ beforeEach(async () => {
   node = document.createElement('button'); node.className = 'ihr-spine'; node.dataset.bookId = 'one'; stage.append(node);
   rows = [{ top:20,bottom:220 },{ top:260,bottom:460 }];
   book = { id:'one',title:'Same book',progressFraction:.1 }; style = { color:'#41694f',width:28,coverRatio:100/180 };
-  shelf = createBookshelfScene({ stage,scroller,width:390,height:500,rows,
+  shelf = createBookshelfScene({ settleBooks:false, stage,scroller,width:390,height:500,rows,
     entries:[{ node,book,style,coverUrl:'cover:old',x:75,y:130,width:100,height:180,thickness:28 }] });
   shelf.canvas.getBoundingClientRect = () => rect(390,700);
   await Promise.resolve(); shelf.flush({ force:true }); drain(); gpu.renderer.render.mockClear(); gpu.paints = [];

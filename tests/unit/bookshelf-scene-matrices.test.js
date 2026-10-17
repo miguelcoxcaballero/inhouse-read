@@ -4,6 +4,8 @@ import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshel
 
 // Unlike a draw-count-only double, this follows the real renderer's world
 // matrix update. Extra walks before this update are measurable CPU work.
+// This renderer fixture keeps authored book poses fixed. Real contact/settling
+// remains enabled in physics tests and mobile shelf-motion E2E scenarios.
 const gpu = vi.hoisted(() => ({ scene:null, renders:0 }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
@@ -49,7 +51,7 @@ function makeShelf({ lamp = false } = {}) {
     entries.push({ kind:'lamp',node,key:'lamp:matrices',lampId:'mittled',mount:'undershelf',x:185,y:250,
       width:45,height:8,depth:45,isOn:true });
   }
-  shelf = createBookshelfScene({ stage,scroller,entries,width:390,height:750,mode:'isometric',
+  shelf = createBookshelfScene({ settleBooks:false, stage,scroller,entries,width:390,height:750,mode:'isometric',
     rows:[{ top:20,bottom:220 },{ top:260,bottom:460 },{ top:500,bottom:700 }] });
   shelf.canvas.getBoundingClientRect = () => rect(390,700); shelf.flush(); drain();
 }

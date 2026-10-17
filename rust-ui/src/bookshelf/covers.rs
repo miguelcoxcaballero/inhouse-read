@@ -112,7 +112,7 @@ pub fn cover_ratio_for(ctx:&Ctx,style:&JsValue,fallback:&JsValue)->R<JsValue>{
 pub fn maybe_refresh_appearance_styles(ctx:&Rc<Ctx>)->R{
  if !ctx.st_true("appearanceRefreshPending")||ctx.busy_for_refresh()||ctx.st_true("destroyed"){return Ok(());}
  ctx.st_set("appearanceRefreshPending",&JsValue::FALSE);
- ctx.legacy("scheduleRender",&[])?;
+ super::screen_plan::schedule_render(&ctx);
  Ok(())
 }
 
