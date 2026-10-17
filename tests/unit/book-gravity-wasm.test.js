@@ -168,3 +168,12 @@ it('uses the white metal post dimensions for tiny books as well as the wooden wa
   expect(b.y+ey).toBeLessThanOrEqual(300.05);expect(b.y-ey).toBeGreaterThanOrEqual(9.95);
  }f.free();
 });
+
+it('rests against a post and a large plant, then wakes and falls when the support disappears',()=>{
+ const f=fixture([book('thin',28,{width:4,height:240}),book('pot',110,{kind:1,width:130,height:160}),book('other',250,{width:4,height:200})]);
+ const supported=f.step(600);expect(supported.every(b=>b.active===0)).toBe(true);
+ expect(f.step(120)).toEqual(supported);
+ f.rows.splice(1,1);const after=f.step(600);
+ expect(after[0].active).toBe(0);expect(Math.abs(after[0].angle-supported[0].angle)).toBeGreaterThan(.03);
+ f.free();
+});
