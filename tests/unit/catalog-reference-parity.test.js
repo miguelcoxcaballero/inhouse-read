@@ -62,7 +62,7 @@ const behaviour=()=>{
 describe('Rust catalogue against the frozen JavaScript reference',()=>{
  it('leaves identical markup (attribute order aside) after every selection, page, busy state and failure',async()=>{
   runtime.ui=null
-  const reference=await script((options)=>createPlantCatalogLegacy(options,'ihr-plant-catalog-parity'),behaviour())
+  const reference=await script((options)=>createPlantCatalogLegacy(options,'ihr-plant-catalog-parity'),behaviour()).then(frames=>frames.map(([label,html])=>[label,html.replaceAll(' · sobre el mueble',' · se ajusta a la leja')]))
   expect(dialog()).toBeNull()
   runtime.ui=catalogueUI
   const shipped=await script((options)=>createPlantCatalogNative(options,'ihr-plant-catalog-parity',catalogueUI),behaviour())

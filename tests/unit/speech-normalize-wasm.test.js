@@ -5,7 +5,7 @@ import { beforeAll, expect, it, vi } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
 import { rustNormalizeSpeech } from './helpers/speech-kernels.js';
 import { normalizeSpeech, planSpeech } from '../../src/js/readers/speech-text.js';
-import * as reference from './helpers/reference-speech-text.js';
+import * as reference from './helpers/paragraph-speech-oracle.js';
 let core;
 beforeAll(async()=>{core=await loadRustCore({bytes:readFileSync('src/wasm/inhouse_read_core.wasm')});expect(typeof core?.speech_normalize).toBe('function');});
 const texts=['', ' ', 'Título\u2029Párrafo\u2029\u2029Después.', 'Dijo: «Voy.»\u2029Volvió.',

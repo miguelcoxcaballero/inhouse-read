@@ -37,9 +37,10 @@ describe('BAGGEBO physical shelf layout', () => {
     const book = result.entries[1]; expect(book.width).toBeCloseTo(220);
     expect(book.width / book.height).toBeCloseTo(360 / 172);
     const plant = result.entries.at(-1), row = result.rows[2];
-    expect(plant.rooftop).toBe(true);
-    expect(plant.height).toBe(500);
-    expect(plant.y + plant.height / 2).toBe(0);
+    expect(plant.rooftop).toBe(false);
+    expect(plant.height).toBeCloseTo(row.bottom-row.top-4);
+    expect(plant.width / plant.height).toBeCloseTo(80/500);
+    expect(plant.y + plant.height / 2).toBe(row.bottom);
     const slot = shelfBookSlot(book, result.width);
     expect(slot.elements[14] + book.width / 2).toBe(-15);
     expect(slot.elements[14] - book.width / 2).toBe(-235);

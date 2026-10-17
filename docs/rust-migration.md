@@ -1,5 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.259: pausas entre párrafos reales, saltos PDF y espacios CSS; años contextuales en más idiomas. 348 pruebas y dos E2E pasan. Inventario 59,71 %, no funciones completadas. Siguiente: física de colisiones en Rust, zoom y migración.
+
+Entrega 1.7.258: contacto y caída amortiguada de libros en Rust, separación predeterminada cero y plantas altas ajustadas dentro de sus lejas. 225 pruebas finales y cuatro E2E pasan; general de 6420 casos distintos cerrada con reverificación, salvo un timeout preexistente de color. Detalle y alcance del binario final en remaining-wip-verification.md. Inventario **59,70 %**, no funciones completadas. Se retoman pausas y zoom.
+
 Entrega 1.7.257: fechas y cantidades diferenciadas en Rust; años ingleses con lectura por pares según contexto. 146 pruebas específicas y dos E2E pasan. Inventario **59,67 %**, no funciones terminadas.
 
 Entrega 1.7.256: margen vertical de EPUB/PDF reducido y caché de alturas renovada. 25 pruebas específicas y seis comprobaciones de navegador pasan; página móvil ocupa los 704 px disponibles con 4 px interiores arriba y abajo. Se cierra la verificación del audio: 6397/6398 pruebas generales pasan, con un timeout ya conocido ajeno al audio, y dos E2E finales pasan. Inventario **59,64 %** Rust; no mide funciones terminadas.

@@ -1,3 +1,52 @@
+# 1.7.259 — pausas entre párrafos y lectura contextual de años
+
+Changelog: «Pausas naturales y años según idioma».
+Los bloques DOM distintos introducen una pausa aunque no haya puntuación. Un salto visual dentro del mismo párrafo no corta la frase. Los espacios del código HTML se colapsan según CSS; pre/pre-wrap/pre-line/break-spaces conservan sus líneas. En texto PDF una línea vacía separa párrafos, sin confundir CRLF con dos saltos. Se conservan los índices UTF-16 y el resaltado. La síntesis mantiene su descanso de 240 ms entre fragmentos.
+
+Se amplían los años contextuales a alemán, neerlandés y lenguas escandinavas, y se distingue el año chino de cantidades/duraciones. Las unidades cercanas prevalecen sobre el contexto temporal; una coma seguida de otra cantidad ya no convierte un año inglés en cardinal. 348 pruebas específicas en 11 archivos y dos E2E de Chromium móvil pasan con los binarios finales. Las referencias congeladas no se modifican: un adaptador únicamente de pruebas aplica el nuevo contrato después de la máscara original de cabeceras. Build completo correcto. No se ha repetido la batería general en este bloque; permanece documentado el timeout de color ajeno al audio.
+
+Inventario: 31593 líneas Rust / 21315 JS, **59,71 %**; mide líneas propias, no funciones terminadas. Siguiente prioridad: sustituir la inclinación de 258 por colisiones reales, cadenas de caída y pérdida de apoyo en Rust. Después zoom y resto de migración.
+
+# 1.7.258 — libros que se apoyan y plantas dentro de su leja
+
+Changelog: «Libros con apoyo animado y plantas ajustadas».
+La gravedad y el contacto se calculan en Rust: un libro movido se inclina hacia el libro alcanzable
+más próximo de la misma leja, con aceleración y amortiguación, manteniendo la esquina inferior sobre
+la balda. Los libros en contacto permanecen rectos. Macetas y lámparas de pie bloquean el paso;
+los focos del techo no. La animación termina, respeta movimiento reducido y reutiliza modelos y
+texturas. Identificadores UTF-16 distintos conservan estados independientes. No es un simulador de
+cuerpos rígidos: un vecino ya inclinado no se utiliza como apoyo y no se provoca una caída en cadena.
+
+Se elimina la separación predeterminada de 3 px, incluida la regla CSS, y la celda artificial más
+ancha que los lomos finos. Las posiciones guardadas a mano conservan sus huecos deliberados y las
+zonas táctiles siguen ampliadas. Las plantas altas se escalan uniformemente dentro de su leja,
+conservando proporciones, semilla, maceta, color y posición guardada; ya no saltan al techo del mueble.
+El catálogo indica que se ajustan a la leja. No se reduce geometría, resolución de texturas o materiales.
+
+Build completo final y 225 pruebas finales pasan en 14 archivos. Incluyen seis casos de física,
+la transformación real de la malla y su reposo, 6000 muebles degenerados, dimensiones de todas las
+combinaciones de planta/maceta, edición, retorno y movimientos. Se mantienen las referencias JS
+congeladas. Las comparaciones reciben la nueva política de espacio (gap 0, sin celda adicional) y
+la etiqueta de ajuste esperada; no se reducen escenarios ni aserciones. Los 26 escenarios completos
+de escena verifican la API opcional settleBooks:false frente a la referencia anterior; la gravedad
+está activada de forma predeterminada en producción y se comprueba por separado.
+
+Batería general previa en cuatro grupos: 6418 casos, 6362 pasan; 55 fallos por las expectativas de
+separación/diagnóstico antiguas se cierran en la reverificación final, y se añaden dos regresiones
+UTF-16/foco de techo. En conjunto quedan validados 6419 de 6420 casos distintos; el único fallo
+restante es el timeout preexistente de cover-relief-job-wasm para 200000 colores: 6234 ms frente a
+5000 ms, también reproducido en main antes de estos cambios. No se amplía ese límite. La general
+precede las dos correcciones aisladas de identificadores/focos, el ajuste de etiqueta y la opción de
+compatibilidad; esas rutas y comparaciones se verifican con el binario final mediante las 225 específicas.
+
+Cuatro E2E finales pasan en 1,3 minutos, sin reintentos: acceso al libro fino junto a una planta,
+catálogo usable a 320 px, MONSTERA dentro de su leja en ambas estanterías y caída del libro con GPU
+en reposo al terminar. Captura de contacto inspeccionada. Chromium usa SwiftShader; no se afirma
+un rendimiento medido en un móvil físico. Se conserva el dist final como base 258 para medir el zoom.
+Inventario 31572 líneas Rust / 21315 JS: 59,70 %, fuente, no porcentaje de funciones terminadas.
+Revisión propia, sin delegación. Siguen pendientes pausas entre párrafos, optimización de zoom y
+resto de la migración a Rust; se conservan sus worktrees.
+
 # 1.7.257 — años según el contexto
 
 Changelog: «Lectura contextual de años en inglés».

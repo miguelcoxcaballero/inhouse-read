@@ -30,22 +30,22 @@ describe('speech text mapping over the DOM', () => {
   it('puts a separator between blocks and <br>, and ranges skip it', () => {
     const doc = html('<h1>Title</h1><p>First.</p><p>Line one<br>line two</p><ul><li>a</li><li>b</li></ul>')
     const map = mapSpeechText(doc.body)
-    // Headings and list items are hard breaks (their own sentences); paragraphs and <br> are soft line breaks.
-    expect(map.text).toBe('Title\u2029First.\nLine one\nline two\u2029a\u2029b')
+    // Headings and list items are hard breaks (their own sentences); paragraphs now end sentences; a single <br> is a wrapped line.
+    expect(map.text).toBe('Title\u2029First.\u2029Line one\nline two\u2029a\u2029b')
     expect(spoken(map, 0, map.text.length)).toBe('TitleFirst.Line oneline twoab')
     const from = map.text.indexOf('First'), to = map.text.indexOf('line two') + 4
     expect(spoken(map, from - 1, to)).toBe('First.Line oneline')
     // A range that starts inside a separator begins at the next text.
     expect(spoken(map, 5, 12)).toBe('First.')
   })
-  it('a heading without a full stop becomes its own sentence, a wrapped paragraph line does not', () => {
+  it('a heading and each real paragraph pause without full stops; wrapped lines stay continuous', () => {
     const doc = html('<h2>The quiet room</h2><p>It was late and the</p><p>light was low.</p><ul><li>Eggs</li><li>Milk.</li></ul>')
     const map = mapSpeechText(doc.body)
     const { text } = normalizeSpeech(map.text)
-    expect(text).toBe('The quiet room. It was late and the light was low. Eggs. Milk.')
+    expect(text).toBe('The quiet room. It was late and the. light was low. Eggs. Milk.')
     const items = planSpeech(map.text)
-    expect(items.map(item => item.text)).toEqual(['The quiet room.', 'It was late and the light was low.', 'Eggs.', 'Milk.'])
-    expect(items.map(item => spoken(map, item.sentence.start, item.sentence.end))).toEqual(['The quiet room', 'It was late and thelight was low.', 'Eggs', 'Milk.'])
+    expect(items.map(item => item.text)).toEqual(['The quiet room.', 'It was late and the.', 'light was low.', 'Eggs.', 'Milk.'])
+    expect(items.map(item => spoken(map, item.sentence.start, item.sentence.end))).toEqual(['The quiet room', 'It was late and the', 'light was low.', 'Eggs', 'Milk.'])
   })
   it('does not add a stray full stop after a closing quote or bracket that already ends the sentence', () => {
     const doc = html('<ul><li>Dijo: "Voy."</li><li>Otro</li></ul><h2>«Fin»</h2><p>Texto.</p><ul><li>(Ver nota.)</li><li>Él gritó: «¡Corre!»</li></ul>')
@@ -60,18 +60,18 @@ describe('speech text mapping over the DOM', () => {
   it('does not read text that is not rendered: display:none asides, [hidden], aria-hidden and visibility:hidden', () => {
     const doc = html('<p>Visible end of chapter.</p><aside style="display:none"><p>1. Hidden endnote text.</p></aside><p hidden>Hidden para.</p><span aria-hidden="true">decor</span><div style="visibility:hidden">Ghost</div><p>The real next.</p>')
     const map = mapSpeechText(doc.body)
-    expect(map.text).toBe('Visible end of chapter.\nThe real next.')
+    expect(map.text).toBe('Visible end of chapter.\u2029The real next.')
     expect(planSpeech(map.text).map(item => item.text)).toEqual(['Visible end of chapter.', 'The real next.'])
   })
   it('uses the computed style of a real page (stylesheet rules), not only inline styles', () => {
     document.body.innerHTML = '<style>.note{display:none}</style><p>Shown.</p><aside class="note"><p>Footnote text.</p></aside><p>Also shown.</p>'
-    expect(mapSpeechText(document.body).text).toBe('Shown.\nAlso shown.')
+    expect(mapSpeechText(document.body).text).toBe('Shown.\u2029Also shown.')
     document.body.innerHTML = ''
   })
   it('keeps the hard break when a list item or cell wraps its text in a paragraph', () => {
     const doc = html('<ul><li><p>Uno</p></li><li><p>Dos</p></li></ul><table><tr><td><p>A</p></td><td><p>B</p></td></tr></table><ul><li><p>Dos parrafos.</p><p>Mismo item.</p></li></ul>')
     const map = mapSpeechText(doc.body)
-    expect(map.text).toBe('Uno\u2029Dos\u2029A\u2029B\u2029Dos parrafos.\nMismo item.')
+    expect(map.text).toBe('Uno\u2029Dos\u2029A\u2029B\u2029Dos parrafos.\u2029Mismo item.')
     expect(planSpeech(map.text).map(item => item.text)).toEqual(['Uno.', 'Dos.', 'A.', 'B.', 'Dos parrafos.', 'Mismo item.'])
   })
   it('offsetOf finds the first character of a visible range, whatever its container', () => {
@@ -101,13 +101,13 @@ describe('normalising speech without losing offsets', () => {
   it('collapses whitespace and keeps a raw offset for every spoken character', () => {
     const raw = '  One   two\n\n three  '
     const { text, map } = normalizeSpeech(raw)
-    expect(text).toBe('One two three')
-    expect(text.split('').every((ch, i) => ch === ' ' ? /\s/.test(raw[map[i]]) : raw[map[i]] === ch)).toBe(true)
+    expect(text).toBe('One two. three')
+    expect(text.split('').every((ch, i) => ch === ' ' || ch === '.' ? /\s/.test(raw[map[i]]) : raw[map[i]] === ch)).toBe(true)
   })
   it('omits EPUB note references and backlinks while retaining note prose and mathematical superscripts',()=>{
     const doc=html('<p>En 1999<a epub:type="noteref" href="#n1">1</a> ocurrió. Luego<sup><a href="notes.xhtml#n2">2</a></sup> seguimos. E = mc<sup>2</sup>.</p><aside epub:type="footnote" id="n1"><a href="#r1">1</a> Texto de la nota.</aside><p>En <a href="#year">2026</a> volvemos.</p>')
     const map=mapSpeechText(doc.body)
-    expect(map.text).toBe('En 1999 ocurrió. Luego seguimos. E = mc2.\n Texto de la nota.\nEn 2026 volvemos.')
+    expect(map.text).toBe('En 1999 ocurrió. Luego seguimos. E = mc2.\u2029 Texto de la nota.\u2029En 2026 volvemos.')
     const start=map.text.indexOf('2026')
     expect(map.rangeFor(start,start+4).toString()).toBe('2026')
   })

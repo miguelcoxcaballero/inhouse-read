@@ -113,15 +113,18 @@ describe('standard IKEA plant and pot sizes', () => {
     expect(plantSizeLabel('missing', 'muskot')).toBe('');
   });
 
-  it('keeps every plant at its real size on a BAGGEBO shelf instead of shrinking it to fit', () => {
+  it('fits every plant and pot uniformly inside a BAGGEBO bay', () => {
     const scale = 390 / BAGGEBO_SPEC.width, rows = [{}, {}, {}];
     for (const plant of PLANT_CATALOG) for (const pot of POT_CATALOG) {
       const size = plantSceneSize(plant.id, pot.id, scale), real = plantDimensions(plant.id, pot.id);
       const [entry] = baggeboLayout({ width:390, rows, entries:[{ kind:'plant', shelf:0, x:100, y:0,
         width:size.width, height:size.height, depth:size.depth }] }).entries;
-      expect(entry.height).toBeCloseTo(real.height * scale, 6);
-      expect(entry.width).toBeCloseTo(real.width * scale, 6);
-      expect(entry.depth).toBeCloseTo(real.depth * scale, 6);
+      const clearance=(BAGGEBO_SPEC.shelfBottoms[0]-BAGGEBO_SPEC.postSize-4)*scale;
+      const fit=Math.min(1,clearance/(real.height*scale));
+      expect(entry.height).toBeCloseTo(real.height * scale * fit, 6);
+      expect(entry.width).toBeCloseTo(real.width * scale * fit, 6);
+      expect(entry.depth).toBeCloseTo(real.depth * scale * fit, 6);
+      expect(entry.rooftop).toBe(false);
     }
   });
 

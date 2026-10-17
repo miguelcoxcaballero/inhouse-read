@@ -220,3 +220,19 @@ describe('shelf presentation and synchronous projection scheduling',() => {
     expect(frames.size).toBe(0);
   });
 });
+
+it('animates the actual book pose into contact after release, then stops rendering',async()=>{
+ const other=document.createElement('button');other.className='ihr-spine';other.dataset.bookId='two';stage.append(other);
+ const entries=[{node,book:{id:'one',title:'Same book'},style:{color:'#41694f',width:28},shelf:0,x:75,y:130,width:100,height:180,thickness:28},
+  {node:other,book:{id:'two',title:'Support'},style:{color:'#41694f',width:28},shelf:0,x:30,y:130,width:100,height:180,thickness:28}];
+ shelf.updateLayout({stage,scroller,width:390,height:500,rows:[{top:20,bottom:220},{top:260,bottom:460}],entries});
+ await Promise.resolve();shelf.flush({force:true});drain();
+ node.classList.add('is-dragging');shelf.flush({force:true});drain();
+ node.classList.remove('is-dragging');shelf.flush({force:true});drain();
+ expect(+node.dataset.sceneLean).toBeGreaterThan(0);
+ expect(model().rotation.order).toBe('ZYX');
+ expect(model().rotation.z).toBeCloseTo(Math.asin(17/180),5);
+ expect(shelf.canvas.dataset.animating).toBe('false');
+ gpu.renderer.render.mockClear();expect(shelf.flush()).toBe(false);expect(renders()).toBe(0);
+ shelf.dispose();expect(node.dataset.sceneLean).toBeUndefined();
+});

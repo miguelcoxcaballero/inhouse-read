@@ -194,7 +194,7 @@ const darkPage = () => document.documentElement.dataset.theme === 'dark';
  * hit targets, projected from the meshes after every camera/group update.
  */
 export function createBookshelfScene({ stage, scroller, entries, rows, width, height, sceneWidth = width,
-  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1 }) {
+  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1, settleBooks = true }) {
   shelfType = normalizeShelfType(shelfType);
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
@@ -309,6 +309,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // The camera framing, the turn between the views, the inspection zoom and pan and the drop guide's place
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
+  const bookGravity = new rust.RustBookGravity();
+  let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0);
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   let occluderCabinet = null, occluderDescription = null;
@@ -1398,8 +1400,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // a class or drag-variable write) are examined here, as the frame's own read.
     for (const record of mutations.takeRecords()) { const entry = byNode.get(record.target); if (entry) entry.domDirty = true; }
     inverseTurn[0] = inverseRotation.x; inverseTurn[1] = inverseRotation.y; inverseTurn[2] = inverseRotation.z; inverseTurn[3] = inverseRotation.w;
+    if (settleBooks) {
+      if (gravityInput.length !== bookEntries.length * 6) {
+        gravityInput = new Float64Array(bookEntries.length * 6); gravityOutput = new Float64Array(bookEntries.length * 4);
+      }
+      const gravityKeys = bookEntries.map((entry,index) => {
+        if (entry.domDirty) { entry.domDirty = false; entry.state = stateFor(entry); }
+        gravityInput.set([entry.shelf || 0, entry.x, entry.kind === 'plant' || entry.kind === 'lamp' ? entry.width : entry.thickness,
+          entry.height, entry.kind === 'plant' ? 1 : entry.kind === 'lamp' ? entry.mount === 'undershelf' ? 3 : 2 : 0, entry.bits],index * 6);
+        return entry.key;
+      });
+      bookGravity.step(gravityKeys, gravityInput, now, reducedMotion.matches, gravityOutput);
+    }
     sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, window.devicePixelRatio, window.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
-    for (const entry of bookEntries) {
+    for (const [entryIndex,entry] of bookEntries.entries()) {
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
       const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
       // The DOM is read again only for a node whose class or style changed.
@@ -1435,7 +1449,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       moving ||= Boolean(motion & 8);
       shelfMoving ||= !away && Boolean(motion & 24);
       entry.pose.position.set(stepIo[29], stepIo[30], stepIo[31]);
-      entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
+      const gravityAt = entryIndex * 4;
+      if (settleBooks && !decorative && node) setData(node, 'sceneLean', gravityOutput[gravityAt].toFixed(6));
+      if (!decorative && settleBooks) {
+        entry.pose.position.x += gravityOutput[gravityAt + 1]; entry.pose.position.y += gravityOutput[gravityAt + 2];
+        moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
+        entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34] + gravityOutput[gravityAt], gravityOutput[gravityAt] === 0 ? 'XYZ' : 'ZYX');
+      } else entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
       entry.pose.scale.setScalar(stepIo[35]);
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
@@ -2849,6 +2869,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
           delete node.dataset.sceneProjected;
           delete node.dataset.sceneHitSurface;
+          delete node.dataset.sceneLean;
           semanticCovers.get(node)?.remove(); semanticCovers.delete(node);
           // Keep the expensive projected leaf triangles until entries are
           // rebound below. An unchanged plant can move its native hit surface
@@ -2991,6 +3012,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
+      if (!disposed) bookGravity.free();
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
@@ -3022,6 +3044,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
         delete node.dataset.sceneProjected;
         delete node.dataset.sceneHitSurface;
+        delete node.dataset.sceneLean;
         clearPlantDiagnostics(node);
       }
       for (const node of semanticCovers.values()) node.remove();

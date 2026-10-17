@@ -2,7 +2,7 @@
 import {it,expect,beforeAll,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {planSpeech} from './helpers/reference-speech-plan.js'
+import {planSpeech} from './helpers/paragraph-speech-oracle.js'
 import {makeCases,invoke} from '../helpers/speech-pipeline-cases.js'
 // The oracle is the frozen JavaScript (reference-speech-plan.js over reference-speech-text.js), independent of Rust.
 const cases=makeCases(),blocks=Math.ceil(cases.length/100);let core,retained,capacity,held,expected

@@ -1,7 +1,12 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { createBookshelfScene as live } from '../../src/js/bookshelf-scene.js'
+import { createBookshelfScene as liveScene } from '../../src/js/bookshelf-scene.js'
 import { createBookshelfScene as frozen } from './helpers/reference-bookshelf-scene.js'
 import { runScenario } from './helpers/scene-differential.js'
+
+// New settling is enabled in production by default and covered by contact/idle
+// regressions. Keep the complete original scene corpus as an independent check
+// of the optional non-settling API, without changing its frozen reference.
+const live=options=>liveScene({...options,settleBooks:false})
 
 vi.mock('../../src/js/book-model.js', async () => (await import('./helpers/scene-differential.js')).bookModelMock())
 

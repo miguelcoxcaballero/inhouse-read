@@ -333,3 +333,17 @@ test('isometric finger motion reuses its image, restores sharp books and keeps r
   }
   expect(errors).toEqual([]);
 });
+
+test('a released book settles against its neighbour and leaves the GPU idle',async({page},testInfo)=>{
+ const scene=await seedShelf(page);
+ const book=page.locator('[data-book-id="motion:book:1"]');
+ await book.evaluate(node=>node.classList.add('is-dragging'));
+ await expect(scene).toHaveAttribute('data-animating','true');
+ await book.evaluate(node=>node.classList.remove('is-dragging'));
+ await expect.poll(async()=>Math.abs(Number(await book.getAttribute('data-scene-lean')))).toBeGreaterThan(.01);
+ await quietShelf(scene);
+ const before=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);
+ expect(await scene.getAttribute('data-render-count')).toBe(before);
+ await expect(book).toHaveAttribute('data-scene-projected','true');
+ await page.screenshot({path:testInfo.outputPath('book-gravity-contact.png')});
+});

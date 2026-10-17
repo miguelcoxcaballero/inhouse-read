@@ -3,8 +3,24 @@ import { readFileSync } from 'node:fs';
 import { beforeAll,describe,expect,it,vi } from 'vitest';
 import { rustShelfModelLayout } from '../../src/js/shelf-model-layout-wasm.js';
 import { SHELF_SPECS } from '../../src/js/shelf-types.js';
-import { shelfModelLayout as reference } from './helpers/reference-shelf-model-layout.js';
+import { shelfModelLayout as frozenReference } from './helpers/reference-shelf-model-layout.js';
 import { prng } from './helpers/pointer-harness.js';
+// Intentional policy change only: fit finite plants within their existing bay.
+// The frozen layout remains untouched and still supplies every other coordinate.
+function reference(value,type){
+ const result=frozenReference(value,type),scale=value.width/SHELF_SPECS[type].width;
+ for(let i=0;i<value.entries.length;i++){
+  const entry=value.entries[i],model=result.entries[i];if(entry.kind!=='plant')continue;
+  const row=result.rows[Math.max(0,Math.min(result.rows.length-1,entry.shelf??0))];
+  const clearance=row.bottom-row.top-4*scale;
+  if(Number.isFinite(entry.height)&&entry.height>0&&Number.isFinite(clearance)&&clearance>0){
+   const fit=Math.min(1,clearance/entry.height);model.height=entry.height*fit;model.width=entry.width*fit;
+   if(entry.depth)model.depth=entry.depth*fit;
+   model.y=row.bottom-model.height/2;model.rooftop=false;
+  }
+ }
+ return result;
+}
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;});
 function input(width=390,rows=7,count=40) {
