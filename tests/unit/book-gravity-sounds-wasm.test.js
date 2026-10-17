@@ -14,7 +14,8 @@ function shelf(metal=false,rows=[{id:'book',x:300,flags:2}],hand=0){
     geometry.set([b.width??18,b.kind??0,0,1000,0,600,300,10,0],i*9);
    });
    solver.step(rows.map(b=>b.id),states,geometry,scene,time,false,output);time+=1000/60;
-   const sounds=solver.take_sounds();if(sounds)for(let k=0;k<sounds.length;k+=3)hits.push([...sounds.slice(k,k+3),output[0],time]);
+   // [material, strength, pan] + the first output + time + [kind], read with the module's stride.
+   const sounds=solver.take_sounds(),stride=solver.sound_stride();if(sounds)for(let k=0;k<sounds.length;k+=stride)hits.push([...sounds.slice(k,k+3),output[0],time,sounds[k+3]]);
   }},free(){solver.free();scene.free();}};
 }
 
@@ -77,4 +78,40 @@ it('does no contact audio while disabled and discards pending audio on pause',()
  const f=shelf();f.step(90);for(let i=1;i<=30;i++){f.move(i,-50);f.step();}f.release();f.step(600);
  expect(f.hits).toEqual([]);f.solver.sound_enabled(true);f.step(120);expect(f.hits).toEqual([]);
  f.solver.pause();expect(f.solver.take_sounds()).toBeUndefined();f.solver.sound_enabled(false);f.free();
+});
+
+it('reports kinds with each sound, and books only as plain impacts',()=>{
+ const f=shelf();expect(f.solver.sound_stride()).toBe(4);f.solver.sound_enabled(true);f.step(90);
+ for(let i=1;i<=30;i++){f.move(i*1.2,-70);f.step();}f.release();f.step(600);
+ expect(f.hits.length).toBeGreaterThan(0);expect(f.hits.every(h=>h[5]===3)).toBe(true);f.free();
+});
+
+it('lets a lamp or pot land with its own set-down, or tumble when it drops from high',()=>{
+ const cases=[
+  {name:'terracotta pot',kind:1,solid:1,pot:'muskotblomma',values:[.05,.12,.18,0],height:180,material:1,set:12,fall:13},
+  {name:'zinc pot',kind:1,solid:1,pot:'akerbar',values:[.05,.12,.18,0],height:180,material:2,set:12,fall:13},
+  {name:'lantern',kind:2,solid:3,pot:'',values:[0,0,0,.0006],height:150,material:2,set:9,fall:10},
+  {name:'tripod',kind:2,solid:2,pot:'',values:[0,0,0,.0006],height:150,material:1,set:9,fall:10},
+ ];
+ for(const c of cases)for(const [lift,expected] of [[-4,c.set],[-150,c.fall]]){
+  const f=shelf(false,[{id:'decor',x:300,kind:c.kind,width:100,height:c.height,flags:2}]);
+  try{
+   f.solver.decoration('decor',c.solid,c.pot,c.pot,Float64Array.from(c.values));
+   f.solver.sound_enabled(true);f.step(60);f.move(0,lift);f.step(30);const before=f.hits.length;f.release();f.step(240);
+   const landed=f.hits.slice(before);
+   expect(landed.length,JSON.stringify({case:c.name,lift,hits:f.hits})).toBeGreaterThan(0);
+   expect(landed[0][5],JSON.stringify({case:c.name,lift,landed})).toBe(expected);expect(landed[0][0]).toBe(c.material);
+   for(const [,strength,pan] of landed){expect(strength).toBeGreaterThan(0);expect(strength).toBeLessThanOrEqual(1);expect(Math.abs(pan)).toBeLessThanOrEqual(.7);}
+   // A tumble already holds its bounces; a landing does not repeat while the object rests.
+   expect(landed.filter(h=>h[5]===c.fall||h[5]===c.set).length).toBe(1);
+   const count=f.hits.length;f.step(300);expect(f.hits).toHaveLength(count);
+  }finally{f.free();}
+ }
+});
+
+it('forgets a pending landing sound while muted',()=>{
+ const f=shelf(false,[{id:'decor',x:300,kind:1,width:100,height:180,flags:2}]);
+ f.solver.decoration('decor',1,'muskot','muskot',Float64Array.from([.05,.12,.18,0]));
+ f.step(60);f.move(0,-4);f.step(30);f.release();f.step(240);expect(f.hits).toEqual([]);
+ f.solver.sound_enabled(true);f.step(300);expect(f.hits).toEqual([]);f.free();
 });

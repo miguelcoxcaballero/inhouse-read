@@ -222,7 +222,7 @@ pub async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
   if !truthy(&item)||!is_connected(&spine_el)||text(&ctx.geometry_state(&get(&item,"book"))?)!="ready"{return Ok(());}
  }
  method(&ctx.legacy_value("returnViews"),"clear",&[])?;
- ctx.sound(0.0,0.65);
+ ctx.sound_of(17,0,0.65);
  ctx.st_set("busy",&JsValue::TRUE);
  // True once the lifted book sits still (the pull-out has finished), false if the selection ends without that.
  // The page being prepared for this book waits for it.

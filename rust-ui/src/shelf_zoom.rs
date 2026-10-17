@@ -39,9 +39,11 @@ struct Gesture{pinch:bool,x:f64,y:f64,distance:f64,origin:Origin,last_time:f64,s
 struct State{
  points:Vec<(f64,f64,f64)>,gesture:Option<Gesture>,target:JsValue,frame:JsValue,frame_key:u64,coast:Option<(f64,f64)>,last_frame:f64,
  suppress_click:bool,click_timer:JsValue,click_key:u64,destroyed:bool,
+ /// The zoom and time of the last zoom sound; outside a pinch the zoom only follows the view.
+ sound_zoom:f64,sound_at:f64,
 }
 struct Zoom{
- root:JsValue,scroller:JsValue,get_scene:JsValue,is_enabled:JsValue,on_gesture_start:JsValue,reduced:JsValue,
+ root:JsValue,scroller:JsValue,get_scene:JsValue,is_enabled:JsValue,on_gesture_start:JsValue,on_sound:JsValue,reduced:JsValue,
  state:RefCell<State>,listeners:RefCell<Vec<Listener>>,me:RefCell<Weak<Zoom>>,
 }
 fn same_point(a:f64,b:f64)->bool{a==b||(a.is_nan()&&b.is_nan())}
@@ -85,8 +87,23 @@ impl Zoom{
   set(&options,"moving",&JsValue::from_bool(moving))?;set(&options,"renderNow",&JsValue::TRUE)?;
   let next=method(&self.scene()?,"setInspectionView",&[&target,&options])?;
   self.state.borrow_mut().target=next.clone();
-  let force=if num(&read(&next,"zoom")?)>1.001{self.enabled()?}else{JsValue::FALSE};
+  let zoom=num(&read(&next,"zoom")?);
+  self.zoom_sound(zoom)?;
+  let force=if zoom>1.001{self.enabled()?}else{JsValue::FALSE};
   self.toggle_class(&force)
+ }
+ /// A soft whoosh while the fingers pinch: at most one per 220 ms, only after the zoom changed by about 6 %,
+ /// in (31) or out (32) by the sign of the change, stronger when faster. Resets and coasting are silent.
+ fn zoom_sound(&self,zoom:f64)->Result<(),JsValue>{
+  if !truthy(&self.on_sound)||!zoom.is_finite()||zoom<=0.0{return Ok(());}
+  let now=clock()?;let mut state=self.state.borrow_mut();
+  if !state.gesture.as_ref().is_some_and(|gesture|gesture.pinch){state.sound_zoom=zoom;return Ok(());}
+  let since=now-state.sound_at;let change=(zoom/state.sound_zoom).ln();
+  if !(since>=220.0)||!(change.abs()>0.06){return Ok(());}
+  let strength=clamp(0.3+change.abs()/(jmin(since,600.0)/1000.0)*0.2,0.3,0.8);
+  state.sound_at=now;state.sound_zoom=zoom;drop(state);
+  call(&self.on_sound,"onSound",&[&JsValue::from_f64(if change>0.0{31.0}else{32.0}),&JsValue::from_f64(strength)])?;
+  Ok(())
  }
  fn sample_velocity(&self){
   let mut state=self.state.borrow_mut();
@@ -301,12 +318,12 @@ impl RustShelfZoom{
  #[wasm_bindgen(constructor)]
  pub fn new(options:JsValue)->Result<RustShelfZoom,JsValue>{
   let root=read(&options,"root")?;let scroller=read(&options,"scroller")?;let get_scene=read(&options,"getScene")?;
-  let is_enabled=read(&options,"isEnabled")?;let on_gesture_start=read(&options,"onGestureStart")?;
+  let is_enabled=read(&options,"isEnabled")?;let on_gesture_start=read(&options,"onGestureStart")?;let on_sound=get(&options,"onSound");
   let window=get(&global(),"window");
   let query=method_opt(&window,"matchMedia",&[&JsValue::from_str("(prefers-reduced-motion: reduce)")])?;
   let reduced=match query{Some(list)if truthy(&list)=>list,_=>{let fallback=Object::new();set(&fallback,"matches",&JsValue::FALSE)?;fallback.into()}};
-  let zoom=Rc::new(Zoom{root,scroller:scroller.clone(),get_scene,is_enabled,on_gesture_start,reduced,
-   state:RefCell::new(State{points:Vec::new(),gesture:None,target:JsValue::NULL,frame:zero(),frame_key:0,coast:None,last_frame:0.0,suppress_click:false,click_timer:zero(),click_key:0,destroyed:false}),
+  let zoom=Rc::new(Zoom{root,scroller:scroller.clone(),get_scene,is_enabled,on_gesture_start,on_sound,reduced,
+   state:RefCell::new(State{points:Vec::new(),gesture:None,target:JsValue::NULL,frame:zero(),frame_key:0,coast:None,last_frame:0.0,suppress_click:false,click_timer:zero(),click_key:0,destroyed:false,sound_zoom:1.0,sound_at:f64::NEG_INFINITY}),
    listeners:RefCell::new(Vec::new()),me:RefCell::new(Weak::new())});
   *zoom.me.borrow_mut()=Rc::downgrade(&zoom);
   let add=|kind:&'static str,handler:fn(&Zoom,&JsValue)->Result<(),JsValue>|->Result<(),JsValue>{
