@@ -11,3 +11,6 @@ include!("shelf_lib.rs");
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod length_metadata;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod book_data;

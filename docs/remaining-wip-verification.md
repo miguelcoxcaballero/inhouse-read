@@ -1,3 +1,16 @@
+# 1.7.265 — almacenamiento y nombres seleccionados en Rust
+
+Changelog: «Almacenamiento y nombres del lector en Rust».
+Las decisiones de visibilidad por cuenta, descarga pendiente, bytes originales, conservación o invalidación de revisiones y errores de almacenamiento pasan a Rust. El traspaso al lector copia únicamente los nombres editables del libro seleccionado, conservando valores vacíos explícitos y evitando campos heredados. UI y Shelf compilan el mismo módulo; el adaptador usa el que ya esté cargado. El propietario de IndexedDB y sus transacciones sigue siendo la biblioteca existente.
+
+Se conservan los bytes Blob sin conversión a texto, la identidad del error de origen, el código LOCAL_BOOK_STORAGE_FAILED y el receptor de los callbacks. La copia de campos reproduce las propiedades propias enumerables, símbolos y __proto__ como dato, sin invocar setters del prototipo. Se mantiene el orden de los getters y las dos pasadas de filtro/copia de los nombres, además del cortocircuito de llamadas opcionales. No hay nuevos callbacks nativos persistentes.
+
+Build completo correcto; **143 pruebas en 14 archivos pasan** sobre el binario final. Cubren bytes exactos tras reapertura, cuotas y errores, revisión de Drive, progresos, comparaciones con las funciones JavaScript congeladas, símbolos/prototipo/getters, nombres editados antes de mostrar la página, 50 ciclos de éxito/fallo sin handles/callbacks retenidos, biblioteca, cola de recuento, Drive y apertura/cierre. No se cambian corpus existentes, aserciones ni tiempos límite.
+
+**Cuatro E2E finales pasan en una ejecución sin reintentos (1,8 min)**: PDF/EPUB reales y recuento conservado tras recarga, página PDF guardada visible en el modelo 3D antes del zoom con píxeles preservados, capítulo EPUB del CFI guardado durante la bisagra y regreso a 390×845 conservando framebuffer/canvas. No se modifica el renderizado ni las texturas.
+
+Inventario: 32694 líneas Rust / 20877 JavaScript, **61,03 %**; incluye comentarios y compatibilidad, no funciones terminadas. No se repite la batería general completa; queda documentado su timeout de color preexistente. Se continúa con la biblioteca y la coordinación de la aplicación.
+
 # 1.7.264 — recuento completo y cola de libros en Rust
 
 Changelog: «Recuento de libros y cola en Rust».

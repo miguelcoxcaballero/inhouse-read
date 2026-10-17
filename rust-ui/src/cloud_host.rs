@@ -136,3 +136,19 @@ pub fn has_own(target:&JsValue,key:&str)->bool{
  let value=if target.is_object()||target.is_function(){target.clone()}else{js_object(target)};
  Object::has_own(value.unchecked_ref::<Object>(),&key.into())
 }
+
+/// Append JavaScript CopyDataProperties as ordered entries. Object.fromEntries
+/// then creates own data fields (including symbols and __proto__) without invoking setters.
+pub fn data_entry(entries:&Array,key:&JsValue,value:&JsValue){
+ let pair=Array::new();pair.push(key);pair.push(value);entries.push(&pair);
+}
+pub fn copy_data_entries(entries:&Array,source:&JsValue)->Result<(),JsValue>{
+ if nullish(source){return Ok(());}
+ let source=crate::host::boxed(source);
+ for key in Reflect::own_keys(&source)?.iter(){
+  let descriptor=Reflect::get_own_property_descriptor(source.unchecked_ref::<Object>(),&key)?;
+  if !nullish(&descriptor)&&read(&descriptor,"enumerable")?.is_truthy(){
+   data_entry(entries,&key,&Reflect::get(&source,&key)?);
+  }
+ }Ok(())
+}
