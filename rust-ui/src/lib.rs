@@ -23,3 +23,6 @@ mod book_title;
 
 #[cfg(feature = "shelf")]
 mod app_refresh;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_actions;
