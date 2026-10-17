@@ -45,7 +45,7 @@ it('remaps synthesis page marks while retaining original queue text and UTF-16 c
 })
 
 it('expands CJK years without spaces and retains all source marks when a number becomes shorter',()=>{
- expect(spoken('2026年','zh-CN')).toBe('二千零二十六年')
+ expect(spoken('2026年','zh-CN')).toBe('二零二六年')
  expect(spoken('2026年','ja')).toBe('二千二十六年')
  const prepared=ui.speech_synthesis_text('100000000之后。','zh-CN',[1,2,5,8])
  expect(prepared.text).toBe('一亿之后。')
@@ -75,4 +75,26 @@ it('keeps original year offsets while expanding the wire text',()=>{
  expect(result.text).toBe('In nineteen sixty-nine, we read one thousand, nine hundred and sixty-nine books.');
  expect(result.offsetPairs).toEqual([[result.text.indexOf('we'),at],[result.text.length,source.length]]);
  expect(spoken('En 1969.','es-ES')).toBe('En mil novecientos sesenta y nueve.');
+})
+
+it.each([
+ ['In 1969, 20 books were printed.','In nineteen sixty-nine, twenty books were printed.'],
+ ['From 1969 to 1972.','From nineteen sixty-nine to nineteen seventy-two.'],
+ ['Between 1969 and 1972.','Between nineteen sixty-nine and nineteen seventy-two.'],
+ ['In 1969 Bücher.','In one thousand, nine hundred and sixty-nine Bücher.'],
+])('keeps later quantities separate from the preceding year: %s',(source,expected)=>expect(spoken(source,'en-US')).toBe(expected))
+it.each([
+ ['de-DE','Im Jahr 1969.','Im Jahr neunzehnhundertneunundsechzig.'],
+ ['nl-NL','In 1969.','In negentienhonderdnegenenzestig.'],
+ ['sv-SE','År 1969.','År nittonhundrasextionio.'],
+])('uses the selected language century form for a dated year: %s',(lang,source,expected)=>expect(spoken(source,lang)).toBe(expected))
+it.each(['da-DK','nb-NO'])('uses a century rather than a thousand for a dated Scandinavian year: %s',lang=>{
+ const dated=spoken('I 1969.',lang);expect(dated).toMatch(/^I nitten/);expect(dated).not.toMatch(/tusind|tusen/);
+ expect(dated).not.toBe('I '+spoken('1969',lang)+'.');
+})
+
+it('reads a Chinese dated year digit by digit while keeping quantities cardinal',()=>{
+ expect(spoken('在1969年','zh-CN')).toBe('在一九六九年');
+ expect(spoken('1969本书','zh-CN')).toBe('一千九百六十九本书');
+ expect(spoken('持续1969年','zh-CN')).toBe('持续一千九百六十九年');
 })

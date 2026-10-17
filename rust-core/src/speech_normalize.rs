@@ -10,6 +10,18 @@ pub(crate) fn whitespace(c: u16) -> bool {
 fn ornament(c: u16) -> bool {
     matches!(c, 0x00a7 | 0x00b6 | 0x2022 | 0x2023 | 0x2043 | 0x204c | 0x204d | 0x2766 | 0x2767 | 0xfffd)
 }
+fn line_end(c:u16)->bool{matches!(c,10|13|0x2028)}
+fn horizontal(c:u16)->bool{whitespace(c)&&!line_end(c)&&c!=0x2029}
+// A blank line in extracted PDF/plain text is a paragraph. A single wrapped
+// line and the two units of CRLF are not. Mark only the start of each run.
+fn blank_paragraph(raw:&[u16],at:usize)->bool{
+ let c=raw[at];if !line_end(c)||(c==13&&raw.get(at+1)==Some(&10)){return false;}
+ let mut before=if c==10&&at>0&&raw[at-1]==13{at-1}else{at};while before>0&&horizontal(raw[before-1]){before-=1;}
+ if before>0&&line_end(raw[before-1]){return false;}
+ let mut after=at+1;
+ while after<raw.len()&&horizontal(raw[after]){after+=1;}
+ after<raw.len()&&line_end(raw[after])
+}
 fn terminator(c: u16) -> bool { matches!(c, 33 | 46 | 63 | 0x3002 | 0xff01 | 0xff1f | 0x2026 | 58 | 59) }
 fn closer(c: u16) -> bool { matches!(c, 34 | 39 | 0x201d | 0x2019 | 0xbb | 0x203a | 41 | 93 | 125 | 0x300d | 0x300f) }
 
@@ -27,7 +39,7 @@ pub unsafe extern "C" fn speech_normalize(input: *const u16, removed: *const u8,
     let (mut size, mut boundaries) = (0, 0);
     for (i, &c) in raw.iter().enumerate() {
         if removed[i] != 0 || invisible(c) { continue; }
-        if c == 0x2029 {
+        if c == 0x2029 || blank_paragraph(raw,i) {
             if size > 0 && out[size - 1] == 32 { size -= 1; }
             let mut last = size;
             while last > 0 && closer(out[last - 1]) { last -= 1; }

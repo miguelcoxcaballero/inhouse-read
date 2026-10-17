@@ -15,6 +15,7 @@ extern "C" {
  #[wasm_bindgen(extends=Object)] type Style;
  #[wasm_bindgen(method,getter)] fn display(this:&Style)->JsValue;
  #[wasm_bindgen(method,getter)] fn visibility(this:&Style)->JsValue;
+ #[wasm_bindgen(method,getter,js_name=whiteSpace)] fn white_space(this:&Style)->JsValue;
  #[wasm_bindgen(extends=Node)] type TextNode;
  #[wasm_bindgen(method,getter,js_name=nodeValue)] fn text(this:&TextNode)->JsValue;
 }
@@ -45,13 +46,17 @@ fn note_marker(element:&Element)->bool{
 }
 fn is_block(name:&str)->bool{matches!(name,"address"|"article"|"aside"|"blockquote"|"dd"|"details"|"div"|"dl"|"dt"|"fieldset"|"figcaption"|"figure"|"footer"|"form"|"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"header"|"hr"|"li"|"main"|"nav"|"ol"|"p"|"pre"|"section"|"summary"|"table"|"tbody"|"td"|"tfoot"|"th"|"thead"|"tr"|"ul"|"body"|"html")}
 fn hard(name:&str)->bool{matches!(name,"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"li"|"dt"|"dd"|"th"|"td"|"caption"|"figcaption"|"summary")}
-fn not_rendered(element:&Element,window:Option<&web_sys::Window>)->bool{
- if element.has_attribute(wasm_bindgen::intern("hidden"))||element.get_attribute(wasm_bindgen::intern("aria-hidden")).as_deref()==Some("true"){return true;}
+fn render_state(element:&Element,window:Option<&web_sys::Window>)->(bool,Option<bool>){
+ if element.has_attribute(wasm_bindgen::intern("hidden"))||element.get_attribute(wasm_bindgen::intern("aria-hidden")).as_deref()==Some("true"){return (true,None);}
  let style=window.and_then(|window|window.get_computed_style(element).ok().flatten()).map(JsValue::from).unwrap_or_else(||prop(element,"style"));
- if style.is_null()||style.is_undefined(){return false;}let style=style.unchecked_ref::<Style>();if style.display()==JsValue::from_str(wasm_bindgen::intern("none")){return true;}
- let visibility=style.visibility();visibility==JsValue::from_str(wasm_bindgen::intern("hidden"))||visibility==JsValue::from_str(wasm_bindgen::intern("collapse"))
+ if style.is_null()||style.is_undefined(){return (false,None);}let style=style.unchecked_ref::<Style>();
+ let visibility=style.visibility();
+ let hidden=style.display()==JsValue::from_str(wasm_bindgen::intern("none"))||visibility==JsValue::from_str(wasm_bindgen::intern("hidden"))||visibility==JsValue::from_str(wasm_bindgen::intern("collapse"));
+ let white=style.white_space().as_string().unwrap_or_default();
+ let preserve=if matches!(white.as_str(),""|"inherit"|"unset"){None}else{Some(matches!(white.as_str(),"pre"|"pre-wrap"|"pre-line"|"break-spaces"))};
+ (hidden,preserve)
 }
-struct Cursor {next:Option<Node>,block:u32,ancestor_hard:u32,block_hard:u32}
+struct Cursor {next:Option<Node>,block:u32,ancestor_hard:u32,block_hard:u32,preserve:bool}
 fn span(spans:&Array,node:&Node,start:u32,end:u32){let value=Object::new().unchecked_into::<Span>();value.set_node(node);value.set_start(start);value.set_end(end);spans.push(&value);}
 #[wasm_bindgen]
 pub fn speech_map(root:JsValue,mode:u32)->Result<JsValue,JsValue>{
@@ -63,24 +68,31 @@ pub fn speech_map(root:JsValue,mode:u32)->Result<JsValue,JsValue>{
    let document=doc.unchecked_ref::<Document>();let window=document.default_view();
    let initial=if node.node_type()==1{1}else{0};
    let initial_hard=if initial!=0&&hard(&node.unchecked_ref::<Element>().local_name()){1}else{0};let mut next_id=2u32;
-   let mut stack=vec![Cursor{next:node.first_child(),block:initial,ancestor_hard:initial_hard,block_hard:initial_hard}];
+   let initial_preserve=mode==0&&initial!=0&&render_state(node.unchecked_ref::<Element>(),window.as_ref()).1.unwrap_or(false);
+   let mut stack=vec![Cursor{next:node.first_child(),block:initial,ancestor_hard:initial_hard,block_hard:initial_hard,preserve:initial_preserve}];
    let mut text_length=0u32;let mut pending=false;let mut last_block=0;let mut last_hard=0;let mut separator=" ";
    while let Some(frame)=stack.last_mut(){
     let Some(item)=frame.next.take() else {stack.pop();continue};frame.next=item.next_sibling();
     let kind=item.node_type();let element=if kind==1{Some(item.unchecked_ref::<Element>())}else{None};
-    let mut block=frame.block;let mut ancestor_hard=frame.ancestor_hard;let mut block_hard=frame.block_hard;
+    let mut block=frame.block;let mut ancestor_hard=frame.ancestor_hard;let mut block_hard=frame.block_hard;let mut preserve=frame.preserve;
     if let Some(element)=element{
-     let name=element.local_name();if mode==0&&(skipped(&name)||note_marker(element)||not_rendered(element,window.as_ref())){continue;}
+     let name=element.local_name();if mode==0{
+      if skipped(&name)||note_marker(element){continue;}
+      let (hidden,white)=render_state(element,window.as_ref());if hidden{continue;}if let Some(white)=white{preserve=white;}
+     }
      if name=="br"{if mode==0{pending=true;}else if mode==1{separator="\n";}}
      if mode==0{let id=next_id;next_id+=1;if hard(&name){ancestor_hard=id;}if is_block(&name){block=id;block_hard=ancestor_hard;}}
     }else if kind==3{
-     let value=node_text(&item);if value.is_truthy(){let value=value.unchecked_into::<JsString>();
-      if mode==0{if text_length>0&&(pending||block!=last_block){let split=if (block_hard!=0||last_hard!=0)&&(pending||block_hard!=last_hard){"\u{2029}"}else{"\n"};text=text.concat(&split.into());text_length+=1;}pending=false;last_block=block;last_hard=block_hard;}
+     let value=node_text(&item);if value.is_truthy(){let mut value=value.unchecked_into::<JsString>();
+      // HTML source wrapping is not a paragraph unless CSS preserves it. Keep
+      // every UTF-16 position while matching the actual whitespace rendering.
+      if mode==0&&!preserve{let units:Vec<u16>=value.iter().map(|c|if matches!(c,10|13|0x2028){32}else{c}).collect();value=JsString::from_char_code(&units);}
+      if mode==0{if text_length>0&&(pending||block!=last_block){let split=if block!=last_block||(block_hard!=0||last_hard!=0)&&(pending||block_hard!=last_hard){"\u{2029}"}else{"\n"};text=text.concat(&split.into());text_length+=1;}pending=false;last_block=block;last_hard=block_hard;}
       else if mode==1{if text_length>0{text=text.concat(&separator.into());text_length+=1;}separator=" ";}
       let end=text_length+value.length();span(&spans,&item,text_length,end);text_length=end;text=text.concat(&value);
      }
     }
-    if kind!=3{if let Some(child)=item.first_child(){stack.push(Cursor{next:Some(child),block,ancestor_hard,block_hard});}}
+    if kind!=3{if let Some(child)=item.first_child(){stack.push(Cursor{next:Some(child),block,ancestor_hard,block_hard,preserve});}}
    }
   }
  }

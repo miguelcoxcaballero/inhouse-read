@@ -1,3 +1,12 @@
+# 1.7.259 — pausas entre párrafos y lectura contextual de años
+
+Changelog: «Pausas naturales y años según idioma».
+Los bloques DOM distintos introducen una pausa aunque no haya puntuación. Un salto visual dentro del mismo párrafo no corta la frase. Los espacios del código HTML se colapsan según CSS; pre/pre-wrap/pre-line/break-spaces conservan sus líneas. En texto PDF una línea vacía separa párrafos, sin confundir CRLF con dos saltos. Se conservan los índices UTF-16 y el resaltado. La síntesis mantiene su descanso de 240 ms entre fragmentos.
+
+Se amplían los años contextuales a alemán, neerlandés y lenguas escandinavas, y se distingue el año chino de cantidades/duraciones. Las unidades cercanas prevalecen sobre el contexto temporal; una coma seguida de otra cantidad ya no convierte un año inglés en cardinal. 348 pruebas específicas en 11 archivos y dos E2E de Chromium móvil pasan con los binarios finales. Las referencias congeladas no se modifican: un adaptador únicamente de pruebas aplica el nuevo contrato después de la máscara original de cabeceras. Build completo correcto. No se ha repetido la batería general en este bloque; permanece documentado el timeout de color ajeno al audio.
+
+Inventario: 31593 líneas Rust / 21315 JS, **59,71 %**; mide líneas propias, no funciones terminadas. Siguiente prioridad: sustituir la inclinación de 258 por colisiones reales, cadenas de caída y pérdida de apoyo en Rust. Después zoom y resto de migración.
+
 # 1.7.258 — libros que se apoyan y plantas dentro de su leja
 
 Changelog: «Libros con apoyo animado y plantas ajustadas».
