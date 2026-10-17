@@ -89,6 +89,28 @@ def layer(parts):
     for o,p,g in parts:s=int(round(o*RATE));y[s:s+len(p)]+=p*g
     return y
 def pitch(x,ratio):return signal.resample(x,int(len(x)/ratio))
+
+# Natural wood and metal: the pitched Kenney wood thuds and bright metal rings sounded artificial and glassy, so wood
+# comes from real wooden steps, doors and an axe chop (dense, noisy, no single ringing tone) and metal from dull tin
+# plus the first part of a hollow pot, with the ring damped so it never reads as glass.
+def peak1(x):return x/(np.abs(x).max()+1e-9)
+def damp(x,tau,start=0.008):
+    t=np.arange(len(x))/RATE;return x*np.where(t<start,1.0,np.exp(-(t-start)/tau))
+WOOD_L=[['footstep00','footstep02','footstep04','footstep06','footstep07'],
+        ['footstep01','footstep03','doorClose_4','footstep05','footstep08'],
+        ['doorClose_1','doorClose_3','chop','doorClose_4','footstep09']]
+def wood_raw(level,i):
+    n=WOOD_L[level][i%5];x=decode(R(n))
+    if n in('doorClose_1','doorClose_3','chop'):x=damp(x,0.06,0.02)
+    return x
+def metal_raw(level,i):
+    tin=peak1(decode(K('kenney-impact','impactTin_medium',i%3)))
+    pot=peak1(damp(decode(R(f'metalPot{1+i%3}'),0,0.3),0.055))
+    gen=peak1(decode(K('kenney-impact','impactGeneric_light',i%5)))
+    mix=[(0.9,0.15,0.0),(0.8,0.35,0.0),(0.7,0.55,0.4)][level]
+    n=max(len(tin),len(pot),len(gen));y=np.zeros(n)
+    for a,c in zip(mix,(tin,pot,gen)):y[:len(c)]+=a*c
+    return y
 clips={};roles={}
 def add(name,x,db=0.0,**kw):
     kind=kw.get('kind','impact')
@@ -96,14 +118,17 @@ def add(name,x,db=0.0,**kw):
 K=lambda pack,name,i:f'{src}/{pack}/Audio/{name}_{i:03d}.ogg'
 R=lambda n:f'{src}/rpg-audio/Audio/{n}.ogg'
 # ======================= book collisions on each material, three strengths
-IMP={'wood':('impactWood',['light','medium','heavy']),'metal':('impactMetal',['light','medium','heavy']),
-     'glass':('impactGlass',['light','medium','heavy']),'ceramic':('impactPlate',['light','medium','heavy'])}
+IMP={'glass':('impactGlass',['light','medium','heavy']),'ceramic':('impactPlate',['light','medium','heavy'])}
 LVDB=[-4.0,0.0,3.0]
 for mat,(base,lv) in IMP.items():
     for li,l in enumerate(lv):
         for t in range(5):
             hard=mat in('metal','glass')
             add(f'impact_{mat}_L{li}_t{t}',decode(K('kenney-impact',f'{base}_{l}',t)),db=LVDB[li],lp=6800 if hard else 6000,hp=140 if (mat=='wood' and l=='heavy') else 110,max_len=0.55 if hard else 0.4,tail_db=-38)
+for li in range(3):
+    for t in range(5):
+        add(f'impact_wood_L{li}_t{t}',wood_raw(li,t),db=LVDB[li],lp=3600,hp=110,max_len=0.35,tail_db=-38)
+        add(f'impact_metal_L{li}_t{t}',metal_raw(li,t),db=LVDB[li],lp=3400,hp=150,max_len=0.4,tail_db=-38)
 # linen and paper: the recorded "soft" impacts are sub-bass booms, so they are built from real taps plus real cloth
 def cloth_slice(n,a,b):return decode(R(n),a,b)
 for li,db in enumerate(LVDB):
@@ -117,7 +142,7 @@ for li,db in enumerate(LVDB):
         if li==0:base=base*0.5
         if li==2:base=layer([(0,base,1.0),(0.002,clean(decode(K('kenney-impact','impactTin_medium',t)),lp=1900,hp=200,max_len=0.2)/3,0.6)])
         clips[f'impact_paper_L{li}_t{t}']=finish(base,db)
-for t in range(5):add(f'impact_wood_plank_t{t}',decode(K('kenney-impact','impactPlank_medium',t)),db=0.0,hp=120,max_len=0.5)
+for t in range(5):add(f'impact_wood_plank_t{t}',decode(R(f'footstep0{5+t%5}')) if t<4 else decode(R('footstep09')),db=0.0,hp=110,lp=3400,max_len=0.4)
 # ======================= books
 for i,(n,a,b) in enumerate([('cloth2',0,None),('cloth4',0,None),('handleSmallLeather',0,None),('handleSmallLeather2',0,None)]):
     add(f'book_pickup_t{i}',decode(R(n),a,b),db=-3.0,kind='rustle',lp=5200,hp=150,max_len=0.55,soft_in=0.012)
@@ -155,7 +180,15 @@ for _ in range(10):
     taken.append(k)
 for j,k in enumerate(sorted(taken)):add(f'leaves_rustle_t{j}',lv[max(0,k-int(0.35*RATE)):k+int(0.75*RATE)],db=-6.0,kind='rustle',lp=4400,hp=300,max_len=1.0,soft_in=0.04,tail_db=-34)
 # ======================= composed events from real hits
-def hit(base,i,lp=6500,hp=130,ml=0.7,db=0.0):return clean(decode(K('kenney-impact',base,i)),lp=lp,hp=hp,max_len=ml)
+def raw_hit(base,i):
+    lv={'light':0,'medium':1,'heavy':2}
+    if base.startswith('impactWood_'):return wood_raw(lv[base.split('_')[1]],i)
+    if base.startswith('impactPlank'):return wood_raw(1,i)
+    if base.startswith('impactMetal_'):return metal_raw(lv[base.split('_')[1]],i)
+    return decode(K('kenney-impact',base,i))
+def hit(base,i,lp=6500,hp=130,ml=0.7,db=0.0):
+    soft=base.startswith(('impactWood','impactPlank','impactMetal'))
+    return clean(raw_hit(base,i),lp=3600 if soft else lp,hp=hp,max_len=ml)
 def composed(name,seq,db=2.0):
     parts=[]
     for o,b,i,g in seq:
