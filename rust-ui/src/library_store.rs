@@ -182,7 +182,7 @@ pub fn library_same_records(previous:JsValue,next:JsValue,env:JsValue)->R<JsValu
  let function=read(&previous,"every")?;let compare=callback(&env,"recordComparator",&[&next])?;
  function.dyn_ref::<Function>().ok_or_else(||js_sys::TypeError::new("every is not a function"))?.call1(&previous,&compare)
 }
-fn to_numeric(value:JsValue)->R<JsValue>{
+pub(crate) fn to_numeric(value:JsValue)->R<JsValue>{
  let mut primitive=value;
  if primitive.is_object()||primitive.is_function(){
   let hint=s("number");let key:JsValue=Symbol::to_primitive().into();let exotic=Reflect::get(&primitive,&key)?;
