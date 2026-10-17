@@ -1,10 +1,10 @@
 import { needRustShelf, getRustShelf, requireRustShelf } from './rust-shelf.js';
 import { measureFileBookLength } from './file-book-length.js';
 
-import { lengthMetadata } from './book-length-metadata.js';
-export const newContentRevision = () => lengthMetadata().length_new_revision();
-export const clearBookLength = () => lengthMetadata().length_clear_count();
-export const isBookLengthReady = book => lengthMetadata().length_is_ready(book);
+import { bookDataModule } from './book-data-native.js';
+export const newContentRevision = () => bookDataModule().length_new_revision();
+export const clearBookLength = () => bookDataModule().length_clear_count();
+export const isBookLengthReady = book => bookDataModule().length_is_ready(book);
 
 /** Browser-owned continuations carry a JS data graph; Rust decides revisions,
  * serial work, cancellation, failures and commits. Construction starts no WASM
