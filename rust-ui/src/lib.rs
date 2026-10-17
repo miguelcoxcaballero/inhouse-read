@@ -20,3 +20,6 @@ mod library_store;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod book_title;
+
+#[cfg(feature = "shelf")]
+mod app_refresh;

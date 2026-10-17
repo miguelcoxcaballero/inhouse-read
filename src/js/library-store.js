@@ -84,7 +84,7 @@ function committed(transaction) {
 export const idForSource = source => bookDataModule().library_id_for_source(source)
 // A browser type primitive; comparison and traversal belong to Rust.
 const dateInstance = value => value instanceof Date
-const libraryHost = { wrap, committed,
+export const libraryHost = { wrap, committed,
   recordComparator:next => { const native = bookDataModule(); return (record, index) => native.library_record_equal(next, record, index, dateInstance) },
   recentComparator:() => { const native = bookDataModule(); return (a, b) => native.library_recent_order(a, b) }
 }
