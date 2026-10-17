@@ -32,7 +32,7 @@ export function createBookReturnCache() {
 }
 
 /** A parked book's transform in the cabinet's coordinate system. */
-export const shelfBookSlot = (entry, cabinetWidth) => new THREE.Matrix4().fromArray(needRustShelf().shelf_book_slot(entry, cabinetWidth));
+export const shelfBookSlot = (entry, cabinetWidth, physical = null) => new THREE.Matrix4().fromArray(needRustShelf().shelf_book_slot(entry, cabinetWidth, physical));
 
 /** Move the aligned book entirely outside the cabinet before sliding it in. */
 export function shelfBookInsertion(slot, bookWidth, progress = 0) {

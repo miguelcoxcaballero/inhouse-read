@@ -97,13 +97,13 @@ impl Flyout{
  /// `finishClose`.
  pub(super) fn finish_close(&self,silent:bool,instant:bool)->R{
   self.scene_opt("setModalBackgroundDeferred",&[&null(),&obj(&[("resumeHidden",&JsValue::TRUE)])])?;
-  cls_remove(&self.spine(),&["is-away"]);
+  cls_remove(&self.spine(),&["is-away","is-reader-origin"]);
   self.scene_do("flush",&[])?;
   self.view_do("dispose",&[])?;
   remove(&self.flyout);
   self.end_editor();
   if self.is_session(){self.ctx.st_set("session",&null());self.ctx.st_set("busy",&JsValue::FALSE);}
-  cls_remove(&self.spine(),&["is-away"]);
+  cls_remove(&self.spine(),&["is-away","is-reader-origin"]);
   let previous=self.previous_focus.borrow().clone();
   if !silent&&!instant&&get(&previous,"focus").is_function(){focus(&previous);}
   // The session is over: nothing keeps the lifted book alive but the code still running on its behalf.
@@ -222,7 +222,7 @@ pub async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
   if !truthy(&item)||!is_connected(&spine_el)||text(&ctx.geometry_state(&get(&item,"book"))?)!="ready"{return Ok(());}
  }
  method(&ctx.legacy_value("returnViews"),"clear",&[])?;
- ctx.sound(0.0,0.65);
+ ctx.sound_of(17,0,0.65);
  ctx.st_set("busy",&JsValue::TRUE);
  // True once the lifted book sits still (the pull-out has finished), false if the selection ends without that.
  // The page being prepared for this book waits for it.
@@ -524,7 +524,7 @@ impl Flyout{
   let had_focus=active_element()==existing;
   let was_away=cls_has(&existing,"is-away");
   let replacement=super::screen_nodes::build_spine(&self.ctx,&self.item)?;
-  if was_away{cls_add(&replacement,&["is-away"]);}
+  if was_away{cls_add(&replacement,&["is-away","is-reader-origin"]);}
   replace_with(&existing,&replacement);
   *self.spine_el.borrow_mut()=replacement.clone();
   if *self.previous_focus.borrow()==existing{*self.previous_focus.borrow_mut()=replacement.clone();}
@@ -563,7 +563,7 @@ impl Flyout{
   // the resting book; detached setup needs no GPU draw or full-screen readback.
   let pose=self.start.borrow().pose();
   self.view_do("draw",&[&pose])?;
-  cls_add(&self.spine(),&["is-away"]);
+  cls_add(&self.spine(),&["is-away","is-reader-origin"]);
   self.scene_do("flush",&[])?;
   self.scene_opt("setModalBackgroundDeferred",&[&self.spine()])?;
   method_opt(&self.flyout,"focus",&[])?;

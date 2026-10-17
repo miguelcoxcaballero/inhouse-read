@@ -118,6 +118,8 @@ pub fn set_view_mode(ctx:&Rc<Ctx>,mode:&JsValue)->R{
  let persist=||->R{local_storage_set("inhouse-read-shelf-view",&text(mode))?;ctx.env("notifyCloudSettingsChanged",&[&s("inhouse-read-shelf-view")])?;Ok(())};let _=persist();
  prepare_catalog_when_idle(ctx,0.0)?;
  if ctx.st_true("shelfScene"){
+  // A soft whoosh as the view turns: to isometric (33) or back to straight (34).
+  ctx.sound_of(if *mode==s("isometric"){33}else{34},0,0.6);
   put(&dataset(&ctx.root),"viewMode",mode);method(&ctx.scene(),"setMode",&[mode])?;ctx.legacy("syncShelfZoom",&[])?;
  }else{screen_render::render(ctx)?;}Ok(())
 }

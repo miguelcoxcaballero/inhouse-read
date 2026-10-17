@@ -155,6 +155,24 @@ pub fn reorder_spine(ctx:&Rc<Ctx>,source:&JsValue,target:&JsValue,after:bool)->R
  persist_shelf_dom_order(ctx,&old_rects)
 }
 
+/// The sounds of a held object: (lift, drag along the shelf, set down, material). A lamp's material is its lamp,
+/// a plant's its pot (see cozy_synth); a book slides on a wooden board.
+fn object_sounds(node:&JsValue)->(u32,u32,u32,u32){
+ if cls_has(node,"ihr-lamp"){(22,8,9,crate::cozy_audio::lamp_index(&text(&data_get(node,"lampId"))))}
+ else if cls_has(node,"ihr-plant"){(14,11,12,crate::cozy_audio::pot_index(&text(&data_get(node,"potId"))))}
+ else{(0,4,16,1)}
+}
+/// A soft scuff while the held object slides sideways, at most every 260 ms and only after real travel.
+fn drag_scuff(ctx:&Ctx,drag:&JsValue,node:&JsValue,x:f64,y:f64){
+ let (dx,dy)=(x-gn(drag,"soundX"),y-gn(drag,"soundY"));let at=now();let since=at-gn(drag,"soundAt");
+ if !(since>260.0)||dx.abs()<14.0{return;}
+ put(drag,"soundAt",&f(at));put(drag,"soundX",&f(x));put(drag,"soundY",&f(y));
+ // Carried up or down to another board it is in the air: no scrape.
+ if dx.abs()<dy.abs()*1.5{return;}
+ let (_,slide,_,material)=object_sounds(node);let material=if slide==4{0}else{material};
+ ctx.sound_of(slide,material,(0.2+dx.abs()/(since.min(600.0)*1.2)).min(0.6));
+}
+
 /// `startSpineDrag(event, node)`: the press that may become a hold, a scroll or a tap.
 pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  if other_button(event)||ctx.st_true("dragSession")||ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("returnMotion"){return Ok(());}
@@ -190,6 +208,7 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   // The 3D hit belongs to another button than the one touched (a lamp's square over a book, or the reverse):
   // pointer capture hands the release to the hit's own button, which then owns the tap.
   ("redirected",&b(!background_only&&node!=pressed)),
+  ("soundX",&get(event,"clientX")),("soundY",&get(event,"clientY")),("soundAt",&f(f64::INFINITY)),
  ]);
  ctx.st_set("dragSession",&drag);
  // The browser may have cancelled the pointer already.
@@ -204,7 +223,9 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   cls_add(&ctx.root,&["is-arranging"]);
   cls_remove(&node,PRESSED);
   cls_add(&node,&["is-lifted"]);
-  if cls_has(&node,"ihr-spine"){ctx.sound(0.0,0.75);}
+  let (lift,_,_,material)=object_sounds(&node);
+  ctx.sound_of(lift,if lift==0{0}else{material},if lift==0{0.75}else{0.55});
+  put(&drag,"soundAt",&f(now()));
   ctx.scene_call("flush",&[])?;
   Ok(())
  }});
@@ -239,6 +260,7 @@ pub fn move_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  let dx=gn(&drag,"x")-gn(&drag,"startX");
  let dy=gn(&drag,"y")-gn(&drag,"startY")+gn(&ctx.scroller,"scrollTop")-gn(&drag,"scrollTop");
  putb(&drag,"moved",true);
+ drag_scuff(ctx,&drag,node,client_x,client_y);
  cls_remove(node,&["is-lifted"]);
  cls_add(node,&["is-dragging"]);
  style_set(node,"--ihr-drag-x",&format!("{}px",ns(dx)));
@@ -352,6 +374,12 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
   let (task_ctx,task_node)=(ctx.clone(),node.clone());
   spawn(async move{trash::remove_in_trash(task_ctx,task_node,discard_motion,discard_rect,discard_duration).await});
   return Ok(());
+ }
+ // A book is set down by the hand; a lamp or plant lands under the physics of the 3D shelf, which plays its
+ // landing (set down, or a fall when it drops from high), so only a shelf without that scene sets it down here.
+ if gb(&drag,"moved")&&!cancelled{
+  let (_,_,set_down,material)=object_sounds(node);
+  if set_down==16||!truthy(&ctx.scene()){ctx.sound_of(set_down,material,0.45);}
  }
  if gb(&drag,"moved")&&!cancelled&&!truthy(&ctx.opts_get("sections"))&&truthy(&get(&drag,"destination")){
   persist_object_placement(ctx,node,&get(&drag,"destination"),&old_rects)?;
