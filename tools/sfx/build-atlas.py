@@ -2,28 +2,30 @@
 """Builds the shelf sound atlas from real CC0 recordings.
 
 Sources (all CC0, no attribution required; credit kept in public/sfx/CREDITS.txt):
-  Kenney Impact Sounds, Kenney RPG Audio, Kenney Interface Sounds (kenney.nl),
-  OpenGameArt: "Scrapes", "Light Switch Turn On And Off SFX" (yd), "20 Rustles of dry leaves",
-  "Sound Effects Pack" by Owlish Media (Paper, Cloth/Rustle, Impacts).
-Every clip is trimmed, band-limited and warmed, loudness matched and faded, then written as 24 kHz mono.
+  Kenney Impact Sounds, RPG Audio, Interface Sounds (kenney.nl); OpenGameArt: "Scrapes",
+  "Light Switch Turn On And Off SFX" (yd), "20 Rustles of dry leaves", "Sound Effects Pack" (Owlish Media).
+Every clip is cleaned (DC, rumble, hiss), warmed, given a soft attack where it is a rustle, tamed at the transient,
+given a very small room, loudness matched by A-weighted level and trimmed; the final atlas keeps the best takes.
 
-usage: build-atlas.py <sources dir> <out dir>
-  <sources dir> holds: kenney-impact/Audio, rpg-audio/Audio, interface-sounds/Audio, scrapes, lightswitch,
-  owlish, leaves.mp3 (as extracted by tools/sfx/fetch-sources.sh).
-Writes <out>/clips/<name>.wav (for listening), <out>/atlas.bin (16-bit PCM, concatenated) and <out>/atlas.json.
+usage: build-atlas.py <sources dir> <out dir> [iteration 1-3]
+  iteration 1: fix defects (sub-bass booms, electronic beeps, hiss, cut-off rustles)
+  iteration 2: + cozy polish (soft transients, small room, A-weighted loudness matching, outlier takes dropped)
+  iteration 3: + events composed from real layers (lamp and pot specific) and take selection for the final atlas
+<sources dir> is what tools/sfx/fetch-sources.sh prepares. Writes <out>/clips/<name>.wav, atlas.bin (int16) and atlas.json.
 """
-import json,os,subprocess,sys
+import json,os,subprocess,sys,wave
 import numpy as np
 from scipy import signal
 RATE=24000
 src,out=sys.argv[1],sys.argv[2]
-def decode(path,start=None,end=None):
+ITER=int(sys.argv[3]) if len(sys.argv)>3 else 3
+rng=np.random.default_rng(20261017)
+def decode(path,start=0.0,end=None):
     cmd=['ffmpeg','-v','error','-i',path,'-ac','1','-ar',str(RATE),'-f','f32le','-']
     x=np.frombuffer(subprocess.run(cmd,capture_output=True,check=True).stdout,dtype=np.float32).astype(np.float64)
-    if start is not None:x=x[int(start*RATE):int((end if end else len(x)/RATE)*RATE)]
-    return x
+    return x[int(start*RATE):int(end*RATE) if end else None]
+def sos(kind,hz,order=2):return signal.butter(order,hz,kind,fs=RATE,output='sos')
 def shelf(x,hz,gain_db,high):
-    # RBJ shelving biquad
     A=10**(gain_db/40);w=2*np.pi*hz/RATE;cs,sn=np.cos(w),np.sin(w);al=sn/2*np.sqrt(2)
     if high:
         b=[A*((A+1)+(A-1)*cs+2*np.sqrt(A)*al),-2*A*((A-1)+(A+1)*cs),A*((A+1)+(A-1)*cs-2*np.sqrt(A)*al)]
@@ -36,71 +38,114 @@ def peaking(x,hz,gain_db,q):
     A=10**(gain_db/40);w=2*np.pi*hz/RATE;al=np.sin(w)/(2*q);cs=np.cos(w)
     b=[1+al*A,-2*cs,1-al*A];a=[1+al/A,-2*cs,1-al/A]
     return signal.lfilter(np.array(b)/a[0],np.array(a)/a[0],x)
-def process(x,lp=8500,warm=1.0,max_len=1.2,target=0.07,fade=0.03,tail_db=-42):
+def spectrum_stats(x):
+    S=np.abs(np.fft.rfft(x*np.hanning(len(x)),max(4096,len(x))))**2;f=np.fft.rfftfreq(max(4096,len(x)),1/RATE);E=S.sum()+1e-18
+    c=np.cumsum(S)/E
+    return dict(roll=f[min(np.searchsorted(c,0.9),len(f)-1)],lf=S[f<150].sum()/E,mid=S[(f>=200)&(f<2500)].sum()/E,hf=S[f>6000].sum()/E,cent=(S*f).sum()/E)
+# A-weighting (IEC 61672) as a digital filter, used to match perceived level
+def a_weight(x):
+    f1,f2,f3,f4=20.598997,107.65265,737.86223,12194.217
+    num=[(2*np.pi*f4)**2*10**(1.9997/20),0,0,0,0];den=np.polymul([1,4*np.pi*f4,(2*np.pi*f4)**2],[1,4*np.pi*f1,(2*np.pi*f1)**2])
+    den=np.polymul(np.polymul(den,[1,2*np.pi*f3]),[1,2*np.pi*f2])
+    b,a=signal.bilinear(num,den,RATE);return signal.lfilter(b,a,x)
+def level(x):
+    w=a_weight(x);act=w[np.abs(x)>np.abs(x).max()*0.04]
+    return np.sqrt(np.mean(act**2))+1e-12
+DRY=None
+def room(x,mix=0.10,ms=70):
+    # a very small, soft room so a dry recording does not sound pasted on
+    global DRY
+    n=int(ms/1000*RATE);ir=rng.standard_normal(n)*np.exp(-np.arange(n)/(0.28*n)*3.0);ir=signal.sosfilt(sos('lp',2600),ir);ir[:int(0.004*RATE)]=0
+    ir/=np.abs(ir).sum()+1e-12;wet=np.convolve(x,ir*6,'full')[:len(x)+n]
+    wet=np.concatenate([wet,np.zeros(len(x)+n-len(wet))])
+    y=np.concatenate([x,np.zeros(n)]);return y+wet*mix
+def clean(x,kind='impact',lp=7000,hp=100,warm=1.0,max_len=1.0,tail_db=-42,fade=0.03,soft_in=0.0,pre=0.003,hiss=False):
     x=x-np.mean(x)
-    sos=signal.butter(2,70,'hp',fs=RATE,output='sos');x=signal.sosfilt(sos,x)
-    sos=signal.butter(4,lp,'lp',fs=RATE,output='sos');x=signal.sosfilt(sos,x)
-    x=shelf(x,220,2.2*warm,False);x=shelf(x,4200,-3.0*warm,True)
-    # Small phone speakers lose everything under about 150 Hz: give dull clips a clear mid presence.
-    S=np.abs(np.fft.rfft(x*np.hanning(len(x))))**2;c=np.cumsum(S)/(S.sum()+1e-18);roll=np.fft.rfftfreq(len(x),1/RATE)[min(np.searchsorted(c,0.9),len(S)-1)]
-    if roll<900:
-        x=signal.sosfilt(signal.butter(2,130,'hp',fs=RATE,output='sos'),x);x=peaking(x,1100,4.5,0.9);x=peaking(x,2400,2.5,0.8)
-    if roll<250:  # soft thumps live almost entirely under a phone speaker's range: nudge them up a little
-        x=signal.resample(x,int(len(x)/1.35))
+    x=signal.sosfilt(sos('hp',hp,2),x)
+    x=signal.sosfilt(sos('lp',min(lp,4800) if hiss else lp,4),x)
+    x=shelf(x,230,2.0*warm,False);x=shelf(x,4300,-3.0*warm,True)
+    st=spectrum_stats(x)
+    if st['roll']<900:  # little content a phone speaker can play: add clear mid presence
+        x=peaking(x,1100,4.0,0.9);x=peaking(x,2400,2.0,0.8)
+    if st['roll']<230:x=signal.resample(x,int(len(x)/1.3))
+    if ITER>=2 and kind=='impact':  # tame the transient: a gentle saturation brings the sharpest peak down about 4 dB
+        k=1.7/np.abs(x).max();x=np.tanh(x*k)/k
     pk=np.abs(x).max()+1e-12
-    on=np.argmax(np.abs(x)>pk*0.03);on=max(0,on-int(0.003*RATE))
+    on=int(np.argmax(np.abs(x)>pk*(0.03 if kind=='impact' else 0.02)));on=max(0,on-int(pre*RATE))
+    if ITER>=2:x=room(x,0.10 if kind=='impact' else 0.07)
     sm=np.convolve(np.abs(x),np.ones(int(0.01*RATE))/int(0.01*RATE),'same')
-    thr=pk*10**(tail_db/20);idx=np.where(sm>thr)[0];end=min(len(x),(idx[-1] if len(idx) else len(x))+int(0.01*RATE))
-    end=min(end,on+int(max_len*RATE));x=x[on:end].copy()
-    n=len(x);f=min(int(fade*RATE),n//2)
-    x[:int(0.0006*RATE)]*=np.linspace(0,1,int(0.0006*RATE));x[n-f:]*=np.linspace(1,0,f)
-    act=x[np.abs(x)>np.abs(x).max()*0.05];rms=np.sqrt(np.mean(act**2))+1e-12
-    x=x*min(target/rms,0.89/np.abs(x).max())
+    idx=np.where(sm>pk*10**(tail_db/20))[0];end=min(len(x),(idx[-1] if len(idx) else len(x))+int(0.01*RATE))
+    end=min(end,on+int(max_len*RATE));x=x[on:end].copy();n=len(x);f=min(int(fade*RATE),n//2)
+    r=int((soft_in if soft_in else 0.0006)*RATE);x[:r]*=np.sin(np.linspace(0,np.pi/2,r))**2
+    x[n-f:]*=np.cos(np.linspace(0,np.pi/2,f))**2
     return x
-def layer(parts,gap=0.0):
-    n=max(int((o+len(p)/RATE)*RATE) for o,p,g in parts)+1;y=np.zeros(n)
-    for o,p,g in parts:s=int(o*RATE);y[s:s+len(p)]+=p*g
+def finish(x,db=0.0):
+    # A-weighted loudness: every clip at the same perceived level, trimmed by `db` for its role
+    target=0.065*10**(db/20);x=x*(target/level(x));pk=np.abs(x).max()
+    if pk>0.8:x=x*(0.8/pk)
+    return x
+def layer(parts):
+    n=max(int(round((o)*RATE))+len(p) for o,p,g in parts)+1;y=np.zeros(n)
+    for o,p,g in parts:s=int(round(o*RATE));y[s:s+len(p)]+=p*g
     return y
-def K(pack,name,i):return f'{src}/{pack}/Audio/{name}_{i:03d}.ogg'
-clips={}  # name -> float array
-def add(name,x,**kw):clips[name]=process(x,**kw)
-# ---------- impacts of a book (or anything light) on each material: soft, medium, hard
-IMP={'wood':('impactWood',['light','medium','heavy']),'metal':('impactMetal',['light','medium','heavy']),'glass':('impactGlass',['light','medium','heavy']),
-     'ceramic':('impactPlate',['light','medium','heavy']),'linen':('impactSoft',['medium','medium','heavy'])}
+def pitch(x,ratio):return signal.resample(x,int(len(x)/ratio))
+clips={};roles={}
+def add(name,x,db=0.0,**kw):
+    kind=kw.get('kind','impact')
+    x=clean(x,**kw);clips[name]=finish(x,db)
+K=lambda pack,name,i:f'{src}/{pack}/Audio/{name}_{i:03d}.ogg'
+R=lambda n:f'{src}/rpg-audio/Audio/{n}.ogg'
+# ======================= book collisions on each material, three strengths
+IMP={'wood':('impactWood',['light','medium','heavy']),'metal':('impactMetal',['light','medium','heavy']),
+     'glass':('impactGlass',['light','medium','heavy']),'ceramic':('impactPlate',['light','medium','heavy'])}
+LVDB=[-4.0,0.0,3.0]
 for mat,(base,lv) in IMP.items():
     for li,l in enumerate(lv):
-        for t in range(5 if l!='medium' or li==1 else 3):
-            p=K('kenney-impact',f'{base}_{l}',t)
-            if os.path.exists(p):add(f'impact_{mat}_L{li}_t{t}',decode(p),target=0.075,max_len=0.9 if mat in('metal','glass') else 0.5,lp=7600 if mat in('metal','glass') else 6500)
-for t in range(1,4):add(f'impact_paper_L1_t{t-1}',decode(f'{src}/rpg-audio/Audio/bookPlace{t}.ogg'),target=0.07,max_len=0.5)
-for t in range(5):add(f'impact_paper_L0_t{t}',decode(K('kenney-impact','impactSoft_medium',t)) if os.path.exists(K('kenney-impact','impactSoft_medium',t)) else np.zeros(10),target=0.05,lp=4200,max_len=0.4)
-for t in range(5):add(f'impact_wood_plank_t{t}',decode(K('kenney-impact','impactPlank_medium',t)),max_len=0.6)
-# ---------- books
-for i,n in enumerate(['cloth1','cloth2','cloth3','cloth4','handleSmallLeather','handleSmallLeather2']):add(f'book_pickup_t{i}',decode(f'{src}/rpg-audio/Audio/{n}.ogg'),target=0.055,max_len=0.7,lp=5500)
-add('book_cover_open_t0',decode(f'{src}/rpg-audio/Audio/bookOpen.ogg'),target=0.06,max_len=1.2,lp=6500)
-add('book_cover_close_t0',decode(f'{src}/rpg-audio/Audio/bookClose.ogg'),target=0.065,max_len=1.0,lp=6500)
-for i in range(1,4):add(f'book_flip_t{i-1}',decode(f'{src}/rpg-audio/Audio/bookFlip{i}.ogg'),target=0.05,max_len=1.0,lp=6000)
-for i in (1,2):add(f'book_pageturn_t{i-1}',decode(f'{src}/owlish/Paper/pageturn{i}.wav'),target=0.05,max_len=1.4,lp=6000)
-for i in range(1,4):add(f'book_set_t{i-1}',decode(f'{src}/rpg-audio/Audio/bookPlace{i}.ogg'),target=0.075,max_len=0.5)
-for i,n in enumerate(['dropLeather']):add('book_drop_t0',decode(f'{src}/rpg-audio/Audio/{n}.ogg'),target=0.075,max_len=0.6)
-# ---------- sliding / scraping (books, lamps, pots)
-for i in range(1,9):add(f'scrape_t{i-1}',decode(f'{src}/scrapes/scrape-{i}.wav'),target=0.05,max_len=1.2,lp=5200,tail_db=-38)
-for i in range(1,4):add(f'scrape_owl_t{i-1}',decode(f'{src}/owlish/Impacts/scrape{i}.wav'),target=0.05,max_len=1.2,lp=5200,tail_db=-38)
-for i in range(1,4):add(f'creak_t{i-1}',decode(f'{src}/rpg-audio/Audio/creak{i}.ogg'),target=0.045,max_len=1.2,lp=4500,tail_db=-38)
-for i in range(1,4):add(f'metal_pot_t{i-1}',decode(f'{src}/rpg-audio/Audio/metalPot{i}.ogg'),target=0.06,max_len=0.9)
-# ---------- switches
-add('switch_light_on_t0',decode(f'{src}/lightswitch/light_switch_turn_on.mp3'),target=0.07,max_len=0.5,lp=7000)
-add('switch_light_off_t0',decode(f'{src}/lightswitch/light_switch_turn_off.mp3'),target=0.07,max_len=0.5,lp=7000)
-add('switch_metal_click_t0',decode(f'{src}/rpg-audio/Audio/metalClick.ogg'),target=0.06,max_len=0.4)
-add('switch_metal_latch_t0',decode(f'{src}/rpg-audio/Audio/metalLatch.ogg'),target=0.06,max_len=0.5)
-for i in range(1,8):add(f'switch_ui_t{i-1}',decode(f'{src}/interface-sounds/Audio/switch_{i:03d}.ogg'),target=0.05,max_len=0.3,lp=7000)
-for i in range(1,5):add(f'toggle_ui_t{i-1}',decode(f'{src}/interface-sounds/Audio/toggle_{i:03d}.ogg'),target=0.05,max_len=0.3,lp=7000)
-# ---------- paper and cloth
-for i in (1,2):add(f'paper_crumple_t{i-1}',decode(f'{src}/owlish/Paper/crumples{i}.wav'),target=0.05,max_len=1.4,lp=6000)
-for i in (1,2,3,4,5,6):
-    p=[f for f in os.listdir(f'{src}/owlish/Cloth, Rustle') if f'blanket-movement-{i}.wav' in f]
-    if p:add(f'cloth_rustle_t{i-1}',decode(f'{src}/owlish/Cloth, Rustle/{p[0]}'),target=0.045,max_len=1.4,lp=5000,tail_db=-36)
-# ---------- leaves: split the montage of dry-leaf rustles by silences
+        for t in range(5):
+            hard=mat in('metal','glass')
+            add(f'impact_{mat}_L{li}_t{t}',decode(K('kenney-impact',f'{base}_{l}',t)),db=LVDB[li],lp=6800 if hard else 6000,hp=140 if (mat=='wood' and l=='heavy') else 110,max_len=0.55 if hard else 0.4,tail_db=-38)
+# linen and paper: the recorded "soft" impacts are sub-bass booms, so they are built from real taps plus real cloth
+def cloth_slice(n,a,b):return decode(R(n),a,b)
+for li,db in enumerate(LVDB):
+    for t in range(5):
+        tap=clean(decode(K('kenney-impact','impactGeneric_light',t)),lp=1500,hp=130,max_len=0.2)*0.55
+        sw=decode(R(['cloth2','cloth4','handleSmallLeather','handleSmallLeather2','cloth4'][t]),0.04,0.32)
+        sw=clean(sw,kind='rustle',lp=3800,hp=140,max_len=0.3,soft_in=0.01)
+        clips[f'impact_linen_L{li}_t{t}']=finish(layer([(0.0,tap/ (np.abs(tap).max()+1e-9)*0.5,1.0),(0.008,sw/(np.abs(sw).max()+1e-9)*(0.35+0.2*li),1.0)]),db-1.0)
+        bp=decode(R(f'bookPlace{1+t%3}'))
+        base=clean(bp,lp=6200,hp=130,max_len=0.45)
+        if li==0:base=base*0.5
+        if li==2:base=layer([(0,base,1.0),(0.002,clean(decode(K('kenney-impact','impactTin_medium',t)),lp=1900,hp=200,max_len=0.2)/3,0.6)])
+        clips[f'impact_paper_L{li}_t{t}']=finish(base,db)
+for t in range(5):add(f'impact_wood_plank_t{t}',decode(K('kenney-impact','impactPlank_medium',t)),db=0.0,hp=120,max_len=0.5)
+# ======================= books
+for i,(n,a,b) in enumerate([('cloth2',0,None),('cloth4',0,None),('handleSmallLeather',0,None),('handleSmallLeather2',0,None)]):
+    add(f'book_pickup_t{i}',decode(R(n),a,b),db=-3.0,kind='rustle',lp=5200,hp=150,max_len=0.55,soft_in=0.012)
+add('book_pickup_t4',decode(f'{src}/owlish/Cloth, Rustle/'+[f for f in os.listdir(f'{src}/owlish/Cloth, Rustle') if 'movement-2' in f][0],0.8,1.4),db=-3.0,kind='rustle',lp=4800,hp=150,max_len=0.55,soft_in=0.02)
+add('book_cover_open_t0',decode(R('bookOpen')),db=-1.0,kind='rustle',lp=6000,hp=110,max_len=1.1,soft_in=0.004)
+add('book_cover_close_t0',decode(R('bookClose')),db=0.0,lp=6000,hp=110,max_len=0.9)
+for i in (1,2,3):add(f'book_flip_t{i-1}',decode(R(f'bookFlip{i}')),db=-3.0,kind='rustle',lp=5800,hp=150,max_len=0.9,soft_in=0.012)
+add('book_pageturn_t0',decode(f'{src}/owlish/Paper/pageturn1.wav'),db=-3.0,kind='rustle',lp=5600,hp=150,max_len=1.2,soft_in=0.012)
+for i in range(1,4):add(f'book_set_t{i-1}',decode(R(f'bookPlace{i}')),db=0.0,lp=6200,hp=130,max_len=0.45)
+add('book_drop_t0',decode(R('dropLeather')),db=0.0,lp=5600,hp=130,max_len=0.5)
+# ======================= sliding, scraping, creaking
+for i in range(1,9):add(f'scrape_t{i-1}',decode(f'{src}/scrapes/scrape-{i}.wav'),db=-4.0,kind='rustle',lp=4600,hp=130,max_len=1.1,tail_db=-36,soft_in=0.02)
+for i in range(1,4):add(f'scrape_owl_t{i-1}',decode(f'{src}/owlish/Impacts/scrape{i}.wav'),db=-4.0,kind='rustle',lp=4600,hp=130,max_len=1.1,tail_db=-36,soft_in=0.02)
+for i in range(1,4):add(f'creak_t{i-1}',decode(R(f'creak{i}')),db=-5.0,kind='rustle',lp=4200,hp=120,max_len=1.0,tail_db=-36,soft_in=0.015)
+for i in range(1,4):add(f'metal_pot_t{i-1}',decode(R(f'metalPot{i}')),db=-1.0,lp=6200,hp=140,max_len=0.7)
+# ======================= switches: only real mechanisms, no electronic beeps
+add('switch_light_on_t0',decode(f'{src}/lightswitch/light_switch_turn_on.mp3'),db=-1.0,lp=6200,hp=150,max_len=0.4,hiss=True)
+add('switch_light_off_t0',decode(f'{src}/lightswitch/light_switch_turn_off.mp3'),db=-1.0,lp=6200,hp=150,max_len=0.4,hiss=True)
+add('switch_metal_click_t0',decode(R('metalClick')),db=-1.0,lp=5600,hp=160,max_len=0.35,hiss=True)
+add('switch_metal_latch_t0',decode(R('metalLatch')),db=-1.0,lp=5600,hp=160,max_len=0.45,hiss=True)
+for i,(n) in enumerate(['click_001','click_002','toggle_001','toggle_002','tick_002']):
+    add(f'switch_plastic_t{i}',decode(f'{src}/interface-sounds/Audio/{n}.ogg'),db=-3.0,lp=5200,hp=200,max_len=0.2,hiss=True)
+# ======================= paper, cloth, leaves
+for i in (1,2):add(f'paper_crumple_t{i-1}',decode(f'{src}/owlish/Paper/crumples{i}.wav'),db=-3.0,kind='rustle',lp=5200,hp=160,max_len=1.2,soft_in=0.02)
+cl=sorted(f for f in os.listdir(f'{src}/owlish/Cloth, Rustle') if f.endswith('.wav') and 'blanket' in f)
+for i,f in enumerate([c for c in cl if 'movement-2' in c or 'movement-1' in c][:2]):
+    x=decode(f'{src}/owlish/Cloth, Rustle/{f}');pk=int(np.argmax(np.convolve(np.abs(x),np.ones(int(0.2*RATE)),'same')))
+    add(f'cloth_rustle_t{i}',x[max(0,pk-int(0.25*RATE)):pk+int(0.9*RATE)],db=-4.0,kind='rustle',lp=4200,hp=170,max_len=1.1,soft_in=0.03,tail_db=-34)
 lv=decode(f'{src}/leaves.mp3');w=int(0.25*RATE);env=np.sqrt(np.convolve(lv**2,np.ones(w)/w,'same'));taken=[]
 for _ in range(10):
     e=env.copy()
@@ -108,21 +153,64 @@ for _ in range(10):
     k=int(np.argmax(e))
     if e[k]<env.max()*0.18:break
     taken.append(k)
-for j,k in enumerate(sorted(taken)):add(f'leaves_rustle_t{j}',lv[max(0,k-int(0.35*RATE)):k+int(0.75*RATE)],target=0.04,max_len=1.1,lp=4800,tail_db=-34)
-# ---------- composed events from real hits
-def hit(name,i):return decode(K('kenney-impact',name,i))
-def composed(name,seq,**kw):
-    clips[name]=process(layer([(o,process(decode(K('kenney-impact',b,i)),target=0.08,max_len=0.9)*g,g) for o,b,i,g in seq]),**kw)
+for j,k in enumerate(sorted(taken)):add(f'leaves_rustle_t{j}',lv[max(0,k-int(0.35*RATE)):k+int(0.75*RATE)],db=-6.0,kind='rustle',lp=4400,hp=300,max_len=1.0,soft_in=0.04,tail_db=-34)
+# ======================= composed events from real hits
+def hit(base,i,lp=6500,hp=130,ml=0.7,db=0.0):return clean(decode(K('kenney-impact',base,i)),lp=lp,hp=hp,max_len=ml)
+def composed(name,seq,db=2.0):
+    parts=[]
+    for o,b,i,g in seq:
+        h=hit(b,i);h=h/(np.abs(h).max()+1e-9)*g;o=max(0.0,o+(rng.uniform(-0.012,0.012) if ITER>=3 and o>0 else 0))
+        parts.append((o,h,1.0))
+        if ITER>=3:  # small parts rattling after each blow, so the gaps between hits are never dead silence
+            for _ in range(3):
+                tick=clean(decode(K('kenney-impact','impactGeneric_light',int(rng.integers(0,5)))),lp=3500,hp=300,max_len=0.08)
+                parts.append((o+rng.uniform(0.03,0.14),tick/(np.abs(tick).max()+1e-9)*0.07*g,1.0))
+    y=layer(parts)
+    if ITER>=3:y=room(y,0.16,130)
+    clips[name]=finish(y,db)
 for t in range(3):
-    composed(f'lamp_fall_metal_t{t}',[(0.0,'impactMetal_heavy',t,1.0),(0.015,'impactGlass_light',t,0.45),(0.21,'impactMetal_medium',t+1,0.7),(0.36,'impactMetal_light',t+2,0.5),(0.47,'impactGlass_light',t+1,0.3),(0.55,'impactMetal_light',t,0.22)],target=0.085,max_len=1.6)
-    composed(f'lamp_fall_wood_t{t}',[(0.0,'impactWood_heavy',t,1.0),(0.02,'impactSoft_medium',t,0.5),(0.19,'impactWood_medium',t+1,0.7),(0.33,'impactWood_light',t+2,0.5),(0.43,'impactWood_light',t,0.28)],target=0.085,max_len=1.4)
-    composed(f'pot_fall_t{t}',[(0.0,'impactPlate_heavy',t,1.0),(0.02,'impactMining',t,0.5),(0.23,'impactPlate_medium',t+1,0.6),(0.38,'impactPlate_light',t+2,0.35)],target=0.085,max_len=1.3)
+    composed(f'lamp_fall_metal_t{t}',[(0.0,'impactMetal_heavy',t,1.0),(0.015,'impactGlass_light',t,0.45),(0.21,'impactMetal_medium',t+1,0.7),(0.36,'impactMetal_light',t+2,0.5),(0.47,'impactGlass_light',t+1,0.3),(0.55,'impactMetal_light',t,0.22)])
+    composed(f'lamp_fall_wood_t{t}',[(0.0,'impactWood_heavy',t,1.0),(0.02,'impactPlank_medium',t,0.5),(0.19,'impactWood_medium',t+1,0.7),(0.33,'impactWood_light',t+2,0.5),(0.43,'impactWood_light',t,0.28)])
+    composed(f'pot_fall_t{t}',[(0.0,'impactPlate_heavy',t,1.0),(0.02,'impactPlate_medium',t+2,0.5),(0.23,'impactPlate_medium',t+1,0.6),(0.38,'impactPlate_light',t+2,0.35)])
+if ITER>=3:
+    # events that belong to one lamp or one pot, made of real layers shifted in pitch
+    for t in range(3):
+        composed(f'lamp_setdown_metal_t{t}',[(0.0,'impactMetal_medium',t,1.0),(0.012,'impactGlass_light',t,0.4)],db=0.0)
+        composed(f'lamp_setdown_wood_t{t}',[(0.0,'impactWood_medium',t,1.0),(0.02,'impactPlank_medium',t,0.4)],db=0.0)
+        composed(f'lamp_setdown_plastic_t{t}',[(0.0,'impactTin_medium',t,0.9),(0.01,'impactGeneric_light',t,0.5)],db=-1.0)
+        for pn,base,ratio in (('glazed','impactPlate_medium',1.0),('terracotta','impactPlate_medium',0.86),('zinc','impactTin_medium',0.9)):
+            x=hit(base,t);x=pitch(x,ratio) if ratio!=1.0 else x
+            clips[f'pot_setdown_{pn}_t{t}']=finish(x,0.0)
+    for pn,i0 in (('glazed',0),('terracotta',3),('zinc',6)):
+        for t in range(2):
+            x=decode(f'{src}/scrapes/scrape-{1+(i0+t)%8}.wav');x=pitch(x,{'glazed':1.15,'terracotta':0.85,'zinc':1.0}[pn])
+            add(f'pot_move_{pn}_t{t}',x,db=-4.0,kind='rustle',lp=4200,hp=150,max_len=0.9,soft_in=0.02,tail_db=-36)
+    for ln,i0,lp_ in (('metal',0,4800),('wood',3,3800),('plastic',5,5200)):
+        for t in range(2):
+            add(f'lamp_move_{ln}_t{t}',decode(f'{src}/scrapes/scrape-{1+(i0+t)%8}.wav') if ln!='wood' else decode(R(f'creak{1+t}')),db=-5.0,kind='rustle',lp=lp_,hp=150,max_len=0.8,soft_in=0.02,tail_db=-36)
+# ======================= take selection: drop outliers within a group (iteration 2+), keep at most 4 (iteration 3)
+import re
+groups={}
+for n in clips:groups.setdefault(re.sub(r'_t\d+$','',n),[]).append(n)
+dropped=[]
+if ITER>=2:
+    for g,names in groups.items():
+        feats=np.array([[np.log(spectrum_stats(clips[n])['cent']+1),spectrum_stats(clips[n])['lf'],len(clips[n])/RATE] for n in names])
+        keep=set(names)
+        for n,fv in zip(names,feats):
+            st=spectrum_stats(clips[n])
+            if st['lf']>0.5 or st['mid']<0.12 and g.startswith(('impact','switch','book_set')):keep.discard(n)
+        if len(names)>3 and ITER>=3:
+            med=np.median(feats,axis=0);sd=feats.std(axis=0)+1e-6
+            dist={n:float(np.abs((f-med)/sd).sum()) for n,f in zip(names,feats) if n in keep}
+            while len(keep)>4:keep.discard(max(dist,key=lambda k:dist[k] if k in keep else -1))
+        for n in names:
+            if n not in keep:dropped.append(n);del clips[n]
 os.makedirs(f'{out}/clips',exist_ok=True)
 index={};blob=bytearray()
 for name,x in sorted(clips.items()):
     pcm=(np.clip(x,-1,1)*32767).astype('<i2');index[name]={'offset':len(blob)//2,'length':len(pcm),'rate':RATE}
     blob+=pcm.tobytes()
-    import wave
     w=wave.open(f'{out}/clips/{name}.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(RATE);w.writeframes(pcm.tobytes());w.close()
 open(f'{out}/atlas.bin','wb').write(bytes(blob));json.dump(index,open(f'{out}/atlas.json','w'),indent=0)
-print(len(clips),'clips',len(blob)/1024,'KB')
+print(f'iteration {ITER}:',len(clips),'clips',round(len(blob)/1024),'KB; dropped',len(dropped),dropped[:12])
