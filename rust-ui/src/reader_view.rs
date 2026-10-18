@@ -146,6 +146,17 @@ impl RustReaderView {
   let play=self.mini_query("[data-mini-play]")?;play.set_inner_html(icon);attr(&play,"aria-label",if state=="playing"{"Pausar lectura"}else{"Continuar lectura"});property(&play,"disabled",&(state=="loading").into())?;
   self.sync_mini_player_layout();Ok(())
  }
+ #[wasm_bindgen(js_name=updateReadingMetrics)]
+ pub fn update_reading_metrics(&self,time:&str,pages:&str)->Result<(),JsValue>{
+  for root in [&self.panel,&self.mini] {
+   if let Some(node)=root.query_selector("[data-audio-remaining]")? {
+    if node.text_content().as_deref()!=Some(time){node.set_text_content(Some(time));attr(&node,"aria-label",&format!("Tiempo restante estimado: {time}"));}
+   }
+  }
+  let button=self.cached_id("reader-location")?;
+  attr(&button,"title",&format!("{} · {pages}",button.get_attribute("aria-label").unwrap_or_default()));
+  Ok(())
+ }
  #[wasm_bindgen(js_name=updateBookmarkButton)]
  pub fn update_bookmark_button(&self,marked:bool)->Result<(),JsValue>{
   let button=self.query("[data-bookmark]")?;let label=if marked{"Quitar marcador de esta página"}else{"Marcar esta página"};

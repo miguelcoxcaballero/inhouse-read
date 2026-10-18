@@ -67,7 +67,10 @@ pub fn voice_present(host:JsValue,id:JsValue,offset:JsValue,clear:Function,ignor
    let end=optional(&optional(&boundary,"sentence")?,"end")?;if absent(&end){get(&item,"end")?}else{end}
   };
   let followed=maybe(&source,"follow",&Array::of2(&first,&last))?;ignore.call1(&JsValue::UNDEFINED,&followed)?;Ok::<(),JsValue>(())
- })();Ok(())
+ })();
+ // Updating a numeric estimate never drives playback or introduces a timer.
+ let _=maybe(&host,"onProgress",&Array::new());
+ Ok(())
 }
 #[wasm_bindgen]
 pub fn voice_unpaint(host:JsValue,clear:Function)->Result<(),JsValue>{
