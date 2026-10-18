@@ -1,3 +1,4 @@
+import {readerUI} from './rust-ui-required.js'
 import {ReaderChrome} from './reader-chrome.js'
 import {ReaderLifecycle,closeReaderVoice} from './reader-lifecycle.js'
 import {VoiceFlow} from './voice-flow.js'
@@ -53,6 +54,7 @@ export class ReaderExperience {
     })
     window.addEventListener('inhouse-reader-selection',event => rememberSelection(event.detail))
     this.voice = new ReadingVoice(reader, (state,message) => this.chrome.voiceState(state,message))
+    this.voice.onProgress = () => this.updateReadingMetrics()
     this.controls = new ReaderControls(this)
     // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
     // the downloadable natural voices of the chosen language live at the end of the voice list.
@@ -80,18 +82,39 @@ export class ReaderExperience {
   /** The title written on the spine or the author changed (in the shelf's
    * editor, maybe while this book was already prepared): show them here too. */
   refreshNames(bookId,fields) { return this.lifecycle.refreshNames(bookId,fields) }
-  open(record) { return this.lifecycle.open(record) }
+  open(record) {
+    this.lengthMetadata = record
+    const pending = this.lifecycle.open(record), epoch = this.reader.epoch
+    // The engine already caches this count. Do not block opening or let a
+    // late count from a closed book leak into the next reader session.
+    if (!record.wordCountComplete && this.reader.getLengthMetadata) {
+      Promise.resolve(this.reader.getLengthMetadata()).then(metadata => {
+        if (this.book !== record || this.reader.epoch !== epoch || !metadata) return
+        this.lengthMetadata = {...record,...metadata}
+        this.relocate()
+      }).catch(() => {})
+    }
+    return pending
+  }
   closeVoice() { return closeReaderVoice(this) }
   reset() { return this.lifecycle.reset() }
   relocate() {
     this.location = {...clonePlace(this.reader.location),section:this.reader.location.section || '',page:this.reader.location.page || ''}
     const label = this.label(this.location)
-    const compactLabel = this.location.locator?.kind === 'pdf-page'
-      ? `${this.location.locator.value}${this.reader.pageCount ? ` / ${this.reader.pageCount}` : ''}`
-      : `${Math.round(this.location.fraction * 100)} %`
+    const compactLabel = this.readingMetrics().compact
     this.view.relocate(label,compactLabel,this.location.fraction * 100,
       this.location.locator?.kind === 'pdf-page',this.location.locator?.value)
     this.updateBookmarkButton()
+    this.updateReadingMetrics()
+  }
+  readingMetrics() {
+    return readerUI().reader_reading_metrics(this.reader.s, this.reader.location,
+      {...this.lengthMetadata, pageCount:this.reader.pageCount}, this.preferences.rate,
+      ['playing','paused','loading'].includes(this.voice?.state))
+  }
+  updateReadingMetrics() {
+    const metrics = this.readingMetrics()
+    this.view.updateReadingMetrics(metrics.time, metrics.pagesDescription)
   }
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
   show(tab) { return this.lifecycle.show(tab) }
@@ -105,6 +128,7 @@ export class ReaderExperience {
   }
   updateMiniPlayer(state = this.voice?.state, message = '') {
     this.view.updateMiniPlayer(state || '',message,displayBookTitle(this.book),rateLabel(this.preferences.rate),Boolean(this.book),readerIcon(state === 'playing' ? 'pause' : 'play'))
+    this.updateReadingMetrics()
   }
   syncMiniPlayerLayout() {
     this.view.syncMiniPlayerLayout()

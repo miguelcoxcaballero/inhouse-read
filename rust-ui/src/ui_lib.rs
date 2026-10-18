@@ -85,6 +85,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};
 use web_sys::{Document, Element, Event, HtmlElement, KeyboardEvent};
 mod reader_view;
+mod reader_metrics;
 
 #[wasm_bindgen]
 pub fn ui_abi_version() -> u32 { 1 }

@@ -30,7 +30,7 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reader-location[aria-expanded=true] .reader-progress, .reader-location[aria-expanded=true] .reader-progress-fill { height:4px; border-radius:2px; }
 .reader-type-icon { font:500 22px Georgia,serif; letter-spacing:-1.5px; }
 .reader-location { min-width:0; min-height:44px; padding:6px 8px; border:0; background:transparent; color:inherit; cursor:pointer; }
-.reader-location-label { display:block; overflow:hidden; text-overflow:ellipsis; margin-bottom:5px; font:500 12px var(--f-body); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.reader-location-label { display:block; overflow:visible; margin-bottom:5px; font:500 12px var(--f-body); font-variant-numeric:tabular-nums; white-space:normal; line-height:1.2; }
 .reader-location .reader-progress { display:block; height:3px; background:repeating-linear-gradient(90deg,color-mix(in srgb,currentColor 24%,transparent) 0 1px,transparent 1px calc(100% / 32)); }
 .reader-progress-fill { display:block; background:currentColor; }
 .reader-return { position:absolute; z-index:3; inset:0; height:44px; min-height:44px; width:100%; border:0; border-radius:0; padding:0 4px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; background:var(--reading-paper); color:var(--reading-ink); box-shadow:none; font:500 12px var(--f-body); text-align:left; cursor:pointer; }
@@ -423,7 +423,13 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 /* One stable footer row: showing audio or a return destination never changes
    the available page height or its line breaks. Both keep full touch targets. */
 .reader-audio-dock { position:absolute; z-index:3; bottom:var(--reader-bar-height); height:var(--reader-dock-height); left:max(env(safe-area-inset-left,0px),var(--reader-chrome-inset)); right:max(env(safe-area-inset-right,0px),var(--reader-chrome-inset)); }
-.reader-audio-dock:has(.reading-mini-player:not([hidden])) .reader-return:not([hidden]) { right:88px; width:auto; z-index:4; }
+.reader-audio-dock:has(.reading-mini-player:not([hidden])) .reader-return:not([hidden]) { right:calc(88px + 11ch); width:auto; z-index:4; }
 .reader-audio-dock:has(.reader-return:not([hidden])) .reading-mini-player [data-mini-open] { visibility:hidden; }
 .reader-audio-dock .reading-mini-player > .reading-icon-button { width:44px; height:44px; flex:none; }
 .reader-kids-mode .reader-audio-dock { visibility:hidden; }
+
+/* Estimates stay beside transport controls without covering the return link. */
+.reading-audio-remaining { white-space:nowrap; font-size:12px; font-variant-numeric:tabular-nums; opacity:.75; }
+.reading-mini-player [data-audio-remaining] { flex:none; width:11ch; text-align:right; padding-inline-end:4px; box-sizing:border-box; }
+.reading-audio-controls [data-audio-remaining] { grid-column:1 / -1; justify-self:center; margin-top:-8px; }
+@media (max-width:360px) { .reader-location { padding-inline:2px; } .reader-location-label { font-size:11px; } }

@@ -70,6 +70,34 @@ async function setup(persist = vi.fn(async () => {})) {
   return { reader, experience, persist }
 }
 
+it('shows pages without audio and updates both remaining-time labels on rate changes', async () => {
+  const {experience,reader}=await setup()
+  await experience.open({id:'long-book',title:'Long book',wordCount:21600,wordCountComplete:true})
+  reader.location=place('here',.5);experience.relocate()
+  expect(experience.locationButton.textContent).toContain('50 % · 37/72')
+  expect(experience.panel.querySelector('[data-audio-remaining]').textContent).toBe('1h 00min')
+  experience.setPreference('rate',2,{restart:false})
+  for(const root of [experience.panel,experience.miniPlayer]) expect(root.querySelector('[data-audio-remaining]').textContent).toBe('0h 30min')
+})
+it('ignores a late count after switching books and never awaits counting to open', async () => {
+  const {experience,reader}=await setup(), count=deferred()
+  reader.getLengthMetadata=vi.fn(()=>count.promise)
+  await experience.open({id:'old',title:'Old'})
+  await experience.open({id:'new',title:'New',wordCount:600,wordCountComplete:true})
+  count.resolve({wordCount:30000,wordCountComplete:true});await Promise.resolve();await Promise.resolve()
+  expect(experience.locationButton.textContent).toContain('/2')
+  expect(experience.lengthMetadata.id).toBe('new')
+})
+it('refreshes the page and time labels when a background count completes', async () => {
+  const {experience,reader}=await setup(),count=deferred()
+  reader.getLengthMetadata=vi.fn(()=>count.promise)
+  await experience.open({id:'counting',title:'Counting'})
+  expect(experience.locationButton.textContent).toContain('—/—')
+  count.resolve({wordCount:21600,wordCountComplete:true});await Promise.resolve();await Promise.resolve()
+  expect(experience.locationButton.textContent).toContain('/72')
+  expect(experience.panel.querySelector('[data-audio-remaining]').textContent).toBe('0h 48min')
+})
+
 describe('reader navigation during asynchronous history writes', () => {
   it('does not expose tools while the application is still restoring the reader', async () => {
     const { experience } = await setup()
@@ -197,7 +225,7 @@ describe('reader appearance and compact location', () => {
     const { experience, reader } = await setup()
     reader.location = { ...beyond, section:'An unusually long chapter title that must not push the toolbar buttons', page:12 }
     experience.relocate()
-    expect(experience.locationButton.querySelector('.reader-location-label').textContent).toBe('60 %')
+    expect(experience.locationButton.querySelector('.reader-location-label').textContent).toBe('60 % · —/—')
     expect(experience.locationButton.getAttribute('aria-label')).toContain(reader.location.section)
     expect(experience.locationButton.title).toContain('Página 12')
     expect(experience.panel.querySelector('.reading-position').textContent).toContain(reader.location.section)
@@ -208,7 +236,7 @@ describe('reader appearance and compact location', () => {
     reader.pageCount = 1352
     reader.location = { fraction:.7, locator:{kind:'pdf-page',value:947} }
     experience.relocate()
-    expect(experience.locationButton.querySelector('.reader-location-label').textContent).toBe('947 / 1352')
+    expect(experience.locationButton.querySelector('.reader-location-label').textContent).toBe('70 % · 947/1352')
     expect(experience.locationButton.getAttribute('aria-label')).toBe('Progreso y capítulos, Página 947 de 1352')
     expect(experience.panel.querySelector('.reading-position').textContent).toBe('Página 947 de 1352')
   })
