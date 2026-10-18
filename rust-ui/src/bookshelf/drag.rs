@@ -198,6 +198,7 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   // pointer capture hands the release to the hit's own button, which then owns the tap.
   ("redirected",&b(!background_only&&node!=pressed)),
  ]);
+ put(&drag,"startedAt",&get(event,"timeStamp"));
  ctx.st_set("dragSession",&drag);
  // The browser may have cancelled the pointer already.
  let _=method_opt(&node,"setPointerCapture",&[&get(event,"pointerId")]);
@@ -213,6 +214,7 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   cls_add(&node,&["is-lifted"]);
   let (lift,_,_,material)=object_sounds(&node);
   ctx.sound_of(lift,if lift==0{0}else{material},if lift==0{0.75}else{0.55});
+  ctx.scene_call("recordBookPointer",&[&node,&f(0.0),&get(&drag,"startedAt"),&f(0.0)])?;
   ctx.scene_call("flush",&[])?;
   Ok(())
  }});
@@ -246,6 +248,7 @@ pub fn move_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  put(&drag,"x",&get(event,"clientX"));put(&drag,"y",&get(event,"clientY"));
  let dx=gn(&drag,"x")-gn(&drag,"startX");
  let dy=gn(&drag,"y")-gn(&drag,"startY")+gn(&ctx.scroller,"scrollTop")-gn(&drag,"scrollTop");
+ ctx.scene_call("recordBookPointer",&[node,&f(dx),&get(event,"timeStamp"),&f(1.0)])?;
  putb(&drag,"moved",true);
  cls_remove(node,&["is-lifted"]);
  cls_add(node,&["is-dragging"]);
@@ -299,6 +302,10 @@ pub fn is_touch_tap_release(ctx:&Ctx,event:&JsValue,drag:&JsValue,node:&JsValue,
 pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:bool,activate_touch:bool)->R{
  let drag=ctx.st("dragSession");
  if !truthy(&drag)||get(&drag,"node")!=*node||get(&drag,"pointerId")!=get(event,"pointerId"){return Ok(());}
+ if gb(&drag,"active"){
+  let x=num(&coalesce(get(event,"clientX"),get(&drag,"x")))-gn(&drag,"startX");
+  ctx.scene_call("recordBookPointer",&[node,&f(x),&get(event,"timeStamp"),&f(if cancelled||gb(&drag,"cancelled"){3.0}else{2.0})])?;
+ }
  ctx.clear_timeout(&get(&drag,"timer"));
  clear_placement_preview(ctx,&drag)?;
  ctx.cancel_frame_id(&get(&drag,"previewFrame"));

@@ -2762,6 +2762,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       invalidate();
     },
+    recordBookPointer(node, x, at, phase) {
+      const entry = byNode.get(node);
+      if (entry && entry.kind !== 'plant' && entry.kind !== 'lamp') bookGravity?.record_pointer(entry.key, x, at, phase);
+    },
     getBookPose(node) {
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp') return null;

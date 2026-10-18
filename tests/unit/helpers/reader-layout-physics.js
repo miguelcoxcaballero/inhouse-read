@@ -3,7 +3,7 @@ import {rustShelf} from './rust-shelf-ready.js'
 export function fixture(rows,metal=false,animated=false){
  const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,metal,false,0);
  let clock=0;const previous=new Map();
- return {rows,decoration:(...args)=>solver.decoration(...args),pause:()=>solver.pause(),snapshot:()=>solver.snapshot(),restore:value=>solver.restore(value),step(frames=1,reduced=false,frameMs=1000/60){let output;
+ return {rows,pointer:(...args)=>solver.record_pointer(...args),decoration:(...args)=>solver.decoration(...args),pause:()=>solver.pause(),snapshot:()=>solver.snapshot(),restore:value=>solver.restore(value),step(frames=1,reduced=false,frameMs=1000/60){let output;
   for(let frame=0;frame<frames;frame++){
    scene.beginEntries(clock,reduced,1,new Float64Array([0,0,0,1]),1,600,0,18);
    const states=new Float64Array(rows.length*37),geometry=new Float64Array(rows.length*9);

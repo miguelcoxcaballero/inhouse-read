@@ -1,3 +1,17 @@
+# 1.7.284 — colocación cuidadosa y caída con gesto
+
+Changelog: «Colocación suave y caída con gesto».
+
+Rust distingue una colocación tranquila de una suelta lateral: una pausa del dedo deja caducar el movimiento anterior, mientras un pequeño desplazamiento final conserva el lado de caída. La intención tiene una ventana de 180 ms, un recorrido firmado mínimo de 1,5 mm y velocidad horizontal filtrada mínima de 6 mm/s. Un cambio de sentido empieza un recorrido nuevo, de modo que el gesto final prima sobre el trayecto anterior y el pequeño temblor alterno no elige un lado. La suelta se decide en Rust con los timestamps de los eventos del puntero y queda fijada antes de cerrar el arrastre; un frame retrasado no transforma el gesto en una pausa. Los clientes directos del solver conservan un respaldo por tiempo de frame.
+
+Se conserva el agarre animado, el frenado horizontal y la caída física existente. No se fija una orientación artificial al soltar: una colocación recta deja de recibir el par de vuelco, y las colisiones y la pérdida de apoyo siguen actuando normalmente. Los libros apoyados, los empujes, las macetas y lámparas mantienen sus cuerpos reales.
+
+Pasan 129/129 pruebas específicas en diez archivos. Las nueve nuevas cubren posición estable y reposo, parada tras movimiento en ambos sentidos y con agarre superior/central/inferior, colocación muy lenta y temblor pequeño, gesto final de 3 mm en madera/metal a 30/60/120 Hz, inversión breve del sentido pausa sin frames intermedios, eventos de entrada con render atrasado, cancelación y claves UTF-16 exactas, incluido un sustituto no emparejado. Tres de esas pruebas fallan con los bindings de 1.7.283. Las regresiones de caídas y apoyos preparan ahora el libro con movimiento final reciente o una pausa breve, conservando sus comprobaciones de contacto, poses, penetración y pie sin patinar. Se comprueban también el layout del lector, el audio de 48 kHz sin arrastres y la caché offline.
+
+Pasan cuatro E2E finales, en una ejecución sin reintentos: colocación y gesto breve mediante eventos táctiles CDP en ambas direcciones y con recarga; regreso exacto del lector por el lomo; suelta con puntero en ambas direcciones sin patinar y reposo del renderer; empuje nativo de vecinos y conservación de poses al recargar. La prueba de puntero termina con un movimiento reciente después de sus mediciones, para no introducir una pausa artificial. Build local: UI 3019313 B, SHA256 79b73b57137361f0286cd84425b66ce69eaa06320b1d24c54a7ff9d1aa396254; Shelf 3693365 B, SHA256 a02eae2387de007abffaf3d238239722813c0cf26e4276f2691c3d3d33f2959e. Shell 111 archivos / 35621625 B, revisión 742f323f1cd1. El actualizador compartido pasa su verificación; Android, vendor, workflows y los WIP anteriores se conservan. No se declara batería general completa ni validación en teléfono físico.
+
+---
+
 # 1.7.283 — arrastre silencioso y audio a 48 kHz
 
 Changelog: «Sin arrastres y sonido más nítido».
