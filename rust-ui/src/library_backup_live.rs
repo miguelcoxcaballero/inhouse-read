@@ -38,7 +38,13 @@ impl Core{
    return call(&task,"then",&[&again]).expect("Promise.then").into();
   }
   let incoming=self.live_inbox.borrow_mut().take();let core=self.clone();let generation=self.generation.get();
-  let task=start(async move{core.run_sync(account,generation,incoming).await});
+  let task=start(async move{
+   let retry=incoming.clone();let result=core.clone().run_sync(account,generation,incoming).await;
+   if result.is_err()&&core.guard(generation).is_ok(){
+    if let Some(retry)=retry{let pending=core.live_inbox.borrow().clone().unwrap_or_else(blank);*core.live_inbox.borrow_mut()=Some(library_merge_checkpoint(retry,pending));}
+   }
+   result
+  });
   let owner=self.clone();let saved_generation=generation;
   let release=Closure::once_into_js(move||{if owner.guard(saved_generation).is_ok(){*owner.live_task.borrow_mut()=None;}});
   let task:Promise=call(&task,"finally",&[&release]).expect("Promise.finally").into();

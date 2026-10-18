@@ -137,8 +137,9 @@ let roomRefreshRetry = null
 let roomCaptureTimer = null
 let roomCaptureBusy = false
 let roomCaptureAgain = false
+let roomCaptureFailures = 0
 const liveRoom = new LiveRoom({
-  enabled:()=>!appDisposed&&!document.hidden&&hasDriveSession(),
+  enabled:()=>!appDisposed&&!document.hidden&&Boolean(driveProfile?.id),
   receive:(account,snapshot)=>libraryBackup.receiveSnapshot(account,snapshot),
   receiveMotion:(account,packet)=>{if(account===driveProfile?.id && els.readerScreen.hidden)shelf?.applyLiveRoomMotion?.(packet)},
   disconnected:source=>shelf?.clearLiveRoomMotion?.(source)
@@ -168,7 +169,7 @@ function scheduleLibraryBackup() {
     syncLibraryToDrive({ silent:true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
   }, 350)
 }
-function scheduleRoomCapture() {
+function scheduleRoomCapture(delay = 32) {
   roomCaptureAgain = true
   if (roomCaptureBusy || roomCaptureTimer != null || !driveProfile?.id) return
   roomCaptureTimer = setTimeout(async () => {
@@ -176,10 +177,10 @@ function scheduleRoomCapture() {
     const account = driveProfile?.id
     if (!account) return
     roomCaptureBusy = true; roomCaptureAgain = false
-    try { await libraryBackup.captureRoom(account); await libraryBackup.drainLive(account) }
-    catch (error) { console.warn('Colocación pendiente:', error.message) }
-    finally { roomCaptureBusy = false; if (roomCaptureAgain) scheduleRoomCapture() }
-  }, 32)
+    try { await libraryBackup.captureRoom(account); await libraryBackup.drainLive(account); roomCaptureFailures = 0 }
+    catch (error) { roomCaptureFailures++; roomCaptureAgain = true; console.warn('Colocación pendiente:', error.message) }
+    finally { roomCaptureBusy = false; if (roomCaptureAgain) scheduleRoomCapture(roomCaptureFailures ? Math.min(10000, 250 * 2 ** Math.min(roomCaptureFailures, 5)) : 32) }
+  }, delay)
 }
 function localRoomBookChanged(id,fields) {
   if (driveProfile?.id && libraryBackup.markBookChanged(driveProfile.id,id,fields)) scheduleRoomCapture()
@@ -996,6 +997,7 @@ if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
 function resumeDriveSync({ poll = false } = {}) {
+  liveRoom.resume()
   if (!navigator.onLine || (!hasDriveSession() && !getRememberedDriveProfile())) return
   syncLibraryToDrive({ silent: true, poll }).then(() => { if (cloudRoomChanged) return refreshShelf() }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
 }
@@ -1005,5 +1007,6 @@ const backupPoll = setInterval(() => {
 }, 5000)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') resumeDriveSync()
-  else liveRoom.pause()
+  else liveRoom.suspend()
 })
+globalThis.addEventListener('pageshow', () => { if (!document.hidden) resumeDriveSync() })

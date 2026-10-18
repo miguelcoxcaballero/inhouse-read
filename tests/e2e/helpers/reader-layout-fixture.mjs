@@ -17,8 +17,8 @@ export async function quietShelf(scene) {
   }, { timeout:30_000 }).toBe(true);
 }
 
-export async function seedShelf(page, {domino=false,single=false,mode='isometric',bookFile='tiny.pdf'}={}) {
-  await page.addInitScript(({ lampKey, plantKey, domino, single, mode }) => {
+export async function seedShelf(page, {domino=false,single=false,withLamp=false,mode='isometric',bookFile='tiny.pdf'}={}) {
+  await page.addInitScript(({ lampKey, plantKey, domino, single, withLamp, mode }) => {
     if(!/^https?:$/.test(location.protocol))return;
     localStorage.setItem('inhouse-read-shelf-view', mode);
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
@@ -26,10 +26,10 @@ export async function seedShelf(page, {domino=false,single=false,mode='isometric
       { key:'plant:motion', seed:'motion', catalogId:'sansevieria', variant:'sansevieria',
         potId:'muskot', width:42, height:124, shelf:domino?2:0, x:.76 }
     ]));
-    localStorage.setItem(lampKey, JSON.stringify(single ? [] : [
+    localStorage.setItem(lampKey, JSON.stringify(single && !withLamp ? [] : [
       { key:'lamp:motion', lampId:'tarnaby', shelf:1, x:.56, isOn:true }
     ]));
-  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino, single, mode });
+  }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino, single, withLamp, mode });
   await page.goto(TARGET_URL);
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/'+bookFile)];
@@ -66,7 +66,7 @@ export async function seedShelf(page, {domino=false,single=false,mode='isometric
   const scene = page.locator('.ihr-bookshelf-scene');
   await expect(page.locator('.ihr-spine')).toHaveCount(single ? 1 : 6);
   await expect(page.locator('.ihr-plant')).toHaveCount(single ? 0 : 1);
-  await expect(page.locator('.ihr-lamp')).toHaveCount(single ? 0 : 1);
+  await expect(page.locator('.ihr-lamp')).toHaveCount(single && !withLamp ? 0 : 1);
   await expect(scene).toHaveAttribute('data-shelf-type', 'baggebo');
   await expect(scene).toHaveAttribute('data-view-progress', mode === 'isometric' ? '1' : '0');
   await quietShelf(scene);

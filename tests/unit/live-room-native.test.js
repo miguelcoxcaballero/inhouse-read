@@ -50,3 +50,41 @@ it('validates encrypted relay envelopes with the same account, source, expiry an
  expect(b.receiveRelay('peer-a',{at:now,packet},now)).toMatchObject({gesture:'held',from:'peer-a'});
  expect(b.receiveMotion(packet)).toBeNull();expect(b.receiveRelay('peer-a',{at:now,packet},now)).toBeNull();a.free();b.free();
 })
+it('retries an unchanged mailbox after a transient read failure',()=>{
+ const room=new ui.RustLiveRoom('account','peer-z'),now=Date.now(),files=[{id:'file',name:'live-v1-peer-a.json',modifiedTime:new Date(now).toISOString()}]
+ expect(room.observe(files,now)).toHaveLength(1);expect(room.observe(files,now+1)).toEqual([])
+ room.readFailed('peer-a');expect(room.observe(files,now+2)).toEqual([['read','peer-a','file']]);room.free()
+})
+it('recovers failed negotiations promptly with bounded retry delay',()=>{
+ const room=new ui.RustLiveRoom('account','peer-a'),now=Date.now(),files=[{id:'file',name:'live-v1-peer-z.json',modifiedTime:new Date(now).toISOString()}]
+ room.observe(files,now);room.failed('peer-z',now)
+ expect(room.observe(files,now+1999)).toEqual([])
+ expect(room.observe(files,now+2000).map(a=>a[0])).toContain('offer')
+ for(let i=0;i<12;i++)room.failed('peer-z',now)
+ expect(room.observe(files,now+15000).map(a=>a[0])).toContain('offer');room.free()
+})
+it('accepts authenticated state fallback for lamps and progress and allows retry after application failure',()=>{
+ const room=new ui.RustLiveRoom('account','peer-z'),now=Date.now()
+ room.observe([{id:'file',name:'live-v1-peer-b.json',modifiedTime:new Date(now).toISOString()}],now)
+ const value=snapshot();value.settings['inhouse-read-shelf-lamps']=stamp('[{"key":"lamp:one","isOn":false}]')
+ const envelope={packet:packet(value)}
+ expect(room.receiveStateRelay('unknown',envelope)).toBeNull()
+ expect(room.receiveStateRelay('peer-b',{packet:packet(value,{from:'other'})})).toBeNull()
+ expect(room.receiveStateRelay('peer-b',envelope)?.snapshot).toEqual(value)
+ expect(room.receiveStateRelay('peer-b',envelope)).toMatchObject({duplicate:true})
+ room.forgetSnapshot('packet-0000000001')
+ expect(room.receiveStateRelay('peer-b',envelope)?.snapshot).toEqual(value);room.free()
+})
+it('uses only the newest mailbox for a peer after older clients created duplicates',()=>{
+ const room=new ui.RustLiveRoom('account','peer-z'),now=Date.now()
+ const file=(id,delta)=>({id,name:'live-v1-peer-a.json',modifiedTime:new Date(now-delta).toISOString()})
+ expect(room.observe([file('old',500),file('new',0),file('older',1000)],now)).toEqual([['read','peer-a','new']])
+ expect(room.observe([file('old',500),file('new',0),file('older',1000)],now+1)).toEqual([]);room.free()
+})
+it('still expires an offline peer after a mailbox read fails',()=>{
+ const room=new ui.RustLiveRoom('account','peer-z'),now=Date.now()
+ room.observe([{id:'file',name:'live-v1-peer-a.json',modifiedTime:new Date(now).toISOString()}],now)
+ room.readFailed('peer-a')
+ expect(room.observe([],now+90001)).toEqual([['close','peer-a',null]])
+ expect(room.peerCount).toBe(0);room.free()
+})
