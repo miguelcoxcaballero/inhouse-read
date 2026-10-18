@@ -1,3 +1,9 @@
+# Entrega 1.7.283: audio nítido y sin arrastre
+
+Se eliminan los roces durante el arrastre y se silencian sus códigos antiguos en Rust y Web Audio. Atlas regenerado a 48 kHz desde los originales CC0 con filtrado más ligero: 128 tomas conservadas y 18 de arrastre retiradas. También el respaldo Rust usa 48 kHz con frecuencia explícita en el contrato. Se mantienen cuatro voces máximas y suspensión en reposo. Se conservan las poses exactas y el soporte físico de 1.7.282. Validación y hashes en [remaining-wip-verification.md](remaining-wip-verification.md). El resto de la migración continúa pendiente; este ajuste no declara completada la aplicación en Rust. Preservar WIP, ramas y stashes de otros agentes.
+
+---
+
 # Entrega 1.7.282: layout estable y sonidos reales
 
 La selección/lectura reserva el cuerpo y la matriz físicos del libro en Rust; regresar no reinicia su inclinación ni restaura una copia antigua de los vecinos. La retirada y el arrastre reales siguen liberando el apoyo. El atlas final de wip/sfx@adede344 incluye 146 clips de 16 kHz / 1861058 B con créditos CC0, alternativas grabadas y síntesis Rust de respaldo. Eventos y contactos por material se deciden en Rust; el transporte Web Audio se suspende en reposo. Se conservan las calidades visuales y los parámetros físicos.

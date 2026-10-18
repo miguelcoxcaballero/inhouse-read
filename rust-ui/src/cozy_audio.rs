@@ -35,21 +35,17 @@ pub fn clip_groups(kind:u32,material:u32,level:u32)->String{
   1=>"book_cover_open".into(),
   2=>"switch_plastic,switch_ui".into(),
   3=>if m<6{impact(surface)}else{String::new()},
-  4=>if m==1{"book_slide_metal,scrape_owl,scrape".into()}else{"book_slide_wood,scrape".into()},
   5=>match m{0|1|5=>format!("book_set_{surface},book_set"),_=>format!("book_set_{surface},{}",impact(surface))},
   6=>format!("lamp_{lamp}_switch_on,{}",if m==2{"switch_metal_click,switch_light_on"}else{"switch_light_on"}),
   7=>format!("lamp_{lamp}_switch_off,{}",if m==2{"switch_metal_click,switch_light_off"}else{"switch_light_off"}),
-  8=>format!("lamp_{lamp}_move,lamp_move_{lamp_family},scrape"),
   9=>format!("lamp_{lamp}_set,lamp_setdown_{lamp_family},{}",impact(MATERIALS[LAMP_BASE[m.min(2)]])),
   10=>format!("lamp_{lamp}_fall,{}",if m==1{"lamp_fall_wood"}else{"lamp_fall_metal"}),
-  11=>format!("pot_{pot}_move,pot_move_{pot_family},scrape"),
   12=>format!("pot_{pot}_set,pot_setdown_{pot_family},{}",if m==2{"metal_pot".into()}else{impact(MATERIALS[POT_MATERIAL[m.min(4)]])}),
   13=>format!("pot_{pot}_fall,pot_fall"),
   14=>"leaves_brush,leaves_rustle".into(),
   15=>"bin_drop,paper_crumple".into(),
   16=>"book_return,book_set".into(),
   17=>"book_pull,book_pickup".into(),
-  18=>"book_slide_back,scrape".into(),
   19=>"book_cover_close".into(),
   20=>"book_flip,book_pageturn".into(),
   21=>"bookmark_ribbon".into(),
@@ -70,12 +66,16 @@ pub fn clip_groups(kind:u32,material:u32,level:u32)->String{
  }
 }
 
-/// The synthesised fallback at 24 kHz: (kind, material, variant 0..2, level 0..2). Unknown events are empty.
+/// The synthesised fallback at 48 kHz: (kind, material, variant 0..2, level 0..2). Unknown events are empty.
 #[wasm_bindgen::prelude::wasm_bindgen]
-pub fn cozy_sound(kind:u32,material:u32,variant:u32,level:u32)->Vec<f32>{cozy_synth::render(kind,material,variant%3,level.min(2))}
+pub fn cozy_sound(kind:u32,material:u32,variant:u32,level:u32)->Vec<f32>{if matches!(kind,4|8|11|18){Vec::new()}else{cozy_synth::render(kind,material,variant%3,level.min(2))}}
 /// The atlas clip groups for an event (see `clip_groups`).
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn cozy_clip(kind:u32,material:u32,level:u32)->String{clip_groups(kind,material,level)}
 /// The level (0 soft, 1 medium, 2 hard) of an event played with `strength`.
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn cozy_level(strength:f64)->u32{level_of(strength)}
+
+/// Sample rate of the fallback PCM, shared with the Web Audio transport.
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn cozy_sample_rate()->u32{cozy_synth::RATE as u32}

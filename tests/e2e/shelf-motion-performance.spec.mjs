@@ -9,7 +9,7 @@ const TARGET_URL = process.env.IHR_TEST_URL || '/';
 
 test('cozy sounds use native PCM for switches, pickup and opening and sleep afterwards',async({page},info)=>{
  // Without the recorded atlas every event is synthesised in Rust.
- await page.route('**/sfx/atlas.*',route=>route.abort());
+ await page.route(/\/assets\/atlas-[\w-]+\.(bin|json)$/,route=>route.abort());
  await page.addInitScript(()=>{
   window.cozyProof={native:[],starts:[],contexts:[]};
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.cozy_sound)return result;

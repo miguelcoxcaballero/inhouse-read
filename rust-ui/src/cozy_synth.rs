@@ -24,9 +24,9 @@
 //! 31 zoom in  32 zoom out  33 view turns isometric  34 view turns straight (soft airy whooshes)
 use std::f64::consts::{PI,TAU};
 pub const KINDS:u32=35;
-pub const RATE:f64=24000.0;
-/// Longest sound: 0.625 s, 60 KB as f32.
-pub const MAX_SAMPLES:usize=15000;
+pub const RATE:f64=48000.0;
+/// Longest sound: 0.625 s, 120 KB as f32.
+pub const MAX_SAMPLES:usize=30000;
 
 struct Rng(std::cell::Cell<u32>);
 impl Rng{

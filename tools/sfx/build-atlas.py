@@ -5,20 +5,23 @@ Sources (all CC0, no attribution required; credit kept in public/sfx/CREDITS.txt
   Kenney Impact Sounds, RPG Audio, Interface Sounds (kenney.nl); OpenGameArt: "Scrapes",
   "Light Switch Turn On And Off SFX" (yd), "20 Rustles of dry leaves", "Sound Effects Pack" (Owlish Media).
 Every clip is cleaned (DC, rumble, hiss), warmed, given a soft attack where it is a rustle, tamed at the transient,
-given a very small room, loudness matched by A-weighted level and trimmed; the final atlas keeps the best takes.
+given a very small room, loudness matched by A-weighted level and trimmed at 48 kHz; the final atlas keeps the best takes.
 
-usage: build-atlas.py <sources dir> <out dir> [iteration 1-3]
+usage: build-atlas.py <sources dir> <out dir> [iteration 1-3] [reviewed-takes.json]
   iteration 1: fix defects (sub-bass booms, electronic beeps, hiss, cut-off rustles)
   iteration 2: + cozy polish (soft transients, small room, A-weighted loudness matching, outlier takes dropped)
   iteration 3: + events composed from real layers (lamp and pot specific) and take selection for the final atlas
-<sources dir> is what tools/sfx/fetch-sources.sh prepares. Writes <out>/clips/<name>.wav, atlas.bin (int16) and atlas.json.
+<sources dir> is what tools/sfx/fetch-sources.sh prepares.
+Pass tools/sfx/reviewed-takes.json to preserve the reviewed non-drag takes.
+Copy the generated atlas.bin/json into src/assets/sfx; Vite hashes their public URLs. Writes <out>/clips/<name>.wav, atlas.bin (int16) and atlas.json.
 """
 import json,os,subprocess,sys,wave
 import numpy as np
 from scipy import signal
-RATE=24000
-OUT_RATE=16000  # stored rate: everything is band-limited under 7 kHz, and the browser resamples on decode
+RATE=48000
+OUT_RATE=48000  # decode original recordings at full bandwidth; never upsample the old 16 kHz atlas
 src,out=sys.argv[1],sys.argv[2]
+selection=set(json.load(open(sys.argv[4]))) if len(sys.argv)>4 else None
 ITER=int(sys.argv[3]) if len(sys.argv)>3 else 3
 rng=np.random.default_rng(20261017)
 def decode(path,start=0.0,end=None):
@@ -57,24 +60,23 @@ def room(x,mix=0.10,ms=70):
     # a very small, soft room so a dry recording does not sound pasted on
     global DRY
     n=int(ms/1000*RATE);ir=rng.standard_normal(n)*np.exp(-np.arange(n)/(0.28*n)*3.0);ir=signal.sosfilt(sos('lp',2600),ir);ir[:int(0.004*RATE)]=0
-    ir/=np.abs(ir).sum()+1e-12;wet=np.convolve(x,ir*6,'full')[:len(x)+n]
+    ir/=np.abs(ir).sum()+1e-12;wet=signal.fftconvolve(x,ir*6,'full')[:len(x)+n]
     wet=np.concatenate([wet,np.zeros(len(x)+n-len(wet))])
     y=np.concatenate([x,np.zeros(n)]);return y+wet*mix
 def clean(x,kind='impact',lp=7000,hp=100,warm=1.0,max_len=1.0,tail_db=-42,fade=0.03,soft_in=0.0,pre=0.003,hiss=False):
     x=x-np.mean(x)
-    x=signal.sosfilt(sos('hp',hp,2),x)
-    x=signal.sosfilt(sos('lp',min(lp,4800) if hiss else lp,4),x)
-    x=shelf(x,230,2.0*warm,False);x=shelf(x,4300,-3.0*warm,True)
+    # Keep the original bass/body and high-frequency detail. The former 3.4 kHz
+    # material filters plus a 16 kHz export made metal, paper and switches muffled.
+    x=signal.sosfilt(sos('hp',min(hp,90 if kind=='rustle' else 70),2),x)
+    x=signal.sosfilt(sos('lp',12000 if hiss else min(18000,max(12000,lp*2.5)),2),x)
+    x=shelf(x,230,0.5*warm,False);x=shelf(x,4300,-0.6*warm,True)
     st=spectrum_stats(x)
-    if st['roll']<900:  # little content a phone speaker can play: add clear mid presence
-        x=peaking(x,1100,4.0,0.9);x=peaking(x,2400,2.0,0.8)
-    if st['roll']<230:x=signal.resample(x,int(len(x)/1.3))
     if ITER>=2 and kind=='impact':  # tame the transient: a gentle saturation brings the sharpest peak down about 4 dB
         k=1.7/np.abs(x).max();x=np.tanh(x*k)/k
     pk=np.abs(x).max()+1e-12
     on=int(np.argmax(np.abs(x)>pk*(0.03 if kind=='impact' else 0.02)));on=max(0,on-int(pre*RATE))
     if ITER>=2:x=room(x,0.10 if kind=='impact' else 0.07)
-    sm=np.convolve(np.abs(x),np.ones(int(0.01*RATE))/int(0.01*RATE),'same')
+    sm=signal.fftconvolve(np.abs(x),np.ones(int(0.01*RATE))/int(0.01*RATE),'same')
     idx=np.where(sm>pk*10**(tail_db/20))[0];end=min(len(x),(idx[-1] if len(idx) else len(x))+int(0.01*RATE))
     end=min(end,on+int(max_len*RATE));x=x[on:end].copy();n=len(x);f=min(int(fade*RATE),n//2)
     r=int((soft_in if soft_in else 0.0006)*RATE);x[:r]*=np.sin(np.linspace(0,np.pi/2,r))**2
@@ -170,9 +172,9 @@ for i,(n) in enumerate(['click_001','click_002','toggle_001','toggle_002','tick_
 for i in (1,2):add(f'paper_crumple_t{i-1}',decode(f'{src}/owlish/Paper/crumples{i}.wav'),db=-3.0,kind='rustle',lp=5200,hp=160,max_len=1.2,soft_in=0.02)
 cl=sorted(f for f in os.listdir(f'{src}/owlish/Cloth, Rustle') if f.endswith('.wav') and 'blanket' in f)
 for i,f in enumerate([c for c in cl if 'movement-2' in c or 'movement-1' in c][:2]):
-    x=decode(f'{src}/owlish/Cloth, Rustle/{f}');pk=int(np.argmax(np.convolve(np.abs(x),np.ones(int(0.2*RATE)),'same')))
+    x=decode(f'{src}/owlish/Cloth, Rustle/{f}');pk=int(np.argmax(signal.fftconvolve(np.abs(x),np.ones(int(0.2*RATE)),'same')))
     add(f'cloth_rustle_t{i}',x[max(0,pk-int(0.25*RATE)):pk+int(0.9*RATE)],db=-4.0,kind='rustle',lp=4200,hp=170,max_len=1.1,soft_in=0.03,tail_db=-34)
-lv=decode(f'{src}/leaves.mp3');w=int(0.25*RATE);env=np.sqrt(np.convolve(lv**2,np.ones(w)/w,'same'));taken=[]
+lv=decode(f'{src}/leaves.mp3');w=int(0.25*RATE);env=np.sqrt(np.maximum(0,signal.fftconvolve(lv**2,np.ones(w)/w,'same')));taken=[]
 for _ in range(10):
     e=env.copy()
     for t in taken:e[max(0,t-int(1.0*RATE)):t+int(1.0*RATE)]=0
@@ -256,7 +258,7 @@ import re
 groups={}
 for n in clips:groups.setdefault(re.sub(r'_t\d+$','',n),[]).append(n)
 dropped=[]
-if ITER>=2:
+if ITER>=2 and selection is None:
     for g,names in groups.items():
         feats=np.array([[np.log(spectrum_stats(clips[n])['cent']+1),spectrum_stats(clips[n])['lf'],len(clips[n])/RATE] for n in names])
         keep=set(names)
@@ -269,10 +271,18 @@ if ITER>=2:
             while len(keep)>3:keep.discard(max(dist,key=lambda k:dist[k] if k in keep else -1))
         for n in names:
             if n not in keep:dropped.append(n);del clips[n]
+# The optional index preserves reviewed takes across a fidelity rebuild. Drag
+# sounds have no playback route and are omitted from both the default and saved set.
+if selection is not None:
+    missing=selection-set(clips)
+    if missing:raise ValueError(f'Missing original takes: {sorted(missing)}')
+    clips={name:x for name,x in clips.items() if name in selection}
+clips={name:x for name,x in clips.items() if not name.startswith(('scrape','pot_move','lamp_move','book_slide'))}
 os.makedirs(f'{out}/clips',exist_ok=True)
 index={};blob=bytearray()
 for name,x in sorted(clips.items()):
-    x=signal.resample_poly(x,OUT_RATE,RATE);pcm=(np.clip(x,-1,1)*32767).astype('<i2');index[name]={'offset':len(blob)//2,'length':len(pcm),'rate':OUT_RATE}
+    if OUT_RATE!=RATE:x=signal.resample_poly(x,OUT_RATE,RATE)
+    pcm=(np.clip(x,-1,1)*32767).astype('<i2');index[name]={'offset':len(blob)//2,'length':len(pcm),'rate':OUT_RATE}
     blob+=pcm.tobytes()
     w=wave.open(f'{out}/clips/{name}.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(OUT_RATE);w.writeframes(pcm.tobytes());w.close()
 open(f'{out}/atlas.bin','wb').write(bytes(blob));json.dump(index,open(f'{out}/atlas.json','w'),indent=0)
