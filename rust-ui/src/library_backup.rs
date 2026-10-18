@@ -64,7 +64,16 @@ impl Core{
   if !get(&result,"shelfVisualId").is_string()||!get(&result,"shelfVisualId").is_truthy(){
    delete(&result,"shelfVisualId");if get(book,"id").is_string()&&get(book,"id").is_truthy(){set(&result,"shelfVisualId",&get(book,"id"));}
   }
+  let updated=get(book,"progressUpdatedAt");
+  if updated.as_f64().is_some_and(|v|v.is_finite()&&v>0.0){
+   set(&result,"readingPosition",&object(&[("fraction",get(book,"progressFraction")),("locator",or(get(book,"locator"),JsValue::NULL)),("updatedAt",updated)]));
+  }
   Ok(result)
+ }
+ fn position_stamp(&self,old:&JsValue,value:&JsValue)->Result<JsValue,JsValue>{
+  // A passive device must not give an older page a fresh synchronization date.
+  if old.is_truthy()&&number_or_zero(&get(&get(old,"value"),"updatedAt"))>=number_or_zero(&get(value,"updatedAt")){return Ok(old.clone());}
+  self.stamp(old,value,&get(value,"updatedAt"))
  }
  /// `JSON.parse(storage.getItem(key)) ?? fallback`, the fallback on any failure.
  fn parse_stored(&self,key:&str)->JsValue{
@@ -80,7 +89,14 @@ impl Core{
  }
 
  fn setting_stamp(&self,key:&str,old:&JsValue,value:&JsValue,at:&JsValue)->Result<JsValue,JsValue>{
-  if key==crate::room_physics_sync::KEY&&old.is_truthy()&&crate::room_physics_sync::room_physics_equivalent(get(old,"value"),value.clone()){return Ok(old.clone());}
+  if key==crate::room_physics_sync::KEY&&old.is_truthy(){
+   let shared=crate::room_physics_sync::room_physics_passive_compatible(get(old,"value"),value.clone());
+   // Reconciliation/float rounding is not a local gesture. Only a genuine
+   // local edit may supersede the shared physical room; schema upgrades remain allowed.
+   let touched=number_or_zero(&get(&self.parse_stored(CHANGES_KEY),key));
+   if shared&&!self.dirty_settings.has(&key.into())&&touched<=number_or_zero(&get(old,"at")){return Ok(old.clone());}
+   if crate::room_physics_sync::room_physics_equivalent(get(old,"value"),value.clone()){return Ok(old.clone());}
+  }
   self.stamp(old,value,at)
  }
  fn sync(self:Rc<Self>,account_id:JsValue)->Promise{
@@ -181,7 +197,7 @@ impl Core{
      let stamped=number_or_zero(&or(get(&book,"progressUpdatedAt"),get(&book,"addedAt")));
      if stamped!=0.0{stamped.into()}else{js_sys::Date::now().into()}
     };
-    set(&local,&field,&if self.room_changed_after(&id_key,&field,observed_sequence){previous}else{self.stamp(&previous,&value,&at)?});
+    set(&local,&field,&if self.room_changed_after(&id_key,&field,observed_sequence){previous}else{if field=="readingPosition"{self.position_stamp(&previous,&value)?}else{self.stamp(&previous,&value,&at)?}});
    }
    merge_fields(&slot(&merged_books,&id_key),&local);
   }
@@ -238,7 +254,12 @@ impl Core{
    }
    let raw=Array::new();
    for (field,register) in entries(&fields){raw.push(&Array::of2(&field.into(),&get(&register,"value")));}
-   let values=self.metadata(&Object::from_entries(&raw)?.into())?;
+   let raw=Object::from_entries(&raw)?;
+   let position=get(&get(&fields,"readingPosition"),"value");
+   if position.is_object()&&number_or_zero(&get(&position,"updatedAt"))>=number_or_zero(&get(&raw,"progressUpdatedAt")){
+    set(&raw,"progressFraction",&get(&position,"fraction"));set(&raw,"locator",&get(&position,"locator"));set(&raw,"progressUpdatedAt",&get(&position,"updatedAt"));
+   }
+   let values=self.metadata(&raw.into())?;delete(&values,"readingPosition");
    // This revision describes the image bytes, not just a metadata field.
    // Commit it only together with the downloaded Blob below.
    delete(&values,"coverUpdatedAt");

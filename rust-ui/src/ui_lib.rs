@@ -1,3 +1,4 @@
+mod room_motion;
 mod gestures;
 mod cloud_host;
 mod legacy_recovery;

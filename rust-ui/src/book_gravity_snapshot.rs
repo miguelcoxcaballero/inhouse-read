@@ -47,6 +47,11 @@ impl RustBookGravity{
   if incoming.saved_layout!=self.layout&&!(incoming.saved.values().all(|p|p.portable)&&portable_layout_matches(&incoming.saved_layout,&self.layout,self.layout.len()%6==3)){return false;}
   for(key,b)in &self.books{
    let Some(pose)=incoming.saved.get(key)else{return false;};
+   // A changed semantic placement must be rendered before its physical pose
+   // is installed. Otherwise the next layout step translates this body twice.
+   // Three millimetres accommodates viewport rounding, not an actual move.
+   if pose.bay_relative&&[(pose.base[0]-pose.bay[0] as f64)-(b.base[0]-b.bay[0] as f64),
+    (pose.base[1]-pose.bay[2] as f64)-(b.base[1]-b.bay[2] as f64)].iter().any(|v|v.abs()>0.003){return false;}
    if !pose.matches(b.kind,b.base,b.size,b.bay)||pose.solid!=self.solids.get(key).map(|s|s.description.signature()){return false;}
   }
   for(key,b)in &mut self.books{

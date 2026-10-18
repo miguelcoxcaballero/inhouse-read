@@ -1,4 +1,4 @@
-// Frozen copy of src/js/library-backup.js before its port to Rust (rust-ui/src/library_backup.rs). Used only by the differential tests. Explicit 1.7.290 contracts: shared appearance identity and changed-setting notifications; room encoding has its own native tests.
+// Frozen copy of src/js/library-backup.js before its port to Rust (rust-ui/src/library_backup.rs). Used only by the differential tests. Explicit 1.7.290 contracts: shared appearance identity and changed-setting notifications; room encoding has its own native tests. Explicit 1.7.293 contract: one timestamped reading-position envelope, retaining the scalar fields for older clients.
 import { readDriveLibrarySnapshots, writeDriveLibrarySnapshot, uploadDriveCover, downloadDriveFile } from '../../../src/js/drive-client.js'
 import { spineCustomization } from '../../../src/js/book-colors.js'
 import { readBackupCheckpoint, saveBackupCheckpoint } from '../../../src/js/cloud-backup-state.js'
@@ -18,6 +18,7 @@ function metadata(book) {
   const result = { ...spineCustomization(book) }
   for (const key of META) if (book[key] !== undefined) result[key] = book[key]
   if (typeof result.shelfVisualId !== 'string' || !result.shelfVisualId) { delete result.shelfVisualId; if (typeof book.id === 'string' && book.id) result.shelfVisualId = book.id }
+  if (Number.isFinite(book.progressUpdatedAt) && book.progressUpdatedAt > 0) result.readingPosition = { fraction:book.progressFraction, locator:book.locator || null, updatedAt:book.progressUpdatedAt }
   return result
 }
 
@@ -102,7 +103,10 @@ export class LibraryBackup {
       const values = { ...metadata(book), visible:true, ...(cover ? { cover } : {}) }
       observed.set(id, metadata(book))
       for (const [field, value] of Object.entries(values)) {
-        local[field] = stamp(old[field], value, old[field] ? Date.now() : Number(book.progressUpdatedAt || book.addedAt) || Date.now())
+        const at = old[field] ? Date.now() : Number(book.progressUpdatedAt || book.addedAt) || Date.now()
+        local[field] = field === 'readingPosition'
+          ? old[field] && (old[field].value?.updatedAt || 0) >= (value.updatedAt || 0) ? old[field] : stamp(old[field], value, value.updatedAt)
+          : stamp(old[field], value, at)
       }
       mergeFields(merged.books[id] ||= {}, local)
     }
@@ -138,7 +142,9 @@ export class LibraryBackup {
         guard(); applied.books[id] = fields; continue
       }
       const raw = Object.fromEntries(Object.entries(fields).map(([k,v]) => [k,v.value]))
-      const values = metadata(raw)
+      const position=fields.readingPosition?.value
+      if (position && (position.updatedAt || 0) >= (raw.progressUpdatedAt || 0)) Object.assign(raw,{progressFraction:position.fraction,locator:position.locator,progressUpdatedAt:position.updatedAt})
+      const values = metadata(raw); delete values.readingPosition
       // This revision describes the image bytes, not just a metadata field.
       // Commit it only together with the downloaded Blob below.
       delete values.coverUpdatedAt

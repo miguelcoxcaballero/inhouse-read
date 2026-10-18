@@ -89,7 +89,8 @@ pub fn library_add(database:JsValue,env:JsValue,partial:JsValue,options:JsValue)
 pub fn library_update_progress(database:JsValue,env:JsValue,id:JsValue,progress:JsValue,locator:JsValue)->Promise{cloud_host::start(async move{
  let store=store_at(&db(&database).await?,BOOKS,"readwrite")?;let completion=complete(&env,&read(&store,"transaction")?)?;
  let existing=request(&env,method(&store,"get",&[&id])).await?;if !truthy(&existing){return Ok(JsValue::NULL);}
- let time=now()?;let record=fields(&[&existing,&object(&[("progressFraction",progress),("locator",locator),("progressUpdatedAt",time.clone()),("progressDirty",JsValue::TRUE),("lastOpenedAt",time)])])?;
+ let previous=crate::host::num(&read(&existing,"progressUpdatedAt")?);let previous=if previous.is_finite(){previous}else{0.0};
+ let time:JsValue=js_sys::Math::max(crate::host::num(&now()?),previous+1.0).into();let record=fields(&[&existing,&object(&[("progressFraction",progress),("locator",locator),("progressUpdatedAt",time.clone()),("progressDirty",JsValue::TRUE),("lastOpenedAt",time)])])?;
  request(&env,method(&store,"put",&[&record])).await?;wait(Ok(completion)).await?;Ok(record)
 })}
 #[wasm_bindgen]

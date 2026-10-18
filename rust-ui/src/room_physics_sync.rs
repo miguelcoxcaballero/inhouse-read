@@ -4,6 +4,31 @@ use js_sys::{Array,JSON};
 use crate::cloud_host::*;
 
 pub const KEY:&str="inhouse-read-shelf-physics-v1";
+/// A passive solver may round/rest a shared pose, but must not publish that
+/// recalculation as an edit. Real membership, geometry or semantic-placement
+/// changes still need a fresh physical room, even for keyboard/import paths.
+#[wasm_bindgen]
+pub fn room_physics_passive_compatible(a:JsValue,b:JsValue)->bool{
+ fn rows(value:&JsValue)->Option<(String,Vec<JsValue>)>{
+  let root=JSON::parse(&value.as_string()?).ok()?;if !Array::is_array(&root){return None;}let root=Array::from(&root);
+  if root.length()!=3||root.get(0).as_f64()!=Some(2.0)||!Array::is_array(&root.get(1))||!Array::is_array(&root.get(2)){return None;}
+  let layout=Array::from(&root.get(1));if layout.length()!=2||layout.get(0).as_f64()!=Some(20261018.0){return None;}
+  let mut rows:Vec<_>=Array::from(&root.get(2)).iter().collect();if rows.len()>10000{return None;}
+  for row in &rows{if !Array::is_array(row){return None;}let row=Array::from(row);
+   if ![8,9].contains(&row.length())||!row.get(0).is_string(){return None;}
+   for (i,len) in [(2,4),(3,3),(4,4)]{if !Array::is_array(&row.get(i)){return None;}let v=Array::from(&row.get(i));
+    if v.length()!=len||!v.iter().all(|v|v.as_f64().is_some_and(f64::is_finite)){return None;}}
+  }
+  rows.sort_by_key(|v|string(&Array::from(v).get(0)));Some((json(&layout.into()).ok()?,rows))
+ }
+ let Some((layout,a))=rows(&a)else{return false;};let Some((other,b))=rows(&b)else{return false;};if layout!=other||a.len()!=b.len(){return false;}
+ a.iter().zip(b).all(|(a,b)|{let a=Array::from(a);let b=Array::from(&b);
+  if a.get(0)!=b.get(0)||a.get(1)!=b.get(1)||a.get(8)!=b.get(8){return false;}
+  let base_a=Array::from(&a.get(2));let base_b=Array::from(&b.get(2));
+  if base_a.get(2)!=base_b.get(2)||(0..2).any(|i|(number(&base_a.get(i))-number(&base_b.get(i))).abs()>0.003){return false;}
+  [3,4].iter().all(|i|Array::from(&a.get(*i)).iter().zip(Array::from(&b.get(*i)).iter()).all(|(a,b)|(number(&a)-number(&b)).abs()<0.0001))
+ })
+}
 fn rounded(n:f64)->JsValue{((n*1e6).round()/1e6).into()}
 #[wasm_bindgen]
 pub fn room_physics_for_cloud(value:JsValue,books:JsValue)->JsValue{

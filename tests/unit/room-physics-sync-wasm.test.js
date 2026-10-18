@@ -88,3 +88,20 @@ it('treats different semantic anchors as the same shared physical room, retainin
  b[2][0][5]-=.0001;b[2][0][3][0]+=.0001;expect(ui.room_physics_equivalent(a,JSON.stringify(b))).toBe(false)
  expect(ui.room_physics_equivalent('{bad','null')).toBe(false)
 })
+
+it('defers a new semantic placement instead of translating an already adopted shared body twice',()=>{
+ const f=fixture(['book:local-A']);f.step(600)
+ const local=f.snapshot(),canonical=JSON.parse(ui.room_physics_for_cloud(local,books))
+ canonical[2][0][2][0]+=.04;canonical[2][0][5]+=.04
+ expect(f.apply(ui.room_physics_for_device(JSON.stringify(canonical),books))).toBe(false)
+ f.free()
+})
+
+for(const [name,core]of [['UI',ui],['shelf',shelf]])it(`${name}: distinguishes passive physics from real geometry/semantic placement changes and tolerates malformed legacy inputs`,()=>{
+ const a=ui.room_physics_for_cloud(JSON.stringify(pose()),books),b=JSON.parse(a);b[2][0][7]+=.1;b[2][0][5]+=.05
+ expect(core.room_physics_passive_compatible(a,JSON.stringify(b))).toBe(true)
+ const moved=structuredClone(b);moved[2][0][2][0]+=.04;expect(core.room_physics_passive_compatible(a,JSON.stringify(moved))).toBe(false)
+ const added=structuredClone(b);added[2].pop();expect(core.room_physics_passive_compatible(a,JSON.stringify(added))).toBe(false)
+ const resized=structuredClone(b);resized[2][0][3][0]+=.01;expect(core.room_physics_passive_compatible(a,JSON.stringify(resized))).toBe(false)
+ for(const bad of [null,'null','{}','[]','[2]','[2,null,[]]','{bad'])expect(core.room_physics_passive_compatible(bad,a)).toBe(false)
+})

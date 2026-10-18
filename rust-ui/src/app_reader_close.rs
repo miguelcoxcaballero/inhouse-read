@@ -52,8 +52,10 @@ async fn close_body(host:&JsValue,flight:&JsValue,id:&JsValue)->R<()>{
  let writes=read(host,"progressWrites")?;let pending=method(&writes,"get",&[id])?;
  c::settle(Ok(if absent(&pending){JsValue::UNDEFINED}else{ignore(host,&pending)?})).await?;
  let position=method(host,"persistablePosition",&[&optional(&snapshot,"location")?])?;
- if truthy(&position){
-  c::settle(method(&read(host,"library")?,"updateProgress",&[id,&read(&position,"fraction")?,&read(&position,"locator")?])).await?;
+ let guard=optional(host,"positionGuard")?;
+ if truthy(&position)&&(absent(&guard)||truthy(&method(&guard,"changed",&[id,&position])?)){
+  let target=if read(&writes,"updateProgress")?.is_function(){writes.clone()}else{read(host,"library")?};
+  c::settle(method(&target,"updateProgress",&[id,&read(&position,"fraction")?,&read(&position,"locator")?])).await?;
   if truthy(&method(host,"hasDriveSession",&[])?){method(&read(host,"cloudSync")?,"scheduleProgress",&[id])?;}
  }
  let book=c::settle(method(&read(host,"library")?,"get",&[id])).await?;

@@ -515,3 +515,11 @@ it('a library adoption during an in-flight legacy progress patch cannot reapply 
  expect(await library.get(record.id)).toMatchObject({shelfVisualId:'shared-origin',shelfPosition:{shelf:1,x:.4}})
  await sync.syncBookProgress(record.id);expect(await library.get(record.id)).toMatchObject({progressFraction:.8,shelfPosition:{shelf:1,x:.4}})
 })
+
+it('does not undo a shared reading position with a stale legacy page on a timestamp tie',async()=>{
+ const record=await library.addOrTouch({sourceType:'drive',driveFileId:'shared-tie',cloudAccountId:'account-1',name:'shared-tie.pdf',shelfVisualId:'shared-original',progressFraction:.8,locator:{kind:'pdf-page',value:8},progressUpdatedAt:200,progressDirty:false})
+ drive.readDriveProgress.mockResolvedValue({fraction:.2,locator:{kind:'pdf-page',value:2},updatedAt:200,stateFileId:'progress'})
+ drive.writeDriveProgress.mockResolvedValue({id:'progress'})
+ await sync.syncBookProgress(record.id)
+ expect(await library.get(record.id)).toMatchObject({progressFraction:.8,locator:{kind:'pdf-page',value:8}})
+})

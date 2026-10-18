@@ -219,7 +219,7 @@ export class CloudSync {
     // in the same frame. Keep a dirty local locator on a tie; otherwise a
     // stale remote value can erase the newest page the reader just saved.
     if (remote && (!localHasProgress || remoteUpdatedAt > localUpdatedAt ||
-      (remoteUpdatedAt === localUpdatedAt && !record.progressDirty))) {
+      (remoteUpdatedAt === localUpdatedAt && !record.progressDirty && typeof record.shelfVisualId !== 'string'))) {
       const updated = await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
         ...(typeof record.shelfVisualId === 'string' ? {} : spineCustomization(remote.appearance)),

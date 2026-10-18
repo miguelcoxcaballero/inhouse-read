@@ -12,7 +12,7 @@ export function createReadingProgressQueue(library,{onSaved=()=>{}}={}){
   const Native=getRustUI()?.RustReadingProgressQueue
   if(Native&&!native)native=new Native(
    (id,fraction,locator)=>library.updateProgress(id,fraction,locator),
-   (id,fields)=>library.patch(id,{...fields,progressUpdatedAt:Date.now(),progressDirty:true}),onSaved)
+   (id,fields)=>library.patch(id,{...fields,...(Object.keys(fields).some(k=>/^(spine|cover|shelf|pageEdge)/.test(k))?{}:{progressUpdatedAt:Date.now(),progressDirty:true})}),onSaved)
   const next=native||legacy;owners.set(id,next);return next
  }
  const observe=(id,owner,promise)=>{

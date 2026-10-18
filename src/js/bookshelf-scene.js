@@ -313,6 +313,35 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
   const bookGravity = new rust.RustBookGravity();
+  const roomMotion = new rust.RustRoomMotion(), roomMotionOut = new Float64Array(9);
+  let motionExpiry = null, motionGesture = null, motionSequence = 0, motionSentAt = -Infinity;
+  let motionRest = new Map();
+  const motionKey = entry => entry.kind === 'plant' || entry.kind === 'lamp' ? entry.key
+    : entry.book?.driveFileId ? `book:drive:${entry.book.driveFileId}` : null;
+  function clearRoomMotion(source = '') {
+    roomMotion.clear(source); clearTimeout(motionExpiry); motionExpiry = null;
+    if (roomMotion.active(performance.now())) motionExpiry = setTimeout(() => invalidate(true, false, 'remote-motion-expired'), 5050);
+    invalidate(true, false, 'remote-motion-ended');
+  }
+  function publishRoomMotion(now, quiet) {
+    const arranging = Boolean(stage.closest('.ihr-bookshelf')?.classList.contains('is-arranging'));
+    if (arranging && !motionGesture) { motionGesture = crypto.randomUUID(); motionSequence = 0; motionSentAt = -Infinity; }
+    if (!motionGesture) {
+      if (quiet && !roomMotion.active(now)) motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose]));
+      return;
+    }
+    const end = !arranging && quiet;
+    if (!end && now - motionSentAt < 50) return;
+    const poses = [];
+    for (const entry of bookEntries) {
+      const row = entry.localMotionPose, previous = motionRest.get(motionKey(entry));
+      if (row && (!previous || entry.bits & 6 || row.some((v,i) => i && Math.abs(v - previous[i]) > .000001))) poses.push(row);
+    }
+    globalThis.dispatchEvent(new CustomEvent('inhouse-room-motion-local', {detail:{gesture:motionGesture,
+      sequence:++motionSequence, phase:end ? 'end' : 'frame', shelfType, poses}}));
+    motionSentAt = now;
+    if (end) { motionGesture = null; motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose])); }
+  }
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
   let physicsStarted = false, physicsInteracted = false;
   if (settleBooks) { try { bookGravity.restore(localStorage.getItem(physicsStorageKey) || ''); } catch {} }
@@ -466,7 +495,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     transformOrigin:'0 0', willChange:'transform' });
   inspectionCanvas.style.zIndex = '1';
   stage.append(inspectionOverviewCanvas);
-  let inspectionSnapshot = null, inspectionSnapshotVisible = false, lastSceneMoving = false;
+  let inspectionSnapshot = null, inspectionSnapshotVisible = false, lastSceneMoving = false, lastLocalSceneMoving = false;
   let inspectionOverview = null;
   const nativeFrameCache = createNativeFramebufferCache(renderer,{onRestored:()=>{
     invalidate(true,false,'context-restored');flushScene({force:true});
@@ -1475,6 +1504,22 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         }
       }
       entry.pose.scale.setScalar(stepIo[35]);
+      const sharedKey = motionKey(entry), ppm = unitWidth / SHELF_SPECS[shelfType].width * 1000;
+      const bay = rows[entry.shelf || 0] || rows[0];
+      if (sharedKey && bay) {
+        const p = entry.pose.position, q = entry.pose.quaternion;
+        entry.localMotionPose = [sharedKey,entry.shelf || 0,(p.x + width / 2 - (bay.left || 0)) / ppm,
+          (p.y + (bay.bottom || 0)) / ppm,p.z / ppm,q.x,q.y,q.z,q.w,entry.pose.scale.x];
+        if (!stage.closest('.ihr-bookshelf')?.classList.contains('is-arranging') && roomMotion.pose(sharedKey, now, roomMotionOut)) {
+          const remoteBay = rows[roomMotionOut[0]];
+          if (remoteBay) {
+            entry.pose.position.set((remoteBay.left || 0) - width / 2 + roomMotionOut[1] * ppm,
+              -(remoteBay.bottom || 0) + roomMotionOut[2] * ppm, roomMotionOut[3] * ppm);
+            entry.pose.quaternion.set(...roomMotionOut.subarray(4,8)); entry.pose.scale.setScalar(roomMotionOut[8]);
+            if (!decorative && node) setData(node, 'sceneLean', new THREE.Euler().setFromQuaternion(entry.pose.quaternion, 'ZYX').z.toFixed(6));
+          }
+        }
+      }
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
@@ -1634,7 +1679,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'returningBookId', insertedIds.length === 1 ? insertedIds[0] : '');
     setData(canvas, 'returnRenderer', overlaying ? 'shared-depth-overlay' : 'shelf');
     if (!insertedIds.length) delete canvas.dataset.returnProgress;
-    return { moving, shelfMoving };
+    return { moving:moving || roomMotion.moving(now), shelfMoving:shelfMoving || roomMotion.moving(now), localMoving:moving };
   }
 
   function updatePlantFoliage(entry) {
@@ -2145,7 +2190,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       prelinkPrograms(renderer, scene, camera, [catalog]);
     }
     const finishedInsertions = [];
-    const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
+    const { moving, shelfMoving, localMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
     const trashMoving = updateTrash(scroll, now, finishedDrops);
     // The opaque reader page masks layout preparation. Retain the dirty
@@ -2393,7 +2438,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'plantGeometry', 'catalog-3d');
     setData(canvas, 'animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
     lastSceneMoving = Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving);
-    if (settleBooks && physicsReady && !lastSceneMoving && !sceneView.moving &&
+    lastLocalSceneMoving = Boolean(sceneView.turning || sceneView.reordering || localMoving || trashMoving);
+    if (settleBooks && physicsReady && !roomMotion.active(now) && !lastSceneMoving && !sceneView.moving &&
       !bookEntries.some(entry => entry.insertion || entry.trashDrop || entry.landing || entry.preview.active)) {
       const saved = bookGravity.snapshot();
       if (saved !== undefined && saved !== null) {
@@ -2403,6 +2449,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         } catch {}
       }
     }
+    if (settleBooks) publishRoomMotion(now, !lastSceneMoving && !sceneView.moving &&
+      !bookEntries.some(e => e.insertion || e.trashDrop || e.landing || e.preview.active));
     paintedViewport = { width:window.innerWidth, height:window.innerHeight,
       ratio:window.devicePixelRatio || 1, clientHeight:scroller.clientHeight, scrollTop:scroller.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
@@ -2669,10 +2717,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     applyRoomPose() {
       const saved = localStorage.getItem(physicsStorageKey);
       if (!saved || !bookGravity.apply_snapshot(saved)) return false;
+      roomMotion.clear(''); clearTimeout(motionExpiry); motionExpiry = null;
       invalidate(true, false, 'cloud-room');
       return true;
     },
-    isMoving:()=>Boolean(lastSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
+    applyLiveRoomMotion(packet) {
+      if (disposed || packet.shelfType !== shelfType || motionGesture ||
+        stage.closest('.ihr-bookshelf')?.classList.contains('is-arranging')) return false;
+      if (!roomMotion.receive(packet, performance.now())) return false;
+      clearTimeout(motionExpiry);
+      motionExpiry = setTimeout(() => { motionExpiry = null; invalidate(true, false, 'remote-motion-expired'); }, 5050);
+      if (roomMotion.changed) invalidate(true, false, 'remote-motion'); return true;
+    },
+    clearLiveRoomMotion:clearRoomMotion,
+    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || lastLocalSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
     getInspectionZoom:()=>sceneView.zoom,
     beginInspectionGesture() {
       if (disposed || !sceneView.canInspect()) return;
@@ -2695,7 +2753,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         Object.assign(entry.lift, { value:0, from:0, target:0, started:now });
         entry.state = stateFor(entry);
       }
-      lastSceneMoving = false;
+      lastSceneMoving = lastLocalSceneMoving = false;
       shelfSnapshotDirty = shadowDirty = false;
       sceneView.shadowRefit = true;
       cancelAnimationFrame(raf); raf = 0;
@@ -3106,7 +3164,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) bookGravity.free();
+      if (!disposed) { bookGravity.free(); roomMotion.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();

@@ -312,3 +312,41 @@ it('does not overwrite a newer locally completed count while applying a remote c
  })
  await b.sync();expect(intervened).toBe(true);expect((await b.library.listAll())[0].wordCount).toBe(79000)
 })
+
+it('sends an atomic reading position directly without waiting for Drive and keeps backward reading',async()=>{
+ const a=device(),original=await add(a);await a.sync();const b=device();await b.sync();const [remote]=await b.library.listAll()
+ const before=[drive.readDriveLibrarySnapshots.mock.calls.length,drive.writeDriveLibrarySnapshot.mock.calls.length]
+ await a.library.updateProgress(original.id,.82,{kind:'pdf-page',value:82})
+ a.backup.markBookChanged('account',original.id,['progressFraction','locator','progressUpdatedAt'])
+ const forward=await a.backup.captureRoom('account');expect(forward.books[0].fields.readingPosition.value).toMatchObject({fraction:.82,locator:{value:82}})
+ await b.backup.receiveSnapshot('account',forward)
+ expect(await b.library.get(remote.id)).toMatchObject({progressFraction:.82,locator:{value:82}})
+ await b.library.updateProgress(remote.id,.23,{kind:'pdf-page',value:23});b.backup.markBookChanged('account',remote.id,['progressFraction','locator','progressUpdatedAt'])
+ await a.backup.receiveSnapshot('account',await b.backup.captureRoom('account'))
+ expect(await a.library.get(original.id)).toMatchObject({progressFraction:.23,locator:{value:23}})
+ expect([drive.readDriveLibrarySnapshots.mock.calls.length,drive.writeDriveLibrarySnapshot.mock.calls.length]).toEqual(before)
+ await b.backup.receiveSnapshot('account',forward);expect((await b.library.get(remote.id)).progressFraction).toBe(.23)
+})
+it('does not republish a passive stale page with a new timestamp after a direct progress update',async()=>{
+ const a=device(),original=await add(a);await a.sync();const b=device();await b.sync();const [remote]=await b.library.listAll()
+ await a.library.patch(original.id,{progressFraction:.7,locator:{kind:'pdf-page',value:70},progressUpdatedAt:10000})
+ a.backup.markBookChanged('account',original.id,['progressFraction','locator','progressUpdatedAt'])
+ const snapshot=await a.backup.captureRoom('account');await b.backup.receiveSnapshot('account',snapshot)
+ // An older legacy progress file or an in-flight local read must not gain authority merely by syncing now.
+ await b.library.patch(remote.id,{progressFraction:.1,locator:{kind:'pdf-page',value:10},progressUpdatedAt:100})
+ await b.sync();await a.sync();expect(await b.library.get(remote.id)).toMatchObject({progressFraction:.7,locator:{value:70}})
+ expect(await a.library.get(original.id)).toMatchObject({progressFraction:.7,locator:{value:70}})
+})
+
+it('does not publish passive physics recalculation over a shared room, but accepts a real local gesture',async()=>{
+ const key='inhouse-read-shelf-physics-v1',a=device(),original=await add(a)
+ const raw=[2,[1000,1],[['book:'+original.id,0,[.1,-.2,2,1000],[.02,.2,.15],[.02,.58,-.3,-.01],.15,-.24,-.4,null]]]
+ a.storage.setItem(key,JSON.stringify(raw));await a.sync();const b=device();await b.sync()
+ const before=structuredClone([...snapshots.values()][0].settings[key]),changed=JSON.parse(b.storage.getItem(key));changed[2][0][7]+=.00002
+ b.storage.setItem(key,JSON.stringify(changed));await b.sync()
+ expect([...snapshots.values()].every(s=>JSON.stringify(s.settings[key])===JSON.stringify(before))).toBe(true)
+ expect(JSON.parse(b.storage.getItem(key))[2][0][7]).toBe(-.4)
+ const gesture=JSON.parse(b.storage.getItem(key));gesture[2][0][7]=-.7;b.storage.setItem(key,JSON.stringify(gesture));b.backup.markSettingChanged('account',key)
+ const snapshot=await b.backup.captureRoom('account');expect(JSON.parse(snapshot.settings[key].value)[2][0][7]).toBe(-.7)
+ await a.backup.receiveSnapshot('account',snapshot);expect(JSON.parse(a.storage.getItem(key))[2][0][7]).toBe(-.7)
+})

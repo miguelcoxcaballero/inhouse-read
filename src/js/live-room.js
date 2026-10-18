@@ -4,17 +4,23 @@ import {getDriveLiveContext,readDriveLiveMailbox,writeDriveLiveMailbox,readDrive
 // Browser-owned RTC and WebCrypto handles; identity, negotiation, deduplication
 // and field registers live in Rust. Drive carries only encrypted rendezvous.
 const LIMIT=2*1024*1024, CHUNK=16000
+// One identity per JavaScript realm: duplicated tabs clone sessionStorage.
+const realmPeer=crypto.randomUUID()
 const bytes=new TextEncoder(), text=new TextDecoder()
 const b64=b=>btoa(String.fromCharCode(...b))
 const un64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0))
 export class LiveRoom {
+  #mailboxes=new Map()
+  #motionClock=0
   #session=null
   #epoch=0
   #receive
   #enabled
   #onPeers
-  constructor({receive,enabled=()=>!document.hidden}) {
-    this.#receive=receive;this.#enabled=enabled
+  #motion
+  #disconnected
+  constructor({receive,receiveMotion=()=>{},disconnected=()=>{},enabled=()=>!document.hidden}) {
+    this.#receive=receive;this.#motion=receiveMotion;this.#disconnected=disconnected;this.#enabled=enabled
     this.#onPeers=e=>{const s=this.#session;if(s?.native&&s.folder===e.detail?.folderId)this.#actions(s,s.native.observe(e.detail.peers,Date.now()))}
     globalThis.addEventListener('inhouse-drive-live-peers',this.#onPeers)
   }
@@ -26,7 +32,19 @@ export class LiveRoom {
     await s.ready
     if(!this.#valid(s))return
     const packet=s.native.publish(s.latest,crypto.randomUUID())
-    if(packet)for(const peer of s.peers.values())this.#send(peer,packet)
+    if(packet){s.tabs?.postMessage({t:'snapshot',from:s.own,packet});for(const peer of s.peers.values())this.#send(peer,packet)}
+  }
+  publishMotion(account,frame) {
+    const s=this.#session;if(!s?.native||s.account!==account||!this.#valid(s))return
+    frame.sequence=++this.#motionClock
+    const packet=s.native.publishMotion(frame);if(!packet)return
+    this.#motionClock=frame.sequence
+    s.motionLatest=frame.phase==='frame'?{...frame}:null
+    if(s.motionLatest&&!s.motionHeartbeat)s.motionHeartbeat=this.#timer(s,()=>{
+      s.motionHeartbeat=null;if(s.motionLatest)this.publishMotion(s.account,{...s.motionLatest})
+    },1000)
+    s.tabs?.postMessage({t:'motion',from:s.own,packet})
+    for(const p of s.peers.values())this.#sendMotion(p,packet)
   }
   #valid(s){return this.#session===s&&s.epoch===this.#epoch&&this.#enabled()}
   #timer(s,fn,ms){const t=setTimeout(()=>{s.timers.delete(t);if(this.#valid(s))fn()},ms);s.timers.add(t);return t}
@@ -41,8 +59,18 @@ export class LiveRoom {
   async #start(s) {
     try{
       const ui=await cloudModule();if(!this.#valid(s))return
-      let own=sessionStorage.getItem('inhouse-read-live-peer');if(!own){own=crypto.randomUUID();sessionStorage.setItem('inhouse-read-live-peer',own)}
-      s.own=own;s.file=sessionStorage.getItem(`inhouse-read-live-file:${s.account}`);s.native=new ui.RustLiveRoom(s.account,own)
+      s.own=realmPeer;s.file=this.#mailboxes.get(s.account)||null;s.native=new ui.RustLiveRoom(s.account,s.own)
+      if(globalThis.BroadcastChannel){
+        const hash=await crypto.subtle.digest('SHA-256',bytes.encode(s.account));if(!this.#valid(s))return
+        s.tabs=new BroadcastChannel('inhouse-read-room-v1:'+b64(new Uint8Array(hash)))
+        s.tabs.onmessage=async({data})=>{
+          if(!this.#valid(s)||data?.from===s.own)return
+          if(data?.t==='state-request'){if(s.native.latest)s.tabs.postMessage({t:'snapshot',from:s.own,packet:s.native.latest});return}
+          if(data?.t==='motion'){const packet=s.native.receiveMotion(data.packet);if(packet){this.#motion(s.account,packet);for(const p of s.peers.values())if(p.id!==packet.from)this.#sendMotion(p,data.packet)};return}
+          if(data?.t==='snapshot'){const packet=s.native.receive(data.packet);if(packet?.snapshot)await this.#receive(s.account,packet.snapshot)}
+        }
+        s.tabs.postMessage({t:'state-request',from:s.own})
+      }
       await this.#context(s);if(!this.#valid(s))return
       await this.#write(s);if(!this.#valid(s))return
       await readDriveLibraryRevision()
@@ -57,8 +85,8 @@ export class LiveRoom {
       const payload={v:1,peer:s.own,at:Date.now(),signals:{...s.signals}}
       let file
       try{file=await writeDriveLiveMailbox(s.own,payload,s.file)}
-      catch(error){if(!this.#valid(s)||!s.file)throw error;s.file=null;sessionStorage.removeItem(`inhouse-read-live-file:${s.account}`);file=await writeDriveLiveMailbox(s.own,payload,null)}
-      if(this.#valid(s)){s.file=file.id;sessionStorage.setItem(`inhouse-read-live-file:${s.account}`,file.id)}
+      catch(error){if(!this.#valid(s)||!s.file)throw error;s.file=null;this.#mailboxes.delete(s.account);file=await writeDriveLiveMailbox(s.own,payload,null)}
+      if(this.#valid(s)){s.file=file.id;this.#mailboxes.set(s.account,file.id)}
     });return s.writing
   }
   async #signal(s,id,description,nonce) {
@@ -81,40 +109,64 @@ export class LiveRoom {
       if(!this.#valid(s))return
       const signal=s.native.signal(id,JSON.parse(text.decode(decoded)),Date.now());if(!signal)return
       if(signal.type==='offer'){
-        this.#close(s,id);const p=this.#peer(s,id);p.nonce=signal.nonce
+        let p=s.peers.get(id);if(p?.nonce!==signal.nonce){this.#close(s,id);p=this.#peer(s,id);p.nonce=signal.nonce}
+        if(p.pc.remoteDescription){await this.#candidates(p,signal.sdp);return}
         await p.pc.setRemoteDescription({type:'offer',sdp:signal.sdp});if(!this.#validPeer(s,p))return
-        await p.pc.setLocalDescription(await p.pc.createAnswer());await this.#ice(s,p)
-        if(this.#validPeer(s,p)){if(!p.pc.localDescription.sdp.includes('a=candidate:')){this.#failed(s,id);return}await this.#signal(s,id,p.pc.localDescription,p.nonce)}
+        if(!p.pc.localDescription)await p.pc.setLocalDescription(await p.pc.createAnswer());await this.#ice(s,p)
+        if(this.#validPeer(s,p)){await this.#signal(s,id,p.pc.localDescription,p.nonce)}
       }else{
-        const p=s.peers.get(id);if(this.#validPeer(s,p))await p.pc.setRemoteDescription({type:'answer',sdp:signal.sdp})
+        const p=s.peers.get(id);if(this.#validPeer(s,p)){if(p.pc.remoteDescription)await this.#candidates(p,signal.sdp);else await p.pc.setRemoteDescription({type:'answer',sdp:signal.sdp})}
       }
     }finally{s.reading.delete(id)}
+  }
+  async #candidates(p,sdp) {
+    const known=new Set((p.pc.remoteDescription?.sdp||'').split(/\r?\n/).filter(l=>l.startsWith('a=candidate:')))
+    p.candidates ||= new Set();let mid='0',index=-1
+    for(const line of sdp.split(/\r?\n/)){
+      if(line.startsWith('m='))index++
+      if(line.startsWith('a=mid:'))mid=line.slice(6)
+      if(line.startsWith('a=candidate:')&&!known.has(line)&&!p.candidates.has(line)){
+        await p.pc.addIceCandidate({candidate:line.slice(2),sdpMid:mid,sdpMLineIndex:Math.max(0,index)});p.candidates.add(line)
+      }
+    }
   }
   #decrypt(s,e){return crypto.subtle.decrypt({name:'AES-GCM',iv:un64(e.iv),additionalData:bytes.encode(s.account)},s.key,un64(e.data))}
   #validPeer(s,p){return p&&this.#valid(s)&&s.peers.get(p.id)===p}
   #peer(s,id) {
-    const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]}),p={id,pc,open:false,queue:null,sending:false,assembly:null};s.peers.set(id,p)
+    const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}],iceCandidatePoolSize:0,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'}),p={id,pc,open:false,queue:null,sending:false,assembly:null,lastReceived:Date.now()};s.peers.set(id,p)
     pc.ondatachannel=e=>this.#channel(s,p,e.channel)
-    pc.onconnectionstatechange=()=>{if(this.#validPeer(s,p)&&['failed','closed','disconnected'].includes(pc.connectionState))this.#failed(s,id)}
+    pc.onconnectionstatechange=()=>{
+      if(!this.#validPeer(s,p))return
+      if(['failed','closed'].includes(pc.connectionState))this.#failed(s,id)
+      else if(pc.connectionState==='disconnected')this.#timer(s,()=>{if(this.#validPeer(s,p)&&pc.connectionState==='disconnected')this.#failed(s,id)},5000)
+    }
+    // Keep the complete encrypted candidate list in the directed mailbox.
+    // Unlike a 1.2-second one-shot offer, late STUN candidates are delivered too.
+    pc.onicecandidate=()=>{
+      if(!this.#validPeer(s,p)||!p.nonce||!pc.localDescription)return
+      clearTimeout(p.iceTimer);p.iceTimer=setTimeout(()=>{if(this.#validPeer(s,p))this.#signal(s,id,pc.localDescription,p.nonce).catch(()=>{})},200)
+    }
     return p
   }
   async #offer(s,id) {
     await this.#context(s);if(!this.#valid(s))return
     this.#close(s,id);const nonce=crypto.randomUUID();if(!s.native.beginOffer(id,nonce,Date.now()))return
-    const p=this.#peer(s,id);p.nonce=nonce;this.#pending(s);this.#channel(s,p,p.pc.createDataChannel('inhouse-read-room-v1',{ordered:true}))
+    const p=this.#peer(s,id);p.nonce=nonce;this.#pending(s);this.#channel(s,p,p.pc.createDataChannel('inhouse-read-room-v1',{ordered:true}));this.#channel(s,p,p.pc.createDataChannel('inhouse-read-interactive-v1',{ordered:true}))
     await p.pc.setLocalDescription(await p.pc.createOffer());await this.#ice(s,p)
-    if(this.#validPeer(s,p)){if(!p.pc.localDescription.sdp.includes('a=candidate:')){this.#failed(s,id);return}await this.#signal(s,id,p.pc.localDescription,nonce)}
+    if(this.#validPeer(s,p)){await this.#signal(s,id,p.pc.localDescription,nonce)}
   }
   #ice(s,p){if(p.pc.iceGatheringState==='complete')return Promise.resolve();return new Promise(resolve=>{const done=()=>{clearTimeout(timer);p.pc.removeEventListener('icegatheringstatechange',changed);resolve()};const changed=()=>{if(p.pc.iceGatheringState==='complete')done()};const timer=setTimeout(done,1200);p.pc.addEventListener('icegatheringstatechange',changed)})}
   #channel(s,p,channel) {
+    if(channel.label==='inhouse-read-interactive-v1'){this.#interactive(s,p,channel);return}
     if(channel.label!=='inhouse-read-room-v1'){channel.close();return}
     p.channel=channel;channel.binaryType='arraybuffer';channel.bufferedAmountLowThreshold=65536
-    channel.onopen=()=>{if(!this.#validPeer(s,p))return;p.open=true;s.native.connected(p.id);this.#send(p,s.native.latest)}
+    channel.onopen=()=>{if(!this.#validPeer(s,p))return;p.open=true;p.lastReceived=Date.now();s.native.connected(p.id);this.#send(p,s.native.latest);this.#health(s,p)}
     channel.onclose=()=>{if(this.#validPeer(s,p))this.#failed(s,p.id)}
     channel.onbufferedamountlow=()=>this.#pump(p)
     channel.onmessage=async e=>{
       if(!this.#validPeer(s,p))return
       try{
+        p.lastReceived=Date.now();
         if(typeof e.data==='string'){
           if(e.data.length>128)throw Error('Invalid header')
           const header=JSON.parse(e.data)
@@ -124,9 +176,34 @@ export class LiveRoom {
         const assembly=p.assembly,part=new Uint8Array(e.data)
         if(!assembly||part.length>CHUNK||assembly.offset+part.length>assembly.buffer.length)throw Error('Invalid chunk')
         assembly.buffer.set(part,assembly.offset);assembly.offset+=part.length
-        if(assembly.offset===assembly.buffer.length){p.assembly=null;const packet=s.native.receive(text.decode(assembly.buffer));if(packet?.snapshot)await this.#receive(s.account,packet.snapshot)}
+        if(assembly.offset===assembly.buffer.length){p.assembly=null;const packet=s.native.receive(text.decode(assembly.buffer));if(packet?.snapshot){s.tabs?.postMessage({t:'snapshot',from:s.own,packet:text.decode(assembly.buffer)});await this.#receive(s.account,packet.snapshot)}}
       }catch{if(this.#validPeer(s,p))this.#failed(s,p.id)}
     }
+  }
+  #interactive(s,p,c) {
+    p.interactive=c;c.bufferedAmountLowThreshold=32768
+    c.onopen=()=>{if(this.#validPeer(s,p))this.#flushMotion(p)}
+    c.onbufferedamountlow=()=>this.#flushMotion(p)
+    c.onclose=()=>{if(p.interactive===c)p.interactive=null}
+    c.onmessage=e=>{
+      if(!this.#validPeer(s,p)||typeof e.data!=='string'||e.data.length>98304)return
+      try{
+        const wire=JSON.parse(e.data);p.lastReceived=Date.now()
+        if(wire.t==='ping'){if(c.readyState==='open')c.send(JSON.stringify({t:'pong',at:wire.at}));return}
+        if(wire.t==='pong')return
+        const packet=s.native.receiveMotion(e.data);if(packet){this.#motion(s.account,packet);s.tabs?.postMessage({t:'motion',from:s.own,packet:e.data});for(const other of s.peers.values())if(other!==p&&other.id!==packet.from)this.#sendMotion(other,e.data)}
+      }catch{}
+    }
+  }
+  #health(s,p) {
+    if(!this.#validPeer(s,p)||!p.open)return
+    if(p.interactive?.readyState==='open'&&Date.now()-p.lastReceived>10000){this.#failed(s,p.id);return}
+    if(p.interactive?.readyState==='open')try{p.interactive.send(JSON.stringify({t:'ping',at:Date.now()}))}catch{}
+    this.#timer(s,()=>this.#health(s,p),1000)
+  }
+  #sendMotion(p,packet){p.motion=packet;this.#flushMotion(p)}
+  #flushMotion(p){const c=p.interactive;if(c?.readyState!=='open'||!p.motion||c.bufferedAmount>32768)return
+    try{c.send(p.motion);p.motion=null}catch{}
   }
   #send(p,packet){if(!packet)return;const data=bytes.encode(packet);if(data.length>LIMIT)return;p.queue=data;this.#pump(p)}
   #pump(p){const c=p.channel;if(c?.readyState!=='open')return
@@ -135,7 +212,7 @@ export class LiveRoom {
     }}catch{c.close()}
   }
   #failed(s,id){if(!this.#valid(s))return;this.#close(s,id);s.native.failed(id,Date.now())}
-  #close(s,id){const p=s.peers.get(id);if(!p)return;s.peers.delete(id);delete s.signals[id];p.channel?.close();p.pc.close();p.queue=null;p.assembly=null}
-  pause(){const s=this.#session;this.#session=null;this.#epoch++;if(!s)return;for(const timer of s.timers)clearTimeout(timer);for(const id of s.peers.keys())this.#close(s,id);s.native?.free()}
+  #close(s,id){const p=s.peers.get(id);if(!p)return;s.peers.delete(id);delete s.signals[id];clearTimeout(p.iceTimer);p.interactive?.close();p.channel?.close();p.pc.close();p.queue=null;p.assembly=null;this.#disconnected(id)}
+  pause(){const s=this.#session;this.#session=null;this.#epoch++;if(!s)return;s.tabs?.close();this.#disconnected('');for(const timer of s.timers)clearTimeout(timer);for(const id of s.peers.keys())this.#close(s,id);s.native?.free()}
   destroy(){this.pause();globalThis.removeEventListener('inhouse-drive-live-peers',this.#onPeers)}
 }
