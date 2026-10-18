@@ -227,6 +227,10 @@ fn pump(e:&JsValue)->R<()>{
  if ahead>0.0&&waiting>=lookahead{
   // enough audio is queued: look again when playback has eaten into it
   clear_timer(e,&read(&run,"pumpTimer")?)?;
+  set(&run,"pumpTimer",&JsValue::NULL)?;
+  // Silent preparation consumes no audio. Play invokes pump again; polling
+  // this unchanged reserve only wakes an idle phone without making progress.
+  if t(&get(&run,"preview")){return Ok(());}
   let timer=arm(e,&run,"pump",(waiting-lookahead+0.25)*1000.0)?;
   set(&run,"pumpTimer",&timer)?;return Ok(());
  }
@@ -743,7 +747,7 @@ pub fn neural_warm_failed(e:JsValue,client:JsValue)->R<bool>{
  if read(&e,"client")?==client&&!t(&read(&e,"run")?){teardown(&e)?;}
  Ok(false)
 }
-/// Prepares two opening fragments silently; Play adopts even in-flight synthesis.
+/// Prepares a bounded opening reserve silently; Play adopts even in-flight synthesis.
 #[wasm_bindgen]
 pub fn neural_prime(e:JsValue,request:JsValue)->R<bool>{
  let text=read(&request,"text")?;let voice_id=read(&request,"voiceId")?;let rate=read(&request,"rate")?;
@@ -764,7 +768,7 @@ pub fn neural_prime(e:JsValue,request:JsValue)->R<bool>{
  clear_idle(&e)?;
  let run=new_run(&voice,rate,true)?;set(&e,"run",&run)?;
  new_entry(&e,&run,&value,true)?;
- let more=clip(&upcoming,1.0)?;
+ let more=clip(&upcoming,(limit(&e,"maxAhead")?-1.0).max(0.0).min(limit(&e,"maxUpcoming")?))?;
  for i in 0..more.length(){new_entry(&e,&run,&more.get(i),true)?;}
  arm_idle(&e)?;pump(&e)?;Ok(true)
 }

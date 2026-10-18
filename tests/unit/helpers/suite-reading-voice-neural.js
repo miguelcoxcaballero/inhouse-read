@@ -39,7 +39,7 @@ describe('neural transport', () => {
     const voice = await reading(SENTENCES, { rate:1.3 })
     expect(speak).not.toHaveBeenCalled()
     expect(engine.calls).toHaveLength(1)
-    expect(last(engine)).toMatchObject({ text:'Primera frase.', voiceId:DAVEFX, rate:1.3, id:voice.utteranceId, upcoming:['Segunda frase.', 'Tercera frase.', 'Cuarta frase.', 'Quinta frase.'] })
+    expect(last(engine)).toMatchObject({ text:'Primera frase.', voiceId:DAVEFX, rate:1.3, id:voice.utteranceId, upcoming:['Segunda frase.', 'Tercera frase.', 'Cuarta frase.', 'Quinta frase.', 'Sexta frase.'] })
     voice.stop()
   })
   it('uses automatic natural selection for an obsolete device choice and never substitutes a missing explicit natural voice', async () => {
@@ -466,7 +466,7 @@ describe('prepare audio before Play',()=>{
     const reader=mappedReader(SENTENCES), voice=new ReadingVoice(reader)
     activeVoices.add(voice); voice.rate=1.25
     expect(await voice.preparePlayback()).toBe(true)
-    expect(engine.prime).toHaveBeenCalledWith({text:'Primera frase.',voiceId:DAVEFX,rate:1.25,upcoming:['Segunda frase.']})
+    expect(engine.prime).toHaveBeenCalledWith({text:'Primera frase.',voiceId:DAVEFX,rate:1.25,upcoming:['Segunda frase.','Tercera frase.','Cuarta frase.','Quinta frase.','Sexta frase.']})
     expect(reader.calls).toEqual([]); expect(reader.next).not.toHaveBeenCalled()
     expect(voice.state).toBe('stopped'); expect(voice.chunks).toEqual([])
     await voice.play()

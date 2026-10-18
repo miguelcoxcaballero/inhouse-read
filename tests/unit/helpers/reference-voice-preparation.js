@@ -1,3 +1,4 @@
+// Frozen preparation with the explicit 1.7.291 six-fragment, contiguous-voice opening contract.
 import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
 import {planSpeech,firstCompleteSentenceOffset} from '../../../src/js/readers/speech-text.js'
 const PAGE_PREPARATION_RETRIES=2
@@ -75,7 +76,11 @@ export class LegacyPreparation {
       if (!valid() || !items.length) return false
       const { voice } = this.voiceFor(items[0].text)
       if (!voice?.neural) return false
-      const upcoming = items.slice(1, 2).filter(item => this.voiceFor(item.text).voice?.id === voice.id).map(item => this.audioItem(item))
+      const upcoming = []
+      for (const item of items.slice(1, 6)) {
+        if (this.voiceFor(item.text).voice?.id !== voice.id) break
+        upcoming.push(this.audioItem(item))
+      }
       return await neuralEngine()?.prime?.({ text:items[0].text, voiceId:voice.id, rate:this.rate, upcoming,
         ...(items[0].marks?.length ? {marks:items[0].marks.map(mark=>mark.offset)} : {}) }) || false
     } catch { return false }

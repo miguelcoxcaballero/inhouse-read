@@ -633,19 +633,19 @@ describe('catalogue', () => {
 
 describe('silent opening audio preparation', () => {
   afterEach(() => vi.useRealTimers())
-  it('prepares only two fragments, without creating audio or emitting start, and adopts them on Play', async () => {
+  it('prepares a bounded opening reserve, without creating audio or emitting start, and adopts it on Play', async () => {
     const t = setup()
     expect(t.engine.prime({text:'Uno.',voiceId:CLAUDE,upcoming:['Dos.','Tres.']})).toBe(true)
     await flush()
     const client = t.clients.last()
-    feedJob(client.jobs[0],2); feedJob(client.jobs[1],3)
-    expect(client.jobs).toHaveLength(2)
+    feedJob(client.jobs[0],2); feedJob(client.jobs[1],3); feedJob(client.jobs[2],2)
+    expect(client.jobs).toHaveLength(3)
     expect(t.ctx.sources).toHaveLength(0)
     expect(t.events).toEqual([])
-    t.engine.speak({text:'Uno.',voiceId:CLAUDE,id:'play',upcoming:['Dos.']})
+    t.engine.speak({text:'Uno.',voiceId:CLAUDE,id:'play',upcoming:['Dos.','Tres.']})
     await flush()
-    expect(client.jobs).toHaveLength(2)
-    expect(t.ctx.sources).toHaveLength(2)
+    expect(client.jobs).toHaveLength(3)
+    expect(t.ctx.sources).toHaveLength(3)
     advance(t.ctx,.05); await flush()
     expect(types(t.events)).toEqual(['start:play'])
     expect(t.engine.stats.firstAudioMs).toBeLessThan(100)
@@ -719,4 +719,25 @@ describe('silent opening audio preparation', () => {
     expect(t.engine.run).toBe(null); expect(t.engine.cache.size).toBe(0)
     expect(client.disposed).toBe(true); expect(t.ctx.sources).toHaveLength(0)
   })
+})
+
+describe('opening reserve within the existing playback and memory budgets',()=>{
+ afterEach(()=>vi.useRealTimers())
+ it('prepares six short opening fragments and adopts all without cancelling in-flight inference',async()=>{
+  const t=setup(),texts=Array.from({length:20},(_,i)=>`Fragment ${i}.`)
+  t.engine.prime({text:texts[0],voiceId:CLAUDE,upcoming:texts.slice(1)});await flush();const client=t.clients.last()
+  for(let i=0;i<5;i++)feedJob(client.jobs[i],1)
+  expect(client.jobs).toHaveLength(6);expect(t.engine.run.entries).toHaveLength(6);expect(t.ctx.sources).toHaveLength(0)
+  const inFlight=client.jobs[5];t.engine.speak({text:texts[0],voiceId:CLAUDE,id:'play',upcoming:texts.slice(1,6)});await flush()
+  expect(inFlight.cancelled).toBe(false);feedJob(inFlight,1)
+  expect(client.jobs).toHaveLength(6);expect(t.ctx.sources).toHaveLength(6)
+  for(let i=1;i<6;i++)expect(t.ctx.sources[i].startedAt).toBeCloseTo(t.ctx.sources[i-1].startedAt+1)
+  expect(t.engine.stats.prefetchHits).toBe(1);t.engine.stop()
+ })
+ it('stops silent preparation at the same thirty-second horizon',async()=>{
+  const t=setup(),texts=Array.from({length:20},(_,i)=>`Long fragment ${i}.`)
+  t.engine.prime({text:texts[0],voiceId:CLAUDE,upcoming:texts.slice(1)});await flush();const client=t.clients.last()
+  for(let i=0;i<4;i++)feedJob(client.jobs[i],8)
+  expect(client.jobs).toHaveLength(4);expect(t.ctx.sources).toHaveLength(0);expect(t.engine.getDiagnosticState().timers.pump).toBe(false);expect(t.engine.cache.samples).toBeLessThanOrEqual(t.engine.limits.lruSamples);t.engine.stop()
+ })
 })
