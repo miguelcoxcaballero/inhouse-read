@@ -29,6 +29,8 @@ import { createNativeImportShelfGate } from './native-import-shelf-gate.js'
 import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
+import { rememberLaunchFrames } from './shelf-launch-cache.js'
+import { idleWork } from './idle-startup.js'
 import { runAfterFirstFrame } from './idle-startup.js'
 import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
@@ -975,6 +977,8 @@ initAndroidUpdateChecks()
 // files, and the reader / catalogue chunks are loaded before anyone reaches
 // for them (see idle-startup.js).
 runAfterFirstFrame([
+  () => rememberLaunchFrames(els.bookshelfRoot, { books:() => library.listRaw(), idle:idleWork,
+    isIdle:() => !appDisposed && els.readerScreen.hidden && !shelf?.isInteracting && !closingReader }),
   () => { void loadRustCore(); void loadRustDecorCore(); profileView.warm() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),

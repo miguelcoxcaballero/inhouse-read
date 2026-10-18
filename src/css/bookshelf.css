@@ -1837,3 +1837,6 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-flyout__colors-rule { background:transparent; }
 
 .ihr-relief-card.is-selected { background:none; box-shadow:none; }
+
+/* A validated local first paint stays only until the live scene has drawn. */
+.has-launch-preview .ihr-library-loading { visibility:hidden; }

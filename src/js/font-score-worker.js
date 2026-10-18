@@ -5,6 +5,19 @@ import { createRustFontScorer } from './font-score-wasm.js';
 let active = null;
 let queue = Promise.resolve();
 const release = () => { active?.rust?.dispose(); active = null; };
+// One family has at most 24 masks. Score that bounded batch in the same
+// order and with the same Rust kernel, without 24 main-thread round trips.
+function scoreMask(mask) {
+  const { gray, near, width, height, rows } = active;
+  if (active.rust) {
+    try { return active.rust.score(mask); }
+    catch { active.rust.dispose(); active.rust = null; }
+  }
+  const task = scoreFontMask(gray, near, width, height, rows, mask);
+  let step = task.next();
+  while (!step.done) step = task.next();
+  return step.value;
+}
 async function handle(data) {
   const { type, job, request } = data || {};
   try {
@@ -29,19 +42,11 @@ async function handle(data) {
       self.postMessage({ type:'begin', job, request, accepted:true });
     } else if (type === 'score') {
       if (!active || active.job !== job) throw new Error('Inactive font score job');
-      const { gray, near, width, height, rows } = active;
-      let score;
-      if (active.rust) {
-        try { score = active.rust.score(data.mask); }
-        catch { active.rust.dispose(); active.rust = null; }
-      }
-      if (score === undefined) {
-        const task = scoreFontMask(gray, near, width, height, rows, data.mask);
-        let step = task.next();
-        while (!step.done) step = task.next();
-        score = step.value;
-      }
-      self.postMessage({ type:'score', job, request, score });
+      self.postMessage({ type:'score', job, request, score:scoreMask(data.mask) });
+    } else if (type === 'scores') {
+      if (!active || active.job !== job || !Array.isArray(data.masks) || data.masks.length > 24)
+        throw new Error('Invalid font score batch');
+      self.postMessage({ type:'scores', job, request, scores:data.masks.map(scoreMask) });
     } else if (type === 'end' && active?.job === job) release();
   } catch {
     if (active?.job === job) release();

@@ -28,6 +28,11 @@ function createClient(factory, events) {
           if (closed || disposed || activeJob !== job) return Promise.reject(new Error('Inactive font score job'));
           return request('score', job, { mask });
         },
+        scoreMany(masks) {
+          if (closed || disposed || activeJob !== job) return Promise.reject(new Error('Inactive font score job'));
+          if (!Array.isArray(masks) || masks.length > 24) return Promise.reject(new Error('Invalid font score batch'));
+          return request('scores', job, { masks });
+        },
         close() {
           if (closed) return;
           closed = true;
@@ -47,7 +52,7 @@ function createClient(factory, events) {
       const id = ++sequence;
       const timeout = type === 'begin' ? STARTUP_TIMEOUT_MS : SCORE_TIMEOUT_MS;
       const timer = setTimeout(() => client.dispose(new Error('Font score worker did not reply')), timeout);
-      pending = { type, job, id, timer, resolve, reject };
+      pending = { type, job, id, timer, resolve, reject, count:payload.masks?.length };
       try { worker.postMessage({ ...payload, type, job, request:id }); }
       catch (error) { client.dispose(error); }
     });
@@ -56,11 +61,13 @@ function createClient(factory, events) {
     if (!pending || data?.job !== pending.job || data?.request !== pending.id) return;
     const waiting = pending;
     if (data.type !== waiting.type ||
-        (waiting.type === 'begin' ? data.accepted !== true : typeof data.score !== 'number' || !Number.isFinite(data.score))) {
+        (waiting.type === 'begin' ? data.accepted !== true : waiting.type === 'scores' ?
+          !Array.isArray(data.scores) || data.scores.length !== waiting.count || data.scores.some(score => typeof score !== 'number' || !Number.isFinite(score)) :
+          typeof data.score !== 'number' || !Number.isFinite(data.score))) {
       client.dispose(new Error('Invalid font score worker reply')); return;
     }
     pending = null; clearTimeout(waiting.timer);
-    waiting.resolve(waiting.type === 'score' ? data.score : true);
+    waiting.resolve(waiting.type === 'scores' ? data.scores : waiting.type === 'score' ? data.score : true);
   };
   worker.onerror = event => { event.preventDefault?.(); client.dispose(new Error('Font score worker failed')); };
   worker.onmessageerror = () => client.dispose(new Error('Font score worker message failed'));
