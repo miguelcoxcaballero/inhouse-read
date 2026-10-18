@@ -57,6 +57,7 @@
           }
         })
         window.__inhouseShelfRead = read
+        window.__inhouseShelfPreviewRead = read.done
       })(indexedDB.open('inhouse-read', 2), { records: null })
     } catch (error) { /* no IndexedDB here: the store reports it */ }
   </script>
@@ -81,7 +82,7 @@
   </script>
   <!-- The live shelf's pointer controllers (swipe, pinch zoom): a small module compiled with the page
        head. The first shelf render awaits it; rust-shelf.js adopts the compiled module once. -->
-  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-D3INaKFA.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-DzNOCBwh.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -138,11 +139,13 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-Dgh2ej9x.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-Dvoi5KS8.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-nNprJxya.js">
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-Ch5-VQ4_.js">
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-Cxpc7H2q.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-JwWmTiyy.css">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-ChuNErjZ.css">
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-DDUZycLD.css">
+  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-CCpwHMJ1.js"></script>
 </head>
 <body>
   <script>
