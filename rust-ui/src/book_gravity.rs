@@ -390,7 +390,7 @@ impl RustBookGravity{
      // while leaving the contact solver's mass matrix invertible.
      self.world.insert_impulse_joint(self.plane,handle,GenericJointBuilder::new(JointAxesMask::LIN_Z).local_anchor1(Vector::new(0.0,0.0,(s[31]/p) as f32)));
     }
-    let b=&mut self.world.bodies[handle];if kind==0&&!held{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
+    let b=&mut self.world.bodies[handle];if kind==0&&!held&&!restored{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
     let name=keys.get(i as u32);let name=if name.is_string(){name.unchecked_into::<JsString>()}else{JsString::from("")};
     self.books.insert(key.clone(),Book{input:None,reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,motion_at:f64::NEG_INFINITY,stroke:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }

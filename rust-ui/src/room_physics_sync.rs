@@ -32,13 +32,13 @@ pub fn room_physics_passive_compatible(a:JsValue,b:JsValue)->bool{
 fn rounded(n:f64)->JsValue{((n*1e6).round()/1e6).into()}
 #[wasm_bindgen]
 pub fn room_physics_for_cloud(value:JsValue,books:JsValue)->JsValue{
- convert(value,books,true)
+ convert(value,books,true,true)
 }
 #[wasm_bindgen]
 pub fn room_physics_for_device(value:JsValue,books:JsValue)->JsValue{
- convert(value,books,false)
+ convert(value,books,false,false)
 }
-fn convert(value:JsValue,books:JsValue,cloud:bool)->JsValue{
+fn convert(value:JsValue,books:JsValue,cloud:bool,shared_only:bool)->JsValue{
  let run=||->Result<JsValue,JsValue>{
   let root=JSON::parse(&value.as_string().ok_or_else(||error("Missing room"))?)?;
   if !Array::is_array(&root){return Ok(value.clone());}
@@ -72,7 +72,9 @@ fn convert(value:JsValue,books:JsValue,cloud:bool)->JsValue{
    rows.set(index as u32,row.into());
   }
   if cloud{
-   let mut sorted:Vec<JsValue>=rows.iter().collect();
+   let mut sorted:Vec<JsValue>=rows.iter().filter(|row|{
+    let key=string(&Array::from(row).get(0));!shared_only||!key.starts_with("book:")||key.starts_with("book:drive:")
+   }).collect();
    sorted.sort_by(|a,b|{let a=Array::from(a).get(0);let b=Array::from(b).get(0);if a.lt(&b){std::cmp::Ordering::Less}else if a.gt(&b){std::cmp::Ordering::Greater}else{std::cmp::Ordering::Equal}});
    rows.set_length(0);for row in sorted{rows.push(&row);}
   }
@@ -107,4 +109,49 @@ pub fn room_physics_equivalent(a:JsValue,b:JsValue)->bool{
   Ok(JSON::stringify(&parsed)?.as_string().unwrap_or_default())
  }
  a==b||signature(&a).ok().zip(signature(&b).ok()).is_some_and(|(a,b)|a==b)
+}
+
+/// Stable room revision shared by live previews and durable checkpoints.
+/// Semantic pixel anchors are excluded; physical positions and geometry remain.
+#[wasm_bindgen]
+pub fn room_physics_revision(value:JsValue,books:JsValue)->String{
+ let canonical=room_physics_for_cloud(value,books);
+ let Some(encoded)=canonical.as_string()else{return String::new();};
+ let Ok(parsed)=JSON::parse(&encoded)else{return String::new();};
+ if !Array::is_array(&parsed){return String::new();}let root=Array::from(&parsed);
+ if root.length()!=3||root.get(0).as_f64()!=Some(2.0)||!Array::is_array(&root.get(2)){return String::new();}
+ for row in Array::from(&root.get(2)).iter(){
+  if !Array::is_array(&row){return String::new();}let row=Array::from(&row);
+  if !Array::is_array(&row.get(2)){return String::new();}
+  set(&row.get(2),"0",&0.into());set(&row.get(2),"1",&0.into());
+ }
+ let Ok(encoded)=json(&parsed)else{return String::new();};
+ let mut hash=0xcbf29ce484222325u64;
+ for unit in encoded.encode_utf16(){for byte in unit.to_le_bytes(){hash^=byte as u64;hash=hash.wrapping_mul(0x100000001b3);}}
+ format!("room-{hash:016x}")
+}
+
+/// Local storage uses the same physical coordinate system as the wire, while
+/// retaining books that have not acquired a Drive identity yet.
+#[wasm_bindgen]
+pub fn room_physics_canonical(value:JsValue,books:JsValue)->JsValue{
+ let canonical=convert(value,books.clone(),true,false);convert(canonical,books,false,false)
+}
+/// A shared room cannot delete or reposition a device-only book. Conversely,
+/// unuploaded local identities must never block another device's restoration.
+#[wasm_bindgen]
+pub fn room_physics_with_local(value:JsValue,previous:JsValue,books:JsValue)->JsValue{
+ let remote=room_physics_canonical(value.clone(),books.clone());
+ let local=room_physics_canonical(previous,books.clone());
+ let run=||->Option<JsValue>{
+  let r=JSON::parse(&remote.as_string()?).ok()?;let l=JSON::parse(&local.as_string()?).ok()?;
+  if !Array::is_array(&r)||!Array::is_array(&l){return None;}
+  let r=Array::from(&r);let l=Array::from(&l);
+  if r.get(0).as_f64()!=Some(2.0)||l.get(0).as_f64()!=Some(2.0)||json(&r.get(1)).ok()?!=json(&l.get(1)).ok()?||!Array::is_array(&r.get(2))||!Array::is_array(&l.get(2)){return None;}
+  let rows=Array::from(&r.get(2));
+  let private:std::collections::BTreeSet<String>=Array::from(&books).iter().filter(|b|!get(b,"driveFileId").is_truthy()).map(|b|format!("book:{}",string(&get(&b,"id")))).collect();
+  let existing:std::collections::BTreeSet<String>=rows.iter().map(|row|string(&Array::from(&row).get(0))).collect();
+  for row in Array::from(&l.get(2)).iter(){let key=string(&Array::from(&row).get(0));if private.contains(&key)&&!existing.contains(&key){rows.push(&row);}}
+  r.set(2,rows.into());JSON::stringify(&r).ok().map(JsValue::from)
+ };run().unwrap_or(remote)
 }
