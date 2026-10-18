@@ -95,3 +95,15 @@ describe('durable full-book word count queue',()=>{
     await queue.ensure(counted);expect(measure).toHaveBeenCalledOnce();
   });
 });
+
+it('parks detached parsing before loading a file and between pages, then commits the same count',async()=>{
+  const book=await importBook();let resume;
+  const yieldTask=vi.fn(()=>new Promise(resolve=>{resume=resolve}));
+  const measure=vi.fn(async (_file,options)=>{await options.yieldTask();return completeWordCount(120000)});
+  queue=createBookLengthQueue(library,{measureFile:measure,yieldTask});
+  const pending=queue.ensure(book);
+  await vi.waitFor(()=>expect(yieldTask).toHaveBeenCalledOnce());expect(measure).not.toHaveBeenCalled();
+  resume();await vi.waitFor(()=>expect(measure).toHaveBeenCalledOnce());expect(yieldTask).toHaveBeenCalledTimes(2);
+  expect(isBookLengthReady(await library.get(book.id))).toBe(false);
+  resume();expect((await pending).wordCount).toBe(120000);
+});

@@ -40,7 +40,7 @@ pub fn reader_voice_state(host:JsValue,state:JsValue,message:JsValue,doc:web_sys
  doc.get_element_by_id("reader-audio").ok_or_else(||JsValue::from_str("Missing audio button"))?.class_list().toggle_with_force("is-playing",playing)?;
  if state==JsValue::from_str("stopped"){one(&host,"setSleepChoice",&0.into())?;}
  two(&host,"updateMiniPlayer",&state,&message)?;call(&host,"updateReturnButton")?;
- if paused&&!get(&get(&host,"voice")?,"neuralOff")?.is_truthy(){let picker=get(&host,"neuralPicker")?;if !absent(&picker){call(&picker,"warmUp")?;}}
+ // Pause must not immediately restart the synthesis that it just cancelled.
  let picker=get(&host,"neuralPicker")?;if !absent(&picker){call(&picker,"render")?;}Ok(())
 }
 #[wasm_bindgen]

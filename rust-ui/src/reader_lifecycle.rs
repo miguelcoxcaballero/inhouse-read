@@ -37,7 +37,9 @@ pub fn reader_open(host:JsValue,record:JsValue,clean_places:Function,clean_quote
  let pdf=!absent(&format)&&get(&format,"engine")?==JsValue::from_str("pdf");
  let count=get(&get(&host,"reader")?,"pageCount")?;let count=if count.is_truthy(){count}else{1.into()};
  invoke(&get(&host,"view")?,"configureFormat",&Array::of2(&pdf.into(),&count))?;
- call(&get(&host,"neuralPicker")?,"warm")?;call(&host,"renderPlaces")?;call(&host,"renderToc")?;
+ // Plain reading must not load a neural model or synthesize a preview.
+ // Opening the audio panel / pressing Play owns voice preparation instead.
+ call(&host,"renderPlaces")?;call(&host,"renderToc")?;
  let pending=Promise::resolve(&call(&host,"applyPreferences")?);
  Ok(future_to_promise(async move{
   JsFuture::from(pending).await?;call(&host,"relocate")?;

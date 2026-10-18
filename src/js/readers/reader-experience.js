@@ -28,9 +28,10 @@ export class ReaderExperience {
   navigation = new ReaderNavigation()
   get navigating() { return this.navigation.navigating }
 
-  constructor(reader, { persist = async () => {} } = {}) {
+  constructor(reader, { persist = async () => {}, onLengthMetadata = async () => {} } = {}) {
     this.reader = reader
     this.persist = persist
+    this.onLengthMetadata = onLengthMetadata
     this.history = []; this.bookmarks = []; this.quotes = []; this.location = { fraction:0, locator:null }
     try { this.preferences = normalizeReadingPreferences(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')) }
     catch { this.preferences = normalizeReadingPreferences() }
@@ -92,6 +93,7 @@ export class ReaderExperience {
         if (this.book !== record || this.reader.epoch !== epoch || !metadata) return
         this.lengthMetadata = {...record,...metadata}
         this.relocate()
+        return this.onLengthMetadata(record, metadata)
       }).catch(() => {})
     }
     return pending

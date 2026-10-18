@@ -57,3 +57,18 @@ it('parks optional work without background polling and rechecks a queued idle ca
  visibility='visible';document.dispatchEvent(new Event('visibilitychange'));await vi.advanceTimersByTimeAsync(50);
  await pending;expect(complete).toHaveBeenCalledOnce();expect(vi.getTimerCount()).toBe(0);
 });
+
+ it('parks shelf/startup slices and in-flight CPU work throughout reading without polling',async()=>{
+  frame();startup.setShelfWorkActive(false);
+  const task=vi.fn(),work=vi.fn();
+  const pending=startup.runAfterFirstFrame([task]),cpu=startup.shelfWorkReady().then(work);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(task).not.toHaveBeenCalled();expect(work).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
+  startup.setShelfWorkActive(true);await vi.advanceTimersByTimeAsync(50);await Promise.all([pending,cpu]);
+  expect(task).toHaveBeenCalledOnce();expect(work).toHaveBeenCalledOnce();
+ });
+ it('rechecks screen ownership if the reader opens after a slice was queued',async()=>{
+  const task=vi.fn();startup.idleWork(task);startup.setShelfWorkActive(false);
+  await vi.advanceTimersByTimeAsync(60_000);expect(task).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
+  startup.setShelfWorkActive(true);await vi.advanceTimersByTimeAsync(50);expect(task).toHaveBeenCalledOnce();
+ });

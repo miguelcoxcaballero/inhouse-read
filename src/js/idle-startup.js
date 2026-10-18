@@ -7,6 +7,31 @@
 const SHELF_SELECTOR = 'canvas.ihr-bookshelf-scene'
 const FIRST_FRAME_DEADLINE_MS = 8000
 
+// Shared screen ownership for optional shelf/startup work. Park callbacks on
+// a signal, never on a polling timer, while the reader owns the screen.
+let shelfWorkActive = true
+const shelfWaiters = new Set()
+export function setShelfWorkActive(active) {
+  shelfWorkActive = Boolean(active)
+  if (shelfWorkActive) for (const resume of [...shelfWaiters]) resume()
+}
+
+/** A cooperative safe point for CPU work already in progress. */
+export function shelfWorkReady() {
+  const owner = globalThis.document
+  if (shelfWorkActive && owner?.visibilityState !== 'hidden') return Promise.resolve()
+  return new Promise(resolve => {
+    const resume = () => {
+      if (owner === globalThis.document && (!shelfWorkActive || owner?.visibilityState === 'hidden')) return
+      shelfWaiters.delete(resume)
+      owner?.removeEventListener('visibilitychange', resume)
+      resolve()
+    }
+    shelfWaiters.add(resume)
+    owner?.addEventListener('visibilitychange', resume)
+  })
+}
+
 let presented = null
 let presentedDocument = null
 /** Resolves once the shelf canvas has drawn, or after the deadline (e.g. no WebGL). */
@@ -30,22 +55,24 @@ export function shelfPresented() {
 export function idleWork(callback, { timeout = 2000, fallbackMs = 50 } = {}) {
   const owner = globalThis.document
   const schedule = () => {
-    if (owner && owner.visibilityState === 'hidden') {
-      owner.addEventListener('visibilitychange', resume)
+    if (!shelfWorkActive || owner?.visibilityState === 'hidden') {
+      shelfWaiters.add(resume)
+      owner?.addEventListener('visibilitychange', resume)
       return
     }
     if (typeof requestIdleCallback === 'function') requestIdleCallback(complete, { timeout })
     else setTimeout(() => complete({ timeRemaining:() => 0 }), fallbackMs)
   }
   const resume = () => {
-    if (owner.visibilityState === 'hidden') return
-    owner.removeEventListener('visibilitychange', resume)
+    if (!shelfWorkActive || owner?.visibilityState === 'hidden') return
+    shelfWaiters.delete(resume)
+    owner?.removeEventListener('visibilitychange', resume)
     schedule()
   }
   // A queued slice may race with locking the phone. Park on one event
   // listener instead of repeatedly waking background timers.
   const complete = deadline => {
-    if (owner && owner === globalThis.document && owner.visibilityState === 'hidden') schedule()
+    if (owner === globalThis.document && (!shelfWorkActive || owner?.visibilityState === 'hidden')) schedule()
     else callback(deadline)
   }
   schedule()

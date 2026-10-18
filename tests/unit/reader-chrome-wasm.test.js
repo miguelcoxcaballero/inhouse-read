@@ -38,7 +38,7 @@ for(let trial=0;trial<200;trial++){
  for(const native of [false,true]){
   const {host,events}=setup(native,trial)
   for(const state of ['stopped','loading','playing','paused','failed'])host.voiceState(state,['','Preparing','字 📖','\ud800',null,false][trial%6])
-  results.push({panel:host.panel.outerHTML,screen:host.screen.outerHTML,events})
+  results.push({panel:host.panel.outerHTML,screen:host.screen.outerHTML,events:events.filter(row=>row[0]!=='warmUp')})
  }
  assert.deepEqual(results[1],results[0])
 }
@@ -86,10 +86,10 @@ it('schedules no focus scrolling for closed panels and ignores closure before a 
  host.panel.open=true;chrome.resize();expect(raf).toHaveBeenCalledOnce()
  host.panel.open=false;host.panel.scrollTop=7;callback();expect(host.panel.scrollTop).toBe(7)
 })
-it('does not hide callback errors or skip the remaining state notifications',()=>{
+it('pausing updates the controls without restarting voice preparation',()=>{
  const {host,events}=setup(true,1),error=Error('warm failed');host.neuralPicker.warmUp=()=>{throw error}
- expect(()=>host.voiceState('paused','Paused')).toThrow(error)
- expect(events).toEqual([['mini','paused','Paused'],['back']]);expect(host.panel.querySelector('[data-play]').getAttribute('aria-label')).toBe('Continuar')
+ expect(()=>host.voiceState('paused','Paused')).not.toThrow()
+ expect(events).toEqual([['mini','paused','Paused'],['back'],['render']]);expect(host.panel.querySelector('[data-play]').getAttribute('aria-label')).toBe('Continuar')
 })
 it('fails with a clear error instead of working around a missing core',()=>{
  const {host}=setup(false,1),chrome=new ReaderChrome(host);runtime.ui=null

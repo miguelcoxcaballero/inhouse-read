@@ -308,3 +308,15 @@ describe('stationary room paints while a selected flyout owns its book', () => {
     expect(frames.size).toBe(0); expect(gpu.renders).toBe(renders);
   });
 });
+
+it('freezes unfinished shelf motion while reading, including forced paints and viewport invalidations',()=>{
+  settle();shelf.setMode('spine');clock+=16;shelf.flush();
+  expect(frames.size).toBeGreaterThan(0);
+  const progress=shelf.canvas.dataset.viewProgress,renders=gpu.renders;
+  shelf.setPresentationActive(false);expect(frames.size).toBe(0);
+  clock+=60000;shelf.invalidate();window.dispatchEvent(new Event('resize'));
+  expect(shelf.flush({force:true})).toBe(false);flushFrames();
+  expect(gpu.renders).toBe(renders);expect(shelf.canvas.dataset.viewProgress).toBe(progress);expect(frames.size).toBe(0);
+  shelf.setPresentationActive(true);flushFrames();
+  expect(gpu.renders).toBeGreaterThan(renders);expect(shelf.canvas.dataset.viewProgress).toBe('0');
+});
