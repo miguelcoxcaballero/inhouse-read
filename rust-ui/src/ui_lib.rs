@@ -6,6 +6,7 @@ mod cloud_sync;
 mod library_backup;
 mod drive_client;
 mod live_room;
+mod room_stream;
 mod android_import;
 mod folder_store;
 mod import_gate;
