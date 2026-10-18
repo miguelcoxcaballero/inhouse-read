@@ -58,12 +58,13 @@ impl Core{
    let id=get(&book,"driveFileId");let linked=get(&book,"cloudAccountId");
    if !id.is_string()||!id.is_truthy()||linked.is_truthy()&&linked!=account{continue;}
    let dirty=self.dirty_books.get(&get(&book,"id"));if !dirty.is_object(){continue;}
-   let dirty:Set=dirty.unchecked_into();let target=slot(&books,&string(&id));let values=self.metadata(&book)?;set(&values,"visible",&JsValue::TRUE);
+   let dirty:Set=dirty.unchecked_into();if ["progressFraction","locator","progressUpdatedAt"].iter().any(|key|dirty.has(&(*key).into())){dirty.add(&"readingPosition".into());}
+   let target=slot(&books,&string(&id));let values=self.metadata(&book)?;set(&values,"visible",&JsValue::TRUE);
    for(field,value)in entries(&values){
     if !dirty.has(&field.clone().into()){continue;}
     let old=get(&target,&field);if old.is_truthy()&&json(&get(&old,"value"))?==json(&value)?{continue;}
     let remote=get(&get(&get(&pending,"books"),&string(&id)),&field);let previous=if remote.is_truthy()&&newer(&remote,&old){remote}else{old};
-    let entry=self.stamp(&previous,&value,&JsValue::UNDEFINED)?;set(&target,&field,&entry);
+    let entry=if field=="readingPosition"{self.position_stamp(&previous,&value)?}else{self.stamp(&previous,&value,&JsValue::UNDEFINED)?};set(&target,&field,&entry);
     self.room_fields.borrow_mut().insert((string(&id),field),next);
    }
   }
@@ -95,7 +96,7 @@ impl RustLibraryBackup{
  pub fn markBookChanged(&self,account:JsValue,id:JsValue,fields:JsValue)->bool{
   if !self.core.live_allowed(&account)||!id.is_string(){return false;}
   let found=self.core.dirty_books.get(&id);let set:Set=if found.is_object(){found.unchecked_into()}else{Set::new(&JsValue::UNDEFINED)};
-  for field in Array::from(&fields).iter(){let name=string(&field);if field.is_string()&&(name.starts_with("spine")||["shelfPosition","shelfOrder","shelfVisualId","title","author","name","visible","coverAppearance","coverAppearanceKey","coverUpdatedAt","coverFinish","coverRelief"].contains(&name.as_str())){set.add(&field);}}
+  for field in Array::from(&fields).iter(){let name=string(&field);if field.is_string()&&(name.starts_with("spine")||["shelfPosition","shelfOrder","shelfVisualId","title","author","name","visible","coverAppearance","coverAppearanceKey","coverUpdatedAt","coverFinish","coverRelief","progressFraction","locator","progressUpdatedAt","readingHistory","bookmarks","quotes"].contains(&name.as_str())){set.add(&field);}}
   if set.size()==0{return false;}
   self.core.dirty_books.set(&id,set.as_ref());self.core.room_revision.set(self.core.room_revision.get().wrapping_add(1));true
  }

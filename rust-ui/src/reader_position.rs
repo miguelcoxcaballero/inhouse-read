@@ -31,3 +31,21 @@ pub fn reader_persistable_relocation(event:JsValue,engine:JsValue)->R<JsValue>{
  else{JsValue::NULL};
  reader_persistable_position(object(&[("fraction",fraction),("locator",locator)])?)
 }
+
+/// Closing an untouched reader is not a new reading action. In particular it
+/// must not overwrite a newer position received while this reader was open.
+#[wasm_bindgen]
+pub struct RustReaderPositionGuard{positions:std::collections::BTreeMap<String,String>}
+#[wasm_bindgen]
+impl RustReaderPositionGuard{
+ #[wasm_bindgen(constructor)]pub fn new()->Self{Self{positions:std::collections::BTreeMap::new()}}
+ pub fn remember(&mut self,id:JsValue,position:JsValue)->R<()>{
+  let position=reader_persistable_position(position)?;if !truthy(&position){return Ok(());}
+  let key=c::json(&id)?;if self.positions.len()>=256&&!self.positions.contains_key(&key){if let Some(first)=self.positions.keys().next().cloned(){self.positions.remove(&first);}}
+  self.positions.insert(key,c::json(&position)?);Ok(())
+ }
+ pub fn changed(&self,id:JsValue,position:JsValue)->R<bool>{
+  let position=reader_persistable_position(position)?;if !truthy(&position){return Ok(false);}
+  Ok(self.positions.get(&c::json(&id)?).is_none_or(|old|c::json(&position).ok().as_ref()!=Some(old)))
+ }
+}

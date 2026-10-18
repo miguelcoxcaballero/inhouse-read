@@ -51,7 +51,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
     await initial; await pending.at(-1)
     expect(library.updateProgress.mock.calls).toEqual([['book', .01, location(1)], ['book', 1, location(101)]])
     expect(saved).toHaveBeenCalledTimes(2)
-    expect(saved.mock.calls[1]).toEqual([{ id:'book', fraction:1, locator:location(101) }, 'book'])
+    expect(saved.mock.calls[1]).toEqual([{ id:'book', fraction:1, locator:location(101) }, 'book', ['progressFraction','locator','progressUpdatedAt']])
     expect(queue.get('book')).toBeUndefined()
   })
 

@@ -17,7 +17,7 @@ export async function quietShelf(scene) {
   }, { timeout:30_000 }).toBe(true);
 }
 
-export async function seedShelf(page, {domino=false,single=false,mode='isometric'}={}) {
+export async function seedShelf(page, {domino=false,single=false,mode='isometric',bookFile='tiny.pdf'}={}) {
   await page.addInitScript(({ lampKey, plantKey, domino, single, mode }) => {
     localStorage.setItem('inhouse-read-shelf-view', mode);
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
@@ -31,7 +31,7 @@ export async function seedShelf(page, {domino=false,single=false,mode='isometric
   }, { lampKey:LAMP_KEY, plantKey:PLANT_KEY, domino, single, mode });
   await page.goto(TARGET_URL);
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
-  const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
+  const bytes = [...await readFile('tests/e2e/fixtures/'+bookFile)];
   await page.evaluate(async ({ bytes, prefix, geometry, domino, single }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read');

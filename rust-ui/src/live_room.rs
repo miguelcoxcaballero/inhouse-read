@@ -6,8 +6,8 @@ use js_sys::{Array,JSON,Object};
 use crate::cloud_host::*;
 const MAX_PACKET:usize=2*1024*1024;
 const MAX_PEERS:usize=8;
-#[derive(Default)]struct Peer{file:String,modified:String,read:f64,started:f64,retry:f64,status:u8,nonce:String,failures:u32}
-#[wasm_bindgen]pub struct RustLiveRoom{account:String,own:String,peers:BTreeMap<String,Peer>,seen:VecDeque<String>,last_key:String,last_packet:String}
+#[derive(Default)]struct Peer{file:String,modified:String,read:f64,started:f64,retry:f64,status:u8,nonce:String,failures:u32,sdp:String}
+#[wasm_bindgen]pub struct RustLiveRoom{account:String,own:String,peers:BTreeMap<String,Peer>,seen:VecDeque<String>,last_key:String,last_packet:String,motion_sequence:u64,motion_seen:BTreeMap<String,f64>}
 fn identity(value:&str)->bool{!value.is_empty()&&value.len()<=128&&value.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'||b==b'_')}
 fn pairs(value:&JsValue)->JsValue{
  let result=Array::new();let source=if value.is_object(){value.clone()}else{object(&[])};
@@ -37,7 +37,7 @@ fn valid_snapshot(snapshot:&JsValue)->bool{
 impl RustLiveRoom{
  #[wasm_bindgen(constructor)]pub fn new(account:String,own:String)->Result<RustLiveRoom,JsValue>{
   if account.is_empty()||account.len()>256||!identity(&own){return Err(error("Invalid live identity"));}
-  Ok(Self{account,own,peers:BTreeMap::new(),seen:VecDeque::new(),last_key:String::new(),last_packet:String::new()})
+  Ok(Self{account,own,peers:BTreeMap::new(),seen:VecDeque::new(),last_key:String::new(),last_packet:String::new(),motion_sequence:0,motion_seen:BTreeMap::new()})
  }
  pub fn observe(&mut self,files:JsValue,now:f64)->JsValue{
   let actions=Array::new();
@@ -72,9 +72,9 @@ impl RustLiveRoom{
   if !identity(&nonce)||nonce.len()<16||!sdp.starts_with("v=0")||sdp.len()>32000||!at.is_finite()||(now-at).abs()>120000.0{return JsValue::NULL;}
   let Some(p)=self.peers.get_mut(&peer)else{return JsValue::NULL;};
   if kind=="offer"&&self.own>peer{
-   if p.nonce==nonce&&p.status!=3{return JsValue::NULL;}p.nonce=nonce;p.status=1;p.started=now;return payload;
+   if p.nonce==nonce&&p.status!=3{if p.sdp==sdp{return JsValue::NULL;}p.sdp=sdp;return payload;}p.nonce=nonce;p.sdp=sdp;p.status=1;p.started=now;return payload;
   }
-  if kind=="answer"&&self.own<peer&&p.status==1&&p.nonce==nonce{return payload;}
+  if kind=="answer"&&self.own<peer&&(p.status==1||p.status==2)&&p.nonce==nonce{if p.sdp==sdp{return JsValue::NULL;}p.sdp=sdp;return payload;}
   JsValue::NULL
  }
  pub fn connected(&mut self,peer:String){if let Some(p)=self.peers.get_mut(&peer){p.status=2;p.failures=0;}}
@@ -87,6 +87,20 @@ impl RustLiveRoom{
   self.last_packet=encoded.clone();if key==self.last_key{return Ok(JsValue::NULL);}self.last_key=key;Ok(encoded.into())
  }
  #[wasm_bindgen(getter)]pub fn latest(&self)->String{self.last_packet.clone()}
+ pub fn publishMotion(&mut self,frame:JsValue)->Result<JsValue,JsValue>{
+  if !crate::room_motion::valid(&frame){return Ok(JsValue::NULL);}
+  self.motion_sequence=self.motion_sequence.wrapping_add(1).max(number(&get(&frame,"sequence")) as u64);set(&frame,"sequence",&(self.motion_sequence as f64).into());
+  set(&frame,"v",&1.into());set(&frame,"t",&"room-motion".into());set(&frame,"account",&self.account.clone().into());set(&frame,"from",&self.own.clone().into());
+  let encoded=json(&frame)?;Ok(if encoded.len()<=98304{encoded.into()}else{JsValue::NULL})
+ }
+ pub fn receiveMotion(&mut self,encoded:String)->JsValue{
+  if encoded.len()>98304{return JsValue::NULL;}let Ok(packet)=JSON::parse(&encoded)else{return JsValue::NULL;};
+  if get(&packet,"v").as_f64()!=Some(1.0)||string(&get(&packet,"t"))!="room-motion"||string(&get(&packet,"account"))!=self.account{return JsValue::NULL;}
+  let source=string(&get(&packet,"from"));if source==self.own||!identity(&source)||!crate::room_motion::valid(&packet){return JsValue::NULL;}
+  let sequence=number(&get(&packet,"sequence"));if self.motion_seen.get(&source).is_some_and(|n|*n>=sequence){return JsValue::NULL;}
+  if self.motion_seen.len()>=128&&!self.motion_seen.contains_key(&source){if let Some(first)=self.motion_seen.keys().next().cloned(){self.motion_seen.remove(&first);}}
+  self.motion_seen.insert(source,sequence);packet
+ }
  pub fn receive(&mut self,encoded:String)->JsValue{
   if encoded.len()>MAX_PACKET{return JsValue::NULL;}let Ok(packet)=JSON::parse(&encoded)else{return JsValue::NULL;};
   if get(&packet,"v").as_f64()!=Some(1.0)||string(&get(&packet,"account"))!=self.account{return JsValue::NULL;}

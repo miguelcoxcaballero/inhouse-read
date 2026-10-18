@@ -172,6 +172,11 @@ pub fn app_restore_and_snapshot(host: JsValue, record: JsValue) -> Promise {
         method(&host, "markTiming", &[&"page-restored".into()])?;
         let snapshot = c::settle(method(&reader, "getPageSnapshot", &[&object(&[("reuseSettledLayout", JsValue::TRUE)])?])).await?;
         method(&host, "markTiming", &[&"page-snapshot".into()])?;
+        let guard=optional(&host,"positionGuard")?;
+        if !absent(&guard){
+            let position=crate::reader_position::reader_persistable_position(optional(&snapshot,"location")?)?;
+            method(&guard,"remember",&[&read(&record,"id")?,&position])?;
+        }
         Ok(snapshot)
     })
 }

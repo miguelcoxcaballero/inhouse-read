@@ -3,7 +3,7 @@
 use std::{cell::RefCell,collections::VecDeque,rc::Rc};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{spawn_local,JsFuture};
-use js_sys::{Function,Map,Promise};
+use js_sys::{Array,Function,Map,Object,Promise};
 enum Update{Position(JsValue,JsValue),Settings(JsValue)}
 struct Task{update:RefCell<Update>,promise:Promise,resolve:Function,reject:Function}
 struct Entry{id:JsValue,pending:RefCell<VecDeque<Rc<Task>>>,latest:RefCell<JsValue>}
@@ -46,7 +46,7 @@ impl Core{
    let args=match &*task.update.borrow(){Update::Position(f,l)=>(true,f.clone(),l.clone()),Update::Settings(f)=>(false,f.clone(),JsValue::UNDEFINED)};
    let write=if args.0{self.position.call3(&JsValue::UNDEFINED,&entry.id,&args.1,&args.2)}else{self.settings.call2(&JsValue::UNDEFINED,&entry.id,&args.1)};
    let result=match settle(write).await{
-    Ok(record)=>match settle(self.saved.call2(&JsValue::UNDEFINED,&record,&entry.id)).await{Ok(_)=>Ok(record),Err(error)=>Err(error)},Err(error)=>Err(error)
+    Ok(record)=>match settle(self.saved.call3(&JsValue::UNDEFINED,&record,&entry.id,&if args.0{Array::of3(&"progressFraction".into(),&"locator".into(),&"progressUpdatedAt".into()).into()}else{Object::keys(args.1.unchecked_ref()).into()})).await{Ok(_)=>Ok(record),Err(error)=>Err(error)},Err(error)=>Err(error)
    };
    match result{Ok(record)=>{let _=task.resolve.call1(&JsValue::UNDEFINED,&record);},Err(error)=>{let _=task.reject.call1(&JsValue::UNDEFINED,&error);}}
   }

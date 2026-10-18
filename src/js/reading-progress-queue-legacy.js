@@ -10,8 +10,8 @@ export function createLegacyReadingProgressQueue(library, { onSaved = () => {} }
       try {
         const record = task.kind === 'position'
           ? await library.updateProgress(id, task.fraction, task.locator)
-          : await library.patch(id, { ...task.fields, progressUpdatedAt:Date.now(), progressDirty:true })
-        await onSaved(record, id)
+          : await library.patch(id, { ...task.fields, ...(Object.keys(task.fields).some(k=>/^(spine|cover|shelf|pageEdge)/.test(k))?{}:{progressUpdatedAt:Date.now(),progressDirty:true}) })
+        await onSaved(record, id, task.kind === 'position' ? ['progressFraction','locator','progressUpdatedAt'] : Object.keys(task.fields))
         task.resolve(record)
       } catch (error) {
         task.reject(error)

@@ -225,7 +225,7 @@ impl Core{
 
   // Equal millisecond timestamps are possible when two reading updates land in the same frame.
   // Keep a dirty local locator on a tie; otherwise a stale remote value can erase the newest page.
-  if remote.is_truthy()&&(!local_has_progress||remote_updated_at>local_updated_at||(remote_updated_at==local_updated_at&&!get(&record,"progressDirty").is_truthy())){
+  if remote.is_truthy()&&(!local_has_progress||remote_updated_at>local_updated_at||(remote_updated_at==local_updated_at&&!get(&record,"progressDirty").is_truthy()&&!get(&record,"shelfVisualId").is_string())){
    let fields=object(&[("progressFraction",get(&remote,"fraction")),("locator",get(&remote,"locator"))]);
    // A library manifest owns appearance and placement field by field. The
    // older per-book reading file has only a reading timestamp: importing its

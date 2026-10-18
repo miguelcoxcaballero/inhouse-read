@@ -136,6 +136,13 @@ pub fn shelf_apply_room_pose(state:JsValue)->Result<bool,JsValue>{
  Ok(method_opt(&get(&state,"shelfScene"),"applyRoomPose",&[])?.is_some_and(|v|truthy(&v)))
 }
 #[wasm_bindgen]
+pub fn shelf_apply_live_room_motion(state:JsValue,packet:JsValue)->Result<bool,JsValue>{
+ if ["destroyed","busy","session","dragSession","returnMotion","trashRemoval","arranging"].iter().any(|key|gb(&state,key)){return Ok(false);}
+ Ok(method_opt(&get(&state,"shelfScene"),"applyLiveRoomMotion",&[&packet])?.is_some_and(|v|truthy(&v)))
+}
+#[wasm_bindgen]
+pub fn shelf_clear_live_room_motion(state:JsValue,source:JsValue)->Result<(),JsValue>{method_opt(&get(&state,"shelfScene"),"clearLiveRoomMotion",&[&source])?;Ok(())}
+#[wasm_bindgen]
 pub fn shelf_can_change_view(state:JsValue)->Result<bool,JsValue>{
  if ["destroyed","busy","session","returnMotion","trashRemoval","arranging"].iter().any(|key|gb(&state,key)){return Ok(false);}
  let zoom=method_opt(&get(&state,"shelfScene"),"getInspectionZoom",&[])?.unwrap_or(undef());Ok(num(&or(zoom,f(1.0)))<=1.001)

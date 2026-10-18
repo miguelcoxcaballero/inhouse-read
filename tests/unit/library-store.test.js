@@ -289,3 +289,19 @@ describe('sameBookRecords', () => {
     expect(sameBookRecords([record({ list: [1] })], [record({ list: { 0: 1 } })])).toBe(false)
   })
 })
+
+it('advances a local reading clock beyond a slightly faster remote device',async()=>{
+ const store=new LibraryStore('progress-causality-'+Date.now())
+ const book=await store.addOrTouch({sourceType:'local',name:'causality.pdf',size:10})
+ const remoteTime=Date.now()+60000;await store.patch(book.id,{progressUpdatedAt:remoteTime,progressFraction:.8})
+ const saved=await store.updateProgress(book.id,.2,{kind:'pdf-page',value:2})
+ expect(saved.progressUpdatedAt).toBe(remoteTime+1);expect(saved.progressFraction).toBe(.2)
+})
+
+it('repairs an invalid legacy reading timestamp on the next real page commit',async()=>{
+ const store=new LibraryStore('progress-clock-repair-'+Date.now()),book=await store.addOrTouch({sourceType:'local',name:'old-clock.pdf',size:10})
+ for(const previous of ['unknown',NaN,Infinity]){
+  await store.patch(book.id,{progressUpdatedAt:previous});const saved=await store.updateProgress(book.id,.2,{kind:'pdf-page',value:2})
+  expect(Number.isFinite(saved.progressUpdatedAt)).toBe(true)
+ }
+})

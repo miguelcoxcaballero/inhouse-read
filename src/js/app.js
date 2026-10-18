@@ -104,12 +104,16 @@ const preparedPages = createPreparedPageCache()
 let pageGate = null
 const coverUpgrades = new Map()
 const progressWrites = createReadingProgressQueue(library, {
-  onSaved: (record, bookId) => {
+  onSaved: (record, bookId, fields = []) => {
+    if (!appDisposed && fields.includes('progressFraction')) readerPositionGuard().remember(bookId,{fraction:record?.progressFraction,locator:record?.locator})
+    localRoomBookChanged(bookId, fields)
     if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId)
     scheduleLibraryBackup()
   }
 })
 let driveProfile = null
+let savedReaderPositionGuard = null
+const readerPositionGuard = () => savedReaderPositionGuard ||= new (bookDataModule().RustReaderPositionGuard)()
 let restoringProgress = false
 let shelfRefreshQueued = false
 let lengthStatusVersion = 0
@@ -129,10 +133,19 @@ const cloudSync = new CloudSync(library, {
 })
 let cloudRoomChanged = false
 let backupTimer = null
+let roomRefreshRetry = null
 let roomCaptureTimer = null
 let roomCaptureBusy = false
 let roomCaptureAgain = false
-const liveRoom = new LiveRoom({enabled:()=>!appDisposed&&!document.hidden&&hasDriveSession(),receive:(account,snapshot)=>libraryBackup.receiveSnapshot(account,snapshot)})
+const liveRoom = new LiveRoom({
+  enabled:()=>!appDisposed&&!document.hidden&&hasDriveSession(),
+  receive:(account,snapshot)=>libraryBackup.receiveSnapshot(account,snapshot),
+  receiveMotion:(account,packet)=>{if(account===driveProfile?.id && els.readerScreen.hidden)shelf?.applyLiveRoomMotion?.(packet)},
+  disconnected:source=>shelf?.clearLiveRoomMotion?.(source)
+})
+globalThis.addEventListener('inhouse-room-motion-local', e=>{
+  if(driveProfile?.id)liveRoom.publishMotion(driveProfile.id,e.detail)
+})
 const libraryBackup = new LibraryBackup(library, cloudSync, {
   onStatus:setDriveSyncStatus,
   onChange:refreshShelf,
@@ -264,6 +277,8 @@ addEventListener('pagehide', event => {
   clearTimeout(backupTimer)
   clearInterval(backupPoll)
   clearTimeout(roomCaptureTimer)
+  savedReaderPositionGuard?.free(); savedReaderPositionGuard = null
+  clearTimeout(roomRefreshRetry)
   liveRoom.destroy()
 })
 
@@ -279,6 +294,10 @@ function refreshShelf(options) {
   return shelfRefreshQueue.request(options)
 }
 
+function retryRoomRefresh() {
+  if (roomRefreshRetry != null || appDisposed || document.hidden) return
+  roomRefreshRetry = setTimeout(() => { roomRefreshRetry = null; refreshShelf() }, 150)
+}
 async function performShelfRefresh({ immediate = false } = {}) {
   const firstRecords = takeFirstRawRecords()
   // A native import changes the library after the boot snapshot was taken.
@@ -300,6 +319,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
     }
     return
   }
+  if (shelf?.isInteracting) { retryRoomRefresh(); return }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
   let storedBooks = await (firstRecords ?? library.listAll())
   // Saved plant meshes and plant/lamp paint are read in parallel. A late read
@@ -311,7 +331,9 @@ async function performShelfRefresh({ immediate = false } = {}) {
   if (firstRecords) storedBooks = recentFirst(storedBooks)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
   if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
-  return needRustShelf().app_refresh_after_load(shelfRefreshHost, storedBooks, accountId, immediate)
+  const result = await needRustShelf().app_refresh_after_load(shelfRefreshHost, storedBooks, accountId, immediate)
+  if (shelf?.isInteracting) retryRoomRefresh()
+  return result
 }
 
 function createShelfForRecords(books) {
@@ -544,6 +566,7 @@ const idleSlice = () => new Promise(resolve => {
 // adapt Promise callbacks; browser idle work and DOM measurements keep their APIs.
 const readerPreparationHost = {
   library, preparedBooks, preparedPages, progressWrites, reader, els, window, document,
+  get positionGuard() { return readerPositionGuard() },
   get readingExperience() { return readingExperience },
   get cloudSync() { return cloudSync },
   state: {
@@ -851,6 +874,7 @@ const readerRuntimeHost = {
 
 // JS owns callback lifetimes; the close/return sequence and cleanup run in Rust.
 const readerCloseHost = {
+  get positionGuard() { return readerPositionGuard() },
   reader, readingExperience, els, coverUpgrades, progressWrites, library, cloudSync, preparedBooks,
   document, console, matchMedia: query => matchMedia(query), getComputedStyle: node => getComputedStyle(node),
   persistablePosition, readerReturnCanvas, supersedePreparation, hasDriveSession,
