@@ -7,7 +7,7 @@ use crate::cloud_host::*;
 const MAX_PACKET:usize=2*1024*1024;
 const MAX_PEERS:usize=8;
 #[derive(Default)]struct Peer{file:String,modified:String,read:f64,started:f64,retry:f64,status:u8,nonce:String,failures:u32,sdp:String}
-#[wasm_bindgen]pub struct RustLiveRoom{account:String,own:String,peers:BTreeMap<String,Peer>,seen:VecDeque<String>,last_key:String,last_packet:String,motion_sequence:u64,motion_seen:BTreeMap<String,f64>}
+#[wasm_bindgen]pub struct RustLiveRoom{account:String,own:String,peers:BTreeMap<String,Peer>,seen:VecDeque<String>,last_key:String,last_packet:String,motion_sequence:u64,motion_seen:BTreeMap<String,f64>,motion_tip:String,motion_lineage:Vec<String>,motion_rest:BTreeMap<String,JsValue>}
 fn identity(value:&str)->bool{!value.is_empty()&&value.len()<=128&&value.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-'||b==b'_')}
 fn pairs(value:&JsValue)->JsValue{
  let result=Array::new();let source=if value.is_object(){value.clone()}else{object(&[])};
@@ -37,7 +37,7 @@ fn valid_snapshot(snapshot:&JsValue)->bool{
 impl RustLiveRoom{
  #[wasm_bindgen(constructor)]pub fn new(account:String,own:String)->Result<RustLiveRoom,JsValue>{
   if account.is_empty()||account.len()>256||!identity(&own){return Err(error("Invalid live identity"));}
-  Ok(Self{account,own,peers:BTreeMap::new(),seen:VecDeque::new(),last_key:String::new(),last_packet:String::new(),motion_sequence:0,motion_seen:BTreeMap::new()})
+  Ok(Self{account,own,peers:BTreeMap::new(),seen:VecDeque::new(),last_key:String::new(),last_packet:String::new(),motion_sequence:0,motion_seen:BTreeMap::new(),motion_tip:String::new(),motion_lineage:Vec::new(),motion_rest:BTreeMap::new()})
  }
  pub fn observe(&mut self,files:JsValue,now:f64)->JsValue{
   let actions=Array::new();
@@ -115,6 +115,22 @@ impl RustLiveRoom{
  #[wasm_bindgen(getter)]pub fn latest(&self)->String{self.last_packet.clone()}
  pub fn publishMotion(&mut self,frame:JsValue)->Result<JsValue,JsValue>{
   if !crate::room_motion::valid(&frame){return Ok(JsValue::NULL);}
+  let base=string(&get(&frame,"base"));let commit=string(&get(&frame,"commit"));
+  let base=if get(&frame,"base").is_string(){base}else{String::new()};
+  let commit=if get(&frame,"commit").is_string(){commit}else{String::new()};
+  if base!=self.motion_tip{self.motion_tip=base.clone();self.motion_lineage.clear();self.motion_rest.clear();}
+  if !base.is_empty()&&self.motion_lineage.last()!=Some(&base){self.motion_lineage.push(base.clone());}
+  if self.motion_lineage.len()>32{self.motion_lineage.drain(..self.motion_lineage.len()-32);}
+  // Backpressure and the encrypted relay coalesce packets. Each packet must
+  // therefore retain the causal base and completed affected poses, even if
+  // the receiver never saw the preceding end frame.
+  let lineage=Array::new();for revision in &self.motion_lineage{lineage.push(&revision.clone().into());}set(&frame,"lineage",&lineage.into());
+  let mut poses=self.motion_rest.clone();
+  let incoming=Array::from(&get(&frame,"poses"));
+  for row in incoming.iter(){poses.insert(string(&Array::from(&row).get(0)),row);}
+  if poses.len()>512{poses.clear();for row in incoming.iter(){poses.insert(string(&Array::from(&row).get(0)),row);}}
+  if string(&get(&frame,"phase"))!="cancel"{let merged=Array::new();for row in poses.values(){merged.push(row);}set(&frame,"poses",&merged.into());}
+  if !commit.is_empty(){self.motion_tip=commit;self.motion_rest=poses;}
   self.motion_sequence=self.motion_sequence.wrapping_add(1).max(number(&get(&frame,"sequence")) as u64);set(&frame,"sequence",&(self.motion_sequence as f64).into());
   set(&frame,"v",&1.into());set(&frame,"t",&"room-motion".into());set(&frame,"account",&self.account.clone().into());set(&frame,"from",&self.own.clone().into());
   let encoded=json(&frame)?;Ok(if encoded.len()<=98304{encoded.into()}else{JsValue::NULL})

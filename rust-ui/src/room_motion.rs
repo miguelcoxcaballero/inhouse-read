@@ -11,6 +11,12 @@ pub(crate) fn valid(frame:&JsValue)->bool{
  if !["frame","end","cancel"].contains(&phase.as_str())||gesture.is_empty()||gesture.len()>128||!seq.is_finite()||seq<0.0||seq.fract()!=0.0||seq>9007199254740991.0||!["walnut","baggebo"].contains(&text(frame,"shelfType").as_str()){return false;}
  for key in ["base","commit"]{let value=get(frame,key);if !value.is_undefined()&&!value.is_null()&&!value.as_string().is_some_and(|s|!s.is_empty()&&s.len()<=128){return false;}}
  if !text(frame,"commit").is_empty()&&(phase!="end"||text(frame,"base").is_empty()){return false;}
+ let lineage=get(frame,"lineage");
+ if !lineage.is_null()&&!lineage.is_undefined(){
+  if !Array::is_array(&lineage){return false;}let lineage=Array::from(&lineage);
+  if lineage.length()>32||!lineage.iter().all(|v|v.as_string().is_some_and(|s|!s.is_empty()&&s.len()<=128))
+   ||lineage.length()>0&&lineage.get(lineage.length()-1).as_string().as_deref()!=Some(text(frame,"base").as_str()){return false;}
+ }
  let poses=get(frame,"poses");if !Array::is_array(&poses){return false;}let poses=Array::from(&poses);if poses.length()>512{return false;}
  let mut keys=BTreeMap::new();
  poses.iter().all(|row|{
@@ -21,7 +27,7 @@ pub(crate) fn valid(frame:&JsValue)->bool{
  })
 }
 #[derive(Clone)]struct Pose{bay:f64,from:[f64;8],to:[f64;8],at:f64,duration:f64}
-struct Actor{gesture:String,sequence:f64,ended:bool,expires:f64,poses:BTreeMap<String,Pose>}
+struct Actor{gesture:String,sequence:f64,base:String,commit:String,ancestors:Vec<String>,ended:bool,expires:f64,poses:BTreeMap<String,Pose>}
 #[wasm_bindgen]pub struct RustRoomMotion{actors:BTreeMap<String,Actor>,seen:BTreeMap<String,f64>,revision:String,changed:bool}
 fn sample(p:&Pose,now:f64)->[f64;8]{
  let t=((now-p.at)/p.duration).clamp(0.0,1.0);let mut out=p.to;
@@ -39,7 +45,15 @@ fn sample(p:&Pose,now:f64)->[f64;8]{
   let sequence=n(&packet,"sequence");
   if self.seen.get(&source).is_some_and(|last|*last>=sequence){return false;}
   let base=text(&packet,"base");let commit=text(&packet,"commit");
-  if !base.is_empty()&&!self.revision.is_empty()&&base!=self.revision{return false;}
+  let gesture=text(&packet,"gesture");let old=self.actors.get(&source);
+  // Reliable checkpoints and interactive frames travel independently. A peer
+  // may already be on its next gesture while the previous commit is in flight.
+  // Accept only a proven continuation, never an arbitrary unknown base.
+  let lineage:Vec<String>=if Array::is_array(&get(&packet,"lineage")){Array::from(&get(&packet,"lineage")).iter().filter_map(|v|v.as_string()).collect()}else{Vec::new()};
+  let descended=lineage.contains(&self.revision);
+  let extends=old.is_some_and(|a|a.ended&&!a.commit.is_empty()&&a.commit==base&&a.gesture!=gesture);
+  let continuing=old.is_some_and(|a|a.gesture==gesture&&a.base==base&&a.ancestors.contains(&self.revision));
+  if !base.is_empty()&&!self.revision.is_empty()&&base!=self.revision&&!extends&&!continuing&&!descended{return false;}
   if !commit.is_empty()&&commit==self.revision{
    if self.seen.len()>=128&&!self.seen.contains_key(&source){if let Some(key)=self.seen.keys().next().cloned(){self.seen.remove(&key);}}
    self.changed=self.actors.remove(&source).is_some();self.seen.insert(source,sequence);return true;
@@ -49,17 +63,24 @@ fn sample(p:&Pose,now:f64)->[f64;8]{
   let gesture=text(&packet,"gesture");let sequence=n(&packet,"sequence");let phase=text(&packet,"phase");
   let old=self.actors.get(&source);
   if old.is_some_and(|a|a.sequence>=sequence||a.gesture==gesture&&a.ended){return false;}
-  let mut poses=BTreeMap::new();
+  let mut ancestors=if extends||continuing||old.is_some_and(|a|a.gesture==gesture){old.map(|a|a.ancestors.clone()).unwrap_or_default()}else{Vec::new()};
+  if extends{if let Some(a)=old{ancestors.push(a.base.clone());}}
+  for revision in lineage{if !ancestors.contains(&revision){ancestors.push(revision);}}
+  if ancestors.len()>128{ancestors.drain(..ancestors.len()-128);}
+  // Retain settled neighbours from preceding gestures until their checkpoint
+  // is installed. Replacing the affected set alone exposes the old solver pose.
+  let mut poses=if phase!="cancel"&&(extends||old.is_some_and(|a|a.gesture==gesture&&!a.ancestors.is_empty())){old.map(|a|a.poses.clone()).unwrap_or_default()}else{BTreeMap::new()};
   if phase!="cancel"{for row in Array::from(&get(&packet,"poses")).iter(){
    let row=Array::from(&row);let key=row.get(0).as_string().unwrap();let bay=row.get(1).as_f64().unwrap();
    let to=std::array::from_fn(|i|row.get(i as u32+2).as_f64().unwrap());
    let from=old.and_then(|a|a.poses.get(&key)).filter(|p|p.bay==bay).map(|p|sample(p,now)).unwrap_or(to);
    poses.insert(key,Pose{bay,from,to,at:now,duration:65.0});
   }}
+  if poses.len()>512{return false;}
   self.changed=old.is_none_or(|a|a.poses.len()!=poses.len()||poses.iter().any(|(key,p)|a.poses.get(key).is_none_or(|old|old.bay!=p.bay||old.to.iter().zip(p.to).any(|(a,b)|(a-b).abs()>1e-8))));
   if self.seen.len()>=128&&!self.seen.contains_key(&source){if let Some(key)=self.seen.keys().next().cloned(){self.seen.remove(&key);}}
   self.seen.insert(source.clone(),sequence);
-  self.actors.insert(source,Actor{gesture,sequence,ended:phase!="frame",expires:if phase=="end"&&!commit.is_empty(){f64::INFINITY}else{now+if phase=="frame"{3500.0}else{5000.0}},poses});true
+  self.actors.insert(source,Actor{gesture,sequence,base,commit:commit.clone(),ancestors,ended:phase!="frame",expires:if phase=="end"&&!commit.is_empty(){f64::INFINITY}else{now+if phase=="frame"{3500.0}else{5000.0}},poses});true
  }
  pub fn pose(&self,key:String,now:f64,out:&mut[f64])->bool{
   if out.len()<9{return false;}
@@ -74,7 +95,11 @@ fn sample(p:&Pose,now:f64)->[f64;8]{
  /// a packet or a lamp/reading update. End frames hold until this handoff.
  pub fn acknowledge(&mut self,revision:String){
   if revision.is_empty()||revision==self.revision{return;}
-  self.revision=revision;self.actors.clear();self.changed=true;
+  // An intermediate checkpoint retires its own preview, not a descendant
+  // gesture already painted on top. An unrelated winning branch still fences
+  // all previews derived from the losing room.
+  self.actors.retain(|_,a|a.commit!=revision&&(a.base==revision||a.ancestors.contains(&revision)));
+  self.revision=revision;self.changed=true;
  }
  pub fn clear(&mut self,source:String){if source.is_empty(){for actor in self.actors.values_mut(){actor.poses.clear();actor.ended=true;}}else if let Some(actor)=self.actors.get_mut(&source){if actor.expires.is_finite(){actor.poses.clear();}}}
 }

@@ -1,3 +1,4 @@
+import {paintedRoomProbe,paintedRoom} from './helpers/painted-room-probe.mjs';
 import {test,expect} from '@playwright/test';
 import {driveServer} from './helpers/drive-server.mjs';
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs';
@@ -18,16 +19,23 @@ function samePoses(a,b){
  if(!a?.poses||!b?.poses||a.poses.length!==b.poses.length)return false;
  return a.poses.every(p=>{const q=b.poses.find(q=>q.key===p.key);return q&&p.bay===q.bay&&['x','y','angle'].every(k=>Math.abs(p[k]-q[k])<.0002)&&p.size.every((v,i)=>Math.abs(v-q.size[i])<.0002)});
 }
+async function samePaint(a,b,count=8){
+ const source=await paintedRoom(a),remote=await paintedRoom(b),keys=Object.keys(source);
+ if(keys.length!==count)return 1;
+ return Math.max(...keys.map(key=>!remote[key]?1:Math.max(...source[key].paint.map((v,i)=>Math.abs(v-remote[key].paint[i])))));
+}
 test('full mobile room stays identical in Chrome across OAuth clients, live gestures and remote commits',async({browser},info)=>{
  test.setTimeout(240000);const drive=driveServer({privateAppProperties:true}),contexts=[],errors=[];let a,b;
  try{
-  const mobile=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:1});contexts.push(mobile);a=await mobile.newPage();await roomProbe(a);a.on('pageerror',e=>errors.push(e.message));
+  const mobile=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:1});contexts.push(mobile);a=await mobile.newPage();await roomProbe(a);await paintedRoomProbe(a);a.on('pageerror',e=>errors.push(e.message));
   await seedShelf(a);await drive.connect(mobile);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'));await expect.poll(()=>drive.manifests().some(m=>m.books.length===6&&m.settings['inhouse-read-shelf-physics-v1']),{timeout:30000}).toBe(true);
-  const desktop=await browser.newContext({viewport:{width:1240,height:900},deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);b=await desktop.newPage();await roomProbe(b);b.on('pageerror',e=>errors.push(e.message));await b.goto(URL);
+  const desktop=await browser.newContext({serviceWorkers:'block',viewport:{width:1240,height:900},deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);b=await desktop.newPage();await roomProbe(b);await paintedRoomProbe(b);b.on('pageerror',e=>errors.push(e.message));await b.goto(URL);
   await expect(b.locator('.ihr-spine')).toHaveCount(6);await expect(b.locator('.ihr-plant')).toHaveCount(1);await expect(b.locator('.ihr-lamp')).toHaveCount(1);
   await quietShelf(a.locator('.ihr-bookshelf-scene'));await quietShelf(b.locator('.ihr-bookshelf-scene'));
+  await info.attach('initial-painted-pair',{body:JSON.stringify({a:await paintedRoom(a),b:await paintedRoom(b)}),contentType:'application/json'});
   await info.attach('initial-room-pair',{body:JSON.stringify({a:await state(a),b:await state(b)}),contentType:'application/json'});
   await expect.poll(async()=>samePoses(await state(a),await state(b)),{timeout:15000}).toBe(true);
+  await expect.poll(()=>samePaint(a,b),{timeout:15000}).toBeLessThan(.00001);
   await expect.poll(()=>b.evaluate(()=>__roomChannels.some(c=>c.label==='inhouse-read-interactive-v1'&&c.readyState==='open')),{timeout:30000}).toBe(true);
   await watchScene(b);
   const point=await visibleMiddleBookPoint(a,[.5,.7,.3],2);expect(point).toBeTruthy();
@@ -49,12 +57,16 @@ test('full mobile room stays identical in Chrome across OAuth clients, live gest
   await expect(b.locator('.ihr-lamp')).toHaveAttribute('data-lamp-on','false');await quietShelf(b.locator('.ihr-bookshelf-scene'));
   expect(await b.evaluate(()=>__originalCanvas===document.querySelector('.ihr-bookshelf-scene')&&__roomDetachments===0)).toBe(true);
   await expect.poll(async()=>samePoses(await state(a),await state(b)),{timeout:15000}).toBe(true);
+  await expect.poll(()=>samePaint(a,b),{timeout:15000}).toBeLessThan(.00001);
+  await b.setViewportSize({width:680,height:790});await quietShelf(b.locator('.ihr-bookshelf-scene'));
+  await expect.poll(()=>samePaint(a,b),{timeout:5000}).toBeLessThan(.00001);
   await b.reload();await expect(b.locator('.ihr-spine')).toHaveCount(6);await quietShelf(b.locator('.ihr-bookshelf-scene'));
-  await expect.poll(async()=>samePoses(await state(a),await state(b)),{timeout:15000}).toBe(true);expect(errors).toEqual([]);
+  await expect.poll(async()=>samePoses(await state(a),await state(b)),{timeout:15000}).toBe(true);
+  await expect.poll(()=>samePaint(a,b),{timeout:15000}).toBeLessThan(.00001);expect(errors).toEqual([]);
  }finally{
   await info.attach('errors',{body:JSON.stringify(errors),contentType:'application/json'});
   for(const [name,p]of [['mobile',a],['desktop',b]])if(p&&!p.isClosed()){
-   await info.attach(name+'-state',{body:JSON.stringify(await state(p)),contentType:'application/json'});await info.attach(name+'-screen',{body:await p.screenshot(),contentType:'image/png'});
+   await info.attach(name+'-painted',{body:JSON.stringify(await paintedRoom(p)),contentType:'application/json'});await info.attach(name+'-state',{body:JSON.stringify(await state(p)),contentType:'application/json'});await info.attach(name+'-screen',{body:await p.screenshot(),contentType:'image/png'});
   }
   for(const c of contexts)await c.close();
  }
@@ -64,9 +76,9 @@ test('different installations receive held movement through encrypted Drive when
  test.setTimeout(150000);const drive=driveServer({privateAppProperties:true}),contexts=[];
  const samples=[];
  try{
-  const make=async (viewport,connect=true)=>{const context=await browser.newContext({viewport,hasTouch:true,isMobile:viewport.width<500});contexts.push(context);if(connect)await drive.connect(context);
+  const make=async (viewport,connect=true)=>{const context=await browser.newContext({serviceWorkers:'block',viewport,hasTouch:true,isMobile:viewport.width<500});contexts.push(context);if(connect)await drive.connect(context);
    await context.addInitScript(()=>{globalThis.RTCPeerConnection=class{constructor(){throw Error('Blocked network fixture')}}});
-   const page=await context.newPage();await page.emulateMedia({reducedMotion:'reduce'});return page};
+   const page=await context.newPage();await paintedRoomProbe(page);await page.emulateMedia({reducedMotion:'reduce'});return page};
   const a=await make({width:390,height:844},false);await seedShelf(a,{single:true});await drive.connect(contexts[0]);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'));await expect.poll(()=>drive.manifests().some(m=>m.books.length===1),{timeout:30000}).toBe(true);
   const b=await make({width:1000,height:900});await b.goto(URL);await expect(b.locator('.ihr-spine')).toHaveCount(1);await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await watchScene(b);const p=await visibleMiddleBookPoint(a),touch=await contexts[0].newCDPSession(a);expect(p).toBeTruthy();
@@ -80,6 +92,7 @@ test('different installations receive held movement through encrypted Drive when
   expect(relayed.length).toBeGreaterThan(0);for(const m of relayed){expect(m.motion.data).toMatch(/^[\w+/]+=*$/);expect(JSON.stringify(m.motion)).not.toContain('book:drive:');expect(m.motion.iv).toBeTruthy()}
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touch.detach();await quietShelf(a.locator('.ihr-bookshelf-scene'));await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await expect.poll(async()=>samePoses(await state(a),await state(b)),{timeout:15000}).toBe(true);
+  await expect.poll(()=>samePaint(a,b,1),{timeout:15000}).toBeLessThan(.00001);
   expect(await b.evaluate(()=>__originalCanvas===document.querySelector('.ihr-bookshelf-scene')&&__roomDetachments===0)).toBe(true);
   await info.attach('encrypted-relay-held-movement',{body:JSON.stringify({before,samples,mailboxes:relayed.length}),contentType:'application/json'});
  }finally{for(const c of contexts)await c.close()}

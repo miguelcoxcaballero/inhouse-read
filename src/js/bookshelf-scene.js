@@ -3056,6 +3056,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     updateLayout(next) {
       if (disposed) return false;
+      const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
+      // A viewport rebuild is a coordinate change, not a physical edit. The
+      // old solver otherwise interprets rounded CSS anchors as forces and
+      // settles the same shared room differently on every screen.
+      const resized = next.width !== width || next.height !== height || (next.unitWidth || next.width) !== unitWidth;
+      const samePlacements = resized && next.entries.length === bookEntries.length && next.entries.every((data,index) => {
+        const old = oldEntries.get(entryKey(data,index));
+        return old && old.shelf === data.shelf && (!data.book ||
+          JSON.stringify(old.book?.shelfPosition) === JSON.stringify(data.book.shelfPosition));
+      });
+      if (!next.cloudRoom && resized && samePlacements && !motionGesture && !physicsInteracted &&
+          !lastLocalSceneMoving && roomCheckpoint && normalizeShelfType(next.shelfType) === shelfType)
+        pendingCloudPhysics = roomCheckpoint;
       if(next.cloudRoom){
         const ppm=unitWidth/SHELF_SPECS[shelfType].width*1000;
         const painted=bookEntries.filter(e=>motionKey(e)).map(e=>{
@@ -3072,7 +3085,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       inspectionOverview = null;
       shelfSnapshotDirty = shadowDirty = true;
       cancelAnimationFrame(raf); raf = 0; mutations.disconnect();
-      const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
       const oldWidth = width, oldHeight = height, oldRows = JSON.stringify(rows), oldDepth = depth, oldShelfType = shelfType;
       // Restore only the outgoing DOM. The already painted canvas and GPU
       // resources remain alive while the replacement semantic tree is bound.

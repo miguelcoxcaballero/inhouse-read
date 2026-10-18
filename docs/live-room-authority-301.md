@@ -1,0 +1,16 @@
+# 1.7.301 — causal live motion and stable viewport restoration
+
+Two independent regressions remained after 1.7.298:
+
+- A second gesture could start from a physical revision that the receiver had not installed yet. The receiver rejected it even though it followed the first gesture. A delayed checkpoint also cleared all previews, including newer gestures. A two-browser regression reproduced a 17 mm horizontal difference with identical book geometry.
+- Resizing retained the old solver and fed it newly rounded semantic anchors. That woke settled contacts and slightly changed their actual positions and rotations. Saved canonical JSON stayed identical, so tests that compared storage missed the visual divergence. Comparing rendered transforms reproduced this in the decorated room.
+
+The Rust sender now includes a bounded causal history and the affected resting poses from preceding gestures. Each new packet survives coalescing by the RTC backpressure queue or encrypted Drive relay: it does not depend on having received the preceding end frame. The history is limited to 32 revisions and the existing 512-pose/96 KiB packet bounds remain. Switching to another physical branch resets the sender's carried state. Legacy packets remain readable.
+
+The Rust receiver tracks each actor's base, final commit and ancestors. It accepts proven descendant gestures while durable delivery is pending, retains previously moved neighbours, and retires a preview only when its own commit or an unrelated winning branch is installed. Installing an intermediate ancestor preserves newer motion. Per-source sequence fences, identity/account validation, bounded leases and the durable field-register conflict rules remain in force. Revision hashes and ancestry describe causality, not authentication; the existing authenticated/encrypted transports provide that boundary.
+
+A passive viewport rebuild with unchanged placements now restores the canonical physical checkpoint through the Rust solver. It retains GPU resources and uses the existing atomic membership, geometry and collision-shape validation. A resize cannot silently become a physical edit. Local active manipulation and genuine placement/cabinet changes retain their normal simulation path.
+
+Browser assertions now compare bay-relative XYZ positions, quaternions and scale actually consumed by rendering, as well as saved poses. Test-only response instrumentation observes those transforms; no debug hook is shipped in the application. Coverage includes two real touch gestures before durable delivery, a deliberately dropped intermediate end packet, delayed RTC/Drive checkpoints, resizing, reload, stale replay, a full decorated room, lamp state and the RTC-blocked encrypted fallback. The two independent Chromium contexts use different mobile/desktop viewport sizes, real WebRTC via a local test TURN server, and simulated Drive storage.
+
+This release does not change mesh/texture quality, APKs or updater channels. Network latency still separates motion samples; the tests establish convergence and ordering rather than a physical-phone/WAN latency benchmark. Both devices need the update for outgoing causal histories and the receiver correction.
