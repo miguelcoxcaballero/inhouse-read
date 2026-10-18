@@ -1,3 +1,15 @@
+# 1.7.285 — coordinación de cierre del lector en Rust
+
+Changelog: «Cierre del lector coordinado en Rust».
+
+La secuencia completa de regreso pasa de app.js a Rust compartido por UI y Shelf: exclusión de dobles cierres, voz/panel, instantánea actual, escritura final del progreso, retención de la primera portada, invalidación de preparaciones, decisión de refrescar el destino y devolución animada. Conserva el mismo canvas separado y sus píxeles; el overlay solo cede cuando el libro 3D lo ha recibido. Drive continúa sin bloquear la animación. Los adaptadores JavaScript únicamente crean callbacks recogibles por GC y transportan las APIs del navegador; Rust no retiene ciclos de closures/DOM ni añade bucles de dibujo.
+
+Pasan 264/264 pruebas específicas en trece archivos. Las 46 nuevas comparan el coordinador completo con una referencia congelada de 1.7.284, incluidos fallos, métodos ausentes, primera portada, voz antigua, guardado pendiente, ausencia de destino y movimiento reducido. Se comprueba ejecución inmediata del bloqueo de doble cierre, progreso local antes de destruir el lector, continuidad de los mismos píxeles, UI sin Shelf y liberación de handles/callbacks tras 60 ciclos. La comparación conserva el orden de las operaciones del lector y el de la cola independiente de Drive por separado: el executor WASM puede intercalar su continuación con el aviso de Drive en otra microtarea. No se exige el prefijo sintáctico específico del motor en errores por métodos de destino inexistentes.
+
+Se verifican nueve E2E distintos con el binario final: layout exacto del lector en frontal e isométrica; devolución de PDF nativo, fallback sin WebGL, PDF adaptado con imágenes y EPUB; apertura preparada con módulo normal y retrasado; y ejecución real de app_close_reader con doble pulsación, guardado/reapertura en la página 2 y una única cesión efectiva por cierre. Ocho pasan en la ejecución inicial; el noveno se repite y pasa tras corregir su contador para observar la cesión efectiva en lugar de exigir un solo aviso del destino. El código de aplicación no cambia entre ambas. Pasan la conservación exacta de píxeles y ausencia de capas retenidas. Build final: UI 3041961 B, SHA256 100b4821ce6e160a0671046392ce64917a99590930c5e6055a591745bba66e29; Shelf 3716478 B, SHA256 bdd3003f273fd73b676387cdb0217f48a03a1ab957333338db84f8c89c99523b. Shell 111 archivos / 35668631 B, revisión d00952a69369. Inventario: 34925 líneas Rust / 20749 JavaScript, 62,73 %; es reparto de fuentes, no funciones migradas. La apertura y el resto de app.js siguen pendientes. No se declara batería general completa ni medición en teléfono físico. Se conservan el audio de 48 kHz sin arrastres, el layout exacto y la colocación cuidadosa; esta última pasa también su prueba táctil en la web pública de 1.7.284. No se modifica Android, actualizador, vendor ni workflows. Preservar los WIP, ramas y stashes anteriores.
+
+---
+
 # 1.7.284 — colocación cuidadosa y caída con gesto
 
 Changelog: «Colocación suave y caída con gesto».

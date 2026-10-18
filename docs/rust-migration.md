@@ -1,3 +1,9 @@
+# Entrega 1.7.285: cierre del lector en Rust
+
+El coordinador completo de cierre, progreso y regreso a la misma página se ejecuta en Rust compartido UI/Shelf. Mantiene el canvas original, el soporte y pose de los libros, la primera portada pendiente y la sincronización Drive sin bloquear el vuelo. JavaScript conserva adaptadores de navegador y callbacks recogibles por GC. Pasan 264 pruebas específicas, incluidas 46 nuevas diferenciales y ciclos de recursos; nueve E2E distintos finales verificados, con alcance y repetición documentados. Inventario 34925 líneas Rust / 20749 JavaScript = 62,73 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúa la migración de apertura y del resto de app.js; preservar todos los WIP/stashes y ramas ajenas.
+
+---
+
 # Entrega 1.7.284: colocación cuidadosa en Rust
 
 La intención de caída del libro caduca al detener el dedo. Una colocación muy lenta o con pequeño temblor deja el libro recto, y un pequeño gesto lateral reciente inicia el vuelco hacia ese lado, incluida una inversión del movimiento. La intención usa los timestamps de entrada y se fija al soltar, independientemente del renderizado. La gravedad, el agarre animado, las colisiones y el frenado contra el patinaje siguen siendo físicos. Detalles y validación en [remaining-wip-verification.md](remaining-wip-verification.md). Se conserva el layout exacto y el audio de 48 kHz sin arrastres de 1.7.282/283. El resto de la migración de app.js sigue pendiente; preservar WIP, ramas y stashes de otros agentes.
