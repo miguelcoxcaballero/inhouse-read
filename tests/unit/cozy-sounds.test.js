@@ -1,7 +1,7 @@
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 const synth=vi.hoisted(()=>vi.fn(()=>new Float32Array([0,.1,0])));
 const clip=vi.hoisted(()=>vi.fn(()=>''));
-vi.mock('../../src/js/rust-shelf.js',()=>({needRustShelf:()=>({cozy_sound:synth,cozy_clip:clip})}));
+vi.mock('../../src/js/rust-shelf.js',()=>({needRustShelf:()=>({cozy_sound:synth,cozy_clip:clip,cozy_sample_rate:()=>48000})}));
 let contexts,disposed,module,fetches;
 class Node{
  constructor(){this.gain={value:0,setTargetAtTime:vi.fn()};this.pan={value:0};this.playbackRate={value:1};this.connect=vi.fn();this.disconnect=vi.fn();}
@@ -46,7 +46,7 @@ it('reuses three PCM variants per level and limits overlapping voices',async()=>
  expect(synth).toHaveBeenCalledTimes(3);
  const voices=contexts[0].sources.slice(1);expect(voices).toHaveLength(9);
  expect(voices.filter(v=>v.stop.mock.calls.length)).toHaveLength(5);
- expect(voices.at(-1).buffer.sampleRate).toBe(24000);
+ expect(voices.at(-1).buffer.sampleRate).toBe(48000);
 });
 
 it('renders soft, medium and hard events from the strength',async()=>{
@@ -141,4 +141,14 @@ it('stops a queued pickup if resuming audio is rejected',async()=>{
  const audio=contexts[0];audio.state='suspended';audio.resume.mockRejectedValue(new Error('blocked'));
  module.playShelfSound(17,0,.65);const voice=audio.sources.at(-1);await flush();
  expect(voice.stop).toHaveBeenCalledTimes(1);expect(module.shelfSoundsEnabled()).toBe(false);
+});
+
+
+it('never plays or allocates a drag sound, including when the atlas is unavailable',async()=>{
+ own();module.unlockShelfSounds();await flush();
+ for(const kind of [4,8,11,18])module.playShelfSound(kind,1,.8);
+ expect(synth).not.toHaveBeenCalled();expect(clip).not.toHaveBeenCalled();
+ expect(started(contexts[0])).toHaveLength(0);
+ module.playShelfSound(17,0,.65);expect(started(contexts[0])).toHaveLength(1);
+ module.playShelfSound(3,1,.7);expect(started(contexts[0])).toHaveLength(2);
 });

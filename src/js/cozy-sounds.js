@@ -1,9 +1,13 @@
 // Web Audio transport. Rust names each event's recorded clips (cozy_clip), synthesises a fallback (cozy_sound)
 // and reports the real contact events; no oscillator, polling loop or audio context runs on an idle shelf.
-// The clip atlas (public/sfx: 16-bit PCM plus an index) is fetched once after the first gesture; until it has
+// The clip atlas (src/assets/sfx: 16-bit PCM plus an index) is fetched once after the first gesture; until it has
 // loaded, or if it cannot load (offline without a cached copy), every event uses the synthesised sound.
 import {needRustShelf} from './rust-shelf.js';
-const KEY='inhouse-read-shelf-sounds',ATLAS=`${import.meta.env?.BASE_URL||'/'}sfx/`,RETRY_MS=60000;
+const KEY='inhouse-read-shelf-sounds',RETRY_MS=60000;
+// Vite gives both recordings and their index immutable hashed URLs. An older
+// offline shell cannot pair a new index with its cached low-bandwidth binary.
+const ATLAS_BIN=new URL('../assets/sfx/atlas.bin',import.meta.url).href;
+const ATLAS_INDEX=new URL('../assets/sfx/atlas.json',import.meta.url).href;
 let context=null,master=null,unlocked=false,muted=false,serial=0,idle=0,owners=0;
 let atlas=null,atlasState='idle',atlasRetry=0,viewUntil=-Infinity;
 const buffers=new Map(),voices=new Set(),tails=new Set(),groups=new Map(),routes=new Map(),lastTake=new Map();
@@ -34,8 +38,8 @@ export function indexShelfSoundAtlas(index,samples){
 function loadAtlas(){
  if(atlasState==='loading'||atlasState==='ready'||atlasState==='failed'&&Date.now()<atlasRetry||typeof fetch!=='function')return;
  atlasState='loading';
- const base=new URL(ATLAS,globalThis.location?.href||'http://localhost/'),get=(name,read)=>fetch(new URL(name,base)).then(response=>{if(!response.ok)throw Error(`HTTP ${response.status}`);return read(response);});
- Promise.all([get('atlas.json',response=>response.json()),get('atlas.bin',response=>response.arrayBuffer())]).then(([index,bin])=>{
+ const get=(url,read)=>fetch(url).then(response=>{if(!response.ok)throw Error(`HTTP ${response.status}`);return read(response);});
+ Promise.all([get(ATLAS_INDEX,response=>response.json()),get(ATLAS_BIN,response=>response.arrayBuffer())]).then(([index,bin])=>{
   const samples=new Int16Array(bin,0,bin.byteLength>>1),found=indexShelfSoundAtlas(index,samples.length);
   if(!found.size)throw Error('empty sound atlas');
   groups.clear();for(const [group,takes] of found)groups.set(group,takes);
@@ -73,6 +77,8 @@ export function unlockShelfSounds(){
  }catch{unlocked=false;}
 }
 export function playShelfSound(kind,material=0,strength=1,pan=0){
+ // Dragging stays silent, including older/native callers and offline synthesis.
+ if(kind===4||kind===8||kind===11||kind===18)return;
  if(!shelfSoundsEnabled()||!context)return;
  // A view switch (33, 34) owns its whoosh: zoom whooshes (31, 32) wait until it has played.
  if((kind===31||kind===32)&&performance.now()<viewUntil)return;
@@ -91,7 +97,7 @@ export function playShelfSound(kind,material=0,strength=1,pan=0){
     const key=`${kind}:${material}:${level}:${variant}`;buffer=buffers.get(key);
     if(!buffer){
      const pcm=needRustShelf().cozy_sound(kind,material,variant,level);if(!pcm.length)return;
-     buffer=audio.createBuffer(1,pcm.length,24000);buffer.copyToChannel(pcm,0);buffers.set(key,buffer);
+     buffer=audio.createBuffer(1,pcm.length,needRustShelf().cozy_sample_rate());buffer.copyToChannel(pcm,0);buffers.set(key,buffer);
     }
    }
    clearTimeout(idle);

@@ -4,14 +4,14 @@ import {rustShelf} from './helpers/rust-shelf-ready.js';
 
 // Materials per kind (cozy_synth): surfaces for impacts and books, lamps, pots, UI taps.
 const MATERIALS={3:6,4:2,5:6,16:6,6:3,7:3,8:3,9:3,10:3,22:3,23:3,24:3,11:5,12:5,13:5,27:5,30:3};
-const events=function*(){for(let kind=0;kind<35;kind++)for(let material=0;material<(MATERIALS[kind]||1);material++)yield [kind,material];};
+const events=function*(){for(let kind=0;kind<35;kind++)if(![4,8,11,18].includes(kind))for(let material=0;material<(MATERIALS[kind]||1);material++)yield [kind,material];};
 const stats=pcm=>{let peak=0,power=0,sum=0,finite=true;for(const x of pcm){finite&&=Number.isFinite(x);peak=Math.max(peak,Math.abs(x));power+=x*x;sum+=x;}return {finite,peak,rms:Math.sqrt(power/pcm.length),mean:sum/pcm.length};};
 
 it('synthesises every event as short, bounded, balanced PCM that starts and ends in silence',()=>{
  let count=0;
  for(const [kind,material] of events())for(const level of [0,2]){
   const pcm=rustShelf.cozy_sound(kind,material,count%3,level),label=`${kind}/${material}/${level}`;count++;
-  expect(pcm.length,label).toBeGreaterThan(2400);expect(pcm.length,label).toBeLessThanOrEqual(15000);
+  expect(pcm.length,label).toBeGreaterThan(4800);expect(pcm.length,label).toBeLessThanOrEqual(30000);
   const {finite,peak,rms,mean}=stats(pcm);expect(finite,label).toBe(true);
   expect(peak,label).toBeLessThan(.83);expect(peak,label).toBeGreaterThan(.05);
   expect(rms,label).toBeGreaterThan(.004);expect(Math.abs(mean),label).toBeLessThan(.004);
@@ -53,4 +53,13 @@ it('names the recorded clip groups of each event, most specific first, and maps 
  expect(rustShelf.cozy_clip(3,9,1)).toBe('');expect(rustShelf.cozy_clip(99,0,0)).toBe('');
  expect([0,.32,.33,.65,.66,1].map(rustShelf.cozy_level)).toEqual([0,0,1,1,2,2]);
  expect(rustShelf.cozy_level(Number.NaN)).toBe(0);
+});
+
+
+it('keeps retired drag events silent and declares full-rate fallback PCM',()=>{
+ expect(rustShelf.cozy_sample_rate()).toBe(48000);
+ for(const kind of [4,8,11,18])for(let material=0;material<6;material++){
+  expect(rustShelf.cozy_clip(kind,material,2)).toBe('');
+  expect(rustShelf.cozy_sound(kind,material,1,2)).toHaveLength(0);
+ }
 });

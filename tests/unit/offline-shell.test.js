@@ -207,6 +207,20 @@ describe('atomic offline app shell',()=>{
     expect(new Uint8Array(await nextResponse.arrayBuffer())).toEqual(nextCore)
     expect(h.scope.fetch).not.toHaveBeenCalled()
   })
+  it.each(['bin','json'])('keeps the previous hashed audio %s usable offline after an update',async extension=>{
+    const previousPath=`assets/atlas-previous.${extension}`,nextPath=`assets/atlas-next.${extension}`
+    const h=harness('audio-old',{...source,[previousPath]:'previous audio'});await h.worker.install()
+    const files={...source,[nextPath]:'new audio'}
+    const next=createOfflineShell(h.scope,{...h.manifest,version:'audio-new',entries:Object.entries(files)
+      .map(([path,body])=>({path,bytes:Buffer.byteLength(body),sha256:hash(body)}))})
+    h.scope.fetch.mockImplementation(async req=>new Response(files[new URL(req).pathname.slice('/inhouse-read/'.length)]))
+    await next.install();await next.activate();h.scope.fetch.mockClear().mockRejectedValue(new Error('offline'))
+    const event={request:request(previousPath),respondWith:vi.fn()};h.listeners.fetch(event)
+    expect(event.respondWith).toHaveBeenCalledOnce()
+    expect(await(await event.respondWith.mock.calls[0][0]).text()).toBe('previous audio')
+    expect(await(await next.handle(request(nextPath))).text()).toBe('new audio')
+    expect(h.scope.fetch).not.toHaveBeenCalled()
+  })
   it('keeps retained WASM routing limited to same-origin hashed assets and ordinary GET requests',async()=>{
     const h=harness();await h.worker.install();h.scope.fetch.mockClear()
     const path='assets/inhouse_read_core-previous.wasm'
@@ -233,7 +247,7 @@ describe('atomic offline app shell',()=>{
 
 describe('shell generation and registration',()=>{
   it('includes reader/worker/ORT/phon resources and excludes models, maps, dictionaries and update metadata',()=>{
-    for(const path of ['index.html','download-android.html','assets/worker-hash.js','assets/pdf.worker-hash.mjs','assets/image-hash.webp','neural-voice/ort/ort-wasm-simd-threaded.wasm','neural-voice/phon/piper_phonemize.data','licenses/piper.txt','sfx/atlas.json','sfx/atlas.bin'])expect(isShellFile(path)).toBe(true)
+    for(const path of ['index.html','download-android.html','assets/worker-hash.js','assets/pdf.worker-hash.mjs','assets/image-hash.webp','neural-voice/ort/ort-wasm-simd-threaded.wasm','neural-voice/phon/piper_phonemize.data','licenses/piper.txt','assets/atlas-index.json','assets/atlas-audio.bin'])expect(isShellFile(path)).toBe(true)
     for(const path of ['android-update.json','assets/main-hash.js.map','assets/voice.onnx','models/file.onnx','neural-voice/phon/dict/bg_dict','neural-voice/phon/README.md','sfx/clips/book_set_t0.wav','sfx/CREDITS.txt'])expect(isShellFile(path)).toBe(false)
   })
   it('generates a deterministic standalone worker and changes the version when any runtime bytes change',async()=>{

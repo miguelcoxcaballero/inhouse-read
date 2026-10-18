@@ -1,7 +1,7 @@
-Shelf sound effects (public/sfx/atlas.bin, atlas.json).
+Shelf sound effects (src/assets/sfx/atlas.bin, atlas.json; published as assets/atlas-<hash>.*).
 
 Built by tools/sfx/build-atlas.py from recordings released under CC0 (public domain dedication), processed
-(cleaned, warmed, loudness matched, trimmed, 16 kHz mono) and layered. No attribution is required; credit is given anyway:
+(lightly cleaned, loudness matched, trimmed, full-bandwidth 48 kHz mono) and layered. No attribution is required; credit is given anyway:
 - Kenney (kenney.nl): Impact Sounds, RPG Audio, Interface Sounds. CC0.
 - OpenGameArt.org: "Scrapes" (CC0), "Light Switch Turn On And Off SFX" by yd (CC0),
   "20 Rustles of dry leaves" (CC0), "Sound Effects Pack" by Owlish Media (CC0).

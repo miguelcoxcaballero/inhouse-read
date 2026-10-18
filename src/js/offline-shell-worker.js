@@ -9,6 +9,7 @@ export function createOfflineShell(scope, manifest) {
   const hex = bytes => Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, '0')).join('')
   const canonical = url => { const parsed = new URL(url); parsed.search = ''; parsed.hash = ''; return parsed.href }
   const documents = ['', 'index.html', 'download-android.html']
+  const retainedAsset = path => /^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|wasm|webp|png|woff2?)$/.test(path) || /^assets\/atlas-[\w-]+\.(?:bin|json)$/.test(path)
   // A reload (no-cache) or a hard reload revalidates against the network, as
   // the HTTP cache would; every other launch of the app opens from the shell.
   const revalidates = request => ['no-cache', 'reload', 'no-store'].includes(request.cache)
@@ -98,7 +99,7 @@ export function createOfflineShell(scope, manifest) {
     if (request.mode === 'navigate') return documents.includes(path)
     if (request.cache === 'no-store') return false
     return !documents.includes(path) &&
-      (entries.has(canonical(url.href)) || /^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|wasm|webp|png|woff2?)$/.test(path))
+      (entries.has(canonical(url.href)) || retainedAsset(path))
   }
   async function handle(request) {
     if (!handles(request)) return null
@@ -130,7 +131,7 @@ export function createOfflineShell(scope, manifest) {
     const key = canonical(url.href)
     // The known shell and old hashed chunks are immutable. Metadata, callback
     // URLs, auth, dictionaries and model downloads deliberately pass through.
-    if (!entries.has(key) && !/^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|wasm|webp|png|woff2?)$/.test(path)) return null
+    if (!entries.has(key) && !retainedAsset(path)) return null
     if (request.cache === 'no-store') return null
     return await cached(key) || scope.fetch(request)
   }

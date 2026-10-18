@@ -22,9 +22,9 @@ test('the published atlas plays recorded lamp and book events and parks audio af
   }window.AudioContext=Context;
  });
  const scene=await seedShelf(page,{mode:'spine'});expect(await page.evaluate(()=>window.recordedAudio.contexts.length)).toBe(0);
- const binary=page.waitForResponse(r=>/\/sfx\/atlas\.bin$/.test(r.url())&&r.ok());
+ const binary=page.waitForResponse(r=>/\/assets\/atlas-[\w-]+\.bin$/.test(r.url())&&r.ok());
  const lamp=page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');await lamp.tap();await binary;await quietShelf(scene);
- await lamp.tap();await expect.poll(()=>page.evaluate(()=>window.recordedAudio.events.filter(e=>e.rate===16000).length)).toBeGreaterThan(0);
+ await lamp.tap();await expect.poll(()=>page.evaluate(()=>window.recordedAudio.events.filter(e=>e.rate===48000).length)).toBeGreaterThan(0);
  for(const selector of ['.ihr-plant','.ihr-lamp']){
   const node=page.locator(selector).first(),box=await node.boundingBox();expect(box).not.toBeNull();
   const x=box.x+box.width/2,y=box.y+box.height*.88;
@@ -32,14 +32,15 @@ test('the published atlas plays recorded lamp and book events and parks audio af
   await page.waitForTimeout(300);await page.mouse.move(x+24,y-4,{steps:5});await page.mouse.up();await quietShelf(page.locator('.ihr-bookshelf-scene'));
  }
  await info.attach('sound-event-kinds',{body:JSON.stringify(await page.evaluate(()=>window.recordedAudio.kinds)),contentType:'application/json'});
- await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(14)&&window.recordedAudio.kinds.includes(11)&&window.recordedAudio.kinds.some(k=>k===12||k===13)),{timeout:5000}).toBe(true);
- await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(22)&&window.recordedAudio.kinds.includes(8)&&window.recordedAudio.kinds.some(k=>k===9||k===10)),{timeout:5000}).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(14)&&window.recordedAudio.kinds.some(k=>k===12||k===13)),{timeout:5000}).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(22)&&window.recordedAudio.kinds.some(k=>k===9||k===10)),{timeout:5000}).toBe(true);
+ expect(await page.evaluate(()=>window.recordedAudio.kinds.some(k=>[4,8,11,18].includes(k)))).toBe(false);
  const point=await visibleMiddleBookPoint(page);expect(point).not.toBeNull();await page.touchscreen.tap(point.x,point.y);
  await expect(page.locator('.ihr-flyout.is-ready')).toBeVisible();await page.locator('.ihr-flyout__cover-target').click();
  await expect(page.locator('#reader-toolbar')).toBeVisible();
- await expect.poll(()=>page.evaluate(()=>window.recordedAudio.events.filter(e=>e.rate===16000).length)).toBeGreaterThanOrEqual(3);
+ await expect.poll(()=>page.evaluate(()=>window.recordedAudio.events.filter(e=>e.rate===48000).length)).toBeGreaterThanOrEqual(3);
  await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await quietShelf(page.locator('.ihr-bookshelf-scene'));
  await expect.poll(()=>page.evaluate(()=>window.recordedAudio.contexts.every(c=>c.state==='suspended'||c.state==='closed'))).toBe(true);
- const events=await page.evaluate(()=>window.recordedAudio.events);expect(events.filter(e=>e.rate===16000).every(e=>e.peak>0&&e.peak<1)).toBe(true);
+ const events=await page.evaluate(()=>window.recordedAudio.events);expect(events.filter(e=>e.rate===48000).every(e=>e.peak>0&&e.peak<1)).toBe(true);
  await info.attach('recorded-atlas-playback',{body:JSON.stringify(events),contentType:'application/json'});
 });

@@ -1,3 +1,21 @@
+# 1.7.283 — arrastre silencioso y audio a 48 kHz
+
+Changelog: «Sin arrastres y sonido más nítido».
+
+Se eliminan los eventos continuos de roce del controlador Rust y sus temporizadores. Los identificadores antiguos de arrastre de libro, lámpara, maceta y deslizamiento de regreso quedan silenciados también en las rutas nativas y en el transporte Web Audio. Permanecen los sonidos breves de coger, soltar, abrir/cerrar, interruptores e impactos según el material.
+
+El atlas se regenera desde los paquetes CC0 originales a 48 kHz con filtros más suaves: desaparecen el recorte fuerte de agudos a 3,4–7 kHz y el refuerzo artificial de medios. No se remuestrea el atlas publicado de 16 kHz. Se conservan las mismas 128 tomas restantes, enumeradas en tools/sfx/reviewed-takes.json, y se omiten los 18 clips de arrastre. Los créditos y el proceso reproducible se conservan. Los archivos se publican con nombres que incluyen su hash, para que una caché antigua no mezcle el índice nuevo con el audio anterior. El respaldo sintetizado por Rust pasa también a 48 kHz y expone su frecuencia al transporte, conservando la duración, el límite de cuatro voces y la suspensión en reposo.
+
+El nuevo atlas ocupa 4203880 B; SHA256 42a370f790af414ab48cd5e59b4066ae68797dde16a1b73419acccf5532f5437. Una medición Welch sobre las grabaciones de apertura de libro e impacto metálico encuentra respectivamente 5,28 % y 2,70 % de energía por encima de 8 kHz; el atlas anterior no podía representar esa banda. Son medidas de ancho de banda, no una evaluación perceptiva en teléfono físico.
+
+Pasan 120/120 pruebas específicas en nueve archivos, incluidas las 56 regresiones físicas anteriores, la conservación de poses y matrices, los impactos y el mute/reposo. Se comprueba el silencio de todos los códigos retirados incluso sin atlas, y una FFT independiente verifica agudos reales en las muestras entregadas. Pasan cuatro casos E2E: regreso exacto del lector en frontal e isométrica y los dos casos finales de audio grabado y respaldo nativo. Los arrastres reales de planta y lámpara no emiten códigos de roce; las sueltas, interruptores y apertura siguen sonando a 48 kHz, y el contexto vuelve a suspenderse. Los casos de audio se repiten tras introducir las URL inmutables; pasan ambos sin reintentos.
+
+Se valida además la conservación offline de los archivos de audio con hash de la versión anterior tras activar un worker nuevo.
+
+Build local: UI 3019313 B, SHA256 a7056fbe26b5ddbb7dd8d2f077303ec251fc6b92ef07dff73b36b5f231620ccf; Shelf 3690204 B, SHA256 b3e38e05711ea971ba550e737745dedcd9021398b021c19fa771bf1771a6a572. Shell 111 archivos / 35618264 B, revisión f1e84a6e84e8. El actualizador compartido pasa su verificación. No se modifica Android, vendor ni workflows ni se declara batería general completa.
+
+---
+
 # 1.7.282 — layout conservado y sonidos grabados
 
 Changelog: «Layout estable y sonidos reales».
