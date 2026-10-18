@@ -66,6 +66,15 @@ beforeEach(()=>{
 afterEach(()=>{shelf?.dispose();shelf=null;document.body.innerHTML='';vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 describe('fractional room presentation and lazy original 2D exports',()=>{
+  it('reuses a press ray within the task and invalidates it after a paint or task boundary',async()=>{
+    const rays=vi.spyOn(THREE.Raycaster.prototype,'intersectObjects').mockReturnValue([]);
+    shelf.getObjectAtPoint(50,150);shelf.getBookAtPoint(50,150);
+    expect(rays).toHaveBeenCalledTimes(1);
+    await Promise.resolve();shelf.getObjectAtPoint(50,150);
+    expect(rays).toHaveBeenCalledTimes(2);
+    shelf.flush({force:true});shelf.getObjectAtPoint(50,150);
+    expect(rays).toHaveBeenCalledTimes(3);
+  });
   it('presents the floor GL room at its original fractional CSS origin without an eager readback',()=>{
     const background=shelf.getNativeRoomBackground(),node=driver.renderer.domElement;
     expect(background.lease.isOwner()).toBe(true);

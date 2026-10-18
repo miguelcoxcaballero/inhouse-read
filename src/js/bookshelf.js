@@ -470,6 +470,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   let observer = null;
   const onViewportResize = () => { if (shelfCtxLive) shelfLifecycle.viewportResize(); };
   const onVisualViewportChange = () => { if (shelfCtxLive) shelfLifecycle.visualViewportChange(); };
+  const onInputInterrupted = () => {
+    if (!shelfCtxLive) return;
+    shelfViewGesture.cancel(); shelfZoom.cancel(); shelfLifecycle.cancelInput();
+  };
+  const onInputVisibility = () => { if (document.hidden) onInputInterrupted(); };
+  window.addEventListener('blur', onInputInterrupted);
+  document.addEventListener('visibilitychange', onInputVisibility);
   window.addEventListener('resize', onViewportResize);
   window.visualViewport?.addEventListener('resize', onVisualViewportChange);
   window.visualViewport?.addEventListener('scroll', onVisualViewportChange);
@@ -536,6 +543,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     },
 
     destroy() {
+      window.removeEventListener('blur', onInputInterrupted);
+      document.removeEventListener('visibilitychange', onInputVisibility);
       shelfNative.shelf_destroy_dispatch(shelfParts, shelfCtxLive ? shelfLifecycle.destroy : null);
       if (shelfCtxLive) { shelfCtxLive = false; shelfCtx.free(); }
     }

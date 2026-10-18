@@ -34,6 +34,7 @@ impl Gesture{
  fn start(&self,event:&JsValue)->Result<(),JsValue>{
   let kind=read(event,"pointerType")?;
   if !(text(&kind,"touch")||text(&kind,"pen")){return Ok(());}
+  if text(&kind,"pen")&&truthy(&method(&read(event,"target")?,"closest",&[&JsValue::from_str(".ihr-spine,.ihr-plant,.ihr-lamp")])?){return Ok(());}
   let button=read(event,"button")?;
   if !button.is_undefined()&&button.as_f64()!=Some(0.0){return Ok(());}
   let id=read(event,"pointerId")?;
@@ -75,7 +76,7 @@ impl Gesture{
   self.consume(event)?;
   let _=method_opt(&self.scroller,"releasePointerCapture",&[&read(event,"pointerId")?]);
   let dx=num(&read(event,"clientX")?)-swipe.x;let dy=num(&read(event,"clientY")?)-swipe.y;
-  if !text(&read(event,"type")?,"pointercancel")&&self.enabled()?&&self.mode()?==swipe.mode
+  if text(&read(event,"type")?,"pointerup")&&self.enabled()?&&self.mode()?==swipe.mode
    &&dx.abs()>=self.threshold()?&&dx.abs()>dy.abs()*1.5&&self.direction(&swipe.mode,dx){
    let next=if text(&swipe.mode,"spine"){"isometric"}else{"spine"};
    call(&self.set_mode,"setMode",&[&JsValue::from_str(next)])?;
@@ -110,6 +111,14 @@ impl Gesture{
   let listeners=std::mem::take(&mut *self.listeners.borrow_mut());
   drop(listeners);Ok(())
  }
+ fn cancel(&self)->Result<(),JsValue>{
+  let (timer,key)={let mut state=self.state.borrow_mut();state.candidate=None;state.contacts.clear();state.suppress_click=false;let result=(state.click_timer.clone(),state.click_key);state.click_timer=zero();state.click_key=0;result};
+  clear_timeout(&timer)?;release(key);Ok(())
+ }
+ fn capture_lost(&self,event:&JsValue)->Result<(),JsValue>{
+  if method_opt(&self.scroller,"hasPointerCapture",&[&read(event,"pointerId")?])?.is_some_and(|v|truthy(&v)){return Ok(());}
+  self.finish(event)
+ }
 }
 /// `===` between pointer ids.
 fn same_strict(a:&JsValue,b:&JsValue)->bool{a==b}
@@ -133,7 +142,9 @@ impl RustShelfViewGesture{
   };
   add(&scroller,"pointerdown",true,Gesture::start)?;add(&scroller,"pointermove",true,Gesture::motion)?;add(&scroller,"pointerup",true,Gesture::finish)?;
   add(&scroller,"pointercancel",true,Gesture::finish)?;add(&scroller,"click",true,Gesture::click)?;add(&root,"keydown",false,Gesture::key)?;
+  add(&scroller,"lostpointercapture",true,Gesture::capture_lost)?;
   Ok(RustShelfViewGesture{gesture})
  }
  pub fn destroy(&self)->Result<(),JsValue>{self.gesture.destroy()}
+ pub fn cancel(&self)->Result<(),JsValue>{self.gesture.cancel()}
 }

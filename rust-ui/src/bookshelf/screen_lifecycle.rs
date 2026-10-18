@@ -87,6 +87,11 @@ pub fn shelf_screen_state(env:JsValue,books:JsValue,options:JsValue)->Result<JsV
 fn clear_press(ctx:&Ctx){
  ctx.st_set("pressedBookId",&null());for node in qsa(&ctx.scroller,".is-pressed"){cls_remove(&node,&["is-pressed","is-press-pending"]);}
 }
+fn cancel_input(ctx:&Rc<Ctx>)->R{
+ let active=ctx.st("dragSession");
+ if truthy(&active){drag::finish_spine_drag(ctx,&obj(&[("pointerId",&get(&active,"pointerId")),("timeStamp",&f(now()))]),&get(&active,"node"),true,false)?;}
+ clear_press(ctx);Ok(())
+}
 pub fn begin_view_gesture(ctx:&Rc<Ctx>,event:&JsValue)->R{
  let active=ctx.st("dragSession");if truthy(&active){putb(&active,"cancelled",true);drag::finish_spine_drag(ctx,event,&get(&active,"node"),true,false)?;}
  clear_press(ctx);Ok(())
@@ -211,7 +216,7 @@ impl RustShelfCtx{
  pub fn lifecycle_callbacks(&self)->JsValue{
   let callbacks=obj(&[]);
   for name in ["clearCompatibilityTapRefresh","deferCompatibilityTapRefresh","applyDeferredShelfUpdates",
-   "viewportResize","visualViewportChange","observedResize","refreshFonts","beginViewGesture","beginZoomGesture",
+   "viewportResize","visualViewportChange","observedResize","refreshFonts","beginViewGesture","beginZoomGesture","cancelInput",
    "prepareCatalogWhenIdle","setViewMode","setCatalogShelfType","setCatalogMotion","openCatalog","destroy"]{
    let weak=Rc::downgrade(&self.ctx);
    let callback=self.ctx.input_callbacks.make(Stale::Undefined,move|argument,_|{
@@ -226,6 +231,7 @@ impl RustShelfCtx{
      "refreshFonts"=>refresh_fonts(&ctx)?,
      "beginViewGesture"=>begin_view_gesture(&ctx,&argument)?,
      "beginZoomGesture"=>begin_zoom_gesture(&ctx)?,
+     "cancelInput"=>cancel_input(&ctx)?,
      "prepareCatalogWhenIdle"=>prepare_catalog_when_idle(&ctx,num(&argument))?,
      "setViewMode"=>set_view_mode(&ctx,&argument)?,
      "setCatalogShelfType"=>set_catalog_shelf_type(&ctx,&argument)?,

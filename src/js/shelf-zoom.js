@@ -7,6 +7,7 @@ export function createShelfZoom(options) {
   const shelf = needRustShelf()
   let native = new shelf.RustShelfZoom(options)
   return {
+    cancel() { native?.cancel() },
     sync() { native?.sync() },
     destroy() {
       if (!native) return

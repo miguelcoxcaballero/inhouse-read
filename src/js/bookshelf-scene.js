@@ -1852,19 +1852,28 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return tapNodes[rust.scene_nearest_tap(Float64Array.from(tapPacked), clientX, clientY)] ?? null;
   }
 
+  // A press is validated by the semantic button, drag controller and grip.
+  // Reuse its exact ray hit within this event task, not across animation frames.
+  let pointerHit = null;
+  function rememberPointerHit(clientX, clientY, node, point = null) {
+    const hit = pointerHit = { clientX, clientY, node, point };
+    queueMicrotask(() => { if (pointerHit === hit) pointerHit = null; });
+    return node;
+  }
   function objectAtPoint(clientX, clientY) {
+    if (pointerHit?.clientX === clientX && pointerHit.clientY === clientY) return pointerHit.node;
     const ray = pointerRay(clientX, clientY);
     const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
       !object.userData.entry?.node?.classList.contains('is-away'));
     for (const hit of ray.intersectObjects(pickable, true)) {
       let object = hit.object;
       while (object && !object.userData.entry) object = object.parent;
-      if (object?.userData.entry?.node && object.visible) return object.userData.entry.node;
+      if (object?.userData.entry?.node && object.visible) return rememberPointerHit(clientX, clientY, object.userData.entry.node, hit.point.clone());
       // Solid wood in front blocks the object behind it, but a book's padded tap
       // rectangle or a lamp's square still wins over the wood around them.
-      if (!object?.userData.entry) return tapTargetNear(clientX, clientY);
+      if (!object?.userData.entry) return rememberPointerHit(clientX, clientY, tapTargetNear(clientX, clientY));
     }
-    return tapTargetNear(clientX, clientY);
+    return rememberPointerHit(clientX, clientY, tapTargetNear(clientX, clientY));
   }
 
   const isSolid = (material, side) => material.visible && material.depthWrite && material.depthTest && !material.transparent &&
@@ -2178,6 +2187,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function draw(now = performance.now(), force = false) {
+    pointerHit = null;
     raf = 0;
     if (disposed) return;
     if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return; }
@@ -2940,8 +2950,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!entry?.model || entry.kind === 'plant' || entry.kind === 'lamp') return;
       // Three owns only the ray/matrix conversion. The native solver clamps
       // the local grip and computes its leverage, swing and release torque.
-      const hit = pointerRay(clientX, clientY).intersectObject(entry.model, true)[0];
-      if (hit) entry.gripHeight = entry.model.worldToLocal(hit.point.clone()).y / entry.height;
+      const hitPoint = pointerHit?.node === node && pointerHit.clientX === clientX && pointerHit.clientY === clientY
+        ? pointerHit.point : pointerRay(clientX, clientY).intersectObject(entry.model, true)[0]?.point;
+      if (hitPoint) entry.gripHeight = entry.model.worldToLocal(hitPoint.clone()).y / entry.height;
       else {
         const bounds = node.getBoundingClientRect();
         entry.gripHeight = bounds.height ? .5 - (clientY - bounds.top) / bounds.height : 0;
