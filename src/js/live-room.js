@@ -3,7 +3,6 @@ import {getDriveLiveContext,readDriveLiveMailbox,writeDriveLiveMailbox,readDrive
 
 // Browser-owned RTC and WebCrypto handles; identity, negotiation, deduplication
 // and field registers live in Rust. Drive carries only encrypted rendezvous.
-const LIMIT=2*1024*1024, CHUNK=16000
 // One identity per JavaScript realm: duplicated tabs clone sessionStorage.
 const realmPeer=crypto.randomUUID()
 const bytes=new TextEncoder(), text=new TextDecoder()
@@ -32,7 +31,7 @@ export class LiveRoom {
     await s.ready
     if(!this.#valid(s))return
     const packet=s.native.publish(s.latest,crypto.randomUUID())
-    if(packet){s.tabs?.postMessage({t:'snapshot',from:s.own,packet});for(const peer of s.peers.values())this.#send(peer,packet)}
+    if(packet){s.tabs?.postMessage({t:'snapshot',from:s.own,packet});if(s.peers.size){const encoded=bytes.encode(packet);for(const peer of s.peers.values())this.#send(peer,encoded)}}
   }
   publishMotion(account,frame) {
     const s=this.#session;if(!s?.native||s.account!==account||!this.#valid(s))return
@@ -59,7 +58,7 @@ export class LiveRoom {
   async #start(s) {
     try{
       const ui=await cloudModule();if(!this.#valid(s))return
-      s.own=realmPeer;s.file=this.#mailboxes.get(s.account)||null;s.native=new ui.RustLiveRoom(s.account,s.own)
+      s.ui=ui;s.own=realmPeer;s.file=this.#mailboxes.get(s.account)||null;s.native=new ui.RustLiveRoom(s.account,s.own)
       if(globalThis.BroadcastChannel){
         const hash=await crypto.subtle.digest('SHA-256',bytes.encode(s.account));if(!this.#valid(s))return
         s.tabs=new BroadcastChannel('inhouse-read-room-v1:'+b64(new Uint8Array(hash)))
@@ -133,7 +132,7 @@ export class LiveRoom {
   #decrypt(s,e){return crypto.subtle.decrypt({name:'AES-GCM',iv:un64(e.iv),additionalData:bytes.encode(s.account)},s.key,un64(e.data))}
   #validPeer(s,p){return p&&this.#valid(s)&&s.peers.get(p.id)===p}
   #peer(s,id) {
-    const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}],iceCandidatePoolSize:0,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'}),p={id,pc,open:false,queue:null,sending:false,assembly:null,lastReceived:Date.now()};s.peers.set(id,p)
+    const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}],iceCandidatePoolSize:0,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'}),p={id,pc,open:false,stream:new s.ui.RustRoomPacketStream(),lastReceived:Date.now()};s.peers.set(id,p)
     pc.ondatachannel=e=>this.#channel(s,p,e.channel)
     pc.onconnectionstatechange=()=>{
       if(!this.#validPeer(s,p))return
@@ -167,16 +166,8 @@ export class LiveRoom {
       if(!this.#validPeer(s,p))return
       try{
         p.lastReceived=Date.now();
-        if(typeof e.data==='string'){
-          if(e.data.length>128)throw Error('Invalid header')
-          const header=JSON.parse(e.data)
-          if(header.v!==1||!Number.isInteger(header.size)||header.size<1||header.size>LIMIT)throw Error('Invalid packet')
-          p.assembly={buffer:new Uint8Array(header.size),offset:0};return
-        }
-        const assembly=p.assembly,part=new Uint8Array(e.data)
-        if(!assembly||part.length>CHUNK||assembly.offset+part.length>assembly.buffer.length)throw Error('Invalid chunk')
-        assembly.buffer.set(part,assembly.offset);assembly.offset+=part.length
-        if(assembly.offset===assembly.buffer.length){p.assembly=null;const packet=s.native.receive(text.decode(assembly.buffer));if(packet?.snapshot){s.tabs?.postMessage({t:'snapshot',from:s.own,packet:text.decode(assembly.buffer)});await this.#receive(s.account,packet.snapshot)}}
+        const assembled=p.stream.receive(typeof e.data==='string'?e.data:new Uint8Array(e.data))
+        if(assembled){const encoded=text.decode(assembled),packet=s.native.receive(encoded);if(packet?.snapshot){s.tabs?.postMessage({t:'snapshot',from:s.own,packet:encoded});await this.#receive(s.account,packet.snapshot)}}
       }catch{if(this.#validPeer(s,p))this.#failed(s,p.id)}
     }
   }
@@ -205,14 +196,14 @@ export class LiveRoom {
   #flushMotion(p){const c=p.interactive;if(c?.readyState!=='open'||!p.motion||c.bufferedAmount>32768)return
     try{c.send(p.motion);p.motion=null}catch{}
   }
-  #send(p,packet){if(!packet)return;const data=bytes.encode(packet);if(data.length>LIMIT)return;p.queue=data;this.#pump(p)}
+  #send(p,packet){if(!packet)return;const data=typeof packet==='string'?bytes.encode(packet):packet
+    if(p.stream.queue(data))this.#pump(p)
+  }
   #pump(p){const c=p.channel;if(c?.readyState!=='open')return
-    try{while(c.bufferedAmount<131072){if(!p.sending){if(!p.queue)return;p.sending=p.queue;p.queue=null;p.offset=0;c.send(JSON.stringify({v:1,size:p.sending.length}))}
-      const end=Math.min(p.offset+CHUNK,p.sending.length);c.send(p.sending.subarray(p.offset,end));p.offset=end;if(end===p.sending.length)p.sending=null
-    }}catch{c.close()}
+    try{while(c.bufferedAmount<131072){const part=p.stream.next();if(part===undefined)return;c.send(part)}}catch{c.close()}
   }
   #failed(s,id){if(!this.#valid(s))return;this.#close(s,id);s.native.failed(id,Date.now())}
-  #close(s,id){const p=s.peers.get(id);if(!p)return;s.peers.delete(id);delete s.signals[id];clearTimeout(p.iceTimer);p.interactive?.close();p.channel?.close();p.pc.close();p.queue=null;p.assembly=null;this.#disconnected(id)}
+  #close(s,id){const p=s.peers.get(id);if(!p)return;s.peers.delete(id);delete s.signals[id];clearTimeout(p.iceTimer);p.interactive?.close();p.channel?.close();p.pc.close();p.stream.free();this.#disconnected(id)}
   pause(){const s=this.#session;this.#session=null;this.#epoch++;if(!s)return;s.tabs?.close();this.#disconnected('');for(const timer of s.timers)clearTimeout(timer);for(const id of s.peers.keys())this.#close(s,id);s.native?.free()}
   destroy(){this.pause();globalThis.removeEventListener('inhouse-drive-live-peers',this.#onPeers)}
 }

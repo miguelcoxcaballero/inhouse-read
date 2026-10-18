@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import {driveServer} from './helpers/drive-server.mjs';
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs';
 const URL=process.env.IHR_TEST_URL||'/inhouse-read/';
+const PEER_URL=process.env.IHR_TEST_PEER_URL||URL;
 const row=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('inhouse-read-shelf-physics-v1')||'null')?.[2]?.find(v=>v[1]===0));
 const book=page=>page.evaluate(async()=>{const db=await new Promise(resolve=>{const r=indexedDB.open('inhouse-read');r.onsuccess=()=>resolve(r.result)});const result=await new Promise(resolve=>{const r=db.transaction('books').objectStore('books').getAll();r.onsuccess=()=>resolve(r.result[0])});db.close();return result&&{id:result.id,driveFileId:result.driveFileId,shelfVisualId:result.shelfVisualId,title:result.title,shelfPosition:result.shelfPosition,spineColorOverride:result.spineColorOverride,progressFraction:result.progressFraction,locator:result.locator,progressUpdatedAt:result.progressUpdatedAt}});
 
@@ -29,7 +30,7 @@ test('mobile and desktop stream held-book movement and converge poses and readin
   await expect.poll(()=>drive.manifests().some(m=>m.books.length>0&&m.settings['inhouse-read-shelf-physics-v1']),{timeout:30000}).toBe(true);
   const source=await book(a),initial=await row(a);expect(source.driveFileId).toBeTruthy();expect(initial).toBeTruthy();
   const desktop=await browser.newContext({viewport:{width:1000,height:900},hasTouch:true,deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);
-  const b=await desktop.newPage();await roomProbe(b);b.on('console',m=>{if(m.text().startsWith('Direct room'))console.log('desktop',m.text())});b.on('pageerror',e=>errors.push(e.message));await b.emulateMedia({reducedMotion:'reduce'});await b.goto(URL);
+  const b=await desktop.newPage();await roomProbe(b);b.on('console',m=>{if(m.text().startsWith('Direct room'))console.log('desktop',m.text())});b.on('pageerror',e=>errors.push(e.message));await b.emulateMedia({reducedMotion:'reduce'});await b.goto(PEER_URL);
   await expect(b.locator('.ihr-spine')).toHaveCount(1);await quietShelf(b.locator('.ihr-bookshelf-scene'));
   const restored=await book(b);expect(restored.id).not.toBe(source.id);expect(restored.driveFileId).toBe(source.driveFileId);expect(restored.shelfVisualId).toBe(source.id);
   await expect.poll(async()=>Number(await b.locator('.ihr-spine').getAttribute('data-scene-lean'))).toBeCloseTo(initial[7],3);
