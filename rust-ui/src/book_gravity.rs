@@ -372,8 +372,8 @@ impl RustBookGravity{
     // Start a legacy lean around its original bottom toe, not its
     // centre: rotating about the centre pushes the raised bottom corner
     // into its neighbour and can create an artificial wedged support.
-    let x=remembered.as_ref().map_or_else(||base[0]+angle.signum()*thickness/2.0*(angle.cos()-1.0)-h/2.0*angle.sin(),|s|s.x as f64+if s.portable{base[0]-s.base[0]}else{0.0});
-    let y=remembered.as_ref().map_or_else(||if kind==2{target.y as f64}else{base[1]+h/2.0*(angle.cos()-1.0)+thickness/2.0*angle.sin().abs()},|s|s.y as f64+if s.portable{base[1]-s.base[1]}else{0.0});
+    let x=remembered.as_ref().map_or_else(||base[0]+angle.signum()*thickness/2.0*(angle.cos()-1.0)-h/2.0*angle.sin(),|s|s.x as f64+s.offset(base,bay)[0]);
+    let y=remembered.as_ref().map_or_else(||if kind==2{target.y as f64}else{base[1]+h/2.0*(angle.cos()-1.0)+thickness/2.0*angle.sin().abs()},|s|s.y as f64+s.offset(base,bay)[1]);
     let solid=self.solids.get(key).map(|s|s.shape.clone());
     let body=if kind==0||solid.is_some(){RigidBodyBuilder::dynamic()}else{RigidBodyBuilder::fixed()}
      .translation(Vector::new(x as f32,y as f32,(s[31]/p) as f32))

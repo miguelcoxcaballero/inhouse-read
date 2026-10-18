@@ -7,12 +7,14 @@
 //! readBackupCheckpoint, saveBackupCheckpoint, spineCustomization}`.
 use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::prelude::*;
-use js_sys::{Array,Map,Object,Promise};
+use js_sys::{Array,Map,Object,Promise,Set};
+use std::collections::BTreeMap;
+#[path="library_backup_live.rs"]mod live;
 use crate::cloud_host::*;
 
-const META:[&str;22]=["name","title","author","format","mimeType","size","sizeBytes","pageCount","shelfOrder","addedAt","lastOpenedAt","shelfVisualId",
+const META:[&str;23]=["name","title","author","format","mimeType","size","sizeBytes","pageCount","shelfOrder","addedAt","lastOpenedAt","shelfVisualId",
  "coverAppearance","coverAppearanceKey","coverUpdatedAt","driveContentChecksum",
- "progressFraction","locator","progressUpdatedAt","readingHistory","bookmarks","quotes"];
+ "progressFraction","locator","progressUpdatedAt","readingHistory","bookmarks","quotes","bookLength"];
 const DEVICE_KEY:&str="inhouse-read-backup-device";
 const CHANGES_KEY:&str="inhouse-read-backup-settings-changes";
 const UNSAFE:[&str;3]=["__proto__","constructor","prototype"];
@@ -20,6 +22,8 @@ const UNSAFE:[&str;3]=["__proto__","constructor","prototype"];
 struct Core{
  host:JsValue,library:JsValue,cloud:JsValue,storage:JsValue,device:JsValue,settings:Vec<String>,
  generation:Cell<f64>,task:RefCell<Option<Promise>>,revision:RefCell<Option<(JsValue,JsValue)>>,
+ live_task:RefCell<Option<Promise>>,hot:RefCell<Option<JsValue>>,live_inbox:RefCell<Option<JsValue>>,live_account:RefCell<Option<JsValue>>,
+ dirty_books:Map,dirty_settings:Set,room_revision:Cell<u64>,local_sequence:Cell<u64>,room_fields:RefCell<BTreeMap<(String,String),u64>>,
 }
 
 fn blank()->JsValue{Object::new().into()}
@@ -55,6 +59,8 @@ impl Core{
  fn metadata(&self,book:&JsValue)->Result<JsValue,JsValue>{
   let result=blank();assign(&result,&call(&self.host,"spineCustomization",&[book])?)?;
   for key in META{let value=get(book,key);if !value.is_undefined(){set(&result,key,&value);}}
+  let length=crate::length_metadata::length_drive_metadata(book.clone())?;
+  if length.is_truthy(){set(&result,"bookLength",&length);}
   if !get(&result,"shelfVisualId").is_string()||!get(&result,"shelfVisualId").is_truthy(){
    delete(&result,"shelfVisualId");if get(book,"id").is_string()&&get(book,"id").is_truthy(){set(&result,"shelfVisualId",&get(book,"id"));}
   }
@@ -73,8 +79,13 @@ impl Core{
   Ok(object(&[("value",value.clone()),("at",js_sys::Math::max(number(at),floor).into()),("device",self.device.clone())]))
  }
 
+ fn setting_stamp(&self,key:&str,old:&JsValue,value:&JsValue,at:&JsValue)->Result<JsValue,JsValue>{
+  if key==crate::room_physics_sync::KEY&&old.is_truthy()&&crate::room_physics_sync::room_physics_equivalent(get(old,"value"),value.clone()){return Ok(old.clone());}
+  self.stamp(old,value,at)
+ }
  fn sync(self:Rc<Self>,account_id:JsValue)->Promise{
-  let task=self.task.borrow().clone();
+  *self.live_account.borrow_mut()=Some(account_id.clone());
+  let task=self.live_task.borrow().clone().or_else(||self.task.borrow().clone());
   if let Some(task)=task{
    let generation=self.generation.get();let core=self.clone();
    let again=Closure::once_into_js(move||->JsValue{if generation==core.generation.get(){core.sync(account_id).into()}else{JsValue::UNDEFINED}});
@@ -94,15 +105,20 @@ impl Core{
   *cell.borrow_mut()=Some(task.clone());*self.task.borrow_mut()=Some(task.clone());task
  }
 
- fn run(self:Rc<Self>,account_id:JsValue,generation:f64)->Promise{start(async move{self.run_sync(account_id,generation).await})}
- async fn run_sync(self:Rc<Self>,account_id:JsValue,generation:f64)->Result<JsValue,JsValue>{
+ fn run(self:Rc<Self>,account_id:JsValue,generation:f64)->Promise{start(async move{self.run_sync(account_id,generation,None).await})}
+ async fn run_sync(self:Rc<Self>,account_id:JsValue,generation:f64,incoming:Option<JsValue>)->Result<JsValue,JsValue>{
   if !account_id.is_truthy(){return Err(error("Conecta tu cuenta de Google para guardar la biblioteca."));}
+  let observed_sequence=self.local_sequence.get();
   let key=format!("{}:{}",string(&self.device),string(&account_id));
   let baseline=settle(call(&self.host,"readBackupCheckpoint",&[&key.clone().into()])).await?;self.guard(generation)?;
   self.status("Sincronizando biblioteca y estantería…",true)?;
   // Failure here must abort: never publish an empty replacement after a failed read.
   // Per-device manifests also preserve the originals in Drive.
-  let snapshots=Array::from(&settle(call(&self.host,"readDriveLibrarySnapshots",&[])).await?);self.guard(generation)?;
+  let live=incoming.is_some();
+  let snapshots=if let Some(incoming)=incoming{
+   let merged=live::library_merge_checkpoint(baseline.clone(),incoming);
+   Array::of1(&live::checkpoint_snapshot(&merged,&self.device))
+  }else{Array::from(&settle(call(&self.host,"readDriveLibrarySnapshots",&[])).await?)};self.guard(generation)?;
   let merged_books=blank();let merged_settings=blank();
   for snapshot in snapshots.iter(){
    for book in Array::from(&read(&snapshot,"books")?).iter(){
@@ -116,6 +132,7 @@ impl Core{
     merge_fields(&merged_settings,&if entry.is_truthy(){object(&[(setting.as_str(),entry)])}else{blank()});
    }
   }
+  self.hot_merge(&merged_books,&merged_settings);
   let mut uploaded=0;
   let errors=Array::new();
   let observed=Map::new();
@@ -124,6 +141,7 @@ impl Core{
    let linked=get(&book,"cloudAccountId");
    if linked.is_truthy()&&linked!=account_id{continue;}
    if !get(&book,"driveFileId").is_truthy(){
+    if live{continue;}
     if !get(&book,"content").is_truthy(){
      errors.push(&format!("{}: falta el archivo original en este dispositivo",string(&or(get(&book,"title"),get(&book,"name")))).into());continue;
     }
@@ -157,17 +175,18 @@ impl Core{
    if cover.is_truthy(){set(&values,"cover",&cover);}
    observed.set(&id,&self.metadata(&book)?);
    for (field,value) in entries(&values){
-    let previous=get(&old,&field);
+    if live{continue;}
+    let previous=self.room_previous(&id_key,&field,get(&old,&field));
     let at=if previous.is_truthy(){js_sys::Date::now().into()}else{
      let stamped=number_or_zero(&or(get(&book,"progressUpdatedAt"),get(&book,"addedAt")));
      if stamped!=0.0{stamped.into()}else{js_sys::Date::now().into()}
     };
-    set(&local,&field,&self.stamp(&previous,&value,&at)?);
+    set(&local,&field,&if self.room_changed_after(&id_key,&field,observed_sequence){previous}else{self.stamp(&previous,&value,&at)?});
    }
    merge_fields(&slot(&merged_books,&id_key),&local);
   }
   let removals=Array::from(&settle(call(&self.library,"listRemoved",&[])).await?);self.guard(generation)?;
-  for removal in removals.iter(){
+  for removal in removals.iter().filter(|_|!live){
    let drive_id=get(&removal,"driveFileId");
    if drive_id.is_truthy()&&get(&removal,"cloudAccountId")==account_id{
     let before=get(&get(&get(&baseline,"books"),&string(&drive_id)),"visible");
@@ -178,6 +197,7 @@ impl Core{
   let touched=self.parse_stored(CHANGES_KEY);
   records=Array::from(&settle(call(&self.library,"listAll",&[])).await?);self.guard(generation)?;
   for setting in &self.settings{
+   if live{continue;}
    let value=call(&self.storage,"getItem",&[&setting.as_str().into()])?;
    if value.is_null(){continue;}
    let value=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_for_cloud(value,records.clone().into())}else{value};
@@ -185,7 +205,7 @@ impl Core{
    let old=get(&get(&baseline,"settings"),setting);
    if !old.is_truthy()&&!get(&touched,setting).is_truthy()&&get(&merged_settings,setting).is_truthy(){continue;}
    let at=if get(&touched,setting).is_truthy(){get(&touched,setting)}else if old.is_truthy(){js_sys::Date::now().into()}else{0.into()};
-   let entry=self.stamp(&old,&value,&at)?;
+   let entry=self.setting_stamp(setting,&old,&value,&at)?;
    merge_fields(&merged_settings,&object(&[(setting.as_str(),entry)]));
   }
   records=Array::from(&settle(call(&self.library,"listAll",&[])).await?);self.guard(generation)?;
@@ -194,6 +214,7 @@ impl Core{
    let linked=get(&record,"cloudAccountId");
    if !linked.is_truthy()||linked==account_id{by_drive.set(&get(&record,"driveFileId"),&record);}
   }
+  self.hot_merge(&merged_books,&merged_settings);
   let applied_books=blank();let applied_settings=blank();
   for (id,fields) in entries(&merged_books){
    self.guard(generation)?;
@@ -221,6 +242,8 @@ impl Core{
    // This revision describes the image bytes, not just a metadata field.
    // Commit it only together with the downloaded Blob below.
    delete(&values,"coverUpdatedAt");
+   let book_length=get(&values,"bookLength");delete(&values,"bookLength");
+   if get(&values,"size").is_undefined()&&get(&book_length,"byteLength").as_f64().is_some(){set(&values,"size",&get(&book_length,"byteLength"));}
    // Never restore local IDs/handles/contentRevision from another device.
    // A remote book without bytes must take the Drive download path.
    if !book.is_truthy(){
@@ -252,6 +275,15 @@ impl Core{
      self.guard(generation)?;if !saved.is_truthy(){continue;}
      book=saved;
     }
+   }
+   let count=crate::length_metadata::length_count_from_drive(book.clone(),book_length.clone())?;
+   if count.is_truthy(){
+    let core=self.clone();let expected=book_length.clone();
+    let guard:Closure<dyn FnMut(JsValue)->Result<JsValue,JsValue>>=Closure::wrap(Box::new(move|latest:JsValue|->Result<JsValue,JsValue>{
+     Ok(JsValue::from_bool(core.guard(generation).is_ok()&&crate::length_metadata::length_count_from_drive(latest,expected.clone())?.is_truthy()))
+    }));
+    let saved=settle(call(&self.library,"patch",&[&get(&book,"id"),&count,&object(&[("ifCurrent",guard.as_ref().clone())])])).await?;drop(guard);self.guard(generation)?;
+    book=if saved.is_truthy(){saved}else{settle(call(&self.library,"get",&[&get(&book,"id")])).await?};self.guard(generation)?;if !book.is_truthy(){continue;}
    }
    let cover=get(&get(&fields,"cover"),"value");
    let locally_changed=observed.has(&id.clone().into())&&read(&book,"coverUpdatedAt")?!=get(&observed.get(&id.clone().into()),"coverUpdatedAt");
@@ -286,21 +318,27 @@ impl Core{
    if latest_touched.gt(&or(get(&touched,setting),0.into())){continue;}
    let value=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_for_device(get(&entry,"value"),room_records.clone())}else{get(&entry,"value")};
    let current=call(&self.storage,"getItem",&[&setting.as_str().into()])?;
-   let unchanged=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_for_cloud(current.clone(),room_records.clone())==get(&entry,"value")}else{current==value};
+   let unchanged=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_equivalent(crate::room_physics_sync::room_physics_for_cloud(current.clone(),room_records.clone()),get(&entry,"value"))}else{current==value};
    if !unchanged{
     call(&self.storage,"setItem",&[&setting.as_str().into(),&value])?;changed_settings.push(&setting.as_str().into());
    }
    set(&applied_settings,setting,&entry);
   }
   self.guard(generation)?;
-  settle(call(&self.host,"saveBackupCheckpoint",&[&key.into(),&object(&[("books",applied_books),("settings",applied_settings)])])).await?;self.guard(generation)?;
+  let checkpoint=object(&[("books",applied_books),("settings",applied_settings)]);
+  let hot=self.hot.borrow().clone();let checkpoint=if let Some(hot)=hot{live::library_merge_checkpoint(checkpoint,hot)}else{checkpoint};
+  let save=if self.hot.borrow().is_some()||live{"mergeBackupCheckpoint"}else{"saveBackupCheckpoint"};
+  settle(call(&self.host,save,&[&key.into(),&checkpoint])).await?;self.guard(generation)?;
   if changed_settings.length()>0{call(&self.host,"onSettings",&[changed_settings.as_ref()])?;}
   call(&self.host,"onChange",&[])?;
   let mut own=JsValue::UNDEFINED;
   for snapshot in snapshots.iter(){if get(&snapshot,"deviceId")==self.device{own=snapshot;}}
+  self.hot_merge(&merged_books,&merged_settings);
   let books=Array::new();
   for (drive_file_id,fields) in entries(&merged_books){books.push(&object(&[("driveFileId",drive_file_id.into()),("fields",fields)]));}
   let snapshot=object(&[("schemaVersion",1.into()),("deviceId",self.device.clone()),("books",books.into()),("settings",merged_settings)]);
+  self.snapshot_ready(&account_id,&snapshot)?;
+  if live{if get(&self.host,"onLiveApplied").is_function(){call(&self.host,"onLiveApplied",&[])?;}return Ok(object(&[("uploaded",0.into()),("errors",errors.into())]));}
   if json(&get(&own,"books"))?!=json(&get(&snapshot,"books"))?||json(&get(&own,"settings"))?!=json(&get(&snapshot,"settings"))?{
    settle(call(&self.host,"writeDriveLibrarySnapshot",&[&snapshot,&get(&own,"stateFileId")])).await?;self.guard(generation)?;
   }
@@ -325,15 +363,16 @@ impl RustLibraryBackup{
   let device=if saved.is_truthy(){saved}else{call(&host,"randomUUID",&[])?};
   call(&storage,"setItem",&[&DEVICE_KEY.into(),&device])?;
   let settings=Array::from(&get(&host,"settings")).iter().map(|name|string(&name)).collect();
-  Ok(RustLibraryBackup{core:Rc::new(Core{library:get(&host,"library"),cloud:get(&host,"cloud"),storage,device,settings,host,generation:Cell::new(0.0),task:RefCell::new(None),revision:RefCell::new(None)})})
+  Ok(RustLibraryBackup{core:Rc::new(Core{library:get(&host,"library"),cloud:get(&host,"cloud"),storage,device,settings,host,generation:Cell::new(0.0),task:RefCell::new(None),revision:RefCell::new(None),live_task:RefCell::new(None),hot:RefCell::new(None),live_inbox:RefCell::new(None),live_account:RefCell::new(None),dirty_books:Map::new(),dirty_settings:Set::new(&JsValue::UNDEFINED),room_revision:Cell::new(0),local_sequence:Cell::new(0),room_fields:RefCell::new(BTreeMap::new())})})
  }
  #[wasm_bindgen(getter)] pub fn device(&self)->JsValue{self.core.device.clone()}
  #[wasm_bindgen(getter)] pub fn task(&self)->JsValue{self.core.task.borrow().clone().map(JsValue::from).unwrap_or(JsValue::NULL)}
- pub fn reset(&self){self.core.generation.set(self.core.generation.get()+1.0);*self.core.task.borrow_mut()=None;*self.core.revision.borrow_mut()=None;}
- pub fn sync(&self,account_id:JsValue)->Promise{*self.core.revision.borrow_mut()=None;self.core.clone().sync(account_id)}
+ pub fn reset(&self){self.core.generation.set(self.core.generation.get()+1.0);*self.core.task.borrow_mut()=None;*self.core.revision.borrow_mut()=None;*self.core.live_task.borrow_mut()=None;*self.core.hot.borrow_mut()=None;*self.core.live_inbox.borrow_mut()=None;*self.core.live_account.borrow_mut()=None;self.core.dirty_books.clear();self.core.dirty_settings.clear();self.core.room_fields.borrow_mut().clear();}
+ pub fn sync(&self,account_id:JsValue)->Promise{let changed=self.core.live_account.borrow().as_ref().is_some_and(|a|*a!=account_id);if changed{self.reset();}*self.core.live_account.borrow_mut()=Some(account_id.clone());*self.core.revision.borrow_mut()=None;self.core.clone().sync(account_id)}
  /// One small metadata request per visible poll. Unchanged rooms never read
  /// book bytes, decode covers, restart physics or wake the renderer.
  pub fn poll(&self,account_id:JsValue)->Promise{
+  let changed=self.core.live_account.borrow().as_ref().is_some_and(|a|*a!=account_id);if changed{self.reset();}
   let core=self.core.clone();let generation=core.generation.get();
   start(async move{
    if !account_id.is_truthy(){return Ok(JsValue::UNDEFINED);}

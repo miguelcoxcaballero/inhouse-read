@@ -234,7 +234,7 @@ it('checks room revisions with one metadata request after lookup and never downl
   if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
   if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
   expect(q).toBe("'state' in parents and trashed = false")
-  expect(url.searchParams.get('fields')).toBe('nextPageToken,files(id,name,modifiedTime)')
+  expect(url.searchParams.get('fields')).toBe('nextPageToken,files(id,name,modifiedTime,appProperties)')
   expect(url.searchParams.has('alt')).toBe(false)
   return json({files:[{id:'b',name:'library-v1-b.json',modifiedTime:changed?'later':'before'},{id:'a',name:'library-v1-a.json',modifiedTime:'first'},{id:'cover',name:'cover.png',modifiedTime:'ignore'}]})
  })
@@ -242,4 +242,19 @@ it('checks room revisions with one metadata request after lookup and never downl
  expect(await drive.readDriveLibraryRevision()).toBe(first);expect(fetch).toHaveBeenCalledTimes(4)
  changed=true;expect(await drive.readDriveLibraryRevision()).not.toBe(first);expect(fetch).toHaveBeenCalledTimes(5)
  drive.signOutDrive();await expect(drive.readDriveLibraryRevision()).rejects.toThrow(/Conectar|sesión/i)
+})
+
+it('confirms the shared live key after creation and returns no OAuth token',async()=>{
+ session();let reads=0,patches=0;const winner='W'.repeat(43)
+ globalThis.fetch=vi.fn(async(target,options={})=>{
+  const url=new URL(target),q=url.searchParams.get('q')||''
+  if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
+  if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
+  expect(url.pathname).toBe('/drive/v3/files/state');expect(url.searchParams.get('fields')).toBe('id,properties')
+  if(options.method==='PATCH'){patches++;const properties=JSON.parse(options.body).properties;expect(properties.ihr_live_key_v1).toMatch(/^[A-Za-z0-9_-]{43}$/);return json({id:'state'})}
+  reads++;return json({id:'state',properties:reads===1?{}:{ihr_live_key_v1:winner}})
+ })
+ expect(await drive.getDriveLiveContext()).toEqual({folderId:'state',key:winner,confirm:true});expect(patches).toBe(1);expect(reads).toBe(2)
+ expect(await drive.getDriveLiveContext()).toEqual({folderId:'state',key:winner,confirm:false});expect(patches).toBe(1)
+ drive.signOutDrive();await expect(drive.getDriveLiveContext()).rejects.toThrow(/Conectar|sesión/i)
 })

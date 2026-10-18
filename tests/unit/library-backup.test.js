@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Blob, File } from 'node:buffer'
 import { LibraryStore } from '../../src/js/library-store.js'
 import { CloudSync } from '../../src/js/cloud-sync.js'
-import './helpers/rust-ui-ready.js'
+import {rustUI} from './helpers/rust-ui-ready.js'
 import { LibraryBackup } from '../../src/js/library-backup.js'
 
 vi.mock('../../src/js/drive-client.js', () => ({
@@ -228,4 +228,87 @@ it('retries a failed original upload even when the remote revision did not chang
  const a=device();await add(a);drive.readDriveLibraryRevision.mockResolvedValue('same-revision');drive.uploadDriveFile.mockRejectedValueOnce(new Error('temporary failure'))
  expect((await a.backup.poll('account')).errors.length).toBeGreaterThan(0)
  await a.backup.poll('account');expect(drive.uploadDriveFile).toHaveBeenCalledTimes(2);expect((await a.library.listAll())[0].driveFileId).toBeTruthy()
+})
+
+describe('direct room delivery without waiting for Drive',()=>{
+ it('captures explicit edits locally and applies them on another device without network reads or writes',async()=>{
+  const a=device(),original=await add(a);await a.sync();const b=device();await b.sync();const [remote]=await b.library.listAll()
+  await a.library.patch(original.id,{spineColorOverride:'#112233',shelfPosition:{shelf:1,x:.21}})
+  expect(a.backup.markBookChanged('account',original.id,['spineColorOverride','shelfPosition'])).toBe(true)
+  const before=[drive.readDriveLibrarySnapshots.mock.calls.length,drive.writeDriveLibrarySnapshot.mock.calls.length]
+  const snapshot=await a.backup.captureRoom('account');expect(snapshot.books[0].fields.spineColorOverride.value).toBe('#112233')
+  await b.backup.receiveSnapshot('account',snapshot)
+  expect(await b.library.get(remote.id)).toMatchObject({spineColorOverride:'#112233',shelfPosition:{shelf:1,x:.21}})
+  expect([drive.readDriveLibrarySnapshots.mock.calls.length,drive.writeDriveLibrarySnapshot.mock.calls.length]).toEqual(before)
+ })
+ it('applies a peer edit while its older Drive write is still pending and does not revert it',async()=>{
+  const a=device(),original=await add(a);await a.sync();const b=device();await b.sync();const [remote]=await b.library.listAll()
+  let release,started;const waiting=new Promise(r=>release=r),writing=new Promise(r=>started=r)
+  const write=drive.writeDriveLibrarySnapshot.getMockImplementation()
+  drive.writeDriveLibrarySnapshot.mockImplementationOnce(async(...args)=>{started();await waiting;return write(...args)})
+  // Force a real unrelated durable write on b, then leave its network request open.
+  await b.library.patch(remote.id,{title:'Other title'});const pending=b.sync();await writing
+  await a.library.patch(original.id,{spineColorOverride:'#445566'});a.backup.markBookChanged('account',original.id,['spineColorOverride']);const snapshot=await a.backup.captureRoom('account')
+  await b.backup.receiveSnapshot('account',snapshot)
+  expect((await b.library.get(remote.id)).spineColorOverride).toBe('#445566')
+  release();await pending;await b.sync();expect((await b.library.get(remote.id)).spineColorOverride).toBe('#445566')
+ })
+ it('queues peer data until a concurrent local edit is captured, preserving both fields',async()=>{
+  const a=device(),original=await add(a);await a.sync();const b=device();await b.sync();const [remote]=await b.library.listAll()
+  await a.library.patch(original.id,{spineColorOverride:'#abcdef'});a.backup.markBookChanged('account',original.id,['spineColorOverride']);const incoming=await a.backup.captureRoom('account')
+  await b.library.patch(remote.id,{spineTextFinish:'silver'});b.backup.markBookChanged('account',remote.id,['spineTextFinish']);await b.backup.receiveSnapshot('account',incoming)
+  expect((await b.library.get(remote.id)).spineColorOverride).not.toBe('#abcdef')
+  await b.backup.captureRoom('account');await b.backup.drainLive('account')
+  expect(await b.library.get(remote.id)).toMatchObject({spineColorOverride:'#abcdef',spineTextFinish:'silver'})
+ })
+ it('rejects direct delivery after signout',async()=>{
+  const a=device();await add(a);await a.sync();const snapshot=[...snapshots.values()][0];a.backup.reset()
+  await expect(a.backup.receiveSnapshot('account',snapshot)).rejects.toThrow('Invalid live room')
+  expect(a.backup.markBookChanged('account','id',['title'])).toBe(false)
+ })
+})
+
+it('does not let a pre-existing slow Drive read overwrite a new direct edit',async()=>{
+ const a=device(),original=await add(a);await a.sync();const b=device();await b.sync();const [remote]=await b.library.listAll()
+ const read=drive.readDriveLibrarySnapshots.getMockImplementation();let release,entered
+ const ready=new Promise(r=>entered=r),blocked=new Promise(r=>release=r),old=await read()
+ drive.readDriveLibrarySnapshots.mockImplementationOnce(async()=>{entered();await blocked;return old})
+ const task=b.sync();await ready
+ await a.library.patch(original.id,{spineColorOverride:'#987654'});a.backup.markBookChanged('account',original.id,['spineColorOverride'])
+ await b.backup.receiveSnapshot('account',await a.backup.captureRoom('account'))
+ expect((await b.library.get(remote.id)).spineColorOverride).toBe('#987654')
+ release();await task;expect((await b.library.get(remote.id)).spineColorOverride).toBe('#987654')
+})
+
+it('shares verified paper volume and retains it when downloading the same original',async()=>{
+ const upload=drive.uploadDriveFile.getMockImplementation()
+ drive.uploadDriveFile.mockImplementation(async(...args)=>{const result=await upload(...args);files.get(result.id).md5Checksum='a'.repeat(32);return {...result,md5Checksum:'a'.repeat(32)}})
+ const a=device(),original=await add(a)
+ await a.library.patch(original.id,{wordCount:78000,wordCountVersion:2,wordCountComplete:true,contentRevision:'verified-original',wordCountContentRevision:'verified-original'})
+ expect(rustUI.length_is_ready(await a.library.get(original.id))).toBe(true)
+ await a.sync();expect([...snapshots.values()][0].books[0].fields.bookLength.value).toMatchObject({wordCount:78000,md5Checksum:'a'.repeat(32),byteLength:8})
+ const b=device();await b.sync();const [copy]=await b.library.listAll()
+ expect(copy).toMatchObject({wordCount:78000,wordCountVersion:2,wordCountComplete:true});expect(copy.wordCountContentRevision).toBe(copy.contentRevision);expect(await copy.content.text()).toBe('original')
+})
+
+it('does not restamp a physical room merely because another viewport rounded its placement anchor',async()=>{
+ const a=device(),original=await add(a),key='inhouse-read-shelf-physics-v1'
+ a.storage.setItem(key,JSON.stringify([2,[20261018,0],[[`book:${original.id}`,0,[.3,.1,1,1],[.02,.2,.15],[0,.6,0,.3],.3,.1,.2,null]]]))
+ await a.sync();const b=device();await b.sync();const anchored=JSON.parse(b.storage.getItem(key));anchored[2][0][2][0]+=.00044;b.storage.setItem(key,JSON.stringify(anchored))
+ await b.sync();const before=[...snapshots.values()].find(v=>v.deviceId===b.backup.device).settings[key]
+ await b.sync();const after=[...snapshots.values()].find(v=>v.deviceId===b.backup.device).settings[key]
+ expect(after).toEqual(before);expect(after.value).toBe([...snapshots.values()].find(v=>v.deviceId===a.backup.device).settings[key].value)
+})
+
+it('does not overwrite a newer locally completed count while applying a remote count',async()=>{
+ const upload=drive.uploadDriveFile.getMockImplementation()
+ drive.uploadDriveFile.mockImplementation(async(...args)=>{const result=await upload(...args);files.get(result.id).md5Checksum='a'.repeat(32);return {...result,md5Checksum:'a'.repeat(32)}})
+ const a=device(),original=await add(a)
+ await a.library.patch(original.id,{...rustUI.length_complete_count(78000),contentRevision:'original',wordCountContentRevision:'original'});await a.sync()
+ const b=device(),patch=b.library.patch.bind(b.library);let intervened=false
+ vi.spyOn(b.library,'patch').mockImplementation(async(id,fields,options)=>{
+  if(!intervened&&fields.wordCount===78000){intervened=true;const latest=await b.library.get(id);await patch(id,{...rustUI.length_complete_count(79000),wordCountContentRevision:latest.contentRevision})}
+  return patch(id,fields,options)
+ })
+ await b.sync();expect(intervened).toBe(true);expect((await b.library.listAll())[0].wordCount).toBe(79000)
 })
