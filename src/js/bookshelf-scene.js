@@ -312,8 +312,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // The camera framing, the turn between the views, the inspection zoom and pan and the drop guide's place
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
-  const bookGravity = new rust.RustBookGravity();
+  let bookGravity = new rust.RustBookGravity();
   const roomMotion = new rust.RustRoomMotion(), roomMotionOut = new Float64Array(9);
+  const roomTransition = new rust.RustRoomTransition(), transitionTarget = new Float64Array(8), transitionOut = new Float64Array(8);
   let motionExpiry = null, motionGesture = null, motionSequence = 0, motionSentAt = -Infinity;
   let motionRest = new Map();
   const motionKey = entry => entry.kind === 'plant' || entry.kind === 'lamp' ? entry.key
@@ -343,7 +344,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (end) { motionGesture = null; motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose])); }
   }
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
-  let physicsStarted = false, physicsInteracted = false;
+  let physicsStarted = false, physicsInteracted = false, pendingCloudPhysics = null;
   if (settleBooks) { try { bookGravity.restore(localStorage.getItem(physicsStorageKey) || ''); } catch {} }
   let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0), physicsStates = new Float64Array(0);
   let bookEntries = entries.map(freshEntry);
@@ -1520,6 +1521,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           }
         }
       }
+      if (sharedKey) {
+        const p=entry.pose.position,q=entry.pose.quaternion;
+        transitionTarget.set([(p.x+width/2)/ppm,p.y/ppm,p.z/ppm,q.x,q.y,q.z,q.w,entry.pose.scale.x]);
+        if(roomTransition.pose(sharedKey,transitionTarget,now,transitionOut)){
+          entry.pose.position.set(transitionOut[0]*ppm-width/2,transitionOut[1]*ppm,transitionOut[2]*ppm);
+          entry.pose.quaternion.set(...transitionOut.subarray(3,7));entry.pose.scale.setScalar(transitionOut[7]);
+          if(!decorative&&node)setData(node,'sceneLean',new THREE.Euler().setFromQuaternion(entry.pose.quaternion,'ZYX').z.toFixed(6));
+        }
+      }
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
@@ -1679,7 +1689,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'returningBookId', insertedIds.length === 1 ? insertedIds[0] : '');
     setData(canvas, 'returnRenderer', overlaying ? 'shared-depth-overlay' : 'shelf');
     if (!insertedIds.length) delete canvas.dataset.returnProgress;
-    return { moving:moving || roomMotion.moving(now), shelfMoving:shelfMoving || roomMotion.moving(now), localMoving:moving };
+    return { moving:moving || roomMotion.moving(now) || roomTransition.moving(now), shelfMoving:shelfMoving || roomMotion.moving(now) || roomTransition.moving(now), localMoving:moving };
   }
 
   function updatePlantFoliage(entry) {
@@ -2730,7 +2740,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (roomMotion.changed) invalidate(true, false, 'remote-motion'); return true;
     },
     clearLiveRoomMotion:clearRoomMotion,
-    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || lastLocalSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
+    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || roomTransition.moving(performance.now()) || lastLocalSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
     getInspectionZoom:()=>sceneView.zoom,
     beginInspectionGesture() {
       if (disposed || !sceneView.canInspect()) return;
@@ -3002,6 +3012,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     updateLayout(next) {
       if (disposed) return false;
+      if(next.cloudRoom){
+        const ppm=unitWidth/SHELF_SPECS[shelfType].width*1000;
+        const painted=bookEntries.filter(e=>motionKey(e)).map(e=>{
+          const p=e.pose.position,q=e.pose.quaternion;
+          return [motionKey(e),(p.x+width/2)/ppm,p.y/ppm,p.z/ppm,q.x,q.y,q.z,q.w,e.pose.scale.x];
+        });
+        if(reducedMotion.matches)roomTransition.clear();else roomTransition.begin(painted,performance.now());
+        roomMotion.clear('');clearTimeout(motionExpiry);motionExpiry=null;
+        pendingCloudPhysics=localStorage.getItem(physicsStorageKey)||'';
+      }
       physicsReady = next.physicsReady !== false;
       noteInspectionDirty('layout');
       // A fresh semantic layout already contains the current book records.
@@ -3125,6 +3145,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       for (const entry of oldEntries.values()) releaseEntry(entry);
       bookEntries = retained; byNode.clear();
+      if(pendingCloudPhysics&&physicsReady){
+        const incoming=new rust.RustBookGravity();
+        const keys=bookEntries.filter(e=>!(e.kind==='lamp'&&e.mount==='undershelf')).map(e=>e.key);
+        if(incoming.restore(pendingCloudPhysics)&&incoming.matches_keys(keys)){
+          bookGravity.free();bookGravity=incoming;physicsStarted=false;physicsInteracted=false;pendingCloudPhysics=null;
+          for(const entry of bookEntries)entry.collisionStamp=null;
+        }else incoming.free();
+      }
       fitDepth(Math.max(155, ...bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp').map(entry => entry.width + 12),
         ...bookEntries.filter(entry => entry.kind === 'lamp' && entry.mount !== 'undershelf').map(entry => (entry.depth || entry.width) + 12)));
       for (const entry of bookEntries) if (entry.node) {
@@ -3164,7 +3192,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { bookGravity.free(); roomMotion.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();

@@ -95,7 +95,7 @@ impl RustShelfCtx{
 
 /// Adopt a metadata-only refresh without repainting the room or changing its hit targets.
 pub fn adopt_metadata_records(ctx:&Rc<Ctx>,next_books:&JsValue)->R<bool>{
- if ctx.option("adoptMetadata")!=JsValue::TRUE||truthy(&ctx.option("texts"))||ctx.opts_get("sections")!=JsValue::FALSE
+ if ctx.st_true("cloudRoomPending")||ctx.option("adoptMetadata")!=JsValue::TRUE||truthy(&ctx.option("texts"))||ctx.opts_get("sections")!=JsValue::FALSE
   ||ctx.opts_get("sort")!=s("none")||!ctx.st_true("useScene")||!ctx.st_true("shelfScene")||!ctx.st_true("presentationActive")
   ||["destroyed","busy","session","pendingSelection","returnMotion","dragSession","compatibilityTapTimer","reorderTimer","trashRemoval","arranging"].iter().any(|key|ctx.st_true(key))
   ||ctx.st("returningBookId")!=null()||ctx.st("pressedBookId")!=null()||map_size(&ctx.st("pendingRemovals"))!=0.0
@@ -154,7 +154,15 @@ pub fn refresh(ctx:&Rc<Ctx>,next_books:&JsValue,defer:bool)->R{
  ctx.st_set("queuedBooks",&null());
  let top=get(&ctx.scroller,"scrollTop");
  if Array::is_array(next_books){ctx.st_set("books",&filtered_books(ctx,next_books));}
- if !ctx.st_true("appearancesReady")&&truthy(&ctx.option("waitForCoverAppearance")){
+ // Newly synchronized covers need the same first-paint barrier as startup.
+ // Otherwise their temporary fallback aspect ratio changes collider depth,
+ // discards the received rest pose and starts another local simulation.
+ let missing_appearance=array_of(&ctx.st("books")).into_iter().any(|book|{
+  let cover=coalesce(get(&book,"cover"),coalesce(get(&book,"coverBlob"),get(&book,"coverUrl")));
+  let cached=map_get(&ctx.st("coverAppearances"),&super::covers::book_id(&book));
+  truthy(&cover)&&(get(&cached,"key")!=super::covers::cover_key_for(&book)||get(&cached,"complete")==JsValue::FALSE)
+ });
+ if (!ctx.st_true("appearancesReady")||missing_appearance)&&truthy(&ctx.option("waitForCoverAppearance")){
   ctx.st_set("appearanceGeneration",&f(num(&ctx.st("appearanceGeneration"))+1.0));
   ctx.st_set("appearancesReady",&JsValue::TRUE);
   super::screen_plan::prepare_initial_appearances(&ctx)?;
@@ -193,9 +201,11 @@ pub fn read_shelf_layout(ctx:&Ctx,stage:&JsValue,width:f64)->R<JsValue>{
    }
    if cls_has(&node,"ihr-plant"){
     let record=array_of(&ctx.st("plants")).into_iter().find(|record|get(record,"key")==data_get(&node,"objectId"));
-    let depth=match record{Some(record)=>get(&objects::plant_shelf_object(ctx,&record,objects::plant_scale(ctx)?)?,"depth"),None=>f(gn(&bounds,"width")*0.7)};
+    // DOM bounds are pixel-rounded and may include a transformed hit target.
+    // Actual plant dimensions must come from its catalogue on every viewport.
+    let dimensions=match record{Some(record)=>objects::plant_shelf_object(ctx,&record,objects::plant_scale(ctx)?)?,None=>obj(&[("width",&get(&bounds,"width")),("height",&get(&bounds,"height")),("depth",&f(gn(&bounds,"width")*0.7))])};
     entries.push(&obj(&[("kind",&s("plant")),("key",&data_get(&node,"objectId")),("node",&node),("x",&f(x)),("y",&f(y)),
-     ("shelf",&f(index as f64)),("depthInset",&f(0.0)),("width",&get(&bounds,"width")),("height",&get(&bounds,"height")),("depth",&depth),
+     ("shelf",&f(index as f64)),("depthInset",&f(0.0)),("width",&get(&dimensions,"width")),("height",&get(&dimensions,"height")),("depth",&get(&dimensions,"depth")),
      ("catalogId",&data_get(&node,"catalogId")),("potId",&data_get(&node,"potId")),("potColorId",&data_get(&node,"potColorId")),
      ("seed",&data_get(&node,"plantSeed")),("variant",&data_get(&node,"plantVariant"))]));
     continue;

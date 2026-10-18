@@ -16,7 +16,7 @@ const summary=options=>Object.fromEntries(Object.entries(options).map(([key,valu
 const records=()=>[{id:'local',sourceType:'local',title:'the_book.epub',author:{name:'Writer'}},{id:'owned',sourceType:'drive',cloudAccountId:'me',title:'Owned'},{id:'other',sourceType:'drive',cloudAccountId:'other',title:'Other'},{id:'saved',sourceType:'drive',cloudAccountId:'other',content:new Blob(['x']),title:'Saved'}];
 function fixture(options={}){
  const events=[],stored=options.empty?[]:records(),ready=stored.map(book=>({...book,title:normalizeBookTitle(book.title||book.name),author:normalizeBookAuthor(book.author)||null}));
- const shelf={isInteracting:!!options.interacting,destroy(){events.push(['destroy'])},update(books){events.push(['update',ids(books)])},queueRefresh:options.noQueue?undefined:function(books){events.push(['queue',ids(books)])}};
+ const shelf={isInteracting:!!options.interacting,prepareCloudRoom(){events.push(['cloud-room'])},destroy(){events.push(['destroy'])},update(books){events.push(['update',ids(books)])},queueRefresh:options.noQueue?undefined:function(books){events.push(['queue',ids(books)])}};
  const state={appDisposed:false,closingReader:!!options.closing,cloudRoomChanged:!!options.roomChanged,shelf:options.create?null:shelf,shelfRecords:options.equal?ready.filter(book=>isBookVisible(book,options.account)):null,lengthStatusVersion:2,shelfLengthStatusVersion:options.versionChanged?1:2};
  if(options.equal){stored.splice(0,stored.length,...ready);}
  const queue={ensure(book){events.push(['count',book.id]);return options.countError?Promise.reject(Error('count')):Promise.resolve()},geometryState:()=>({}),retry:id=>id,cancel:id=>id};
@@ -48,5 +48,5 @@ it('retains a pending cloud room while held and applies it after the gesture fin
  expect(f.state.cloudRoomChanged).toBe(true);expect(f.events.some(e=>['destroy','create','queue','update'].includes(e[0]))).toBe(false)
  f.state.shelf.isInteracting=false
  await rustShelf.app_refresh_after_load(f.host,f.stored,undefined,false)
- expect(f.state.cloudRoomChanged).toBe(false);expect(f.events.some(e=>e[0]==='destroy')).toBe(true);expect(f.events.some(e=>e[0]==='create')).toBe(true)
+ expect(f.state.cloudRoomChanged).toBe(false);expect(f.events.some(e=>e[0]==='cloud-room')).toBe(true);expect(f.events.some(e=>e[0]==='destroy'||e[0]==='create')).toBe(false)
 })

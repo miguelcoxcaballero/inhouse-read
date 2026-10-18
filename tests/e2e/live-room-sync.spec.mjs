@@ -6,20 +6,7 @@ const PEER_URL=process.env.IHR_TEST_PEER_URL||URL;
 const row=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('inhouse-read-shelf-physics-v1')||'null')?.[2]?.find(v=>v[1]===0));
 const book=page=>page.evaluate(async()=>{const db=await new Promise(resolve=>{const r=indexedDB.open('inhouse-read');r.onsuccess=()=>resolve(r.result)});const result=await new Promise(resolve=>{const r=db.transaction('books').objectStore('books').getAll();r.onsuccess=()=>resolve(r.result[0])});db.close();return result&&{id:result.id,driveFileId:result.driveFileId,shelfVisualId:result.shelfVisualId,title:result.title,shelfPosition:result.shelfPosition,spineColorOverride:result.spineColorOverride,progressFraction:result.progressFraction,locator:result.locator,progressUpdatedAt:result.progressUpdatedAt}});
 
-const relay=process.env.IHR_TEST_TURN_URL?{urls:process.env.IHR_TEST_TURN_URL,username:'room-test',credential:'local-fixture-only'}:null;
-async function roomProbe(page){
- await page.addInitScript(relay=>{
-  const Native=RTCPeerConnection;globalThis.__roomChannels=[];globalThis.__roomPeers=[];globalThis.__roomMotionPackets=[];globalThis.__roomSentMotions=[];
-  const watch=c=>{
-   const record=(target,data)=>{if(typeof data!=='string')return;try{const value=JSON.parse(data);if(value.t==='room-motion'){target.push({at:Date.now(),value});if(target.length>256)target.shift()}}catch{}};
-   c.addEventListener('message',e=>record(globalThis.__roomMotionPackets,e.data));const send=c.send.bind(c);c.send=data=>{record(globalThis.__roomSentMotions,data);return send(data)};return c;
-  };
-  globalThis.RTCPeerConnection=class extends Native{
-   constructor(...args){super(...(relay?[{...args[0],iceServers:[relay],iceTransportPolicy:'relay'}]:args));globalThis.__roomPeers.push(this);this.addEventListener('datachannel',e=>globalThis.__roomChannels.push(watch(e.channel)))}
-   createDataChannel(...args){const c=super.createDataChannel(...args);globalThis.__roomChannels.push(watch(c));return c}
-  }
- },relay)
-}
+import {roomProbe} from './helpers/live-room-probe.mjs';
 
 test('mobile and desktop stream held-book movement and converge poses and reading progress while open',async({browser},info)=>{
  test.setTimeout(240000);let delayLibrary=false,libraryWrites=0,pendingWrites=0;const drive=driveServer({beforeUpload:async metadata=>{if(metadata.name?.startsWith('library-v1-')){libraryWrites++;pendingWrites++;try{if(delayLibrary)await new Promise(r=>setTimeout(r,5000))}finally{pendingWrites--}}}}),contexts=[],errors=[];

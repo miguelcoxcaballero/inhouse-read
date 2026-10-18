@@ -210,7 +210,7 @@ impl RustBookGravity{
     plan.extend([index as f64,x,y,hx,hy]);
    }
    plan.push(if metal{1.0}else{0.0});let row=r[0] as i64;
-   if self.walls.get(&row).is_some_and(|(previous,_)|*previous==plan){continue;}
+   if self.walls.get(&row).is_some_and(|(previous,_)|previous.len()==plan.len()&&previous.iter().zip(&plan).all(|(a,b)|(a-b).abs()<1e-7)){continue;}
    if let Some((_,handles))=self.walls.remove(&row){for h in handles{self.world.remove_body(h);}}
    let mut handles=Vec::new();
    for wall in plan[..plan.len()-1].chunks_exact(5){let (index,x,y,hx,hy)=(wall[0] as usize,wall[1],wall[2],wall[3],wall[4]);
@@ -380,7 +380,7 @@ impl RustBookGravity{
      .rotation(Vector::new(0.0,0.0,angle as f32))
      .locked_axes(if kind==0{LockedAxes::ROTATION_LOCKED_X|LockedAxes::ROTATION_LOCKED_Y}else{LockedAxes::ROTATION_LOCKED_X|LockedAxes::ROTATION_LOCKED_Y|LockedAxes::ROTATION_LOCKED_Z|LockedAxes::TRANSLATION_LOCKED_X|LockedAxes::TRANSLATION_LOCKED_Z})
      .linear_damping(2.2).angular_damping(3.8).ccd_enabled(true);
-    let restored=remembered.as_ref().is_some_and(|r|r.solid==self.solids.get(key).map(|s|s.description.signature()));
+    let restored=remembered.as_ref().is_some_and(|r|match self.solids.get(key){Some(s)=>s.description.matches_signature(r.solid.as_deref()),None=>r.solid.is_none()});
     let shape=solid.clone().unwrap_or_else(||SharedShape::cuboid((thickness/2.0) as f32,(h/2.0) as f32,(size[2]/2.0) as f32));
     let (handle,collider)=self.world.insert(body,ColliderBuilder::new(shape).density(650.0).user_data(kind as u128+1).active_hooks(if kind==0{ActiveHooks::MODIFY_SOLVER_CONTACTS}else{ActiveHooks::empty()}).friction(0.65).restitution(0.0).collision_groups(InteractionGroups::new(Group::GROUP_1,Group::ALL,InteractionTestMode::And)));
     if kind==0{
@@ -395,6 +395,8 @@ impl RustBookGravity{
     self.books.insert(key.clone(),Book{input:None,reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,motion_at:f64::NEG_INFINITY,stroke:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }
    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
+   // Pixel scale and floating-point roundoff are not a physical edit.
+   let base_changed=b.base[2]!=base[2]||(0..2).any(|i|(b.base[i]-base[i]).abs()>1e-7);
    if reader&&kind==0{
     // Keep the original rigid pose and its support while the visual book is
     // in the reader. No new body, seed angle, placement or neighbour rollback.
@@ -411,7 +413,7 @@ impl RustBookGravity{
     b.reader=false;b.restored=true;b.held=false;b.release=0.0;b.quiet=None;changed=true;
    }
    if held{b.restored=false;if !b.held{b.home=Some((*body.position(),b.bay));b.recovery=None;b.firm_grip=false;}}else{b.recovery=None;}
-   if !held&&(b.held&&(kind!=0||!b.contacting)||!b.held&&b.base!=base){isolated_releases.push(key.clone());}
+   if !held&&(b.held&&(kind!=0||!b.contacting)||!b.held&&base_changed){isolated_releases.push(key.clone());}
    if kind!=0{
     if b.solid.is_some(){
      // The chosen X/Z and upright orientation stay fixed, but a pot may
@@ -426,7 +428,7 @@ impl RustBookGravity{
       // chosen slot is on the next bay. Enter that bay before contacts resume;
       // otherwise the ceiling can support it forever on the wrong side.
       let mut position=body.translation();
-      if b.base!=base||b.pointer[0].abs()+b.pointer[1].abs()>0.01{position.x=base[0] as f32;}
+      if base_changed||b.pointer[0].abs()+b.pointer[1].abs()>0.01{position.x=base[0] as f32;}
       let foot=if kind==1{h as f32/2.0}else{0.0};
       let low=bay[2]+foot;let high=bay[3]-(h as f32-foot);
       position.y=if low<=high{position.y.clamp(low,high)}else{position.y.max(low)};
@@ -456,7 +458,7 @@ impl RustBookGravity{
      }
      b.goal=target;
      if held{b.decor_landing=true;}else if s[5]<0.01{b.decor_landing=false;}
-    }else if b.base!=base{body.set_translation(Vector::new(base[0] as f32,if kind==2{target.y}else{base[1] as f32},target.z),true);changed=true;}
+    }else if base_changed{body.set_translation(Vector::new(base[0] as f32,if kind==2{target.y}else{base[1] as f32},target.z),true);changed=true;}
    }else if held{
     if !b.held{
      b.anchor=body.translation()-target;b.grip_angle=body.rotation().to_scaled_axis().z;b.grip_time=0.0;
@@ -516,7 +518,7 @@ impl RustBookGravity{
    }else if !any_held&&(b.base[0]-base[0]).abs()>0.0001{
     body.set_translation(body.translation()+Vector::new((base[0]-b.base[0]) as f32,(base[1]-b.base[1]) as f32,0.0),true);changed=true;
    }
-   if b.base!=base || b.held!=held{disturbed.insert(b.base[2] as i64);disturbed.insert(g[2] as i64);}
+   if base_changed || b.held!=held{disturbed.insert(b.base[2] as i64);disturbed.insert(g[2] as i64);}
    b.base=base;b.held=held;b.bay=bay;
   }
   // Imported/legacy coordinates can put a fresh book through an actual pot.

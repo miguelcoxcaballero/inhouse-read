@@ -155,7 +155,7 @@ const libraryBackup = new LibraryBackup(library, cloudSync, {
 })
 function applyCloudSettings(keys) {
     const room = keys.filter(key => key.startsWith('inhouse-read-shelf-'))
-    if (room.length && !(els.readerScreen.hidden && !closingReader && room.length === 1 && room[0] === 'inhouse-read-shelf-physics-v1' && shelf?.applyRoomPose?.())) cloudRoomChanged = true
+    if (room.length) cloudRoomChanged = true
     if (keys.includes('inhouse-read-theme')) initTheme()
     if (keys.includes('inhouse-read-reading-preferences')) readingExperience.reloadPreferences()
     refreshShelf()
@@ -963,7 +963,7 @@ els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
 // A newer deploy found at launch reloads only a shelf nobody is using yet.
-deployCheck = initContentFreshnessChecks({ isIdle: () => !closingReader && !driveUploadsInFlight && !shelfRefreshQueued &&
+deployCheck = initContentFreshnessChecks({ isIdle: () => !closingReader && !driveUploadsInFlight && !shelfRefreshQueued && !shelf?.isInteracting &&
   !document.querySelector('.ihr-flyout') && els.readerScreen.hidden && els.driveModal.hidden &&
   document.getElementById('drive-auth-notice').hidden })
 refreshShelf({ immediate:true })

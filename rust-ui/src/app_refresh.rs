@@ -26,8 +26,8 @@ pub fn app_refresh_after_load(host:JsValue,stored:JsValue,account:JsValue,immedi
  let shelf=read(&state,"shelf")?;
  if !absent(&shelf)&&truthy(&read(&shelf,"isInteracting")?){return Ok(JsValue::UNDEFINED);}
  if truthy(&read(&state,"cloudRoomChanged")?)&&truthy(&read(&read(&read(&host,"els")?,"readerScreen")?,"hidden")?)&&!truthy(&read(&state,"closingReader")?){
-  let shelf=read(&state,"shelf")?;if !absent(&shelf){method(&shelf,"destroy",&[])?;}
-  set(&state,"shelf",&JsValue::NULL)?;set(&state,"shelfRecords",&JsValue::NULL)?;set(&state,"cloudRoomChanged",&JsValue::FALSE)?;
+  let shelf=read(&state,"shelf")?;if !absent(&shelf){method(&shelf,"prepareCloudRoom",&[])?;}
+  set(&state,"shelfRecords",&JsValue::NULL)?;set(&state,"cloudRoomChanged",&JsValue::FALSE)?;
  }
  for book in books.iter(){let task=method(&read(&host,"wordCountQueue")?,"ensure",&[&book])?;method(&task,"catch",&[&read(&host,"warnPreparation")?])?;}
  if truthy(&read(&state,"shelf")?)&&truthy(&read(&state,"shelfRecords")?)

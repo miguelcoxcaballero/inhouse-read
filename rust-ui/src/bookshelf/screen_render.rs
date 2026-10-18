@@ -15,6 +15,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  }
  let count=gn(&ctx.st("books"),"length");
  if !ctx.st_true("appearancesReady")&&count>0.0{
+  if ctx.st_true("shelfScene"){ctx.st_set("renderQueued",&JsValue::TRUE);return Ok(());}
   ctx.scene_call("dispose",&[])?;ctx.st_set("shelfScene",&null());set_text(&ctx.scroller,"");
   append(&ctx.scroller,&screen_nodes::build_preparing_state());return Ok(());
  }
@@ -102,6 +103,8 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  append(&ctx.scroller,&fragment);
  if ctx.st_true("useScene"){
   let layout=screen_plan::read_shelf_layout(ctx,&stage,width)?;
+  method(&get(&global(),"Object"),"defineProperty",&[&layout,&s("cloudRoom"),&obj(&[("value",&ctx.st("cloudRoomPending"))])])?;
+  ctx.st_set("cloudRoomPending",&JsValue::FALSE);
   method(&get(&global(),"Object"),"defineProperty",&[&layout,&s("physicsReady"),&obj(&[("value",&b(pending.length()==0))])])?;
   style_prop(&stage,"cssText",&format!("--ihr-cabinet-width:{}px",ns(width)));style_prop(&heading,"cssText","");
   for child in previous{remove(&child);}

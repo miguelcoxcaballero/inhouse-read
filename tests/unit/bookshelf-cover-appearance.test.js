@@ -165,6 +165,24 @@ describe('cover matched shelf styling', () => {
     }
   })
 
+  it('waits for every newly synchronized cover before laying out its first room', async () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    const complete = new Map()
+    vi.mocked(analyzeCoverAppearance).mockImplementation((url, title) => new Promise(resolve => complete.set(title, resolve)))
+    shelf = renderBookshelf(container, [], { shelfWidth:390, sections:false, waitForCoverAppearance:true })
+    const books = ['First', 'Second'].map(title => ({ id:`remote:${title}`, title, format:'PDF', cover:`blob:${title}` }))
+    shelf.refresh(books)
+    await vi.waitFor(() => expect(complete.size).toBe(2))
+    expect(container.querySelector('.ihr-spine')).toBeNull()
+    complete.get('First')({ color:'#3b5268', aspectRatio:.74, source:'cover' })
+    await Promise.resolve()
+    expect(container.querySelector('.ihr-spine')).toBeNull()
+    complete.get('Second')({ color:'#3b5268', aspectRatio:.82, source:'cover' })
+    await vi.waitFor(() => expect(container.querySelectorAll('.ihr-spine')).toHaveLength(2))
+    expect([...container.querySelectorAll('.ihr-spine canvas')].map(node => Number(node.dataset.coverRatio))).toEqual([.74,.82])
+  })
+
   it('prepares the author weight and the italic face of a generated cover before painting', async () => {
     container = document.createElement('div')
     document.body.append(container)

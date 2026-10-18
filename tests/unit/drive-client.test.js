@@ -258,3 +258,16 @@ it('confirms the shared live key after creation and returns no OAuth token',asyn
  expect(await drive.getDriveLiveContext()).toEqual({folderId:'state',key:winner,confirm:false});expect(patches).toBe(1)
  drive.signOutDrive();await expect(drive.getDriveLiveContext()).rejects.toThrow(/Conectar|sesión/i)
 })
+
+it('discovers Android/web mailboxes even when private OAuth appProperties are absent',async()=>{
+ session();const peer={id:'live-file',name:'live-v1-foreign-client-123.json',modifiedTime:new Date().toISOString()},events=[]
+ const listen=e=>events.push(e.detail);globalThis.addEventListener('inhouse-drive-live-peers',listen)
+ globalThis.fetch=vi.fn(async target=>{
+  const q=new URL(target).searchParams.get('q')||''
+  if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
+  if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
+  return json({files:[peer,{id:'other',name:'ordinary.json',appProperties:{ihrKind:'live-v1'}},{id:'bad',name:'live-v1-../invalid.json'}]})
+ })
+ try{expect(await drive.readDriveLibraryRevision()).toBe('[]');expect(events).toEqual([{folderId:'state',peers:[peer]}])}
+ finally{globalThis.removeEventListener('inhouse-drive-live-peers',listen)}
+})
