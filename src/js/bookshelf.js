@@ -510,6 +510,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     element: root,
     get isInteracting() { return shelfCtxLive && shelfNative.shelf_has_interaction(state); },
     applyRoomPose:() => shelfCtxLive && shelfNative.shelf_apply_room_pose(state),
+    prepareCloudRoom:() => { if(shelfCtxLive)shelfCtx.prepareCloudRoom(); },
     applyLiveRoomMotion:packet => shelfCtxLive && shelfNative.shelf_apply_live_room_motion(state,packet),
     clearLiveRoomMotion:source => shelfCtxLive && shelfNative.shelf_clear_live_room_motion(state,source),
     refresh,

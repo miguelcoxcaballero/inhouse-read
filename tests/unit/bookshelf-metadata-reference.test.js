@@ -200,3 +200,12 @@ describe('production metadata reference adoption', () => {
     expect(spine(latest[0].id).getAttribute('aria-label')).toContain('37 %');
   });
 });
+
+it('applies remote decorations on the retained room even when book metadata is unchanged',async()=>{
+ await mount();const root=shelf.element;
+ localStorage.setItem('inhouse-read-shelf-lamps',JSON.stringify([{key:'lamp:remote',lampId:'tarnaby',shelf:0,x:.7,isOn:false}]));
+ shelf.prepareCloudRoom();shelf.refresh(records);
+ expect(shelf.element).toBe(root);expect(root.isConnected).toBe(true);expect(state.updates).toBe(1);
+ expect(state.layout.cloudRoom).toBe(true);expect(state.layout.entries.some(e=>e.kind==='lamp'&&e.key==='lamp:remote')).toBe(true);
+ expect(state.adoption).not.toHaveBeenCalled();
+})

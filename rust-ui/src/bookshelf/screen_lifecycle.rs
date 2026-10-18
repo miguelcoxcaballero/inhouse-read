@@ -194,6 +194,19 @@ fn open_catalog(ctx:&Ctx)->R{
 
 #[wasm_bindgen]
 impl RustShelfCtx{
+ #[wasm_bindgen(js_name=prepareCloudRoom)]
+ pub fn prepare_cloud_room(&self)->R{
+  let ctx=&self.ctx;
+  let plants=super::screen_prefs::shelf_saved_plants(ctx.env.clone());
+  if !nullish(&plants){ctx.st_set("plants",&plants);ctx.st_set("plantsInitialized",&JsValue::TRUE);}
+  ctx.st_set("lamps",&super::screen_prefs::shelf_saved_lamps(ctx.env.clone()));
+  ctx.st_set("shelfType",&super::screen_prefs::shelf_stored_type(ctx.env.clone()));
+  let view=super::screen_prefs::shelf_stored_view(ctx.st("viewMode"));
+  if view!=ctx.st("viewMode"){
+   ctx.st_set("viewMode",&view);method_opt(&ctx.scene(),"setMode",&[&view])?;
+  }
+  ctx.st_set("cloudRoomPending",&JsValue::TRUE);Ok(())
+ }
  #[wasm_bindgen(js_name=lifecycleCallbacks)]
  pub fn lifecycle_callbacks(&self)->JsValue{
   let callbacks=obj(&[]);

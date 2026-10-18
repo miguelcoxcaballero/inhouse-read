@@ -512,3 +512,16 @@ it('repairs an obsolete tripod foot without resimulating the other saved bays',(
  const f=fixture(rows());register(f);expect(f.restore(JSON.stringify(saved))).toBe(true);const first=f.step();
  expect(first[1]).toEqual(before[1]);expect(first[2]).toEqual(before[2]);const rest=f.step(600);expect(rest[1]).toEqual(before[1]);expect(rest[2]).toEqual(before[2]);expect(rest[0].active).toBe(0);expect(rest[0].y+height/2).toBeLessThan(301);expect(typeof f.snapshot()).toBe('string');f.rows[0].flags=2;const held=f.step(60);expect(held[1]).toEqual(before[1]);f.rows.pop();const fallen=f.step(600)[1];const foot=fallen.y+50*Math.abs(Math.cos(fallen.angle))+10*Math.abs(Math.sin(fallen.angle));expect(foot).toBeGreaterThan(938);expect(foot).toBeLessThan(941);expect(fallen.active).toBe(0);f.free();
 });
+
+it('keeps a saved decorated room asleep across equivalent viewport arithmetic and legacy signatures',()=>{
+ for(const rounding of [1e-15,0.00004]){
+ const rows=[book('one',100),book('plant',450,{kind:1,width:100,height:250})];
+ const make=epsilon=>{const f=fixture(structuredClone(rows));f.decoration('plant',1,'muskot','muskot',new Float64Array([.075+epsilon,.15+epsilon,.25+epsilon,0]));return f};
+ const a=make(0);a.step(600);const snapshot=JSON.parse(a.snapshot());a.free();
+ const bits=v=>{const buffer=new ArrayBuffer(8);new Float64Array(buffer)[0]=v;return new BigUint64Array(buffer)[0].toString()};
+ snapshot[2].find(r=>r[0]==='plant')[8]='solid-v1:1:muskot:muskot:['+[.075+rounding,.15+rounding,.25+rounding,0].map(bits).join(', ')+']';
+ const b=make(2e-15);expect(b.restore(JSON.stringify(snapshot))).toBe(true);const first=b.step();expect(first.every(p=>p.active===0)).toBe(true);
+ expect(b.step(120)).toEqual(first);const saved=JSON.parse(b.snapshot());
+ for(const p of snapshot[2]){const q=saved[2].find(q=>q[0]===p[0]);for(const i of [5,6,7])expect(q[i]).toBeCloseTo(p[i],6)}b.free();
+ }
+})

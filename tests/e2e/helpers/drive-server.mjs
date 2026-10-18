@@ -3,12 +3,16 @@ import { createHash } from 'node:crypto'
 /** Binary-preserving Drive HTTP fixture shared by independent browser contexts.
  * Only Google's endpoints are substituted; the built app, storage, readers and
  * sync implementation are real. No app modules or IndexedDB are shared. */
-export function driveServer({ beforeUpload = async () => {} } = {}) {
+export function driveServer({ beforeUpload = async () => {}, privateAppProperties = false } = {}) {
   const files = new Map()
   let counter = 0
   const manifests = () => [...files.values()].filter(f => f.name.startsWith('library-v1-')).map(f => JSON.parse(f.bytes))
   async function connect(context) {
-    await context.addInitScript(() => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({ accessToken:'fixture-token', expiresAt:Date.now()+3600000 })))
+    // Drive appProperties belong to the requesting OAuth application. Android
+    // and browser clients may see the file without the other client's tags.
+    const owned = new Set()
+    const visible = file => { const {bytes,...meta}=file; if(privateAppProperties&&!owned.has(file.id))delete meta.appProperties; return meta }
+    await context.addInitScript(() => { if(/^https?:$/.test(location.protocol))localStorage.setItem('ihr_drive_session_v2', JSON.stringify({ accessToken:'fixture-token', expiresAt:Date.now()+3600000 })) })
     await context.route('https://www.googleapis.com/**', async route => {
       const req=route.request(), url=new URL(req.url()), method=req.method()
       const reply = data => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(data) })
@@ -33,10 +37,11 @@ export function driveServer({ beforeUpload = async () => {} } = {}) {
         const file={ ...previous, ...metadata, id:savedId, mimeType, bytes, size:String(bytes.length),
           md5Checksum:createHash('md5').update(bytes).digest('hex'), modifiedTime:new Date().toISOString() }
         files.set(savedId,file)
-        return reply({ ...file, bytes:undefined })
+        owned.add(savedId)
+        return reply(visible(file))
       }
       if (method==='GET' && files.has(id) && !url.searchParams.has('q')) {
-        const {bytes,...meta}=files.get(id);return reply(meta)
+        return reply(visible(files.get(id)))
       }
       if (method==='PATCH' && files.has(id)) {
         const old=files.get(id),next=JSON.parse(req.postData());Object.assign(old,next);return reply(old)
@@ -47,7 +52,7 @@ export function driveServer({ beforeUpload = async () => {} } = {}) {
       }
       const query=url.searchParams.get('q') || '', name=/name = '([^']+)'/.exec(query)?.[1], parent=/'([^']+)' in parents/.exec(query)?.[1]
       return reply({ files:[...files.values()].filter(f => (!name || f.name===name) && (!parent || f.parents?.includes(parent)))
-        .map(({bytes,...metadata}) => metadata) })
+        .map(visible) })
     })
   }
   return { connect, files, manifests }

@@ -19,6 +19,7 @@ export async function quietShelf(scene) {
 
 export async function seedShelf(page, {domino=false,single=false,mode='isometric',bookFile='tiny.pdf'}={}) {
   await page.addInitScript(({ lampKey, plantKey, domino, single, mode }) => {
+    if(!/^https?:$/.test(location.protocol))return;
     localStorage.setItem('inhouse-read-shelf-view', mode);
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
     localStorage.setItem(plantKey, JSON.stringify(single ? [] : [

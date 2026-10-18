@@ -2009,8 +2009,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         }
         if (node.classList.contains('ihr-plant')) {
           const record = state.plants.find(item => item.key === node.dataset.objectId);
-          entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
-            depth:record ? plantShelfObject(record).depth : rect.width * .7,
+          // Deliberate 1.7.295 contract change: catalogue dimensions survive
+          // viewport rounding; the DOM still supplies the chosen placement.
+          const dimensions = record ? plantShelfObject(record) : {width:rect.width,height:rect.height,depth:rect.width*.7};
+          entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:dimensions.width, height:dimensions.height,
+            depth:dimensions.depth,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
             seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;

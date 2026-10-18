@@ -35,3 +35,18 @@ describe('native direct-room protocol',()=>{
   const merged=ui.library_merge_checkpoint(a,b);expect(merged.books.file).toEqual({title:stamp('new',2),author:stamp('A')});expect(merged.settings.theme.value).toBe('dark');expect(ui.library_merge_checkpoint(b,a)).toEqual(merged)
  })
 })
+it('discovers recent sessions beyond old mailboxes and prioritizes the newest bounded peers',()=>{
+ const room=new ui.RustLiveRoom('account','peer-a'),now=Date.now();
+ const files=Array.from({length:90},(_,i)=>({id:'old-'+i,name:`live-v1-old-peer-${i}.json`,modifiedTime:new Date(now-1000000).toISOString()}));
+ files.push({id:'active',name:'live-v1-peer-b.json',modifiedTime:new Date(now).toISOString()});
+ expect(room.observe(files,now)).toEqual([['read','peer-b','active'],['offer','peer-b','active']]);room.free();
+})
+it('validates encrypted relay envelopes with the same account, source, expiry and sequence guards as RTC',()=>{
+ const a=new ui.RustLiveRoom('account','peer-a'),b=new ui.RustLiveRoom('account','peer-b'),now=Date.now();
+ b.observe([{id:'file',name:'live-v1-peer-a.json',modifiedTime:new Date(now).toISOString()}],now);
+ const packet=a.publishMotion({gesture:'held',sequence:1,phase:'frame',shelfType:'walnut',poses:[['book:drive:a',0,.1,.1,0,0,0,0,1,1]]});
+ expect(b.peerCount).toBe(1);expect(b.connectedCount).toBe(0);
+ for(const [id,envelope,time] of [['peer-z',{at:now,packet},now],['peer-a',{at:now-6001,packet},now],['peer-a',{at:now,packet},NaN],['peer-a',{at:now,packet:packet.replace('peer-a','peer-z')},now]])expect(b.receiveRelay(id,envelope,time)).toBeNull();
+ expect(b.receiveRelay('peer-a',{at:now,packet},now)).toMatchObject({gesture:'held',from:'peer-a'});
+ expect(b.receiveMotion(packet)).toBeNull();expect(b.receiveRelay('peer-a',{at:now,packet},now)).toBeNull();a.free();b.free();
+})

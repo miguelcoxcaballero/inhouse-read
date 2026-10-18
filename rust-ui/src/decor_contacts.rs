@@ -7,7 +7,18 @@ use std::f64::consts::PI;
 #[derive(Clone)]
 pub struct Description{pub kind:u32,pub pot:String,pub profile:String,pub values:[f64;4]}
 impl Description{
- pub fn signature(&self)->String{format!("{}:{}:{}:{}:{:?}",if self.kind==2{"solid-v2"}else{"solid-v1"},self.kind,self.pot,self.profile,self.values.map(f64::to_bits))}
+ fn prefix(&self)->String{format!("{}:{}:{}:{}:",if self.kind==2{"solid-v2"}else{"solid-v1"},self.kind,self.pot,self.profile)}
+ pub fn signature(&self)->String{format!("{}{:?}",self.prefix(),self.values.map(|v|((v*1e9).round()/1e9).to_bits()))}
+ pub fn matches_signature(&self,saved:Option<&str>)->bool{
+  let Some(raw)=saved.and_then(|s|s.strip_prefix(&self.prefix())).and_then(|s|s.strip_prefix('[')).and_then(|s|s.strip_suffix(']'))else{return false;};
+  let Some(values)=raw.split(',').map(|s|s.trim().parse::<u64>().ok().map(f64::from_bits)).collect::<Option<Vec<_>>>()else{return false;};
+  // Older plant snapshots measured CSS rectangles (rounded to 1/64 px).
+  // Match the existing rest-pose dimension tolerance: sub-0.1 mm changes
+  // must not wake a saved support merely because the viewport changed.
+  // Lamp values contain model scale factors, so keep their tighter bound.
+  let tolerance=if self.kind==1{0.0001}else{1e-8};
+  values.len()==4&&values.iter().zip(self.values).all(|(a,b)|a.is_finite()&&(a-b).abs()<tolerance)
+ }
  pub fn same(&self,other:&Self)->bool{self.kind==other.kind&&self.pot==other.pot&&self.profile==other.profile&&self.values.iter().zip(other.values).all(|(a,b)|(a-b).abs()<1e-9)}
 }
 #[derive(Clone)]

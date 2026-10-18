@@ -43,7 +43,11 @@ impl RustLiveRoom{
   let actions=Array::new();
   let stale:Vec<String>=self.peers.iter().filter(|(_,p)|p.status!=2&&js_sys::Date::parse(&p.modified)<now-90000.0).map(|(id,_)|id.clone()).collect();
   for id in stale{self.peers.remove(&id);actions.push(&Array::of3(&"close".into(),&id.into(),&JsValue::NULL));}
-  for file in Array::from(&files).iter().take(64){
+  // Old per-session mailboxes stay in Drive. Never let the first 64 stale
+  // files hide the active phone/browser further down a paginated listing.
+  let mut files:Vec<_>=Array::from(&files).iter().collect();
+  files.sort_by(|a,b|js_sys::Date::parse(&string(&get(b,"modifiedTime"))).total_cmp(&js_sys::Date::parse(&string(&get(a,"modifiedTime")))));
+  for file in files{
    let name=string(&get(&file,"name"));let Some(peer)=name.strip_prefix("live-v1-").and_then(|n|n.strip_suffix(".json"))else{continue;};
    if peer==self.own||!identity(peer){continue;}
    let modified=string(&get(&file,"modifiedTime"));let at=js_sys::Date::parse(&modified);
@@ -80,6 +84,15 @@ impl RustLiveRoom{
  pub fn connected(&mut self,peer:String){if let Some(p)=self.peers.get_mut(&peer){p.status=2;p.failures=0;}}
  pub fn failed(&mut self,peer:String,now:f64){if let Some(p)=self.peers.get_mut(&peer){p.status=3;p.failures=p.failures.saturating_add(1);p.retry=now+(5000.0*2f64.powi(p.failures.min(5) as i32)).min(120000.0);}}
  #[wasm_bindgen(getter)]pub fn connectedCount(&self)->usize{self.peers.values().filter(|p|p.status==2).count()}
+ #[wasm_bindgen(getter)]pub fn peerCount(&self)->usize{self.peers.len()}
+ pub fn receiveRelay(&mut self,peer:String,envelope:JsValue,now:f64)->JsValue{
+  let at=get(&envelope,"at").as_f64().unwrap_or(f64::NAN);
+  if !now.is_finite()||!at.is_finite()||(now-at).abs()>6000.0||!self.peers.contains_key(&peer){return JsValue::NULL;}
+  let Some(encoded)=get(&envelope,"packet").as_string().filter(|s|s.len()<=98304)else{return JsValue::NULL;};
+  let Ok(packet)=JSON::parse(&encoded)else{return JsValue::NULL;};
+  if string(&get(&packet,"from"))!=peer{return JsValue::NULL;}
+  self.receiveMotion(encoded)
+ }
  pub fn publish(&mut self,snapshot:JsValue,id:String)->Result<JsValue,JsValue>{
   if !valid_snapshot(&snapshot)||!identity(&id){return Ok(JsValue::NULL);}
   let key=snapshot_key(&snapshot)?;let packet=object(&[("v",1.into()),("account",self.account.clone().into()),("from",self.own.clone().into()),("id",id.into()),("snapshot",snapshot)]);

@@ -25,7 +25,7 @@ for(const [name,core]of [['UI',ui],['shelf',shelf]]){
 function fixture(names,scale=1,dx=0,dy=0){
  const solver=new shelf.RustBookGravity(),scene=new shelf.RustScene(600*scale,1200*scale,600*scale,250*scale,false,false,0)
  const inverse=Float64Array.of(0,0,0,1),out=new Float64Array(names.length*4);let clock=0
- return {apply:value=>solver.apply_snapshot(value),restore:value=>solver.restore(value),snapshot:()=>solver.snapshot(),step(frames=1,held=false){
+ return {resize:factor=>{scale=factor},apply:value=>solver.apply_snapshot(value),restore:value=>solver.restore(value),snapshot:()=>solver.snapshot(),step(frames=1,held=false){
   for(let f=0;f<frames;f++){
    scene.beginEntries(clock,false,1,inverse,1,600*scale,0,18)
    const states=new Float64Array(names.length*37),geometry=new Float64Array(names.length*9)
@@ -104,4 +104,13 @@ for(const [name,core]of [['UI',ui],['shelf',shelf]])it(`${name}: distinguishes p
  const added=structuredClone(b);added[2].pop();expect(core.room_physics_passive_compatible(a,JSON.stringify(added))).toBe(false)
  const resized=structuredClone(b);resized[2][0][3][0]+=.01;expect(core.room_physics_passive_compatible(a,JSON.stringify(resized))).toBe(false)
  for(const bad of [null,'null','{}','[]','[2]','[2,null,[]]','{bad'])expect(core.room_physics_passive_compatible(bad,a)).toBe(false)
+})
+
+it('keeps a shared resting room exact when its existing viewport changes scale',()=>{
+ const a=fixture(['book:local-A','book:local-B']);a.step(600);const cloud=ui.room_physics_for_cloud(a.snapshot(),books);a.free()
+ const c=fixture(['book:local-A','book:local-B'],.65);expect(c.restore(ui.room_physics_for_device(cloud,books))).toBe(true)
+ c.step();const initial=JSON.parse(ui.room_physics_for_cloud(c.snapshot(),books))[2]
+ c.resize(1.4333333333333333);c.step(120);const after=JSON.parse(ui.room_physics_for_cloud(c.snapshot(),books))[2]
+ for(let i=0;i<initial.length;i++)for(const k of [5,6,7])expect(after[i][k]).toBeCloseTo(initial[i][k],5)
+ c.free()
 })

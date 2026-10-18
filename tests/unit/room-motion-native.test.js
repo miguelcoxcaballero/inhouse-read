@@ -59,3 +59,14 @@ it('keeps remote gesture ownership through a motionless lease and releases it at
  room.receive(frame({sequence:2}),3000);expect(room.changed).toBe(false);expect(room.gesturing(4000)).toBe(true)
  room.receive(frame({sequence:3,phase:'end'}),4500);expect(room.gesturing(4501)).toBe(false);expect(room.active(4501)).toBe(true);room.free()
 })
+
+it('bridges a committed room in physical coordinates without mutating its target or leaking animation',()=>{
+ const bridge=new ui.RustRoomTransition(),target=Float64Array.of(.4,.1,0,0,0,1,0,1),out=new Float64Array(8)
+ bridge.begin([['book:drive:a',.2,.1,0,0,0,0,1,1]],100)
+ expect(bridge.pose('book:drive:a',target,100,out)).toBe(true);expect(out[0]).toBeCloseTo(.2)
+ expect(bridge.pose('book:drive:a',target,220,out)).toBe(true);expect(out[0]).toBeCloseTo(.3)
+ expect(Math.hypot(...out.slice(3,7))).toBeCloseTo(1)
+ expect(target[0]).toBe(.4);expect(bridge.pose('missing',target,220,out)).toBe(false)
+ expect(bridge.pose('book:drive:a',target,340,out)).toBe(false);expect(bridge.moving(340)).toBe(false)
+ bridge.begin([['book:drive:a',NaN,0,0,0,0,0,1,1]],400);expect(bridge.moving(400)).toBe(false);bridge.free()
+})

@@ -37,6 +37,12 @@ pub(super) fn portable_layout_matches(saved:&[f64],current:&[f64],metal:bool)->b
 }
 #[wasm_bindgen]
 impl RustBookGravity{
+ /// A remote snapshot may arrive before covers/book geometry. Do not seed a
+ /// partial solver and then lose the saved poses as the remaining books load.
+ pub fn matches_keys(&self,keys:Array)->bool{
+  let keys:BTreeSet<Vec<u16>>=keys.iter().filter(|k|k.is_string()).map(|k|k.unchecked_ref::<JsString>().iter().collect()).collect();
+  !keys.is_empty()&&keys.len()==self.saved.len()&&self.saved.keys().all(|key|keys.contains(key))
+ }
  /// Adopt an entire remote resting room atomically. Retain meshes, textures,
  /// colliders and contact identities; an incompatible membership/layout asks
  /// the shelf to take its normal semantic refresh path instead.
@@ -52,7 +58,8 @@ impl RustBookGravity{
    // Three millimetres accommodates viewport rounding, not an actual move.
    if pose.bay_relative&&[(pose.base[0]-pose.bay[0] as f64)-(b.base[0]-b.bay[0] as f64),
     (pose.base[1]-pose.bay[2] as f64)-(b.base[1]-b.bay[2] as f64)].iter().any(|v|v.abs()>0.003){return false;}
-   if !pose.matches(b.kind,b.base,b.size,b.bay)||pose.solid!=self.solids.get(key).map(|s|s.description.signature()){return false;}
+   let solid_matches=match self.solids.get(key){Some(s)=>s.description.matches_signature(pose.solid.as_deref()),None=>pose.solid.is_none()};
+   if !pose.matches(b.kind,b.base,b.size,b.bay)||!solid_matches{return false;}
   }
   for(key,b)in &mut self.books{
    let pose=&incoming.saved[key];let body=&mut self.world.bodies[b.handle];

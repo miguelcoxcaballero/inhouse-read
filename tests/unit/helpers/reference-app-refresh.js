@@ -45,7 +45,7 @@ export async function performShelfRefresh({ immediate = false } = {}) {
   if (cloudRoomChanged && (!els.readerScreen.hidden || closingReader)) return
   if (shelf?.isInteracting) return
   if (cloudRoomChanged && els.readerScreen.hidden && !closingReader) {
-    shelf?.destroy(); shelf = null; shelfRecords = null
+    shelf?.prepareCloudRoom(); shelfRecords = null
     cloudRoomChanged = false
   }
   // Counting is detached from the active reader and serial, so a home reload,

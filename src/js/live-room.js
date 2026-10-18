@@ -2,11 +2,12 @@ import {cloudModule} from './cloud-native.js'
 import {getDriveLiveContext,readDriveLiveMailbox,writeDriveLiveMailbox,readDriveLibraryRevision} from './drive-client.js'
 
 // Browser-owned RTC and WebCrypto handles; identity, negotiation, deduplication
-// and field registers live in Rust. Drive carries only encrypted rendezvous.
+// and field registers live in Rust. Drive carries encrypted rendezvous and a
+// bounded motion fallback when a direct network route is unavailable.
 // One identity per JavaScript realm: duplicated tabs clone sessionStorage.
 const realmPeer=crypto.randomUUID()
 const bytes=new TextEncoder(), text=new TextDecoder()
-const b64=b=>btoa(String.fromCharCode(...b))
+const b64=b=>{let s='';for(let i=0;i<b.length;i+=16384)s+=String.fromCharCode(...b.subarray(i,i+16384));return btoa(s)}
 const un64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0))
 export class LiveRoom {
   #mailboxes=new Map()
@@ -24,7 +25,7 @@ export class LiveRoom {
     globalThis.addEventListener('inhouse-drive-live-peers',this.#onPeers)
   }
   async publish(account,snapshot) {
-    if(!account||!this.#enabled()||!globalThis.RTCPeerConnection||!crypto.subtle)return
+    if(!account||!this.#enabled()||!crypto.subtle)return
     let s=this.#session
     if(s?.account!==account){this.pause();s={account,epoch:this.#epoch,peers:new Map(),signals:{},file:null,latest:snapshot,timers:new Set()};this.#session=s;s.ready=this.#start(s)}
     s.latest=snapshot
@@ -44,6 +45,21 @@ export class LiveRoom {
     },1000)
     s.tabs?.postMessage({t:'motion',from:s.own,packet})
     for(const p of s.peers.values())this.#sendMotion(p,packet)
+    if(s.native.peerCount>s.native.connectedCount){s.relayPending=packet;this.#scheduleRelay(s)}
+  }
+  #scheduleRelay(s){if(s.relayBusy||s.relayTimer||!s.relayPending)return
+    s.relayTimer=this.#timer(s,()=>{s.relayTimer=null;this.#relay(s)},250)
+  }
+  async #relay(s){
+    const packet=s.relayPending;s.relayPending=null
+    if(!packet||!this.#valid(s)||!s.key||s.native.peerCount<=s.native.connectedCount)return
+    s.relayBusy=true
+    try{
+      const iv=crypto.getRandomValues(new Uint8Array(12))
+      const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:bytes.encode(s.account)},s.key,bytes.encode(JSON.stringify({at:Date.now(),packet})))
+      if(!this.#valid(s))return
+      s.relayMotion={iv:b64(iv),data:b64(new Uint8Array(data))};await this.#write(s)
+    }catch{}finally{s.relayBusy=false;if(this.#valid(s))this.#scheduleRelay(s)}
   }
   #valid(s){return this.#session===s&&s.epoch===this.#epoch&&this.#enabled()}
   #timer(s,fn,ms){const t=setTimeout(()=>{s.timers.delete(t);if(this.#valid(s))fn()},ms);s.timers.add(t);return t}
@@ -72,16 +88,25 @@ export class LiveRoom {
       }
       await this.#context(s);if(!this.#valid(s))return
       await this.#write(s);if(!this.#valid(s))return
-      await readDriveLibraryRevision()
+      this.#discover(s)
       this.#heartbeat(s)
     }catch(error){console.debug('Direct room initialization:',error.message);if(this.#session===s){this.pause()}}
   }
   #heartbeat(s){this.#timer(s,()=>{this.#write(s).catch(()=>{});this.#heartbeat(s)},20000)}
+  async #discover(s){
+    // Discovery must not wait behind a cover upload or the durable backup
+    // lock: the other device's first offer may arrive during that work.
+    try{await readDriveLibraryRevision();s.discoveryFailures=0}
+    catch{s.discoveryFailures=(s.discoveryFailures||0)+1}
+    if(this.#valid(s))this.#timer(s,()=>this.#discover(s),s.discoveryFailures?
+      Math.min(15000,1000*2**Math.min(s.discoveryFailures,4)):
+      [...s.peers.values()].some(p=>p.open)?2500:700)
+  }
   #write(s) {
     // Serialize writes so a slow heartbeat cannot overwrite a newer answer.
     s.writing=(s.writing||Promise.resolve()).catch(()=>{}).then(async()=>{
       if(!this.#valid(s))return
-      const payload={v:1,peer:s.own,at:Date.now(),signals:{...s.signals}}
+      const payload={v:1,peer:s.own,at:Date.now(),signals:{...s.signals},motion:s.relayMotion}
       let file
       try{file=await writeDriveLiveMailbox(s.own,payload,s.file)}
       catch(error){if(!this.#valid(s)||!s.file)throw error;s.file=null;this.#mailboxes.delete(s.account);file=await writeDriveLiveMailbox(s.own,payload,null)}
@@ -102,6 +127,13 @@ export class LiveRoom {
     s.reading ||= new Set();if(s.reading.has(id))return;s.reading.add(id)
     try{
       const mailbox=await readDriveLiveMailbox(file);if(!this.#valid(s)||mailbox.peer!==id)return
+      if(typeof mailbox.motion?.data==='string'&&mailbox.motion.data.length<=132000){
+        try{
+          const decoded=await this.#decrypt(s,mailbox.motion);if(!this.#valid(s))return
+          const envelope=JSON.parse(text.decode(decoded)),packet=s.native.receiveRelay(id,envelope,Date.now())
+          if(packet){this.#motion(s.account,packet);s.tabs?.postMessage({t:'motion',from:s.own,packet:envelope.packet});for(const p of s.peers.values())if(p.id!==id)this.#sendMotion(p,envelope.packet)}
+        }catch{}
+      }
       const encrypted=mailbox.signals[s.own];if(!encrypted||typeof encrypted.data!=='string'||encrypted.data.length>65000)return
       let decoded
       try{decoded=await this.#decrypt(s,encrypted)}catch{await this.#context(s);if(!this.#valid(s))return;decoded=await this.#decrypt(s,encrypted)}
@@ -175,7 +207,7 @@ export class LiveRoom {
     p.interactive=c;c.bufferedAmountLowThreshold=32768
     c.onopen=()=>{if(this.#validPeer(s,p))this.#flushMotion(p)}
     c.onbufferedamountlow=()=>this.#flushMotion(p)
-    c.onclose=()=>{if(p.interactive===c)p.interactive=null}
+    c.onclose=()=>{if(p.interactive===c){p.interactive=null;if(this.#validPeer(s,p))this.#failed(s,p.id)}}
     c.onmessage=e=>{
       if(!this.#validPeer(s,p)||typeof e.data!=='string'||e.data.length>98304)return
       try{

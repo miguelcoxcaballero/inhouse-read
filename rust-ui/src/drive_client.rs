@@ -484,12 +484,15 @@ impl Core{
    *self.state_folder.borrow_mut()=Some(Promise::resolve(&folder));folder
   };
   self.require(generation)?;
-  let pattern=RegExp::new(r"^library-v1-[\w-]+\.json$","");let rows=Array::new();let peers=Array::new();let mut token=JsValue::UNDEFINED;
+  let pattern=RegExp::new(r"^library-v1-[\w-]+\.json$","");let live_pattern=RegExp::new(r"^live-v1-[A-Za-z0-9_-]{8,128}\.json$","");let rows=Array::new();let peers=Array::new();let mut token=JsValue::UNDEFINED;
   loop{
    let page=self.list_folder(&folder,&object(&[("fields","id,name,modifiedTime,appProperties".into()),("pageToken",token)]),generation).await?;
    for file in Array::from(&or(get(&page,"files"),Array::new().into())).iter(){
     if pattern.test(&string(&get(&file,"name"))){rows.push(&Array::of2(&get(&file,"id"),&get(&file,"modifiedTime")));}
-    if get(&get(&file,"appProperties"),"ihrKind")==JsValue::from_str("live-v1"){peers.push(&file);}
+    // appProperties are private to an OAuth application. Android and web
+    // discover the same account's directed mailboxes by their public names;
+    // the authenticated encrypted payload still validates both identities.
+    if live_pattern.test(&string(&get(&file,"name"))){peers.push(&file);}
    }
    token=get(&page,"nextPageToken");if !token.is_truthy(){break;}
   }
