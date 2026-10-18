@@ -126,6 +126,16 @@ pub fn set_view_mode(ctx:&Rc<Ctx>,mode:&JsValue)->R{
 
 
 #[wasm_bindgen]
+pub fn shelf_has_interaction(state:JsValue)->Result<bool,JsValue>{
+ if ["busy","session","dragSession","returnMotion","trashRemoval","arranging","pendingSelection","pressedBookId","compatibilityTapTimer"].iter().any(|key|gb(&state,key)){return Ok(true);}
+ Ok(method_opt(&get(&state,"shelfScene"),"isMoving",&[])?.is_some_and(|v|truthy(&v)))
+}
+#[wasm_bindgen]
+pub fn shelf_apply_room_pose(state:JsValue)->Result<bool,JsValue>{
+ if shelf_has_interaction(state.clone())?{return Ok(false);}
+ Ok(method_opt(&get(&state,"shelfScene"),"applyRoomPose",&[])?.is_some_and(|v|truthy(&v)))
+}
+#[wasm_bindgen]
 pub fn shelf_can_change_view(state:JsValue)->Result<bool,JsValue>{
  if ["destroyed","busy","session","returnMotion","trashRemoval","arranging"].iter().any(|key|gb(&state,key)){return Ok(false);}
  let zoom=method_opt(&get(&state,"shelfScene"),"getInspectionZoom",&[])?.unwrap_or(undef());Ok(num(&or(zoom,f(1.0)))<=1.001)

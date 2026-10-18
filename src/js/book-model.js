@@ -414,7 +414,7 @@ function coverRasterDimensions(ratio, textureHeight, maxDimension = Infinity) {
   return { width:Math.max(1, Math.round(width * scale)), height:Math.max(1, Math.round(height * scale)) };
 }
 
-const coverSeed = (book, style, salt) => seededRandom(textSeed(`${book?.id ?? ''}|${book?.title ?? ''}|${style?.color}|${salt}`));
+const coverSeed = (book, style, salt) => seededRandom(textSeed(`${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}|${style?.color}|${salt}`));
 
 // Wear that belongs to the board rather than the artwork, drawn in design
 // units (1024 = board height) over printed and cloth covers alike.
@@ -435,7 +435,7 @@ function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity
   // The publisher's device is the spine's own mark when the case has one, otherwise one of the
   // same family, per book.
   const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
-  const device = thumb ? -1 : spineLayout(book).device ?? textSeed(`device|${book?.id ?? ''}|${book?.title ?? ''}`) % 3;
+  const device = thumb ? -1 : spineLayout(book).device ?? textSeed(`device|${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}`) % 3;
   needRustShelf().book_cover_case(c, designWidth, displayBookTitle(book) || 'Sin título', String(normalizeBookAuthor(book.author) || ''),
     style.ink, style.fontWeight, family, thumb, device, drawDevice, random);
   const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
@@ -474,9 +474,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const textureHeight = inspectionResolution || (overview ? 256 : shelf ? 512 : liftedTextureHeight(height));
   const maxTextureDimension = overview ? 256 : Infinity;
   const bindingSegments = overview ? 16 : shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
-  const ribbonSegments = overview ? 8 : 32, ribbonSeed = textSeed(`ribbon|${book?.id ?? ''}|${book?.title ?? ''}`) || 1;
+  const ribbonSegments = overview ? 8 : 32, ribbonSeed = textSeed(`ribbon|${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}`) || 1;
   const detail = !shelf && !overview, level = group.userData.detailLevel, ratio = width / height;
-  const surfaceSeed = String(book?.id ?? book?.path ?? book?.title ?? 'book');
+  const surfaceSeed = String(book?.shelfVisualId ?? book?.id ?? book?.path ?? book?.title ?? 'book');
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
   applyBookReflectionSurface(cloth, { seed:`${surfaceSeed}|back`, strength:.018 });
   let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution);

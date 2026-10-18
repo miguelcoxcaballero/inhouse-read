@@ -410,3 +410,8 @@ describe('planBookshelf', () => {
     }
   })
 })
+
+it('shares spine color, height and texture with an imported Drive copy',()=>{
+ const local={id:'local:quiet',title:'Quiet reading',wordCount:50000},remote={...local,id:'drive:123',shelfVisualId:local.id}
+ expect(seedFor(remote)).toBe(local.id);expect(spineStyleFor(remote)).toEqual(spineStyleFor(local))
+})

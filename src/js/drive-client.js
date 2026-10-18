@@ -129,6 +129,7 @@ export function signOutDrive() {
 
 export const getOrCreateReadFolder = later('getOrCreateReadFolder')
 export const readDriveLibrarySnapshots = later('readDriveLibrarySnapshots')
+export const readDriveLibraryRevision = later('readDriveLibraryRevision')
 export const writeDriveLibrarySnapshot = later('writeDriveLibrarySnapshot')
 export const uploadDriveCover = later('uploadDriveCover')
 export const listDriveBooks = later('listDriveBooks')

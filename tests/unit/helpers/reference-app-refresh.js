@@ -41,6 +41,9 @@ export async function performShelfRefresh({ immediate = false } = {}) {
   }))
   const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
   if (appDisposed || nativeImportShelfGate.deferRefresh()) return
+  // 1.7.290: a received room waits until the active reader/gesture returns.
+  if (cloudRoomChanged && (!els.readerScreen.hidden || closingReader)) return
+  if (shelf?.isInteracting) return
   if (cloudRoomChanged && els.readerScreen.hidden && !closingReader) {
     shelf?.destroy(); shelf = null; shelfRecords = null
     cloudRoomChanged = false

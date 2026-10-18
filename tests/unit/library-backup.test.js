@@ -7,7 +7,7 @@ import { LibraryBackup } from '../../src/js/library-backup.js'
 
 vi.mock('../../src/js/drive-client.js', () => ({
   getDriveProfile:vi.fn(), listAllDriveBooks:vi.fn(), uploadDriveFile:vi.fn(), downloadDriveFile:vi.fn(),
-  readDriveProgress:vi.fn(), writeDriveProgress:vi.fn(), readDriveLibrarySnapshots:vi.fn(),
+  readDriveProgress:vi.fn(), writeDriveProgress:vi.fn(), readDriveLibrarySnapshots:vi.fn(), readDriveLibraryRevision:vi.fn(),
   writeDriveLibrarySnapshot:vi.fn(), uploadDriveCover:vi.fn()
 }))
 import * as drive from '../../src/js/drive-client.js'
@@ -193,4 +193,39 @@ describe('complete Drive library backup across independent devices', () => {
     expect(await a.library.listAll()).toEqual([])
     expect(await b.library.listAll()).toEqual([])
   })
+})
+
+it('polls only lightweight revisions while the room is unchanged, and retries a locally dirty sync',async()=>{
+ const a=device();await add(a);drive.readDriveLibraryRevision.mockResolvedValue('revision-one')
+ await a.backup.poll('account');const reads=drive.readDriveLibrarySnapshots.mock.calls.length,full=drive.listAllDriveBooks.mock.calls.length
+ await a.backup.poll('account');await a.backup.poll('account')
+ expect(drive.readDriveLibrarySnapshots).toHaveBeenCalledTimes(reads);expect(drive.listAllDriveBooks).toHaveBeenCalledTimes(full)
+ drive.readDriveLibraryRevision.mockRejectedValueOnce(new Error('offline'))
+ await expect(a.backup.poll('account')).rejects.toThrow('offline')
+ await a.sync();await a.backup.poll('account');expect(drive.readDriveLibrarySnapshots.mock.calls.length).toBeGreaterThan(reads)
+})
+it('restores a changed revision immediately through the same merge and keeps shared book appearance identities',async()=>{
+ const a=device(),first=await add(a);await a.sync();const b=device()
+ drive.readDriveLibraryRevision.mockImplementation(async()=>JSON.stringify([...snapshots.values()]))
+ await b.backup.poll('account');const [restored]=await b.library.listAll();expect(restored.shelfVisualId).toBe(first.id)
+ await a.library.patch(first.id,{shelfPosition:{shelf:1,x:.31},spineColorOverride:'#123456'});await a.sync()
+ await b.backup.poll('account');expect(await b.library.get(restored.id)).toMatchObject({shelfPosition:{shelf:1,x:.31},spineColorOverride:'#123456',shelfVisualId:first.id})
+})
+it('backs up portable settled poses with Drive IDs instead of another device local IDs',async()=>{
+ const a=device(),book=await add(a)
+ const pose=[2,[1000,1],[['book:'+book.id,0,[.1,-.2,2,1000],[.02,.2,.15],[.02,.58,-.3,-.01],.15,-.24,-.4,null]]]
+ a.storage.setItem('inhouse-read-shelf-physics-v1',JSON.stringify(pose));await a.sync()
+ const [source]=await a.library.listAll(),remote=[...snapshots.values()][0].settings['inhouse-read-shelf-physics-v1'].value
+ expect(JSON.parse(remote)[2][0][0]).toBe('book:drive:'+source.driveFileId)
+ const b=device();await b.sync();const [restored]=await b.library.listAll()
+ const local=JSON.parse(b.storage.getItem('inhouse-read-shelf-physics-v1'));expect(local[0]).toBe(2);expect(local[2][0][0]).toBe('book:'+restored.id);expect(local[2][0][7]).toBe(-.4)
+ const register=structuredClone([...snapshots.values()][0].settings['inhouse-read-shelf-physics-v1'])
+ await b.sync();await a.sync();await b.sync()
+ for(const manifest of snapshots.values())expect(manifest.settings['inhouse-read-shelf-physics-v1']).toEqual(register)
+ const settled=drive.writeDriveLibrarySnapshot.mock.calls.length;await a.sync();await b.sync();expect(drive.writeDriveLibrarySnapshot).toHaveBeenCalledTimes(settled)
+})
+it('retries a failed original upload even when the remote revision did not change',async()=>{
+ const a=device();await add(a);drive.readDriveLibraryRevision.mockResolvedValue('same-revision');drive.uploadDriveFile.mockRejectedValueOnce(new Error('temporary failure'))
+ expect((await a.backup.poll('account')).errors.length).toBeGreaterThan(0)
+ await a.backup.poll('account');expect(drive.uploadDriveFile).toHaveBeenCalledTimes(2);expect((await a.library.listAll())[0].driveFileId).toBeTruthy()
 })

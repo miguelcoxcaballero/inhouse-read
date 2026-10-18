@@ -372,8 +372,8 @@ impl RustBookGravity{
     // Start a legacy lean around its original bottom toe, not its
     // centre: rotating about the centre pushes the raised bottom corner
     // into its neighbour and can create an artificial wedged support.
-    let x=remembered.as_ref().map_or_else(||base[0]+angle.signum()*thickness/2.0*(angle.cos()-1.0)-h/2.0*angle.sin(),|s|s.x as f64);
-    let y=remembered.as_ref().map_or_else(||if kind==2{target.y as f64}else{base[1]+h/2.0*(angle.cos()-1.0)+thickness/2.0*angle.sin().abs()},|s|s.y as f64);
+    let x=remembered.as_ref().map_or_else(||base[0]+angle.signum()*thickness/2.0*(angle.cos()-1.0)-h/2.0*angle.sin(),|s|s.x as f64+if s.portable{base[0]-s.base[0]}else{0.0});
+    let y=remembered.as_ref().map_or_else(||if kind==2{target.y as f64}else{base[1]+h/2.0*(angle.cos()-1.0)+thickness/2.0*angle.sin().abs()},|s|s.y as f64+if s.portable{base[1]-s.base[1]}else{0.0});
     let solid=self.solids.get(key).map(|s|s.shape.clone());
     let body=if kind==0||solid.is_some(){RigidBodyBuilder::dynamic()}else{RigidBodyBuilder::fixed()}
      .translation(Vector::new(x as f32,y as f32,(s[31]/p) as f32))
@@ -548,7 +548,7 @@ impl RustBookGravity{
   for (key,contacting,recovery) in contacts{let b=self.books.get_mut(&key).unwrap();if contacting&&b.recovery.is_some(){b.firm_grip=true;}b.contacting=contacting;b.recovery=recovery;
    self.world.colliders[b.collider].set_collision_groups(InteractionGroups::new(Group::GROUP_1,if contacting{Group::ALL & !Group::GROUP_2}else{Group::empty()},InteractionTestMode::And));
   }
-  let matching_scene=!self.initialized&&!self.saved.is_empty()&&self.saved_layout==self.layout&&self.saved.len()==self.books.len()&&self.snapshot_allowed;
+  let matching_scene=!self.initialized&&!self.saved.is_empty()&&(self.saved_layout==self.layout||self.saved.values().all(|s|s.portable)&&snapshot::portable_layout_matches(&self.saved_layout,&self.layout,scene.baggebo))&&self.saved.len()==self.books.len()&&self.snapshot_allowed;
   let repaired_rows:BTreeSet<_>=if matching_scene{self.books.values().filter(|b|!b.restored).map(|b|b.base[2] as i64).collect()}else{BTreeSet::new()};
   let restored_scene=matching_scene&&repaired_rows.is_empty();
   if restored_scene{

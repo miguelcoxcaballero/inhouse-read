@@ -50,3 +50,6 @@ mod app_cover_background;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod book_customization;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod room_physics_sync;

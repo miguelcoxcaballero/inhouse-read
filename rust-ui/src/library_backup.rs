@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Array,Map,Object,Promise};
 use crate::cloud_host::*;
 
-const META:[&str;21]=["name","title","author","format","mimeType","size","sizeBytes","pageCount","shelfOrder","addedAt","lastOpenedAt",
+const META:[&str;22]=["name","title","author","format","mimeType","size","sizeBytes","pageCount","shelfOrder","addedAt","lastOpenedAt","shelfVisualId",
  "coverAppearance","coverAppearanceKey","coverUpdatedAt","driveContentChecksum",
  "progressFraction","locator","progressUpdatedAt","readingHistory","bookmarks","quotes"];
 const DEVICE_KEY:&str="inhouse-read-backup-device";
@@ -19,7 +19,7 @@ const UNSAFE:[&str;3]=["__proto__","constructor","prototype"];
 
 struct Core{
  host:JsValue,library:JsValue,cloud:JsValue,storage:JsValue,device:JsValue,settings:Vec<String>,
- generation:Cell<f64>,task:RefCell<Option<Promise>>,
+ generation:Cell<f64>,task:RefCell<Option<Promise>>,revision:RefCell<Option<(JsValue,JsValue)>>,
 }
 
 fn blank()->JsValue{Object::new().into()}
@@ -55,6 +55,9 @@ impl Core{
  fn metadata(&self,book:&JsValue)->Result<JsValue,JsValue>{
   let result=blank();assign(&result,&call(&self.host,"spineCustomization",&[book])?)?;
   for key in META{let value=get(book,key);if !value.is_undefined(){set(&result,key,&value);}}
+  if !get(&result,"shelfVisualId").is_string()||!get(&result,"shelfVisualId").is_truthy(){
+   delete(&result,"shelfVisualId");if get(book,"id").is_string()&&get(book,"id").is_truthy(){set(&result,"shelfVisualId",&get(book,"id"));}
+  }
   Ok(result)
  }
  /// `JSON.parse(storage.getItem(key)) ?? fallback`, the fallback on any failure.
@@ -173,9 +176,11 @@ impl Core{
    }
   }
   let touched=self.parse_stored(CHANGES_KEY);
+  records=Array::from(&settle(call(&self.library,"listAll",&[])).await?);self.guard(generation)?;
   for setting in &self.settings{
    let value=call(&self.storage,"getItem",&[&setting.as_str().into()])?;
    if value.is_null(){continue;}
+   let value=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_for_cloud(value,records.clone().into())}else{value};
    // Default plants/view created during boot must not replace a saved room.
    let old=get(&get(&baseline,"settings"),setting);
    if !old.is_truthy()&&!get(&touched,setting).is_truthy()&&get(&merged_settings,setting).is_truthy(){continue;}
@@ -235,7 +240,7 @@ impl Core{
     let current=self.metadata(&book)?;
     for (field,value) in entries(&values){
      if observed.has(&id.clone().into())&&json(&get(&current,&field))?!=json(&get(&observed.get(&id.clone().into()),&field))?{continue;}
-     if json(&get(&current,&field))?!=json(&value)?{set(&patch,&field,&value);}
+     if json(&get(&current,&field))?!=json(&value)?||(field=="shelfVisualId"&&get(&book,&field)!=value){set(&patch,&field,&value);}
     }
     if Object::keys(patch.unchecked_ref::<Object>()).length()>0{
      let still=current.clone();let core=self.clone();
@@ -270,21 +275,26 @@ impl Core{
    }
    set(&applied_books,&id,&fields);
   }
-  let mut settings_changed=false;
+  let room_records=if self.settings.iter().any(|s|s==crate::room_physics_sync::KEY){settle(call(&self.library,"listAll",&[])).await?}else{records.into()};
+  self.guard(generation)?;
+  let changed_settings=Array::new();
   for setting in &self.settings{
    let entry=get(&merged_settings,setting);
    if !entry.is_truthy()||!get(&entry,"value").is_string(){continue;}
    // Re-check edits that happened while an image was downloading.
    let latest_touched=or(get(&self.parse_stored(CHANGES_KEY),setting),0.into());
    if latest_touched.gt(&or(get(&touched,setting),0.into())){continue;}
-   if call(&self.storage,"getItem",&[&setting.as_str().into()])?!=get(&entry,"value"){
-    call(&self.storage,"setItem",&[&setting.as_str().into(),&get(&entry,"value")])?;settings_changed=true;
+   let value=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_for_device(get(&entry,"value"),room_records.clone())}else{get(&entry,"value")};
+   let current=call(&self.storage,"getItem",&[&setting.as_str().into()])?;
+   let unchanged=if setting==crate::room_physics_sync::KEY{crate::room_physics_sync::room_physics_for_cloud(current.clone(),room_records.clone())==get(&entry,"value")}else{current==value};
+   if !unchanged{
+    call(&self.storage,"setItem",&[&setting.as_str().into(),&value])?;changed_settings.push(&setting.as_str().into());
    }
    set(&applied_settings,setting,&entry);
   }
   self.guard(generation)?;
   settle(call(&self.host,"saveBackupCheckpoint",&[&key.into(),&object(&[("books",applied_books),("settings",applied_settings)])])).await?;self.guard(generation)?;
-  if settings_changed{call(&self.host,"onSettings",&[])?;}
+  if changed_settings.length()>0{call(&self.host,"onSettings",&[changed_settings.as_ref()])?;}
   call(&self.host,"onChange",&[])?;
   let mut own=JsValue::UNDEFINED;
   for snapshot in snapshots.iter(){if get(&snapshot,"deviceId")==self.device{own=snapshot;}}
@@ -315,10 +325,25 @@ impl RustLibraryBackup{
   let device=if saved.is_truthy(){saved}else{call(&host,"randomUUID",&[])?};
   call(&storage,"setItem",&[&DEVICE_KEY.into(),&device])?;
   let settings=Array::from(&get(&host,"settings")).iter().map(|name|string(&name)).collect();
-  Ok(RustLibraryBackup{core:Rc::new(Core{library:get(&host,"library"),cloud:get(&host,"cloud"),storage,device,settings,host,generation:Cell::new(0.0),task:RefCell::new(None)})})
+  Ok(RustLibraryBackup{core:Rc::new(Core{library:get(&host,"library"),cloud:get(&host,"cloud"),storage,device,settings,host,generation:Cell::new(0.0),task:RefCell::new(None),revision:RefCell::new(None)})})
  }
  #[wasm_bindgen(getter)] pub fn device(&self)->JsValue{self.core.device.clone()}
  #[wasm_bindgen(getter)] pub fn task(&self)->JsValue{self.core.task.borrow().clone().map(JsValue::from).unwrap_or(JsValue::NULL)}
- pub fn reset(&self){self.core.generation.set(self.core.generation.get()+1.0);*self.core.task.borrow_mut()=None;}
- pub fn sync(&self,account_id:JsValue)->Promise{self.core.clone().sync(account_id)}
+ pub fn reset(&self){self.core.generation.set(self.core.generation.get()+1.0);*self.core.task.borrow_mut()=None;*self.core.revision.borrow_mut()=None;}
+ pub fn sync(&self,account_id:JsValue)->Promise{*self.core.revision.borrow_mut()=None;self.core.clone().sync(account_id)}
+ /// One small metadata request per visible poll. Unchanged rooms never read
+ /// book bytes, decode covers, restart physics or wake the renderer.
+ pub fn poll(&self,account_id:JsValue)->Promise{
+  let core=self.core.clone();let generation=core.generation.get();
+  start(async move{
+   if !account_id.is_truthy(){return Ok(JsValue::UNDEFINED);}
+   let task=core.task.borrow().clone();if let Some(task)=task{return settle(Ok(task.into())).await;}
+   let revision=settle(call(&core.host,"readDriveLibraryRevision",&[])).await?;core.guard(generation)?;
+   if core.revision.borrow().as_ref().is_some_and(|(account,old)|*account==account_id&&*old==revision){return Ok(JsValue::UNDEFINED);}
+   let result=settle(Ok(core.clone().sync(account_id.clone()).into())).await?;core.guard(generation)?;
+   let errors=get(&result,"errors");
+   if !Array::is_array(&errors)||Array::from(&errors).length()==0{*core.revision.borrow_mut()=Some((account_id,revision));}
+   Ok(result)
+  })
+ }
 }

@@ -8,6 +8,18 @@ use crate::length_metadata::{length_clear_count,length_new_revision};
 type R<T> = Result<T,JsValue>;
 fn optional(value:&JsValue,key:&str)->R<JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{read(value,key)}}
 fn setting(options:&JsValue,key:&str)->R<JsValue>{let value=read(options,key)?;Ok(if value.is_undefined(){JsValue::FALSE}else{value})}
+/// A shared appearance identity takes precedence over the local IndexedDB key.
+/// Keep JavaScript string coercion and UTF-16; no lossy Rust String round trip.
+#[wasm_bindgen]
+pub fn book_seed_for(book:JsValue)->R<JsValue>{
+ if !truthy(&book){return Ok("".into());}
+ let visual=read(&book,"shelfVisualId")?;
+ if visual.is_string()&&truthy(&visual){return Ok(visual);}
+ if !absent(&read(&book,"id")?)&&read(&book,"id")?!=JsValue::from_str(""){return method(&crate::host::global(),"String",&[&read(&book,"id")?]);}
+ if truthy(&read(&book,"path")?){return method(&crate::host::global(),"String",&[&read(&book,"path")?]);}
+ let title=read(&book,"title")?;let author=read(&book,"author")?;
+ method(&JsValue::from_str(""),"concat",&[&if absent(&title){"".into()}else{title},&"|".into(),&if absent(&author){"".into()}else{author}])
+}
 #[wasm_bindgen]
 pub fn book_is_visible(book:JsValue,account:JsValue)->R<bool>{
  if !truthy(&book){return Ok(false);}
