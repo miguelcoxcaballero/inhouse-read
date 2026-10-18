@@ -111,6 +111,10 @@ function makeServer(trace) {
 }
 
 function installPlatform(world, rng) {
+  // Deadline behavior is covered in drive-fetch.test.js. jsdom's timeout
+  // implementation reads Date.now internally; that must not advance this
+  // differential fixture's synthetic business clock per HTTP request.
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => new AbortController().signal)
   const events = world.trace
   let clock = 1_700_000_000_000, uuid = 0, bytes = 0
   vi.spyOn(Date, 'now').mockImplementation(() => /fake-indexeddb/.test(new Error().stack) ? realNow() : (clock += 1))

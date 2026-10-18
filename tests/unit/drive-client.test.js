@@ -271,3 +271,7 @@ it('discovers Android/web mailboxes even when private OAuth appProperties are ab
  try{expect(await drive.readDriveLibraryRevision()).toBe('[]');expect(events).toEqual([{folderId:'state',peers:[peer]}])}
  finally{globalThis.removeEventListener('inhouse-drive-live-peers',listen)}
 })
+it.each([404,503])('preserves HTTP %i so live recovery recreates only deleted files',async status=>{
+ session();globalThis.fetch=vi.fn(async()=>new Response(JSON.stringify({error:{message:'failure'}}),{status,headers:{'Content-Type':'application/json'}}))
+ await expect(drive.readDriveLiveMailbox('mailbox')).rejects.toMatchObject({message:'failure',status})
+})

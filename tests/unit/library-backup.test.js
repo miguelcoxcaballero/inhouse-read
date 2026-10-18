@@ -350,3 +350,15 @@ it('does not publish passive physics recalculation over a shared room, but accep
  const snapshot=await b.backup.captureRoom('account');expect(JSON.parse(snapshot.settings[key].value)[2][0][7]).toBe(-.7)
  await a.backup.receiveSnapshot('account',snapshot);expect(JSON.parse(a.storage.getItem(key))[2][0][7]).toBe(-.7)
 })
+it('retains a received room for retry after a transient local storage failure',async()=>{
+ const a=device(),b=device();await add(a);await a.sync();await b.sync()
+ const key='inhouse-read-shelf-lamps',value='[{"key":"lamp:one","isOn":false}]'
+ a.storage.setItem(key,value);a.backup.markSettingChanged('account',key)
+ const snapshot=await a.backup.captureRoom('account')
+ const write=vi.spyOn(b.storage,'setItem')
+ write.mockImplementationOnce(()=>{throw Error('temporary storage failure')})
+ await expect(b.backup.receiveSnapshot('account',snapshot)).rejects.toThrow('temporary storage failure')
+ write.mockRestore()
+ await b.backup.drainLive('account')
+ expect(b.storage.getItem(key)).toBe(value)
+})

@@ -388,7 +388,7 @@ impl Core{
    if let Ok(body)=settle(call(&response,"json",&[])).await{
     let reported=get(&get(&body,"error"),"message");if reported.is_truthy(){failure=string(&reported);}
    }
-   return Err(error(&failure));
+   let failure=error(&failure);set(&failure,"status",&status);return Err(failure);
   }
   Ok(Guarded{core:self.clone(),response,generation})
  }
@@ -573,7 +573,7 @@ impl Core{
  async fn download(self:Rc<Self>,file_id:JsValue,options:JsValue)->Result<JsValue,JsValue>{
   let generation=self.generation.get();
   let url=format!("{DRIVE_FILES_URL}/{}?alt=media",encode_uri_component(&file_id));
-  let blob=self.fetch(&url.into(),&object(&[]),generation).await?.blob().await?;
+  let blob=self.fetch(&url.into(),&object(&[("transfer",JsValue::TRUE)]),generation).await?.blob().await?;
   self.require(generation)?;
   let name=get(&options,"name");let name=if nullish(&name){file_id}else{name};
   let kind=or(or(get(&options,"mimeType"),get(&blob,"type")),"application/octet-stream".into());

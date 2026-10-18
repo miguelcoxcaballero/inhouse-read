@@ -1,6 +1,7 @@
 import { spineCustomization } from './book-colors.js'
 import { cleanQuotes } from './readers/reading-state.js'
 import { normalizeDriveBookLength } from './book-length-drive.js'
+import { driveFetch } from './drive-fetch.js'
 import { cloudModule } from './cloud-native.js'
 
 // Google Drive access lives in rust-ui/src/drive_client.rs (the web sign-in, the
@@ -74,7 +75,7 @@ const host = {
     removeItem: key => localStorage.removeItem(key)
   },
   androidClientId: ANDROID_OAUTH_CLIENT_ID,
-  fetch: (url, options) => fetch(url, options),
+  fetch: driveFetch,
   randomBytes: length => crypto.getRandomValues(new Uint8Array(length)),
   sha256: bytes => crypto.subtle.digest('SHA-256', bytes),
   randomUUID: () => crypto.randomUUID(),
@@ -130,6 +131,8 @@ export function signOutDrive() {
 export const getOrCreateReadFolder = later('getOrCreateReadFolder')
 export const readDriveLibrarySnapshots = later('readDriveLibrarySnapshots')
 export const readDriveLibraryRevision = later('readDriveLibraryRevision')
+export const readDriveLiveState = later('readDriveLiveState')
+export const writeDriveLiveState = later('writeDriveLiveState')
 export const getDriveLiveContext = later('getDriveLiveContext')
 export const readDriveLiveMailbox = later('readDriveLiveMailbox')
 export const writeDriveLiveMailbox = later('writeDriveLiveMailbox')

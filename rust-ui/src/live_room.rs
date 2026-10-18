@@ -1,6 +1,6 @@
 //! Pure direct-room protocol. Browser RTC/crypto objects remain JS-owned;
 //! this object stores only bounded data and can be freed on every account switch.
-use std::collections::{BTreeMap,VecDeque};
+use std::collections::{BTreeMap,BTreeSet,VecDeque};
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,JSON,Object};
 use crate::cloud_host::*;
@@ -47,14 +47,16 @@ impl RustLiveRoom{
   // files hide the active phone/browser further down a paginated listing.
   let mut files:Vec<_>=Array::from(&files).iter().collect();
   files.sort_by(|a,b|js_sys::Date::parse(&string(&get(b,"modifiedTime"))).total_cmp(&js_sys::Date::parse(&string(&get(a,"modifiedTime")))));
+  let mut discovered=BTreeSet::new();
   for file in files{
    let name=string(&get(&file,"name"));let Some(peer)=name.strip_prefix("live-v1-").and_then(|n|n.strip_suffix(".json"))else{continue;};
    if peer==self.own||!identity(peer){continue;}
    let modified=string(&get(&file,"modifiedTime"));let at=js_sys::Date::parse(&modified);
    if !at.is_finite()||at<now-90000.0||at>now+120000.0{continue;}
+   if !discovered.insert(peer.to_owned()){continue;}
    if !self.peers.contains_key(peer)&&self.peers.len()>=MAX_PEERS{continue;}
    let p=self.peers.entry(peer.to_owned()).or_insert_with(||Peer{started:now,..Peer::default()});p.file=string(&get(&file,"id"));
-   if p.modified!=modified{p.modified=modified;actions.push(&Array::of3(&"read".into(),&peer.into(),&p.file.clone().into()));p.read=now;}
+   if p.modified!=modified||p.read<0.0{p.modified=modified;actions.push(&Array::of3(&"read".into(),&peer.into(),&p.file.clone().into()));p.read=now;}
    if self.own.as_str()<peer&&(p.status==0||p.status==3&&now>=p.retry){p.status=1;p.started=now;actions.push(&Array::of3(&"offer".into(),&peer.into(),&p.file.clone().into()));}
   }
   actions.into()
@@ -62,9 +64,20 @@ impl RustLiveRoom{
  pub fn pending(&mut self,now:f64)->JsValue{
   let actions=Array::new();
   for(peer,p)in &mut self.peers{
-   if p.status==1&&now-p.started>12000.0{p.status=3;p.failures=p.failures.saturating_add(1);p.retry=now+(5000.0*2f64.powi(p.failures.min(5) as i32)).min(120000.0);actions.push(&Array::of3(&"close".into(),&peer.as_str().into(),&p.file.as_str().into()));}
+   if p.status==1&&now-p.started>12000.0{p.status=3;p.failures=p.failures.saturating_add(1);p.retry=now+(1000.0*2f64.powi(p.failures.min(4) as i32)).min(15000.0);actions.push(&Array::of3(&"close".into(),&peer.as_str().into(),&p.file.as_str().into()));}
    else if p.status<2&&now-p.started<=12000.0&&now-p.read>=300.0{p.read=now;actions.push(&Array::of3(&"read".into(),&peer.as_str().into(),&p.file.as_str().into()));}
   }actions.into()
+ }
+ pub fn readFailed(&mut self,peer:String){if let Some(p)=self.peers.get_mut(&peer){p.read=-1.0;}}
+ pub fn forgetSnapshot(&mut self,id:String){self.seen.retain(|known|known!=&id);}
+ pub fn receiveStateRelay(&mut self,peer:String,envelope:JsValue)->JsValue{
+  if !self.peers.contains_key(&peer){return JsValue::NULL;}
+  let Some(encoded)=get(&envelope,"packet").as_string().filter(|s|s.len()<=MAX_PACKET)else{return JsValue::NULL;};
+  let Ok(packet)=JSON::parse(&encoded)else{return JsValue::NULL;};
+  if string(&get(&packet,"from"))!=peer{return JsValue::NULL;}
+  // Registers carry their own monotonic versions. A returning device may
+  // legitimately need an old checkpoint; it cannot overwrite newer fields.
+  self.receive(encoded)
  }
  pub fn beginOffer(&mut self,peer:String,nonce:String,now:f64)->bool{
   if self.own>=peer||!identity(&nonce)||nonce.len()<16{return false;}let Some(p)=self.peers.get_mut(&peer)else{return false;};
@@ -82,7 +95,7 @@ impl RustLiveRoom{
   JsValue::NULL
  }
  pub fn connected(&mut self,peer:String){if let Some(p)=self.peers.get_mut(&peer){p.status=2;p.failures=0;}}
- pub fn failed(&mut self,peer:String,now:f64){if let Some(p)=self.peers.get_mut(&peer){p.status=3;p.failures=p.failures.saturating_add(1);p.retry=now+(5000.0*2f64.powi(p.failures.min(5) as i32)).min(120000.0);}}
+ pub fn failed(&mut self,peer:String,now:f64){if let Some(p)=self.peers.get_mut(&peer){p.status=3;p.failures=p.failures.saturating_add(1);p.retry=now+(1000.0*2f64.powi(p.failures.min(4) as i32)).min(15000.0);}}
  #[wasm_bindgen(getter)]pub fn connectedCount(&self)->usize{self.peers.values().filter(|p|p.status==2).count()}
  #[wasm_bindgen(getter)]pub fn peerCount(&self)->usize{self.peers.len()}
  pub fn receiveRelay(&mut self,peer:String,envelope:JsValue,now:f64)->JsValue{

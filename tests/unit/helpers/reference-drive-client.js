@@ -368,7 +368,8 @@ async function driveFetch(url, options = {}, generation = authGeneration) {
     if (response.status === 401 && currentToken === token) clearToken()
     let message = `Google Drive: error ${response.status}`
     try { message = (await response.json()).error?.message || message } catch { /* non-JSON error */ }
-    throw new Error(message)
+    // Explicit contract addition: live retries distinguish deletion from a transient HTTP failure.
+    throw Object.assign(new Error(message), { status: response.status })
   }
   return guardResponseBody(response, generation)
 }
