@@ -11,7 +11,7 @@ for(const delayed of [false,true])test('compiled opening consumes the same prepa
    if(!actual.rustpreparedpagecache_new&&!actual.app_prepare_book)return result;
    if(actual.rustpreparedpagecache_new){window.preparedProof.available=true;window.preparedProof.instances++;}
    const exports={...actual};
-   for(const name of ['rustpreparedpagecache_new','rustpreparedpagecache_begin','rustpreparedpagecache_store','rustpreparedpagecache_take','prepared_page_mismatch','app_prepare_book','app_run_preparation','app_opening_page_snapshot'])
+   for(const name of ['rustpreparedpagecache_new','rustpreparedpagecache_begin','rustpreparedpagecache_store','rustpreparedpagecache_take','prepared_page_mismatch','app_prepare_book','app_run_preparation','app_opening_page_snapshot','app_open_book_record','app_reader_ready','app_animate_reader_page'])
     if(actual[name])exports[name]=(...args)=>{window.preparedProof.calls[name]=(window.preparedProof.calls[name]||0)+1;return actual[name](...args)};
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});
    return result.instance?{...result,instance:proxy}:proxy;
@@ -33,6 +33,6 @@ for(const delayed of [false,true])test('compiled opening consumes the same prepa
   if(!delayed)await page.waitForFunction(()=>window.preparedProof.calls.rustpreparedpagecache_store>0);
   await cover.click();await expect(page.locator('.pdf-page-canvas')).toBeVisible();await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await page.waitForFunction(()=>window.preparedProof.taken.length>0);const proof=await page.evaluate(()=>window.preparedProof);expect(proof.instances).toBe(1);expect(proof.calls.rustpreparedpagecache_new).toBe(1);for(const value of proof.taken){expect(value.width).toBeGreaterThan(0);expect(value.height).toBeGreaterThan(0);expect(value.hasSource).toBe(true)}expect(errors).toEqual([]);await info.attach('compiled-prepared-page',{body:JSON.stringify(proof,null,2),contentType:'application/json'});
-  for(const name of ['app_prepare_book','app_run_preparation','app_opening_page_snapshot'])expect(proof.calls[name],name+' must run in the real compiled app').toBeGreaterThan(0);
+  for(const name of ['app_prepare_book','app_run_preparation','app_opening_page_snapshot','app_open_book_record','app_reader_ready'])expect(proof.calls[name],name+' must run in the real compiled app').toBeGreaterThan(0);
  }finally{release();await Promise.allSettled([...active]);if(delayed&&!page.isClosed())await page.unroute(pattern,hold)}
 })

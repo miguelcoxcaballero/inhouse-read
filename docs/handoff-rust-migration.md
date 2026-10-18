@@ -1,3 +1,9 @@
+# Entrega 1.7.286: apertura del lector en Rust
+
+Selección, propiedad/cancelación de la apertura, reutilización de preparaciones, recuperación local/carpeta/Drive, selector manual y transición de la misma página se coordinan en Rust compartido UI/Shelf. Los callbacks y APIs del navegador quedan como transporte recogible por GC. Pasan 323 pruebas específicas, incluidas 59 nuevas diferenciales, animación y ciclos de recursos; catorce E2E distintos finales pasan en dos ejecuciones sin fallos. Inventario 35113 líneas Rust / 20611 JavaScript = 63,01 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúa la ingestión de archivos y el resto de app.js; preservar todos los WIP/stashes y ramas ajenas.
+
+---
+
 # Entrega 1.7.285: cierre del lector en Rust
 
 El coordinador completo de cierre, progreso y regreso a la misma página se ejecuta en Rust compartido UI/Shelf. Mantiene el canvas original, el soporte y pose de los libros, la primera portada pendiente y la sincronización Drive sin bloquear el vuelo. JavaScript conserva adaptadores de navegador y callbacks recogibles por GC. Pasan 264 pruebas específicas, incluidas 46 nuevas diferenciales y ciclos de recursos; nueve E2E distintos finales verificados, con alcance y repetición documentados. Inventario 34925 líneas Rust / 20749 JavaScript = 62,73 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúa la migración de apertura y del resto de app.js; preservar todos los WIP/stashes y ramas ajenas.

@@ -1,3 +1,15 @@
+# 1.7.286 — coordinación de apertura del lector en Rust
+
+Changelog: «Apertura del lector coordinada en Rust».
+
+Se migra el coordinador completo de selección y apertura: identidad del contexto, marcas de pantalla, cancelación del propietario, reutilización de preparaciones, reconciliación de nombres, instantánea guardada, transición de la misma hoja y revelado de la barra. Las rutas de contenido local, carpeta antigua, selector manual y descarga Drive se deciden en Rust. El retorno tardío del selector solo puede cancelar su propia transición y elimina el id pendiente antes de cerrar, para no asignarlo por accidente al siguiente archivo. Los callbacks DOM/Promise siguen siendo objetos JavaScript recogibles por GC; no se duplican estados ni se crean ciclos de closures Rust.
+
+Pasan 323/323 pruebas específicas en catorce archivos, incluidas 59 nuevas frente a una referencia congelada del coordinador de 1.7.285. Se comprueban preparaciones válidas/fallidas, contenido y permisos, rutas de recuperación, cancelaciones después de esperas, cambio de propietario y libro, errores, nombres con getters de respaldo que no deben evaluarse, identidad UTF-16, módulo UI sin Shelf, 60 ciclos de liberación y las mediciones/validaciones de destino de la animación. Se conservan las 46 regresiones del cierre, el progreso, la física, el layout exacto y el audio a 48 kHz.
+
+Pasan catorce E2E distintos con el binario final, en dos ejecuciones sin fallos ni reintentos: once comprueban cambios de posición en Drive, giro, cierre sin leer, apertura anticipada, reapertura, tema/preferencias, cancelación durante el giro, CBZ y ejecución compilada de app_open_book_record/app_reader_ready con módulo normal o retrasado; otros tres comprueban reutilización de página PDF/EPUB y el cierre nativo de 1.7.285. Las aperturas PDF/EPUB reutilizan la instantánea preparada y no enlazan shaders nuevos. No hay cambios de aplicación entre las ejecuciones. Build final: UI 3077932 B, SHA256 21f52ac84ac230fd881fde22f76b2daff35a09cb53d11884b1f439d39437e2d3; Shelf 3752509 B, SHA256 f1866196e11ecffb15007e63c1e1aef6a30104e19eaf8e924286a661b28e4fbb. Shell 111 archivos / 35742911 B, revisión 671726c683e1. Inventario 35113 líneas Rust / 20611 JavaScript, 63,01 %; no representa funciones completadas. Continúa pendiente la coordinación de importación/ingestión y el resto de app.js. Sin cambios en calidades, Android, actualizador, vendor ni workflows. No se declara batería general completa ni medida en teléfono físico. Preservar los WIP, ramas y stashes anteriores.
+
+---
+
 # 1.7.285 — coordinación de cierre del lector en Rust
 
 Changelog: «Cierre del lector coordinado en Rust».
