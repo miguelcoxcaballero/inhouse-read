@@ -1,6 +1,6 @@
 // @vitest-environment node
 import {describe, expect, it, vi} from 'vitest';
-import {readFileSync} from 'node:fs';
+import {rustShelf} from './helpers/rust-shelf-ready.js';
 import {refreshSelectedBookNames} from '../../src/js/selected-book-names.js';
 import {displayBookTitle} from '../../src/js/book-title.js';
 describe('names at the prepared reader handoff',()=>{
@@ -25,15 +25,19 @@ describe('names at the prepared reader handoff',()=>{
   refreshSelectedBookNames({refreshNames},selected);expect(refreshNames).toHaveBeenCalledWith('selected',{spineTitleOverride:'Current'});
   refreshSelectedBookNames({refreshNames},null);expect(refreshNames).toHaveBeenCalledTimes(1);
  });
- it('the production handoff refreshes names before revealing the prepared reader',async()=>{
-  const source=readFileSync(new URL('../../src/js/app.js',import.meta.url),'utf8');
-  const fragment=source.match(/onReaderReady: async \(\) => \{[\s\S]*?try \{([\s\S]*?)markTiming\('reveal-done'\)/)?.[1];
-  expect(fragment).toBeTruthy();const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-  const handoff=new AsyncFunction('book','readingExperience','revealPreparedReader','refreshSelectedBookNames',fragment);
+ it('the compiled production handoff refreshes names before revealing the prepared reader',async()=>{
   const prepared={id:'book',title:'Tiny',author:'Old'};
   const experience={refreshNames:(id,fields)=>{if(id===prepared.id)Object.assign(prepared,fields)}};
-  let visible;
-  await handoff({id:'book',spineTitleOverride:'Claros del bosque',author:'Maria Zambrano'},experience,async()=>{visible={title:displayBookTitle(prepared),author:prepared.author}},refreshSelectedBookNames);
+  let visible;const classList={add(){},remove(){}};
+  const screen={hidden:false,classList,dataset:{}},toolbar={hidden:true,classList,offsetWidth:0};
+  const book={id:'book',spineTitleOverride:'Claros del bosque',author:'Maria Zambrano'};
+  const ctx={isActive:()=>true,finish:async()=>true};
+  const host={state:{currentBookId:'book',activeOpeningContext:ctx},els:{readerScreen:screen,readerToolbar:toolbar},document:{body:{classList}},
+   readingExperience:experience,refreshSelectedBookNames,revealPreparedReader:async()=>{visible={title:displayBookTitle(prepared),author:prepared.author}},
+   markTiming(){},library:{get:async()=>prepared},openingPageSnapshot:async()=>({sourceType:'pdf-canvas'}),animateReaderPageFromBook(){},
+   requestAnimationFrame:callback=>callback(),setTimeout:()=>0,revealReaderToolbar(){},settleReaderToolbar(){}};
+  await rustShelf.app_reader_ready(host,{book,ctx});
   expect(visible).toEqual({title:'Claros del bosque',author:'Maria Zambrano'});
+  expect(host.state.activeOpeningContext).toBeNull();expect(toolbar.hidden).toBe(false);
  });
 });

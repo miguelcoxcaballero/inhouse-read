@@ -82,9 +82,13 @@ afterEach(() => {
 const logged = (name, fn) => (...args) => { state.log.push(`${name}(${args.map(arg => show(arg)).join(',')})`); return fn?.(...args) }
 const book = (id, extra = {}) => ({ id, title: `Libro ${id}`, author: 'Autora', format: 'PDF', sourceType: 'local', addedAt: 1, lastOpenedAt: 1, progressFraction: 0.2, ...extra })
 const books = () => [book('a'), book('b'), book('c')]
+let pointerOrigin = 0
 const pointer = (node, type, init = {}) => {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.assign(event, { button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true, clientX: 30, clientY: 120, detail: 0, ...init })
+  // Replay identical hardware input times in each session; keep every phase
+  // and interval visible in the transcript, independent of the wall-clock origin.
+  Object.defineProperty(event, 'timeStamp', { value:Date.now() - pointerOrigin })
   node.dispatchEvent(event)
   return event
 }
@@ -122,6 +126,7 @@ async function play(steps, settle = 200) {
 }
 
 async function session(render, script, { list = books, extra = {}, config = {} } = {}) {
+  pointerOrigin = Date.now()
   document.body.innerHTML = ''; state.log.length = 0; state.hit = null; uuid = 0; state.config = { ...config }; localStorage.clear()
   container = document.createElement('div')
   document.body.append(container)
