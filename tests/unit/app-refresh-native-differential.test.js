@@ -16,7 +16,7 @@ const summary=options=>Object.fromEntries(Object.entries(options).map(([key,valu
 const records=()=>[{id:'local',sourceType:'local',title:'the_book.epub',author:{name:'Writer'}},{id:'owned',sourceType:'drive',cloudAccountId:'me',title:'Owned'},{id:'other',sourceType:'drive',cloudAccountId:'other',title:'Other'},{id:'saved',sourceType:'drive',cloudAccountId:'other',content:new Blob(['x']),title:'Saved'}];
 function fixture(options={}){
  const events=[],stored=options.empty?[]:records(),ready=stored.map(book=>({...book,title:normalizeBookTitle(book.title||book.name),author:normalizeBookAuthor(book.author)||null}));
- const shelf={destroy(){events.push(['destroy'])},update(books){events.push(['update',ids(books)])},queueRefresh:options.noQueue?undefined:function(books){events.push(['queue',ids(books)])}};
+ const shelf={isInteracting:!!options.interacting,destroy(){events.push(['destroy'])},update(books){events.push(['update',ids(books)])},queueRefresh:options.noQueue?undefined:function(books){events.push(['queue',ids(books)])}};
  const state={appDisposed:false,closingReader:!!options.closing,cloudRoomChanged:!!options.roomChanged,shelf:options.create?null:shelf,shelfRecords:options.equal?ready.filter(book=>isBookVisible(book,options.account)):null,lengthStatusVersion:2,shelfLengthStatusVersion:options.versionChanged?1:2};
  if(options.equal){stored.splice(0,stored.length,...ready);}
  const queue={ensure(book){events.push(['count',book.id]);return options.countError?Promise.reject(Error('count')):Promise.resolve()},geometryState:()=>({}),retry:id=>id,cancel:id=>id};
@@ -31,7 +31,7 @@ function fixture(options={}){
 }
 async function run(native,options){const f=fixture(options);let error;try{if(native)await rustShelf.app_refresh_after_load(f.host,f.stored,options.account,!!options.immediate);else await scoped(f.env,`async function(storedBooks,accountId,immediate){${body}}`)(f.stored,options.account,!!options.immediate)}catch(failure){error={name:failure.name,message:failure.message}}await Promise.resolve();await Promise.resolve();return{...f.snapshot(),error};}
 it('matches complete refresh sessions including account changes, normalization, reuse and errors',async()=>{
- const cases=[{}, {create:true},{create:true,empty:true},{account:'me'},{account:'other'},{account:'me',equal:true},{account:'me',equal:true,versionChanged:true},{immediate:true},{noQueue:true},{roomChanged:true},{roomChanged:true,closing:true},{roomChanged:true,readerVisible:true},{disposeDuringPatch:true},{defer:true},{patchError:true},{disappears:true},{countError:true}];
+ const cases=[{}, {create:true},{create:true,empty:true},{account:'me'},{account:'other'},{account:'me',equal:true},{account:'me',equal:true,versionChanged:true},{immediate:true},{noQueue:true},{roomChanged:true},{roomChanged:true,closing:true},{roomChanged:true,readerVisible:true},{interacting:true},{roomChanged:true,interacting:true},{disposeDuringPatch:true},{defer:true},{patchError:true},{disappears:true},{countError:true}];
  for(const options of cases)expect(await run(true,options),JSON.stringify(options)).toEqual(await run(false,options));
 });
 it('keeps native handles and callbacks stable through completed and rejected refreshes',async()=>{
@@ -42,3 +42,11 @@ it('keeps native handles and callbacks stable through completed and rejected ref
  }
  expect(rustShelf.shelf_live_handles()).toBe(handles);expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks);
 });
+it('retains a pending cloud room while held and applies it after the gesture finishes',async()=>{
+ const f=fixture({roomChanged:true,interacting:true})
+ await rustShelf.app_refresh_after_load(f.host,f.stored,undefined,false)
+ expect(f.state.cloudRoomChanged).toBe(true);expect(f.events.some(e=>['destroy','create','queue','update'].includes(e[0]))).toBe(false)
+ f.state.shelf.isInteracting=false
+ await rustShelf.app_refresh_after_load(f.host,f.stored,undefined,false)
+ expect(f.state.cloudRoomChanged).toBe(false);expect(f.events.some(e=>e[0]==='destroy')).toBe(true);expect(f.events.some(e=>e[0]==='create')).toBe(true)
+})

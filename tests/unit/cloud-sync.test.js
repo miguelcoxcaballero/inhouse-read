@@ -496,3 +496,22 @@ describe('CloudSync', () => {
     expect(await sync.uploadBook(book)).toMatchObject({ cloudAccountId:'account-2' })
   })
 })
+
+it('accepts newer reading progress without undoing a library-managed placement or finish',async()=>{
+ const record=await library.addOrTouch({sourceType:'drive',driveFileId:'shared',cloudAccountId:'account-1',name:'shared.pdf',shelfVisualId:'original-local',shelfPosition:{shelf:2,x:.7},spineColorOverride:'#224466',progressFraction:.2,progressUpdatedAt:100})
+ drive.readDriveProgress.mockResolvedValue({fraction:.8,locator:{kind:'pdf-page',value:8},updatedAt:200,stateFileId:'progress',appearance:{shelfPosition:{shelf:0,x:.1},spineColorOverride:'#ffffff'}})
+ await sync.syncBookProgress(record.id)
+ expect(await library.get(record.id)).toMatchObject({progressFraction:.8,locator:{kind:'pdf-page',value:8},shelfPosition:{shelf:2,x:.7},spineColorOverride:'#224466'})
+})
+it('a library adoption during an in-flight legacy progress patch cannot reapply its old appearance',async()=>{
+ const record=await library.addOrTouch({sourceType:'drive',driveFileId:'shared',cloudAccountId:'account-1',name:'shared.pdf',shelfPosition:{shelf:1,x:.4},progressFraction:.2,progressUpdatedAt:100})
+ drive.readDriveProgress.mockResolvedValue({fraction:.8,locator:{kind:'pdf-page',value:8},updatedAt:200,stateFileId:'progress',appearance:{shelfPosition:{shelf:0,x:.1}}})
+ const patch=library.patch.bind(library);let intercepted=false
+ vi.spyOn(library,'patch').mockImplementation(async(id,fields,options)=>{
+  if(!intercepted&&fields.progressStateFileId){intercepted=true;await patch(id,{shelfVisualId:'shared-origin'})}
+  return patch(id,fields,options)
+ })
+ await sync.syncBookProgress(record.id);expect(intercepted).toBe(true)
+ expect(await library.get(record.id)).toMatchObject({shelfVisualId:'shared-origin',shelfPosition:{shelf:1,x:.4}})
+ await sync.syncBookProgress(record.id);expect(await library.get(record.id)).toMatchObject({progressFraction:.8,shelfPosition:{shelf:1,x:.4}})
+})

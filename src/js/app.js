@@ -131,10 +131,11 @@ let backupTimer = null
 const libraryBackup = new LibraryBackup(library, cloudSync, {
   onStatus:setDriveSyncStatus,
   onChange:refreshShelf,
-  onSettings:() => {
-    cloudRoomChanged = true
-    initTheme()
-    readingExperience.reloadPreferences()
+  onSettings:keys => {
+    const room = keys.filter(key => key.startsWith('inhouse-read-shelf-'))
+    if (room.length && !(els.readerScreen.hidden && !closingReader && room.length === 1 && room[0] === 'inhouse-read-shelf-physics-v1' && shelf?.applyRoomPose?.())) cloudRoomChanged = true
+    if (keys.includes('inhouse-read-theme')) initTheme()
+    if (keys.includes('inhouse-read-reading-preferences')) readingExperience.reloadPreferences()
     refreshShelf()
   }
 })
@@ -144,7 +145,7 @@ function scheduleLibraryBackup() {
   backupTimer = setTimeout(() => {
     backupTimer = null
     syncLibraryToDrive({ silent:true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
-  }, 2200)
+  }, 350)
 }
 globalThis.addEventListener('inhouse-library-changed', scheduleLibraryBackup)
 function scheduleLengthRefresh() {
@@ -686,7 +687,7 @@ async function loadDriveAccountProfile() {
   return driveProfile
 }
 
-async function syncLibraryToDrive({ silent = false } = {}) {
+async function syncLibraryToDrive({ silent = false, poll = false } = {}) {
   if (!hasDriveSession()) {
     if (silent) {
       // Android uses the same PKCE refresh-token flow as Inhouse Notes.
@@ -695,14 +696,14 @@ async function syncLibraryToDrive({ silent = false } = {}) {
       try { await requestDriveAccess({ interactive: false }) } catch { return }
     } else await requestDriveAccess()
   }
-  const profile = await loadDriveAccountProfile()
+  const profile = driveProfile || await loadDriveAccountProfile()
   if (!profile) {
     if (silent) return
     throw new Error('Sesión caducada. Pulsa Conectar.')
   }
-  try { await restoreLegacyBookBytes(library) }
+  try { if (!poll) await restoreLegacyBookBytes(library) }
   catch (error) { console.warn('No se pudieron recuperar libros antiguos de la carpeta local:', error) }
-  return libraryBackup.sync(profile.id)
+  return poll ? libraryBackup.poll(profile.id) : libraryBackup.sync(profile.id)
 }
 
 const authNotice = document.getElementById('drive-auth-notice')
@@ -933,14 +934,14 @@ initAndroidFileImports({
 if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
-function resumeDriveSync() {
+function resumeDriveSync({ poll = false } = {}) {
   if (!navigator.onLine || (!hasDriveSession() && !getRememberedDriveProfile())) return
-  syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
+  syncLibraryToDrive({ silent: true, poll }).then(() => { if (cloudRoomChanged) return refreshShelf() }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
 }
 globalThis.addEventListener('online', resumeDriveSync)
 const backupPoll = setInterval(() => {
-  if (!document.hidden && !libraryBackup.task) resumeDriveSync()
-}, 180_000)
+  if (!document.hidden && !libraryBackup.task) resumeDriveSync({ poll:true })
+}, 5000)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') resumeDriveSync()
 })

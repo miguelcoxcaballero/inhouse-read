@@ -1,4 +1,5 @@
 import { core, tables, scratch, scratchPointer, inArena, f64View } from './catalogue-core.js';
+import { bookDataModule } from './book-data-native.js';
 
 /**
  * bookshelf-layout.js — la estantería del home de Inhouse Read.
@@ -42,10 +43,7 @@ export function withDefaults(defaults, options) {
  * o `drive:fileId`), que sobrevive a renombrados de la entrada de biblioteca.
  */
 export function seedFor(book) {
-  if (!book) return '';
-  if (book.id != null && book.id !== '') return String(book.id);
-  if (book.path) return String(book.path);
-  return `${book.title ?? ''}|${book.author ?? ''}`;
+  return bookDataModule().book_seed_for(book);
 }
 
 const progressRaw = book => Number(book?.progressFraction ?? book?.progress);

@@ -12,7 +12,7 @@ import { clearBookLength, newContentRevision } from '../../../src/js/book-length
 const EXTENSIONS = /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i
 
 function sameProgress(a, b) {
-  return a.driveFileId === b.driveFileId && a.cloudAccountId === b.cloudAccountId &&
+  return a.driveFileId === b.driveFileId && a.cloudAccountId === b.cloudAccountId && a.shelfVisualId === b.shelfVisualId &&
     (Number(a.progressUpdatedAt) || 0) === (Number(b.progressUpdatedAt) || 0) &&
     Boolean(a.progressDirty) === Boolean(b.progressDirty) &&
     Number(a.progressFraction) === Number(b.progressFraction) &&
@@ -222,7 +222,7 @@ export class CloudSync {
       (remoteUpdatedAt === localUpdatedAt && !record.progressDirty))) {
       const updated = await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
-        ...spineCustomization(remote.appearance),
+        ...(typeof record.shelfVisualId === 'string' ? {} : spineCustomization(remote.appearance)),
         ...(Array.isArray(remote.readingHistory) ? { readingHistory:cleanPlaces(remote.readingHistory) } : {}),
         ...(Array.isArray(remote.bookmarks) ? { bookmarks:cleanPlaces(remote.bookmarks,100) } : {}),
         ...(Array.isArray(remote.quotes) ? { quotes:cleanQuotes(remote.quotes) } : {}),

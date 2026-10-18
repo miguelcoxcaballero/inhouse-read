@@ -20,6 +20,7 @@ struct Core{
 /// Same reading state on both records: what the progress merge must not overwrite.
 fn same_progress(host:&JsValue,a:&JsValue,b:&JsValue)->Result<bool,JsValue>{
  if get(a,"driveFileId")!=get(b,"driveFileId")||get(a,"cloudAccountId")!=get(b,"cloudAccountId"){return Ok(false);}
+ if get(a,"shelfVisualId")!=get(b,"shelfVisualId"){return Ok(false);}
  if number_or_zero(&get(a,"progressUpdatedAt"))!=number_or_zero(&get(b,"progressUpdatedAt")){return Ok(false);}
  if get(a,"progressDirty").is_truthy()!=get(b,"progressDirty").is_truthy(){return Ok(false);}
  if number(&get(a,"progressFraction"))!=number(&get(b,"progressFraction")){return Ok(false);}
@@ -222,7 +223,10 @@ impl Core{
   // Keep a dirty local locator on a tie; otherwise a stale remote value can erase the newest page.
   if remote.is_truthy()&&(!local_has_progress||remote_updated_at>local_updated_at||(remote_updated_at==local_updated_at&&!get(&record,"progressDirty").is_truthy())){
    let fields=object(&[("progressFraction",get(&remote,"fraction")),("locator",get(&remote,"locator"))]);
-   assign(&fields,&call(&self.host,"spineCustomization",&[&get(&remote,"appearance")])?)?;
+   // A library manifest owns appearance and placement field by field. The
+   // older per-book reading file has only a reading timestamp: importing its
+   // appearance on a progress tie silently undoes a newly received shelf move.
+   if !get(&record,"shelfVisualId").is_string(){assign(&fields,&call(&self.host,"spineCustomization",&[&get(&remote,"appearance")])?)?;}
    for (key,limit) in [("readingHistory",None),("bookmarks",Some(100.0))]{
     let list=get(&remote,key);
     if Array::is_array(&list){

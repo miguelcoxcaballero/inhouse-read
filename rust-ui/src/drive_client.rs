@@ -472,6 +472,27 @@ impl Core{
 
  // Each installation owns one manifest. Devices never PATCH another device's snapshot, so
  // simultaneous saves cannot erase an entire library.
+ async fn library_revision(self:Rc<Self>)->Result<JsValue,JsValue>{
+  let generation=self.generation.get();
+  let cached=self.state_folder.borrow().clone();
+  let folder=if let Some(cached)=cached{settle(Ok(cached.into())).await?}else{
+   let root=self.find_folder(FOLDER_NAME,None,generation).await?;
+   if !root.is_truthy(){return Ok("[]".into());}
+   let folder=self.find_folder(STATE_FOLDER_NAME,Some(&root),generation).await?;
+   if !folder.is_truthy(){return Ok("[]".into());}
+   *self.state_folder.borrow_mut()=Some(Promise::resolve(&folder));folder
+  };
+  self.require(generation)?;
+  let pattern=RegExp::new(r"^library-v1-[\w-]+\.json$","");let rows=Array::new();let mut token=JsValue::UNDEFINED;
+  loop{
+   let page=self.list_folder(&folder,&object(&[("fields","id,name,modifiedTime".into()),("pageToken",token)]),generation).await?;
+   for file in Array::from(&or(get(&page,"files"),Array::new().into())).iter(){
+    if pattern.test(&string(&get(&file,"name"))){rows.push(&Array::of2(&get(&file,"id"),&get(&file,"modifiedTime")));}
+   }
+   token=get(&page,"nextPageToken");if !token.is_truthy(){break;}
+  }
+  call(&rows,"sort",&[])?;Ok(json_text(&rows.into())?.into())
+ }
  async fn read_snapshots(self:Rc<Self>)->Result<JsValue,JsValue>{
   let generation=self.generation.get();
   let snapshots=Array::new();
@@ -649,6 +670,8 @@ impl RustDriveClient{
  pub fn get_or_create_read_folder(&self)->Promise{self.core.clone().read_folder_promise()}
  #[wasm_bindgen(js_name=readDriveLibrarySnapshots)]
  pub fn read_drive_library_snapshots(&self)->Promise{let core=self.core.clone();start(async move{core.read_snapshots().await})}
+ #[wasm_bindgen(js_name=readDriveLibraryRevision)]
+ pub fn read_drive_library_revision(&self)->Promise{let core=self.core.clone();start(async move{core.library_revision().await})}
  #[wasm_bindgen(js_name=writeDriveLibrarySnapshot)]
  pub fn write_drive_library_snapshot(&self,snapshot:JsValue,state_file_id:JsValue)->Promise{let core=self.core.clone();start(async move{core.write_snapshot(snapshot,state_file_id).await})}
  #[wasm_bindgen(js_name=uploadDriveCover)]

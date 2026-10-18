@@ -20,6 +20,11 @@ pub fn app_refresh_after_load(host:JsValue,stored:JsValue,account:JsValue,immedi
  let normalized=cloud_host::settle(Ok(Promise::all(&pending).into())).await?;
  let books=Array::new();for book in Array::from(&normalized).iter(){if crate::book_data::book_is_visible(book.clone(),account.clone())?{books.push(&book);}}
  if deferred(&state,&host)?{return Ok(JsValue::UNDEFINED);}
+ if truthy(&read(&state,"cloudRoomChanged")?)&&(!truthy(&read(&read(&read(&host,"els")?,"readerScreen")?,"hidden")?)||truthy(&read(&state,"closingReader")?)){return Ok(JsValue::UNDEFINED);}
+ // A received room waits until the hand, flyout, pinch or settling bodies
+ // have finished; replacing the scene during a gesture loses its ownership.
+ let shelf=read(&state,"shelf")?;
+ if !absent(&shelf)&&truthy(&read(&shelf,"isInteracting")?){return Ok(JsValue::UNDEFINED);}
  if truthy(&read(&state,"cloudRoomChanged")?)&&truthy(&read(&read(&read(&host,"els")?,"readerScreen")?,"hidden")?)&&!truthy(&read(&state,"closingReader")?){
   let shelf=read(&state,"shelf")?;if !absent(&shelf){method(&shelf,"destroy",&[])?;}
   set(&state,"shelf",&JsValue::NULL)?;set(&state,"shelfRecords",&JsValue::NULL)?;set(&state,"cloudRoomChanged",&JsValue::FALSE)?;

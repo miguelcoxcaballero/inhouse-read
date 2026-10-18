@@ -1,3 +1,4 @@
+import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
 import {plantGeometrySpec,lampGeometrySpec} from './decor-geometry-spec.js';
@@ -313,7 +314,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
   const bookGravity = new rust.RustBookGravity();
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
-  let physicsStarted = false;
+  let physicsStarted = false, physicsInteracted = false;
   if (settleBooks) { try { bookGravity.restore(localStorage.getItem(physicsStorageKey) || ''); } catch {} }
   let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0), physicsStates = new Float64Array(0);
   let bookEntries = entries.map(freshEntry);
@@ -1399,6 +1400,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           }
         }
 
+        if (entry.bits & 6) physicsInteracted = true;
         stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
         stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
         stepIo[9] = landing ? 1 : 0;
@@ -2394,7 +2396,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (settleBooks && physicsReady && !lastSceneMoving && !sceneView.moving &&
       !bookEntries.some(entry => entry.insertion || entry.trashDrop || entry.landing || entry.preview.active)) {
       const saved = bookGravity.snapshot();
-      if (saved !== undefined && saved !== null) { try { localStorage.setItem(physicsStorageKey, saved); } catch {} }
+      if (saved !== undefined && saved !== null) {
+        try {
+          localStorage.setItem(physicsStorageKey, saved);
+          if (physicsInteracted) { physicsInteracted = false; notifyCloudSettingsChanged(physicsStorageKey); }
+        } catch {}
+      }
     }
     paintedViewport = { width:window.innerWidth, height:window.innerHeight,
       ratio:window.devicePixelRatio || 1, clientHeight:scroller.clientHeight, scrollTop:scroller.scrollTop };
@@ -2659,6 +2666,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       presentationActive = Boolean(value);
       presentationChanged();
     },
+    applyRoomPose() {
+      const saved = localStorage.getItem(physicsStorageKey);
+      if (!saved || !bookGravity.apply_snapshot(saved)) return false;
+      invalidate(true, false, 'cloud-room');
+      return true;
+    },
+    isMoving:()=>Boolean(lastSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
     getInspectionZoom:()=>sceneView.zoom,
     beginInspectionGesture() {
       if (disposed || !sceneView.canInspect()) return;

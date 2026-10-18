@@ -1,4 +1,4 @@
-import { readDriveLibrarySnapshots, writeDriveLibrarySnapshot, uploadDriveCover, downloadDriveFile } from './drive-client.js'
+import { readDriveLibrarySnapshots, readDriveLibraryRevision, writeDriveLibrarySnapshot, uploadDriveCover, downloadDriveFile } from './drive-client.js'
 import { spineCustomization } from './book-colors.js'
 import { readBackupCheckpoint, saveBackupCheckpoint } from './cloud-backup-state.js'
 import { SYNC_SETTINGS } from './cloud-settings.js'
@@ -11,6 +11,7 @@ export class LibraryBackup {
   #native = null
   #loading = null
   #host
+  #polling = null
 
   constructor(library, cloud, { storage = localStorage, onSettings = () => {}, onChange = () => {}, onStatus = () => {} } = {}) {
     this.#host = {
@@ -18,6 +19,7 @@ export class LibraryBackup {
       withLock: (name, run) => globalThis.navigator?.locks?.request ? navigator.locks.request(name, run) : run(),
       randomUUID: () => crypto.randomUUID(),
       readDriveLibrarySnapshots: (...args) => readDriveLibrarySnapshots(...args),
+      readDriveLibraryRevision: (...args) => readDriveLibraryRevision(...args),
       writeDriveLibrarySnapshot: (...args) => writeDriveLibrarySnapshot(...args),
       uploadDriveCover: (...args) => uploadDriveCover(...args),
       downloadDriveFile: (...args) => downloadDriveFile(...args),
@@ -38,4 +40,7 @@ export class LibraryBackup {
   get device() { return this.#native?.device }
   reset() { this.#native?.reset() }
   sync(accountId) { return this.#native ? this.#native.sync(accountId) : this.#ready().then(native => native.sync(accountId)) }
+  poll(accountId) {
+    return this.#polling ||= this.#ready().then(native => native.poll(accountId)).finally(() => { this.#polling = null })
+  }
 }

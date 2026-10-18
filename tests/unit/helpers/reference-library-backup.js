@@ -1,10 +1,10 @@
-// Frozen copy of src/js/library-backup.js before its port to Rust (rust-ui/src/library_backup.rs). Used only by the differential tests.
+// Frozen copy of src/js/library-backup.js before its port to Rust (rust-ui/src/library_backup.rs). Used only by the differential tests. Explicit 1.7.290 contracts: shared appearance identity and changed-setting notifications; room encoding has its own native tests.
 import { readDriveLibrarySnapshots, writeDriveLibrarySnapshot, uploadDriveCover, downloadDriveFile } from '../../../src/js/drive-client.js'
 import { spineCustomization } from '../../../src/js/book-colors.js'
 import { readBackupCheckpoint, saveBackupCheckpoint } from '../../../src/js/cloud-backup-state.js'
 
 import { SYNC_SETTINGS } from '../../../src/js/cloud-settings.js'
-const META = ['name','title','author','format','mimeType','size','sizeBytes','pageCount','shelfOrder','addedAt','lastOpenedAt',
+const META = ['name','title','author','format','mimeType','size','sizeBytes','pageCount','shelfOrder','addedAt','lastOpenedAt','shelfVisualId',
   'coverAppearance','coverAppearanceKey','coverUpdatedAt','driveContentChecksum',
   'progressFraction','locator','progressUpdatedAt','readingHistory','bookmarks','quotes']
 const DEVICE_KEY = 'inhouse-read-backup-device'
@@ -17,6 +17,7 @@ const newer = (a, b) => !b || a.at > b.at || a.at === b.at && a.device > b.devic
 function metadata(book) {
   const result = { ...spineCustomization(book) }
   for (const key of META) if (book[key] !== undefined) result[key] = book[key]
+  if (typeof result.shelfVisualId !== 'string' || !result.shelfVisualId) { delete result.shelfVisualId; if (typeof book.id === 'string' && book.id) result.shelfVisualId = book.id }
   return result
 }
 
@@ -157,7 +158,7 @@ export class LibraryBackup {
         const current = metadata(book)
         for (const [field, value] of Object.entries(values)) {
           if (observed.has(id) && json(current[field]) !== json(observed.get(id)[field])) continue
-          if (json(current[field]) !== json(value)) patch[field] = value
+          if (json(current[field]) !== json(value) || field === 'shelfVisualId' && book[field] !== value) patch[field] = value
         }
         if (Object.keys(patch).length) {
           // A local edit made while Drive was loading must win next time.
@@ -179,7 +180,7 @@ export class LibraryBackup {
       }
       applied.books[id] = fields
     }
-    let settingsChanged = false
+    const settingsChanged = []
     for (const setting of SYNC_SETTINGS) {
       const entry = merged.settings[setting]
       if (!entry || typeof entry.value !== 'string') continue
@@ -187,13 +188,13 @@ export class LibraryBackup {
       const latestTouched = parse(this.storage, CHANGES_KEY, {})[setting] || 0
       if (latestTouched > (touched[setting] || 0)) continue
       if (this.storage.getItem(setting) !== entry.value) {
-        this.storage.setItem(setting, entry.value); settingsChanged = true
+        this.storage.setItem(setting, entry.value); settingsChanged.push(setting)
       }
       applied.settings[setting] = entry
     }
     guard()
     await saveBackupCheckpoint(key, applied); guard()
-    if (settingsChanged) this.onSettings()
+    if (settingsChanged.length) this.onSettings(settingsChanged)
     this.onChange()
     const own = snapshots.filter(s => s.deviceId === this.device).at(-1)
     const snapshot = { schemaVersion:1, deviceId:this.device,

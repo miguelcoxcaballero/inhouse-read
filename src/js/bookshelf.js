@@ -508,6 +508,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   return {
     element: root,
+    get isInteracting() { return shelfCtxLive && shelfNative.shelf_has_interaction(state); },
+    applyRoomPose:() => shelfCtxLive && shelfNative.shelf_apply_room_pose(state),
     refresh,
     // Storage may notify for several records in one turn. Keep only the last
     // complete list and commit one semantic/GPU layout on the next frame.

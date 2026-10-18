@@ -81,7 +81,7 @@ struct Layout{kind:&'static str,bands:Vec<f64>,rules:Vec<(f64,f64)>,span:(f64,f6
 /// fine double rules, a blind-stamped panel, or a plain spine with a device at the tail. The case
 /// follows the book (id and title), never its colour, so recolouring keeps the same binding.
 fn layout_of(book:&JsValue)->R<Layout>{
- let id=if absent(book){JsValue::UNDEFINED}else{read(book,"id")?};
+ let id=if absent(book){JsValue::UNDEFINED}else{let visual=read(book,"shelfVisualId")?;if absent(&visual){read(book,"id")?}else{visual}};
  let title=if absent(book){JsValue::UNDEFINED}else{read(book,"title")?};
  let blank=txt("");
  let seed=text_seed(&joined(&[&txt("layout|"),if absent(&id){&blank}else{&id},&txt("|"),if absent(&title){&blank}else{&title}]));
@@ -297,7 +297,8 @@ pub fn spine_surface(book:&JsValue,style:&JsValue,physical_height:&JsValue,thick
  let text_finish=txt_of(&call(&spine_finish,"spineFinish",&[&read(book,"spineTextFinish")?])?);
  let metal_binding=binding_finish!="matte";let metal_text=text_finish!="matte";
  let blank=txt("");
- let (id,book_title)=(read(book,"id")?,read(book,"title")?);
+ let visual=read(book,"shelfVisualId")?;
+ let (id,book_title)=(if absent(&visual){read(book,"id")?}else{visual},read(book,"title")?);
  let cloth_seed=text_seed(&joined(&[if absent(&id){&blank}else{&id},&txt("|"),if absent(&book_title){&blank}else{&book_title},&txt("|"),&read(style,"color")?]));
  let random=call(&read(host,"random")?,"random",&[&val(f64::from(cloth_seed))])?;
  let color=canvas(width,height)?;let ctx=method(&color,"getContext",&[&txt("2d")])?;

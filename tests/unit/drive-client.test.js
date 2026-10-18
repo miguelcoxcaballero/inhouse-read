@@ -226,3 +226,20 @@ describe('biblioteca y progreso de Drive', () => {
     })
   })
 })
+
+it('checks room revisions with one metadata request after lookup and never downloads book bytes',async()=>{
+ session();let changed=false
+ globalThis.fetch=vi.fn(async target=>{
+  const url=new URL(target),q=url.searchParams.get('q')||''
+  if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
+  if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
+  expect(q).toBe("'state' in parents and trashed = false")
+  expect(url.searchParams.get('fields')).toBe('nextPageToken,files(id,name,modifiedTime)')
+  expect(url.searchParams.has('alt')).toBe(false)
+  return json({files:[{id:'b',name:'library-v1-b.json',modifiedTime:changed?'later':'before'},{id:'a',name:'library-v1-a.json',modifiedTime:'first'},{id:'cover',name:'cover.png',modifiedTime:'ignore'}]})
+ })
+ const first=await drive.readDriveLibraryRevision();expect(JSON.parse(first)).toEqual([['a','first'],['b','before']]);expect(fetch).toHaveBeenCalledTimes(3)
+ expect(await drive.readDriveLibraryRevision()).toBe(first);expect(fetch).toHaveBeenCalledTimes(4)
+ changed=true;expect(await drive.readDriveLibraryRevision()).not.toBe(first);expect(fetch).toHaveBeenCalledTimes(5)
+ drive.signOutDrive();await expect(drive.readDriveLibraryRevision()).rejects.toThrow(/Conectar|sesión/i)
+})
