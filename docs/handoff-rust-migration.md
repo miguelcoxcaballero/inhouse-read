@@ -1,3 +1,9 @@
+# Entrega 1.7.288: anclas y progreso en Rust
+
+Las guardas de posiciones y la escritura del progreso del lector se ejecutan en Rust compartido UI/Shelf. Se conservan CFIs exactos y la última posición válida ante avisos incompletos. Pasan 447 pruebas específicas, incluidas 20 nuevas y 20 000 comparaciones, y nueve E2E finales en una sola ejecución sin fallos. Inventario 35281 líneas Rust / 20509 JavaScript = 63,24 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúan la extracción de portadas y las políticas restantes de app.js; preservar todos los WIP/stashes y ramas ajenas.
+
+---
+
 # Entrega 1.7.287: ingestión de archivos en Rust
 
 Metadatos, cancelación, configuración del reader, persistencia de bytes, recuento, posición y confirmación de importaciones pasan a Rust compartido UI/Shelf. El bootstrap JS permite esperar o informar de un módulo nativo que aún no existe, conservando la carga fría y los controles bloqueados por generación. Pasan 427 pruebas específicas, incluidas 47 nuevas diferenciales y comprobaciones reales de anclas; trece E2E finales pasan en una ejecución sin fallos. Inventario 35224 líneas Rust / 20523 JavaScript = 63,19 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúan las políticas restantes de app.js y el resto de la migración; preservar todos los WIP/stashes y ramas ajenas.

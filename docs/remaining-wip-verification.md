@@ -1,3 +1,17 @@
+# 1.7.288 — anclas y progreso del lector en Rust
+
+Changelog: «Anclas y progreso validados en Rust».
+
+La validación de posiciones/relocaciones y la coordinación de la escritura de progreso pasan a Rust compartido UI/Shelf. Conserva CFIs UTF-16 exactos, fracciones acotadas, páginas PDF válidas y offsets positivos; un aviso sin ancla no sustituye la posición comprometida. Los controles reciben siempre la notificación de página y su porcentaje, mientras las guardas de restauración/cierre y la identidad actual deciden si se escribe. Los adaptadores de posición se usan con el lector o la estantería ya cargados, sin provocar una descarga adicional.
+
+Pasan 447/447 pruebas específicas en veintidós archivos. Veinte casos nuevos incluyen 20 000 comparaciones frente a las funciones congeladas originales, límites numéricos y tipos, cero negativo, espacios Unicode, CFIs con sustitutos UTF-16 sin emparejar, errores de getters, UI sin Shelf y ciclos de handles. El wrapper real de app.js se compara también con su coordinador anterior para avisos incompletos, PDF/EPUB, guardas, cambios durante la notificación y escrituras rechazadas. Se mantienen las pruebas de importación, persistencia, preparación, cierre, layout, física y audio.
+
+Pasan nueve E2E finales en una ejecución sin fallos ni reintentos: reutilización PDF/EPUB sin shaders nuevos, CBZ sin ancla, layout exacto en frontal/isométrica, estabilidad de página EPUB al cerrar y cambiar la barra de estado, ejecución compilada de app_reader_relocate/reader_persistable_position y dos importaciones Android normal/retrasada. Se comprueba que la escritura nativa real conserva la página al cerrar/reabrir y que no quedan capas de regreso. La apertura 1.7.286 se verifica además en la web pública con ambos casos compilados normal/retrasado.
+
+Build final: UI 3107686 B, SHA256 11bb15fd3df25b7feec51e1e97f7e9a972730df6e1494846aca962e821bb630e; Shelf 3782601 B, SHA256 56644ea741e7dbf087e07d61805950de42b4fc9e806800165c103f61f3eebc9b. Shell 111 archivos / 35804408 B, revisión b8727a296eb8. Inventario 35281 líneas Rust / 20509 JavaScript, 63,24 %; no representa funciones completadas. Continúan pendientes la extracción de portadas y las otras políticas de app.js. El actualizador compartido pasa su verificación. Sin cambios en calidades, Android, vendor ni workflows; no se declara batería general completa ni prueba en teléfono físico. Preservar WIP, ramas y stashes anteriores.
+
+---
+
 # 1.7.287 — ingestión de archivos del lector en Rust
 
 Changelog: «Importación de archivos coordinada en Rust».
