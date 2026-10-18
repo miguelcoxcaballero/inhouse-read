@@ -1,3 +1,9 @@
+# Entrega 1.7.284: colocación cuidadosa en Rust
+
+La intención de caída del libro caduca al detener el dedo. Una colocación muy lenta o con pequeño temblor deja el libro recto, y un pequeño gesto lateral reciente inicia el vuelco hacia ese lado, incluida una inversión del movimiento. La intención usa los timestamps de entrada y se fija al soltar, independientemente del renderizado. La gravedad, el agarre animado, las colisiones y el frenado contra el patinaje siguen siendo físicos. Detalles y validación en [remaining-wip-verification.md](remaining-wip-verification.md). Se conserva el layout exacto y el audio de 48 kHz sin arrastres de 1.7.282/283. El resto de la migración de app.js sigue pendiente; preservar WIP, ramas y stashes de otros agentes.
+
+---
+
 # Entrega 1.7.283: audio nítido y sin arrastre
 
 Se eliminan los roces durante el arrastre y se silencian sus códigos antiguos en Rust y Web Audio. Atlas regenerado a 48 kHz desde los originales CC0 con filtrado más ligero: 128 tomas conservadas y 18 de arrastre retiradas. También el respaldo Rust usa 48 kHz con frecuencia explícita en el contrato. Se mantienen cuatro voces máximas y suspensión en reposo. Se conservan las poses exactas y el soporte físico de 1.7.282. Validación y hashes en [remaining-wip-verification.md](remaining-wip-verification.md). El resto de la migración continúa pendiente; este ajuste no declara completada la aplicación en Rust. Preservar WIP, ramas y stashes de otros agentes.

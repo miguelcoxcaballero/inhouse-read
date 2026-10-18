@@ -27,7 +27,30 @@ const DT:f32=1.0/120.0;
 const HELD:u32=2|4;
 // Only reading reserves a physical origin. Ordinary removal still frees supports.
 const READER_ORIGIN:u32=64;
-struct Book{reader:bool,sound_until:f64,landing_sound:bool,landing_height:f32,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,home:Option<(Pose,[f32;4])>,recovery:Option<Vector>,firm_grip:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
+const RELEASE_WINDOW_MS:f64=180.0;
+const RELEASE_TRAVEL:f32=0.0015;
+const RELEASE_SPEED:f32=0.006;
+
+fn release_direction(direction:f32,motion:f32,moved:f64,now:f64)->f32{
+ if now-moved<=RELEASE_WINDOW_MS&&motion.abs()>=RELEASE_SPEED{-direction}else{0.0}
+}
+// Hardware event timestamps, independent of a delayed render or a queued GPU
+// frame. Direct solver clients still use the frame-sampled fallback below.
+struct ReleaseInput{pointer:f64,last:f64,moved:f64,motion:f32,stroke:f32,direction:f32,released:Option<f32>}
+impl ReleaseInput{
+ fn new(x:f64,at:f64)->Self{Self{pointer:x,last:at,moved:f64::NEG_INFINITY,motion:0.0,stroke:0.0,direction:0.0,released:None}}
+ fn update(&mut self,x:f64,at:f64,scale:f64){
+  let dt=((at-self.last)/1000.0).clamp(1.0/240.0,0.1);let dx=(x-self.pointer)/scale;
+  if dx.abs()>0.00001{
+   self.motion+=(dx as f32/dt as f32-self.motion)*(1.0-(-dt/0.07).exp()) as f32;
+   self.stroke=if at-self.moved<=RELEASE_WINDOW_MS&&self.stroke.signum()==(dx as f32).signum(){self.stroke+dx as f32}else{dx as f32};
+   self.moved=at;self.direction=if self.stroke.abs()>=RELEASE_TRAVEL{self.stroke.signum()}else{0.0};
+  }else{self.motion*=(-dt as f32/0.07).exp();}
+  self.pointer=x;self.last=at;
+ }
+}
+
+struct Book{input:Option<ReleaseInput>,reader:bool,sound_until:f64,landing_sound:bool,landing_height:f32,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,home:Option<(Pose,[f32;4])>,recovery:Option<Vector>,firm_grip:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,motion_at:f64,stroke:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
 fn overlapping(a:&RigidBody,sa:[f64;3],b:&RigidBody,sb:[f64;3],resting:bool)->bool{
  let pa=a.translation();let pb=b.translation();
  if (pa.z-pb.z).abs()>(sa[2]+sb[2]) as f32/2.0{return false;}
@@ -248,6 +271,21 @@ impl RustBookGravity{
  }
  /// A hidden document resumes its existing poses, without simulating the
  /// elapsed time in the background as one expensive catch-up frame.
+ /// Pointer phases: begin, move, release, cancel. The decision is frozen at
+ /// the input event, before clearing DOM offsets or waiting for a scene draw.
+ pub fn record_pointer(&mut self,key:JsValue,x:f64,at:f64,phase:u32){
+  if !x.is_finite()||!at.is_finite(){return;}
+  if !key.is_string(){return;}
+  let name:Vec<u16>=key.unchecked_ref::<JsString>().iter().collect();
+  let Some(b)=self.books.get_mut(&name) else{return;};
+  if b.kind!=0{return;}
+  if phase==0{b.input=Some(ReleaseInput::new(x,at));return;}
+  let Some(input)=&mut b.input else{return;};
+  if input.released.is_some(){return;}
+  input.update(x,at,b.base[3]);
+  if phase==2{input.released=Some(release_direction(input.direction,input.motion,input.moved,at));}
+  else if phase==3{input.released=Some(0.0);}
+ }
  pub fn pause(&mut self){self.last=None;self.carry=0.0;self.pending_sounds.clear();self.audio_velocities.clear();for b in self.books.values_mut(){b.landing_sound=false;}}
  /// One batch across the WASM boundary. States use RustScene.stepEntry's 37
  /// numbers. Geometry: thickness, kind (book/plant/lamp/puck), row, pixels/metre,
@@ -354,7 +392,7 @@ impl RustBookGravity{
     }
     let b=&mut self.world.bodies[handle];if kind==0&&!held{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
     let name=keys.get(i as u32);let name=if name.is_string(){name.unchecked_into::<JsString>()}else{JsString::from("")};
-    self.books.insert(key.clone(),Book{reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
+    self.books.insert(key.clone(),Book{input:None,reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,motion_at:f64::NEG_INFINITY,stroke:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }
    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
    if reader&&kind==0{
@@ -423,18 +461,23 @@ impl RustBookGravity{
     if !b.held{
      b.anchor=body.translation()-target;b.grip_angle=body.rotation().to_scaled_axis().z;b.grip_time=0.0;
      b.clearance=(bay[2]+h as f32/2.0+0.001-body.translation().y).max(0.0);
-     b.grip=if g[8].is_finite(){g[8].clamp(-0.48,0.48) as f32}else{0.0};b.motion=0.0;b.direction=0.0;b.release=0.0;b.release_time=0.0;
+     b.grip=if g[8].is_finite(){g[8].clamp(-0.48,0.48) as f32}else{0.0};b.motion=0.0;b.motion_at=now;b.stroke=0.0;b.direction=0.0;b.release=0.0;b.release_time=0.0;
      b.pointer=[s[3],s[4]];b.fast_until=now;b.fast_grip=false;b.contacting=false;body.wake_up(true);changed=true;
     }
     let dx=(s[3]-b.pointer[0])/p;
     let speed=(dx.hypot((s[4]-b.pointer[1])/p)/frame_dt) as f32;
-    // Recent horizontal travel dominates; a paused finger retains its last
-    // direction, while a deliberate reversal replaces the old gesture.
+    // Only a recent, small deliberate stroke starts a fall. Stopping clears
+    // earlier travel, and sub-millimetre tremor never chooses a release side.
     if dx.abs()>0.00001{
      let blend=(1.0-(-frame_dt/0.07).exp()) as f32;
      b.motion+=(dx as f32/frame_dt as f32-b.motion)*blend;
-     if b.motion.abs()>0.0005{b.direction=b.motion.signum();}
-    }else{b.motion*=(-frame_dt as f32/0.07).exp();}
+     let same_stroke=now-b.motion_at<=RELEASE_WINDOW_MS&&b.stroke.signum()==(dx as f32).signum();
+     b.stroke=if same_stroke{b.stroke+dx as f32}else{dx as f32};b.motion_at=now;
+     b.direction=if b.stroke.abs()>=RELEASE_TRAVEL{b.stroke.signum()}else{0.0};
+    }else{
+     b.motion*=(-frame_dt as f32/0.07).exp();
+     if now-b.motion_at>RELEASE_WINDOW_MS{b.direction=0.0;b.stroke=0.0;}
+    }
     // A normal phone drag must keep its finite physical grip. Only a
     // genuinely rapid sweep temporarily bypasses neighbours.
     if speed>0.8{b.fast_until=now+160.0;b.fast_grip=true;b.contacting=false;b.recovery=None;b.firm_grip=false;}
@@ -455,7 +498,9 @@ impl RustBookGravity{
     // A bounded torque starts the fall; Rapier still resolves every support.
     body.set_linvel(Vector::new(0.0,body.linvel().y.clamp(-0.12,0.0),0.0),true);
     body.set_angvel(Vector::ZERO,true);
-    b.release=-b.direction;
+    // Wall time also matters if a stationary grip needed no intervening frame.
+    // Translation is still braked, so even an intentional tilt cannot skate.
+    b.release=b.input.take().and_then(|input|input.released).unwrap_or_else(||release_direction(b.direction,b.motion,b.motion_at,now));
     b.release_time=0.0;
     // The lifted book travels in front of the boards. Re-enter the
     // selected bay at the actual release pose, correcting only a bottom

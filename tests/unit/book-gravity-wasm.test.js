@@ -186,8 +186,8 @@ it('rests against a post and a large plant, then wakes and falls when the suppor
 });
 
 
-it('tips in the recent finger direction on release, including a reversal and a paused finger',()=>{
- for(const direction of [-1,1])for(const pause of [0,30]){
+it('tips in the recent finger direction on release, including a reversal and a brief pause',()=>{
+ for(const direction of [-1,1])for(const pause of [0,6]){
   const f=fixture([book('hand',300,{flags:2,width:18})]);f.step(90);
   // Earlier travel in the opposite direction must not override the release.
   for(let i=1;i<=12;i++){f.rows[0].drag=-direction*i;f.step();}
@@ -237,7 +237,7 @@ it('keeps the supporting bottom corner planted throughout a free fall on either 
  for(const metal of [false,true])for(const direction of [-1,1]){
   const f=fixture([book('hand',300,{flags:2,width:18})],metal);f.step(90);
   for(let frame=1;frame<=30;frame++){f.rows[0].drag=direction*frame;f.step();}
-  const held=f.step(30)[0];Object.assign(f.rows[0],{flags:0,drag:0,x:300+direction*30});
+  const held=f.step(6)[0];Object.assign(f.rows[0],{flags:0,drag:0,x:300+direction*30});
   const points=[];let final;
   for(let frame=0;frame<600;frame++){
    final=f.step()[0];const a=final.angle;
@@ -280,7 +280,7 @@ it('supports books on the rendered pot walls rather than the empty foliage envel
  for(const pot of ['muskot','gradvis','akerbar','muskotblomma']){
   const f=fixture([book('hand',100,{flags:2,width:18}),book('plant',210,{kind:1,width:200,height:260})]);
   f.decoration('plant',1,pot,pot,Float64Array.of(.045,.070,.260,0));f.step(90);
-  f.rows[0].drag=30;f.step(45);Object.assign(f.rows[0],{flags:0,x:130,drag:0});const solved=f.step(600),rest=solved[0];
+  for(let frame=1;frame<=30;frame++){f.rows[0].drag=frame;f.step();}Object.assign(f.rows[0],{flags:0,x:130,drag:0});const solved=f.step(600),rest=solved[0];
   const geometry=readGeometry(rustShelf.probe_plant_part('pot',pot,Float64Array.of(45,70,.84),new Float64Array()));
   const points=geometry.attributes.position.array;let gap=Infinity;
   for(let i=0;i<points.length;i+=3){
@@ -395,7 +395,7 @@ it('rests against the actual lantern glass and base and releases it when the lam
 it('lands a pot on a fallen book and drops it back to the board when that book is removed',()=>{
  const f=fixture([book('hand',100,{flags:2,width:20,height:160}),book('plant',360,{kind:1,width:80,height:150})]);
  f.decoration('plant',1,'muskot','muskot',Float64Array.of(.03,.07,.15,0));f.step(90);
- f.rows[0].drag=30;f.step(60);Object.assign(f.rows[0],{flags:0,x:130,drag:0});const flat=f.step(600)[0];expect(Math.abs(flat.angle)).toBeGreaterThan(1.5);
+ for(let frame=1;frame<=30;frame++){f.rows[0].drag=frame;f.step();}Object.assign(f.rows[0],{flags:0,x:130,drag:0});const flat=f.step(600)[0];expect(Math.abs(flat.angle)).toBeGreaterThan(1.5);
  f.rows[1].flags=2;f.step(60);f.rows[1].x=flat.x;f.rows[1].dragY=-60;f.step(60);f.rows[1].flags=0;f.rows[1].dragY=0;
  const stack=f.step(600);console.info('POT_ON_COVER',{flat,stack});expect(stack.every(b=>b.active===0)).toBe(true);
  expect(stack[1].y+75).toBeGreaterThan(278);expect(stack[1].y+75).toBeLessThan(282);expect(Math.abs(stack[0].x-flat.x)).toBeLessThan(3);
@@ -491,7 +491,7 @@ it('releases a solid inside the chosen bay when its held pot still crosses the u
 it('returns an animated lifted pots collision depth before landing on a fallen cover',()=>{
  const f=fixture([book('hand',100,{flags:2,width:20,height:160}),book('plant',360,{kind:1,width:80,height:150})],false,true);
  f.decoration('plant',1,'muskot','muskot',Float64Array.of(.03,.07,.15,0));f.step(90);
- f.rows[0].drag=30;f.step(60);Object.assign(f.rows[0],{flags:0,x:130,drag:0});const flat=f.step(600)[0];expect(Math.abs(flat.angle)).toBeGreaterThan(1.5);
+ for(let frame=1;frame<=30;frame++){f.rows[0].drag=frame;f.step();}Object.assign(f.rows[0],{flags:0,x:130,drag:0});const flat=f.step(600)[0];expect(Math.abs(flat.angle)).toBeGreaterThan(1.5);
  f.rows[1].flags=2;f.step(60);f.rows[1].x=flat.x;f.rows[1].dragY=-60;f.step(60);f.rows[1].flags=0;f.rows[1].dragY=0;
  const rest=f.step(600);expect(rest.every(b=>b.active===0)).toBe(true);expect(rest[1].y+75).toBeGreaterThan(278);expect(rest[1].y+75).toBeLessThan(282);f.free();
 });

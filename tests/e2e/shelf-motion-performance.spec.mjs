@@ -493,6 +493,15 @@ test('real pointer releases tip both ways without coasting and the renderer slee
   const before=await book.boundingBox();
   await page.mouse.move(point.x+direction*24,point.y);
   await page.evaluate(direction=>{window.releaseDirection=direction;window.toeProof=[]},direction);
+  // The measurements above can take longer than the new careful-placement
+  // pause on a software GPU. End with a fresh small stroke and release in
+  // one input turn, matching the intentional sideways gesture being tested.
+  await page.evaluate(({x,y,direction})=>{
+   const node=document.querySelector('.ihr-spine');
+   const init={pointerId:1,pointerType:'mouse',clientX:x+direction*27,clientY:y,bubbles:true,cancelable:true};
+   node.dispatchEvent(new PointerEvent('pointermove',{...init,buttons:1}));
+   node.dispatchEvent(new PointerEvent('pointerup',{...init,buttons:0}));
+  },{...point,direction});
   await page.mouse.up();
   await expect(book).not.toHaveClass(/is-dragging|is-lifted/);
   await expect.poll(async()=>Number(await book.getAttribute('data-scene-lean'))*direction).toBeLessThan(-.5);
