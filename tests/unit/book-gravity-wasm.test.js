@@ -525,3 +525,41 @@ it('keeps a saved decorated room asleep across equivalent viewport arithmetic an
  for(const p of snapshot[2]){const q=saved[2].find(q=>q[0]===p[0]);for(const i of [5,6,7])expect(q[i]).toBeCloseTo(p[i],6)}b.free();
  }
 })
+
+it('keeps disconnected resting objects on the same board asleep during pickup and release',()=>{
+ const f=fixture([book('hand',80),book('far',470,{width:30,height:100}),book('other',130,{shelf:1,floor:620})]);
+ const before=f.step(600);expect(before.every(b=>b.active===0)).toBe(true);
+ f.rows[0].flags=2;
+ expect(f.step()[1]).toEqual(before[1]);
+ f.rows[0].drag=20;f.step(20);f.rows[0].flags=0;f.rows[0].x+=20;f.rows[0].drag=0;
+ const after=f.step();expect(after[1]).toEqual(before[1]);expect(after[2]).toEqual(before[2]);
+ f.free();
+});
+
+it('preserves disconnected saved poses through removal of a support on the same board',()=>{
+ const rows=()=>[book('a',100),book('b',140),book('support',200,{kind:1,width:50,height:100}),book('far',480,{width:30,height:80})];
+ const old=fixture(rows());old.step(600);const saved=old.snapshot();old.free();
+ const f=fixture(rows());expect(f.restore(saved)).toBe(true);const before=f.step();
+ f.rows.splice(2,1);const first=f.step();expect(first[2]).toEqual(before[3]);
+ const after=f.step(600);expect(after[2]).toEqual(before[3]);
+ expect(after.slice(0,2).some((b,i)=>Math.abs(b.angle-before[i].angle)>.03||Math.abs(b.x-before[i].x)>2)).toBe(true);
+ f.free();
+});
+
+it('settles the front-view released book stack instead of repainting subpixel contact jitter forever',()=>{
+ const input=JSON.parse(readFileSync(new URL('./fixtures/frontal-book-stack.json',import.meta.url)));
+ const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(...input.scene),out=new Float64Array(input.keys.length*4),inverse=Float64Array.of(0,0,0,1);
+ solver.decoration('plant:plant:motion',1,'muskot','muskot',Float64Array.of(.075,.135,.25,0));
+ solver.decoration('lamp:lamp:motion',3,'','',Float64Array.of(0,0,0,.00065));
+ const active=()=>[...out].filter((_,i)=>i%4===3);
+ const step=(frame,now=frame.now)=>{
+  scene.beginEntries(now,false,1,inverse,1,390,0,44);
+  solver.step(input.keys,Float64Array.from(frame.states.map(v=>v===null?NaN:v)),Float64Array.from(input.geometry),scene,now,false,out);
+ };
+ for(const frame of input.frames){step(frame);if(active().every(v=>v===0))solver.snapshot();}
+ const last=input.frames.at(-1);
+ for(let i=1;i<=1200;i++)step(last,last.now+i*1000/60);
+ expect(active()).toEqual(input.keys.map(()=>0));const settled=[...out];
+ for(let i=1201;i<=1320;i++)step(last,last.now+i*1000/60);
+ expect([...out]).toEqual(settled);solver.free();scene.free();
+});
