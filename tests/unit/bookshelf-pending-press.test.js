@@ -50,6 +50,20 @@ const cleanPending = node => {
   expect(node.classList.contains('is-lifted')).toBe(false)
 }
 describe('pending native press without a short-tap room lift', () => {
+  it.each(['mouse','pen'])('starts a %s drag on movement without waiting for the touch hold', pointerType => {
+    pointer('pointerdown',{pointerType});pointer('pointermove',{pointerType,x:120});
+    expect(spine.classList.contains('is-dragging')).toBe(true);
+    pointer('pointerup',{pointerType,x:120});click();
+    expect(prepared).not.toHaveBeenCalled();
+  })
+  it.each(['lostpointercapture','blur'])('releases an interrupted gesture on %s and accepts the next tap', async reason => {
+    pointer('pointerdown');await vi.advanceTimersByTimeAsync(450);
+    if(reason==='blur')window.dispatchEvent(new Event('blur'));else pointer(reason);
+    cleanPending(spine);expect(container.querySelector('.is-arranging')).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    pointer('pointerdown',{id:2});pointer('pointerup',{id:2});
+    expect(prepared).toHaveBeenCalledOnce();
+  })
   it.each(['mouse', 'touch'])('keeps the short %s semantic press and original activation without an early flush', pointerType => {
     pointer('pointerdown', { pointerType })
     expect(spine.classList.contains('is-pressed')).toBe(true)
@@ -96,6 +110,16 @@ describe('pending native press without a short-tap room lift', () => {
     pointer('pointerup', { id:2, primary:false, x:150 }); pointer('pointerup')
     cleanPending(spine); expect(spine.classList.contains('is-pressed')).toBe(false)
     click(); expect(prepared).not.toHaveBeenCalled()
+  })
+  it('releases an already lifted book when a second finger cancels its drag',async()=>{
+    pointer('pointerdown');await vi.advanceTimersByTimeAsync(450);
+    expect(container.querySelector('.is-arranging')).not.toBeNull();
+    pointer('pointerdown',{id:2,primary:false,x:150});
+    pointer('pointerup',{id:2,primary:false,x:150});pointer('pointerup');
+    cleanPending(spine);expect(container.querySelector('.is-arranging')).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    pointer('pointerdown',{id:3});pointer('pointerup',{id:3});
+    expect(prepared).toHaveBeenCalledOnce();
   })
   it('preserves the original 2D pressed feedback without a native pending mark', () => {
     mount(false); pointer('pointerdown')

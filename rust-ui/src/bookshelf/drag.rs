@@ -162,6 +162,18 @@ fn object_sounds(node:&JsValue)->(u32,u32,u32,u32){
  else if cls_has(node,"ihr-plant"){(14,11,12,crate::cozy_audio::pot_index(&text(&data_get(node,"potId"))))}
  else{(0,4,16,1)}
 }
+/// Touch keeps its hold-to-reorder gesture; a mouse/pen starts on deliberate
+/// movement. Both paths own the same pickup, sound and physics initialization.
+fn activate_drag(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
+ if ctx.st("dragSession")!=*drag||ctx.st_true("destroyed")||gb(drag,"active")||gb(drag,"cancelled"){return Ok(());}
+ ctx.clear_timeout(&get(drag,"timer"));put(drag,"timer",&f(0.0));
+ putb(drag,"active",true);ctx.st_set("arranging",&JsValue::TRUE);
+ cls_add(&ctx.root,&["is-arranging"]);cls_remove(node,PRESSED);cls_add(node,&["is-lifted"]);
+ let (lift,_,_,material)=object_sounds(node);
+ ctx.sound_of(lift,if lift==0{0}else{material},if lift==0{0.75}else{0.55});
+ method_opt(&ctx.scene(),"recordBookPointer",&[node,&f(0.0),&get(drag,"startedAt"),&f(0.0)])?;
+ ctx.scene_call("flush",&[])?;Ok(())
+}
 /// `startSpineDrag(event, node)`: the press that may become a hold, a scroll or a tap.
 pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  if other_button(event)||ctx.st_true("dragSession")||ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("returnMotion"){return Ok(());}
@@ -193,6 +205,7 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   ("x",&get(event,"clientX")),("y",&get(event,"clientY")),("scrollTop",&get(&ctx.scroller,"scrollTop")),
   ("pointerType",&get(event,"pointerType")),("target",&null()),("after",&JsValue::FALSE),("moved",&JsValue::FALSE),
   ("active",&JsValue::FALSE),("scrolling",&JsValue::FALSE),("cancelled",&JsValue::FALSE),("timer",&f(0.0)),
+  ("backgroundOnly",&b(background_only)),
   ("bookTapValid",&b(!background_only&&cls_has(&node,"ihr-spine"))),
   // The 3D hit belongs to another button than the one touched (a lamp's square over a book, or the reverse):
   // pointer capture hands the release to the hit's own button, which then owns the tap.
@@ -206,17 +219,7 @@ pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  // hold on an occluded book.
  if background_only{cls_remove(&node,PRESSED);return Ok(());}
  let timer=ctx.set_timeout(REORDER_HOLD_MS,{let (drag,node)=(drag.clone(),node.clone());move|ctx|{
-  if ctx.st("dragSession")!=drag||ctx.st_true("destroyed"){return Ok(());}
-  putb(&drag,"active",true);
-  ctx.st_set("arranging",&JsValue::TRUE);
-  cls_add(&ctx.root,&["is-arranging"]);
-  cls_remove(&node,PRESSED);
-  cls_add(&node,&["is-lifted"]);
-  let (lift,_,_,material)=object_sounds(&node);
-  ctx.sound_of(lift,if lift==0{0}else{material},if lift==0{0.75}else{0.55});
-  method_opt(&ctx.scene(),"recordBookPointer",&[&node,&f(0.0),&get(&drag,"startedAt"),&f(0.0)])?;
-  ctx.scene_call("flush",&[])?;
-  Ok(())
+  activate_drag(ctx,&drag,&node)
  }});
  put(&drag,"timer",&timer);
  Ok(())
@@ -232,7 +235,9 @@ pub fn move_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   let (start_x,start_y)=(gn(&drag,"startX"),gn(&drag,"startY"));
   if hypot(client_x-start_x,client_y-start_y)>TAP_SLOP{
    ctx.clear_timeout(&get(&drag,"timer"));
-   if ctx.st_str("viewMode")!=ISOMETRIC&&text(&get(&drag,"pointerType"))=="touch"&&(client_y-start_y).abs()>(client_x-start_x).abs(){
+   if !gb(&drag,"backgroundOnly")&&matches!(text(&get(&drag,"pointerType")).as_str(),"mouse"|"pen"){
+    activate_drag(ctx,&drag,node)?;
+   }else if ctx.st_str("viewMode")!=ISOMETRIC&&text(&get(&drag,"pointerType"))=="touch"&&(client_y-start_y).abs()>(client_x-start_x).abs(){
     putb(&drag,"scrolling",true);
    }else{
     putb(&drag,"cancelled",true);
@@ -242,7 +247,7 @@ pub fn move_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
    method(event,"preventDefault",&[])?;
    put(&ctx.scroller,"scrollTop",&f(gn(&drag,"scrollTop")+start_y-client_y));
   }
-  return Ok(());
+  if !gb(&drag,"active"){return Ok(());}
  }
  method(event,"preventDefault",&[])?;
  put(&drag,"x",&get(event,"clientX"));put(&drag,"y",&get(event,"clientY"));

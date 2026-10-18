@@ -84,6 +84,7 @@ pub fn build_plant(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
  input(ctx,&node,"pointermove",&data,"build_plant-pointermove-1",false)?;
  input(ctx,&node,"pointerup",&data,"build_plant-pointerup-1",false)?;
  input(ctx,&node,"pointercancel",&data,"build_plant-pointercancel-1",false)?;
+ input(ctx,&node,"lostpointercapture",&data,"build_plant-pointercancel-1",false)?;
  input(ctx,&node,"keydown",&data,"build_plant-keydown-1",false)?;
  Ok(node)
 }
@@ -106,6 +107,7 @@ pub fn build_lamp(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
  input(ctx,&node,"pointerleave",&data,"build_lamp-pointerleave-1",false)?;
  input(ctx,&node,"pointerup",&data,"build_lamp-pointerup-1",false)?;
  input(ctx,&node,"pointercancel",&data,"build_lamp-pointercancel-1",false)?;
+ input(ctx,&node,"lostpointercapture",&data,"build_lamp-pointercancel-1",false)?;
  input(ctx,&node,"click",&data,"build_lamp-click-1",false)?;
  input(ctx,&node,"keydown",&data,"build_lamp-keydown-1",false)?;
  Ok(node)
@@ -172,6 +174,7 @@ pub fn build_spine(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
  input(ctx,&node,"pointerdown",&data,"build_spine-pointerdown-1",false)?;
  input(ctx,&node,"pointerup",&data,"build_spine-pointerup-1",false)?;
  input(ctx,&node,"pointercancel",&data,"build_spine-pointercancel-1",false)?;
+ input(ctx,&node,"lostpointercapture",&data,"build_spine-pointercancel-1",false)?;
  input(ctx,&node,"pointerleave",&data,"build_spine-pointerleave-1",false)?;
  input(ctx,&node,"pointermove",&data,"build_spine-pointermove-1",false)?;
  input(ctx,&node,"click",&data,"build_spine-click-1",false)?;
@@ -180,6 +183,7 @@ pub fn build_spine(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
  input(ctx,&node,"pointermove",&data,"build_spine-pointermove-2",false)?;
  input(ctx,&node,"pointerup",&data,"build_spine-pointerup-2",false)?;
  input(ctx,&node,"pointercancel",&data,"build_spine-pointercancel-2",false)?;
+ input(ctx,&node,"lostpointercapture",&data,"build_spine-pointercancel-2",false)?;
  Ok(node)
 }
 

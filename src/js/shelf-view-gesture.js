@@ -7,6 +7,7 @@ export function createShelfViewGesture(options) {
   const shelf = needRustShelf()
   let native = new shelf.RustShelfViewGesture(options)
   return {
+    cancel() { native?.cancel() },
     destroy() {
       if (!native) return
       const finished = native

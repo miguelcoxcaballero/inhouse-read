@@ -258,7 +258,7 @@ impl Zoom{
   if self.state.borrow().gesture.is_some(){
    self.sample_velocity();self.consume(event)?;
    let stamp=num(&read(event,"timeStamp")?);
-   let cancelled=text(&read(event,"type")?,"pointercancel");
+   let cancelled=!text(&read(event,"type")?,"pointerup");
    let size=self.state.borrow().points.len();
    if size>=2{
     let (mx,my,distance)=self.midpoint();
@@ -308,6 +308,16 @@ impl Zoom{
   let listeners=std::mem::take(&mut *self.listeners.borrow_mut());
   drop(listeners);Ok(())
  }
+ fn cancel(&self)->Result<(),JsValue>{
+  self.stop()?;
+  self.release_captures();
+  let (timer,key)={let mut state=self.state.borrow_mut();state.points.clear();state.gesture=None;state.suppress_click=false;let result=(state.click_timer.clone(),state.click_key);state.click_timer=zero();state.click_key=0;result};
+  clear_timeout(&timer)?;release(key);self.publish(false)
+ }
+ fn capture_lost(&self,event:&JsValue)->Result<(),JsValue>{
+  if method_opt(&self.scroller,"hasPointerCapture",&[&read(event,"pointerId")?])?.is_some_and(|v|truthy(&v)){return Ok(());}
+  self.finish(event)
+ }
 }
 fn null_gesture()->JsValue{js_sys::TypeError::new("Cannot read properties of null").into()}
 
@@ -332,9 +342,11 @@ impl RustShelfZoom{
    zoom.listeners.borrow_mut().push(listener);Ok(())
   };
   add("pointerdown",Zoom::start)?;add("pointermove",Zoom::motion)?;add("pointerup",Zoom::finish)?;add("pointercancel",Zoom::finish)?;add("click",Zoom::click)?;
+  add("lostpointercapture",Zoom::capture_lost)?;
   zoom.sync()?;
   Ok(RustShelfZoom{zoom})
  }
  pub fn sync(&self)->Result<(),JsValue>{self.zoom.sync()}
+ pub fn cancel(&self)->Result<(),JsValue>{self.zoom.cancel()}
  pub fn destroy(&self)->Result<(),JsValue>{self.zoom.destroy()}
 }
