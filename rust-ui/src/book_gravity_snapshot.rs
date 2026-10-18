@@ -4,15 +4,19 @@
 use super::*;
 use js_sys::JSON;
 #[derive(Clone)]
-pub(super) struct RestPose{pub kind:u32,pub base:[f64;4],pub size:[f64;3],pub bay:[f32;4],pub x:f32,pub y:f32,pub angle:f32,pub solid:Option<String>,pub portable:bool}
+pub(super) struct RestPose{pub kind:u32,pub base:[f64;4],pub size:[f64;3],pub bay:[f32;4],pub x:f32,pub y:f32,pub angle:f32,pub solid:Option<String>,pub portable:bool,pub bay_relative:bool}
 impl RestPose{
+ pub fn offset(&self,base:[f64;4],bay:[f32;4])->[f64;2]{
+  if self.bay_relative{[bay[0] as f64-self.bay[0] as f64,bay[2] as f64-self.bay[2] as f64]}
+  else if self.portable{[base[0]-self.base[0],base[1]-self.base[1]]}else{[0.0,0.0]}
+ }
  pub fn matches(&self,kind:u32,base:[f64;4],size:[f64;3],bay:[f32;4])->bool{
   if self.portable{
    self.kind==kind&&self.base[2]==base[2]
     &&self.size.iter().zip(size).all(|(a,b)|(a-b).abs()<0.0001)
-    &&[(self.base[0]-self.bay[0] as f64)-(base[0]-bay[0] as f64),
-       (self.base[1]-self.bay[2] as f64)-(base[1]-bay[2] as f64),
-       (self.bay[1]-self.bay[0]) as f64-(bay[1]-bay[0]) as f64,
+    &&(self.bay_relative||[(self.base[0]-self.bay[0] as f64)-(base[0]-bay[0] as f64),
+       (self.base[1]-self.bay[2] as f64)-(base[1]-bay[2] as f64)].iter().all(|v|v.abs()<0.0001))
+    &&[(self.bay[1]-self.bay[0]) as f64-(bay[1]-bay[0]) as f64,
        (self.bay[3]-self.bay[2]) as f64-(bay[3]-bay[2]) as f64].iter().all(|v|v.abs()<0.0001)
   }else{self.kind==kind&&self.base.iter().zip(base).all(|(a,b)|(a-b).abs()<1e-7)&&self.size.iter().zip(size).all(|(a,b)|(a-b).abs()<1e-7)&&self.bay.iter().zip(bay).all(|(a,b)|(a-b).abs()<1e-6)}
  }
@@ -47,7 +51,7 @@ impl RustBookGravity{
   }
   for(key,b)in &mut self.books{
    let pose=&incoming.saved[key];let body=&mut self.world.bodies[b.handle];
-   let dx=if pose.portable{b.base[0]-pose.base[0]}else{0.0};let dy=if pose.portable{b.base[1]-pose.base[1]}else{0.0};
+   let [dx,dy]=pose.offset(b.base,b.bay);
    let z=body.translation().z;
    body.set_translation(Vector::new((pose.x as f64+dx) as f32,(pose.y as f64+dy) as f32,z),false);
    body.set_rotation(Rotation::from_scaled_axis(Vector::new(0.0,0.0,pose.angle)),false);
@@ -64,6 +68,7 @@ impl RustBookGravity{
   let root=Array::from(&root);if root.length()!=3||![Some(1.0),Some(2.0)].contains(&root.get(0).as_f64()){return false;}
   let portable=root.get(0).as_f64()==Some(2.0);
   let Some(layout)=numbers(&root.get(1),100000)else{return false;};
+  let bay_relative=portable&&layout.len()==2&&layout[0]==20261018.0;
   if !Array::is_array(&root.get(2)){return false;}let rows=Array::from(&root.get(2));if rows.length()>10000{return false;}
   let mut poses=BTreeMap::new();
   for row in rows.iter(){
@@ -78,7 +83,7 @@ impl RustBookGravity{
    let Some(angle)=row.get(7).as_f64().filter(|v|v.is_finite()&&v.abs()<=std::f64::consts::PI+1e-5)else{return false;};
    let solid=if row.length()==8||row.get(8).is_null(){None}else{let Some(value)=row.get(8).as_string().filter(|v|v.len()<4096)else{return false;};Some(value)};
    if size.iter().any(|v|*v<=0.0||*v>1000.0)||base[3]<=0.0||bay.iter().any(|v|v.abs()>100000.0){return false;}
-   if poses.insert(name,RestPose{kind:kind as u32,base,size,bay:bay.map(|v|v as f32),x:x as f32,y:y as f32,angle:angle as f32,solid,portable}).is_some(){return false;}
+   if poses.insert(name,RestPose{kind:kind as u32,base,size,bay:bay.map(|v|v as f32),x:x as f32,y:y as f32,angle:angle as f32,solid,portable,bay_relative}).is_some(){return false;}
   }
   self.saved=poses;self.saved_layout=layout;true
  }

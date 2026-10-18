@@ -35,6 +35,12 @@ export function driveServer({ beforeUpload = async () => {} } = {}) {
         files.set(savedId,file)
         return reply({ ...file, bytes:undefined })
       }
+      if (method==='GET' && files.has(id) && !url.searchParams.has('q')) {
+        const {bytes,...meta}=files.get(id);return reply(meta)
+      }
+      if (method==='PATCH' && files.has(id)) {
+        const old=files.get(id),next=JSON.parse(req.postData());Object.assign(old,next);return reply(old)
+      }
       if (method==='POST') {
         const meta=JSON.parse(req.postData()), id=`folder-${++counter}`
         files.set(id,{ ...meta,id }); return reply({ ...meta,id })

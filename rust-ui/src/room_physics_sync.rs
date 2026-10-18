@@ -61,3 +61,25 @@ fn convert(value:JsValue,books:JsValue,cloud:bool)->JsValue{
  };
  run().unwrap_or(value)
 }
+
+/// A shared pose is relative to its bay. CSS rounding can move the semantic
+/// placement anchor by a fraction of a pixel without moving the physical body.
+/// Retain the original register for that case; otherwise peers would restamp
+/// one another's equivalent resting room after every refresh.
+#[wasm_bindgen]
+pub fn room_physics_equivalent(a:JsValue,b:JsValue)->bool{
+ fn signature(value:&JsValue)->Result<String,JsValue>{
+  let source=value.as_string().ok_or(JsValue::NULL)?;let parsed=JSON::parse(&source)?;
+  if !Array::is_array(&parsed){return Ok(source);}let root=Array::from(&parsed);
+  let layout=Array::from(&root.get(1));
+  if root.get(0).as_f64()!=Some(2.0)||layout.length()!=2||layout.get(0).as_f64()!=Some(20261018.0){return Ok(source);}
+  if !Array::is_array(&root.get(2)){return Err(JsValue::NULL);}
+  for row in Array::from(&root.get(2)).iter(){
+   if !Array::is_array(&row){return Err(JsValue::NULL);}let row=Array::from(&row);
+   if !Array::is_array(&row.get(2)){return Err(JsValue::NULL);}let base=Array::from(&row.get(2));
+   if base.length()!=4{return Err(JsValue::NULL);}set(&row.get(2),"0",&0.into());set(&row.get(2),"1",&0.into());
+  }
+  Ok(JSON::stringify(&parsed)?.as_string().unwrap_or_default())
+ }
+ a==b||signature(&a).ok().zip(signature(&b).ok()).is_some_and(|(a,b)|a==b)
+}

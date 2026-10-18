@@ -1,6 +1,6 @@
 import { readDriveLibrarySnapshots, readDriveLibraryRevision, writeDriveLibrarySnapshot, uploadDriveCover, downloadDriveFile } from './drive-client.js'
 import { spineCustomization } from './book-colors.js'
-import { readBackupCheckpoint, saveBackupCheckpoint } from './cloud-backup-state.js'
+import { readBackupCheckpoint, saveBackupCheckpoint, mergeBackupCheckpoint } from './cloud-backup-state.js'
 import { SYNC_SETTINGS } from './cloud-settings.js'
 import { cloudModule } from './cloud-native.js'
 
@@ -13,9 +13,9 @@ export class LibraryBackup {
   #host
   #polling = null
 
-  constructor(library, cloud, { storage = localStorage, onSettings = () => {}, onChange = () => {}, onStatus = () => {} } = {}) {
+  constructor(library, cloud, { storage = localStorage, onSettings = () => {}, onChange = () => {}, onStatus = () => {}, onSnapshot = () => {}, onLiveApplied = () => {} } = {}) {
     this.#host = {
-      library, cloud, storage, onSettings, onChange, onStatus, settings: SYNC_SETTINGS,
+      library, cloud, storage, onSettings, onChange, onStatus, onSnapshot, onLiveApplied, settings: SYNC_SETTINGS,
       withLock: (name, run) => globalThis.navigator?.locks?.request ? navigator.locks.request(name, run) : run(),
       randomUUID: () => crypto.randomUUID(),
       readDriveLibrarySnapshots: (...args) => readDriveLibrarySnapshots(...args),
@@ -25,6 +25,7 @@ export class LibraryBackup {
       downloadDriveFile: (...args) => downloadDriveFile(...args),
       readBackupCheckpoint: (...args) => readBackupCheckpoint(...args),
       saveBackupCheckpoint: (...args) => saveBackupCheckpoint(...args),
+      mergeBackupCheckpoint: (...args) => mergeBackupCheckpoint(...args),
       spineCustomization
     }
   }
@@ -40,6 +41,11 @@ export class LibraryBackup {
   get device() { return this.#native?.device }
   reset() { this.#native?.reset() }
   sync(accountId) { return this.#native ? this.#native.sync(accountId) : this.#ready().then(native => native.sync(accountId)) }
+  markBookChanged(accountId, id, fields) { return this.#native?.markBookChanged(accountId, id, fields) || false }
+  markSettingChanged(accountId, key) { return this.#native?.markSettingChanged(accountId, key) || false }
+  captureRoom(accountId) { return this.#ready().then(native => native.captureRoom(accountId)) }
+  receiveSnapshot(accountId, snapshot) { return this.#ready().then(native => native.receiveSnapshot(accountId, snapshot)) }
+  drainLive(accountId) { return this.#native?.drainLive(accountId) || Promise.resolve() }
   poll(accountId) {
     return this.#polling ||= this.#ready().then(native => native.poll(accountId)).finally(() => { this.#polling = null })
   }

@@ -71,3 +71,20 @@ for(const [name,core]of [['UI',ui],['shelf',shelf]])it(`${name}: derives appeara
  expect(()=>core.book_seed_for({title:Symbol('title')})).toThrow(TypeError)
  expect(core.book_seed_for({id:'drive:123',shelfVisualId:'origin'})).toBe('origin')
 })
+
+it('adopts shared bay-relative poses despite viewport rounding of the semantic placement anchor',()=>{
+ const f=fixture(['book:local-A']);f.step(600);const local=f.snapshot(),canonical=JSON.parse(ui.room_physics_for_cloud(local,books))
+ canonical[2][0][2][0]+=.00044
+ expect(f.apply(ui.room_physics_for_device(JSON.stringify(canonical),books))).toBe(true)
+ f.step();const after=JSON.parse(ui.room_physics_for_cloud(f.snapshot(),books))
+ expect(after[2][0][5]).toBeCloseTo(canonical[2][0][5],6);expect(after[2][0][6]).toBeCloseTo(canonical[2][0][6],6)
+ const stale=JSON.parse(local);stale[2][0][2][0]+=.00044;expect(f.apply(JSON.stringify(stale))).toBe(false);f.free()
+})
+
+it('treats different semantic anchors as the same shared physical room, retaining real position/dimension changes',()=>{
+ const a=ui.room_physics_for_cloud(JSON.stringify(pose()),books),b=JSON.parse(a);b[2][0][2][0]+=.00044
+ expect(ui.room_physics_equivalent(a,JSON.stringify(b))).toBe(true)
+ b[2][0][5]+=.0001;expect(ui.room_physics_equivalent(a,JSON.stringify(b))).toBe(false)
+ b[2][0][5]-=.0001;b[2][0][3][0]+=.0001;expect(ui.room_physics_equivalent(a,JSON.stringify(b))).toBe(false)
+ expect(ui.room_physics_equivalent('{bad','null')).toBe(false)
+})

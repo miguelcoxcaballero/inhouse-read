@@ -132,10 +132,14 @@ impl Core{
   let file=settle(call(&self.host,"downloadDriveFile",&[&get(&record,"driveFileId"),&object(&[("name",name),("mimeType",get(&record,"mimeType"))])])).await?;
   if !self.is_current(&id,book_generation,generation){return Ok(JsValue::NULL);}
   let saved=async{
+   let previous_length=crate::length_metadata::length_drive_metadata(record.clone())?;
    let fields=object(&[("content",construct("Blob",&[&Array::of1(&file).into(),&object(&[("type",get(&file,"type"))])])?),("cloudAccountId",account_id)]);
    assign(&fields,&call(&self.host,"clearBookLength",&[])?)?;
    set(&fields,"contentRevision",&call(&self.host,"newContentRevision",&[])?);
    set(&fields,"contentDriveChecksum",&or(get(&record,"driveContentChecksum"),JsValue::NULL));
+   let candidate=object(&[]);assign(&candidate,&record)?;assign(&candidate,&fields)?;
+   let preserved=crate::length_metadata::length_count_from_drive(candidate,previous_length)?;
+   if preserved.is_truthy(){assign(&fields,&preserved)?;}
    settle(call(&self.library,"patch",&[&get(&record,"id"),&fields])).await
   }.await;
   let saved=match saved{

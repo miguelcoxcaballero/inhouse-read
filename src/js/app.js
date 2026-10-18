@@ -14,6 +14,7 @@ import {
 } from './drive-client.js'
 import { CloudSync } from './cloud-sync.js'
 import { LibraryBackup } from './library-backup.js'
+import { LiveRoom } from './live-room.js'
 import { notifyCloudSettingsChanged } from './cloud-settings.js'
 import { createShelfRefreshQueue } from './shelf-refresh-queue.js'
 import { restoreLegacyBookBytes } from './legacy-book-recovery.js'
@@ -128,17 +129,24 @@ const cloudSync = new CloudSync(library, {
 })
 let cloudRoomChanged = false
 let backupTimer = null
+let roomCaptureTimer = null
+let roomCaptureBusy = false
+let roomCaptureAgain = false
+const liveRoom = new LiveRoom({enabled:()=>!appDisposed&&!document.hidden&&hasDriveSession(),receive:(account,snapshot)=>libraryBackup.receiveSnapshot(account,snapshot)})
 const libraryBackup = new LibraryBackup(library, cloudSync, {
   onStatus:setDriveSyncStatus,
   onChange:refreshShelf,
-  onSettings:keys => {
+  onSnapshot:(account,device,snapshot) => { liveRoom.publish(account,snapshot).catch(()=>{}) },
+  onLiveApplied:scheduleLibraryBackup,
+  onSettings:applyCloudSettings
+})
+function applyCloudSettings(keys) {
     const room = keys.filter(key => key.startsWith('inhouse-read-shelf-'))
     if (room.length && !(els.readerScreen.hidden && !closingReader && room.length === 1 && room[0] === 'inhouse-read-shelf-physics-v1' && shelf?.applyRoomPose?.())) cloudRoomChanged = true
     if (keys.includes('inhouse-read-theme')) initTheme()
     if (keys.includes('inhouse-read-reading-preferences')) readingExperience.reloadPreferences()
     refreshShelf()
-  }
-})
+}
 function scheduleLibraryBackup() {
   clearTimeout(backupTimer)
   if (!hasDriveSession() && !getRememberedDriveProfile()) return
@@ -147,6 +155,29 @@ function scheduleLibraryBackup() {
     syncLibraryToDrive({ silent:true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
   }, 350)
 }
+function scheduleRoomCapture() {
+  roomCaptureAgain = true
+  if (roomCaptureBusy || roomCaptureTimer != null || !driveProfile?.id) return
+  roomCaptureTimer = setTimeout(async () => {
+    roomCaptureTimer = null
+    const account = driveProfile?.id
+    if (!account) return
+    roomCaptureBusy = true; roomCaptureAgain = false
+    try { await libraryBackup.captureRoom(account); await libraryBackup.drainLive(account) }
+    catch (error) { console.warn('Colocación pendiente:', error.message) }
+    finally { roomCaptureBusy = false; if (roomCaptureAgain) scheduleRoomCapture() }
+  }, 32)
+}
+function localRoomBookChanged(id,fields) {
+  if (driveProfile?.id && libraryBackup.markBookChanged(driveProfile.id,id,fields)) scheduleRoomCapture()
+}
+globalThis.addEventListener('inhouse-room-book-changed',e=>localRoomBookChanged(e.detail?.id,e.detail?.fields||[]))
+globalThis.addEventListener('inhouse-room-setting-changed', e => {
+  if (driveProfile?.id && libraryBackup.markSettingChanged(driveProfile.id,e.detail)) scheduleRoomCapture()
+})
+globalThis.addEventListener('storage',e => {
+  if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
+})
 globalThis.addEventListener('inhouse-library-changed', scheduleLibraryBackup)
 function scheduleLengthRefresh() {
   if (appDisposed || document.hidden || !els.readerScreen.hidden || lengthRefreshTimer != null) return
@@ -164,7 +195,7 @@ const wordCountQueue = createBookLengthQueue(library, {
     // Batch short books: rebuilding the shelf once per completed chapter or
     // library record would spend far more time drawing than counting text.
     scheduleLengthRefresh()
-    if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(record.id)
+    if (record?.driveFileId && hasDriveSession()) { cloudSync.scheduleProgress(record.id); scheduleLibraryBackup() }
   },
   onError: error => console.warn('No se pudo contar el texto del libro:', error)
 })
@@ -232,6 +263,8 @@ addEventListener('pagehide', event => {
   wordCountQueue.dispose()
   clearTimeout(backupTimer)
   clearInterval(backupPoll)
+  clearTimeout(roomCaptureTimer)
+  liveRoom.destroy()
 })
 
 function isAndroidShell() {
@@ -311,7 +344,7 @@ const shelfRefreshHost = {
   library, libraryHost, nativeImportShelfGate, els, wordCountQueue,
   progressWrites, preparedBooks, coverUpgrades, cloudSync, preparedPages, reader,
   get readingExperience() { return readingExperience },
-  scheduleLibraryBackup, releasePageGate,
+  scheduleLibraryBackup, releasePageGate, onLocalBookChange:localRoomBookChanged,
   ignoreRemovalPreparationError: () => {},
   removedPreparationCleanup: (book, generation) => () => bookDataModule().app_finish_removed_preparation(shelfRefreshHost, book, generation),
   warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
@@ -667,12 +700,14 @@ async function loadDriveAccountProfile() {
   if (!hasDriveSession()) {
     driveProfile = null
     cloudSync.reset()
+    liveRoom.pause()
     libraryBackup.reset()
     profileView.visibility(false)
     profileView.localAccount()
     return null
   }
   profileView.visibility(true)
+  const previousAccount = driveProfile?.id
   try {
     driveProfile = await getDriveProfile()
   } catch (error) {
@@ -682,6 +717,7 @@ async function loadDriveAccountProfile() {
     if (!driveProfile?.id) throw new Error('No se pudo identificar la cuenta de Google. Vuelve a conectar.')
     setDriveSyncStatus(`Perfil guardado · ${error.message}`)
   }
+  if (previousAccount && previousAccount !== driveProfile?.id) { liveRoom.pause(); libraryBackup.reset(); cloudSync.reset() }
   cloudSync.setProfile(driveProfile)
   profileView.account(driveProfile)
   return driveProfile
@@ -769,6 +805,7 @@ els.driveSyncBtn.addEventListener('click', async () => {
 els.driveSignOutBtn.addEventListener('click', () => {
   signOutDrive()
   cloudSync.reset()
+  liveRoom.pause()
   libraryBackup.reset()
   driveProfile = null
   closeProfileMenu()
@@ -944,4 +981,5 @@ const backupPoll = setInterval(() => {
 }, 5000)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') resumeDriveSync()
+  else liveRoom.pause()
 })

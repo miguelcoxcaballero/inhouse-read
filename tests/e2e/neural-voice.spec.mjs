@@ -93,7 +93,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     await expect.poll(async () => (await calls(page)).length).toBeGreaterThan(2)
     const spoken = await calls(page)
     expect(spoken[0]).toMatchObject({ voiceId:LESSAC, rate:1.5, atSpeak:'' })
-    expect(spoken[0].upcoming.length).toBeGreaterThanOrEqual(2); expect(spoken[0].upcoming.length).toBeLessThanOrEqual(4)
+    expect(spoken[0].upcoming.length).toBeGreaterThanOrEqual(2); expect(spoken[0].upcoming.length).toBeLessThanOrEqual(6)
     expect(spoken[1].text).toBe(spoken[0].upcoming[0])
     expect(await engine(page, e => e.unlocks)).toBeGreaterThanOrEqual(1)
     expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)

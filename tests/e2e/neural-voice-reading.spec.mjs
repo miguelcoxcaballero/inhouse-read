@@ -39,13 +39,16 @@ function instrument({ base }) {
 
   const start = AudioBufferSourceNode.prototype.start, stop = AudioBufferSourceNode.prototype.stop
   AudioBufferSourceNode.prototype.start = function (when, ...rest) {
+    // Observe the narrator's actual context. The shelf has a separate context
+    // for its 48 kHz sounds and silent iOS unlock; neither is synthesized speech.
+    if(this.context!==window.__neuEngine?.core?.audio?.context?.())return start.call(this,when,...rest)
     const data = this.buffer.getChannelData(0)
     let peak = 0, sum = 0, finite = true
     for (let i = 0; i < data.length; i++) { const x = data[i]; if (!Number.isFinite(x)) finite = false; else { const a = Math.abs(x); if (a > peak) peak = a; sum += x * x } }
     neu.audio.push({ at: performance.now(), when: when || 0, now: this.context.currentTime, duration: this.buffer.duration, sampleRate: this.buffer.sampleRate, peak, rms: Math.sqrt(sum / Math.max(1, data.length)), finite, state: this.context.state })
     return start.call(this, when, ...rest)
   }
-  AudioBufferSourceNode.prototype.stop = function (...args) { neu.stops++; return stop.apply(this, args) }
+  AudioBufferSourceNode.prototype.stop = function (...args) { if(this.context===window.__neuEngine?.core?.audio?.context?.())neu.stops++; return stop.apply(this, args) }
 
   window.addEventListener('inhouse-tts', event => {
     const entry = { ...event.detail, at: performance.now(), highlight: null }

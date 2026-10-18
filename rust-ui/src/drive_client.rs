@@ -9,6 +9,7 @@ use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function,Object,Promise,RegExp,Uint8Array};
 use crate::cloud_host::*;
+#[path="drive_live.rs"]mod live;
 
 #[wasm_bindgen]
 extern "C"{
@@ -483,14 +484,16 @@ impl Core{
    *self.state_folder.borrow_mut()=Some(Promise::resolve(&folder));folder
   };
   self.require(generation)?;
-  let pattern=RegExp::new(r"^library-v1-[\w-]+\.json$","");let rows=Array::new();let mut token=JsValue::UNDEFINED;
+  let pattern=RegExp::new(r"^library-v1-[\w-]+\.json$","");let rows=Array::new();let peers=Array::new();let mut token=JsValue::UNDEFINED;
   loop{
-   let page=self.list_folder(&folder,&object(&[("fields","id,name,modifiedTime".into()),("pageToken",token)]),generation).await?;
+   let page=self.list_folder(&folder,&object(&[("fields","id,name,modifiedTime,appProperties".into()),("pageToken",token)]),generation).await?;
    for file in Array::from(&or(get(&page,"files"),Array::new().into())).iter(){
     if pattern.test(&string(&get(&file,"name"))){rows.push(&Array::of2(&get(&file,"id"),&get(&file,"modifiedTime")));}
+    if get(&get(&file,"appProperties"),"ihrKind")==JsValue::from_str("live-v1"){peers.push(&file);}
    }
    token=get(&page,"nextPageToken");if !token.is_truthy(){break;}
   }
+  call(&self.host,"emit",&[&"inhouse-drive-live-peers".into(),&object(&[("folderId",folder),("peers",peers.into())])])?;
   call(&rows,"sort",&[])?;Ok(json_text(&rows.into())?.into())
  }
  async fn read_snapshots(self:Rc<Self>)->Result<JsValue,JsValue>{
@@ -584,6 +587,7 @@ impl Core{
   let name=get(&options,"name");
   let metadata=object(&[("name",if name.is_undefined(){get(&file,"name")}else{name})]);
   if folder.is_truthy(){set(&metadata,"parents",&Array::of1(&folder).into());}
+  let app_properties=get(&options,"appProperties");if app_properties.is_object(){set(&metadata,"appProperties",&app_properties);}
   let mime=or(get(&file,"type"),"application/octet-stream".into());
   let endpoint=format!("{UPLOAD_URL}{}",if drive_file_id.is_truthy(){format!("/{}",encode_uri_component(&drive_file_id))}else{String::new()});
   let method=if drive_file_id.is_truthy(){"PATCH"}else{"POST"};

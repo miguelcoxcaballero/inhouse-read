@@ -7,5 +7,6 @@ export function notifyCloudSettingsChanged(key) {
   const stamps = parse(localStorage, CHANGES_KEY, {})
   stamps[key] = Math.max(Date.now(), (Number(stamps[key]) || 0) + 1)
   localStorage.setItem(CHANGES_KEY, JSON.stringify(stamps))
+  globalThis.dispatchEvent(new CustomEvent('inhouse-room-setting-changed', {detail:key}))
   globalThis.dispatchEvent(new Event('inhouse-library-changed'))
 }

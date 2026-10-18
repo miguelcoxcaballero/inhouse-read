@@ -8,6 +8,7 @@ type R<T> = Result<T,JsValue>;
 #[wasm_bindgen]
 pub fn app_persist_book_state(host:JsValue,id:JsValue,fields:JsValue)->Promise{cloud_host::start(async move{
  cloud_host::settle(method(&read(&host,"progressWrites")?,"patch",&[&id,&fields])).await?;
+ if read(&host,"onLocalBookChange")?.is_function(){method(&host,"onLocalBookChange",&[&id,&Object::keys(fields.unchecked_ref()).into()])?;}
  method(&host,"scheduleLibraryBackup",&[])?;Ok(JsValue::UNDEFINED)
 })}
 #[wasm_bindgen]
@@ -35,6 +36,7 @@ pub fn app_remove_from_shelf(host:JsValue,book:JsValue)->Promise{cloud_host::sta
  method(&read(&host,"coverUpgrades")?,"delete",&[&read(&book,"id")?])?;
  let preparing=read(&state,"readerPreparationQueue")?;
  let removal=cloud_host::settle(method(&read(&host,"cloudSync")?,"removeFromShelf",&[&book])).await?;
+ if read(&host,"onLocalBookChange")?.is_function(){method(&host,"onLocalBookChange",&[&read(&book,"id")?,&Array::of1(&"visible".into()).into()])?;}
  method(&host,"scheduleLibraryBackup",&[])?;
  if owns{
   let caught=method(&preparing,"catch",&[&read(&host,"ignoreRemovalPreparationError")?])?;
@@ -69,6 +71,7 @@ pub fn app_cover_appearance(host:JsValue,book:JsValue,appearance:JsValue,key:JsV
  let task=method(&read(&host,"library")?,"patch",&[&id,&patch])?;
  Ok(cloud_host::start(async move{
   let record=cloud_host::settle(Ok(task)).await?;
+  if read(&host,"onLocalBookChange")?.is_function(){method(&host,"onLocalBookChange",&[&id,&Array::of2(&"coverAppearance".into(),&"coverAppearanceKey".into()).into()])?;}
   method(&host,"scheduleLibraryBackup",&[])?;Ok(record)
  }))
 }
