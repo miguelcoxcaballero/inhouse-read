@@ -37,4 +37,7 @@ mod app_reader_close;
 mod app_reader_opening;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_file_content;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod book_customization;
