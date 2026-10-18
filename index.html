@@ -57,6 +57,7 @@
           }
         })
         window.__inhouseShelfRead = read
+        window.__inhouseShelfPreviewRead = read.done
       })(indexedDB.open('inhouse-read', 2), { records: null })
     } catch (error) { /* no IndexedDB here: the store reports it */ }
   </script>

@@ -23,6 +23,7 @@ class FakeWorker {
   postMessage(message) {
     const data=structuredClone(message);this.sent.push(data)
     if(data.type==='begin' && this.begin==='reply') Promise.resolve().then(()=>this.emit({...data,accepted:true}))
+    if(data.type==='scores' && this.score==='reply') Promise.resolve().then(()=>this.emit({type:'scores',job:data.job,request:data.request,scores:data.masks.map(mask=>mask.width/10)}))
     if(data.type==='score' && this.score==='reply') Promise.resolve().then(()=>this.emit({type:'score',job:data.job,request:data.request,score:data.mask.width/10}))
   }
   emit(data) { this.onmessage?.({data}) }
@@ -62,6 +63,21 @@ describe('font score Worker transport',()=>{
     expect(scores.map(message=>message.mask.width)).toEqual([4,5]);expect(scores.every(message=>!('gray'in message)&&!('near'in message))).toBe(true)
     expect(scores[0].mask.perimeter).toBeInstanceOf(Int32Array);expect(scores[0].mask.mask).toBeInstanceOf(Uint8Array)
     job.close()
+  })
+  it('sends one bounded family batch and validates every returned score',async()=>{
+    const t=await setup(),job=await t.open(image()),masks=[mask(1),mask(2)];
+    expect(await job.scoreMany(masks)).toEqual([.4,.5]);
+    expect(t.worker.sent.filter(message=>message.type==='scores')).toHaveLength(1);
+    expect(masks[0].mask.byteLength).toBe(4);
+    await expect(job.scoreMany(Array(25).fill(mask(1)))).rejects.toThrow('Invalid');
+    job.close();
+  })
+  it('rejects incomplete or non-finite batch replies',async()=>{
+    for(const scores of [[.4],[.4,NaN],[.4,'0.5']]){
+      const t=await setup({score:'hold'}),job=await t.open(image()),pending=job.scoreMany([mask(1),mask(2)]),request=t.worker.sent.at(-1);
+      t.worker.emit({type:'scores',job:request.job,request:request.request,scores});
+      await expect(pending).rejects.toThrow('Invalid');job.close();
+    }
   })
   it('bounds startup at 3000ms without changing the font loader timer',async()=>{
     const t=await setup({begin:'hold'});let settled=false

@@ -406,20 +406,19 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
 function* remoteFontScore(_gray, _near, _width, _height, _rows, mask) {
   return yield { mask };
 }
-async function runRemoteFamily(task, scoreMask) {
+async function runRemoteFamily(task, scoreMasks) {
+  // Scores only select a maximum; they never alter which glyphs are sampled.
+  // Build the identical family in short slices, then send its bounded batch.
+  const masks = [];
   let sliceStart = performance.now(), step = task.next();
   while (!step.done) {
-    if (step.value?.mask) {
-      const score = await scoreMask(step.value.mask);
-      sliceStart = performance.now(); step = task.next(score);
-    } else {
-      if (performance.now() - sliceStart >= SLICE_MS) {
-        await yieldToMain(); sliceStart = performance.now();
-      }
-      step = task.next();
+    if (step.value?.mask) masks.push(step.value.mask);
+    if (performance.now() - sliceStart >= SLICE_MS) {
+      await yieldToMain(); sliceStart = performance.now();
     }
+    step = task.next(0);
   }
-  return step.value;
+  return Math.max(0, ...await scoreMasks(masks));
 }
 
 async function matchTitleFont(gray, width, height, title, preparedNear) {
@@ -432,17 +431,20 @@ async function matchTitleFont(gray, width, height, title, preparedNear) {
   const near = preparedNear ?? nearEdgeMap(edgeMap(gray, width, height), width);
   let workerJob = await openFontScoreJob({ gray, near, width, height, rows:work.height });
   const remote = Boolean(workerJob);
-  const scoreMask = async mask => {
+  const scoreMasks = async masks => {
     if (workerJob) {
-      try { return await workerJob.score(mask); }
+      try { return await workerJob.scoreMany(masks); }
       catch { workerJob.close(); workerJob = null; }
     }
-    return runInSlices(scoreFontMask(gray, near, width, height, work.height, mask));
+    // Keep the original masks intact for a failed/unavailable Worker.
+    const scores = [];
+    for (const mask of masks) scores.push(await runInSlices(scoreFontMask(gray, near, width, height, work.height, mask)));
+    return scores;
   };
   try {
     for (const candidate of FONT_CANDIDATES) {
       const task = scoreFamily(candidate, gray, near, width, height, work.height, title, remote ? remoteFontScore : scoreFontMask);
-      const score = remote ? await runRemoteFamily(task, scoreMask) : await runInSlices(task);
+      const score = remote ? await runRemoteFamily(task, scoreMasks) : await runInSlices(task);
       scoreByFamily.push({ candidate, score });
     }
   } finally { workerJob?.close(); }

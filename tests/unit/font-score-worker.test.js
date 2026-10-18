@@ -32,6 +32,13 @@ describe('real module Worker scorer protocol',()=>{
     expect(value).toEqual({type:'score',job:1,request:2,score:drain(originalScore(context.gray,context.near,context.width,context.height,context.rows,mask))})
     expect(Number.isFinite(value.score)).toBe(true)
   })
+  it('returns a full family batch identical to the original per-mask scorer',async()=>{
+    const {mask,...context}=inputs(11),masks=[mask,inputs(6).mask,inputs(9).mask];
+    await send({type:'begin',job:21,request:1,...context});
+    expect(await send({type:'scores',job:21,request:2,masks})).toEqual({type:'scores',job:21,request:2,
+      scores:masks.map(mask=>drain(originalScore(context.gray,context.near,context.width,context.height,context.rows,mask)))});
+    expect(await send({type:'scores',job:21,request:3,masks:Array(25).fill(mask)})).toEqual({type:'error',job:21,request:3});
+  })
   it('releases previous image state at end and cannot score a closed job',async()=>{
     const {mask,...context}=inputs();await send({type:'begin',job:1,request:1,...context})
     await scope.onmessage({data:{type:'end',job:1}})

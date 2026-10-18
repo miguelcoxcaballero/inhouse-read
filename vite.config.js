@@ -7,6 +7,7 @@ import { pdfBackgroundPatch } from './scripts/pdf-background-patch.mjs'
 import { pdfImageTrackingPatch } from './scripts/pdf-image-tracking-patch.mjs'
 import { neuralVoiceAssets } from './scripts/neural-voice-assets.mjs'
 import { shelfBakeVersion } from './scripts/shelf-bake-version.mjs'
+import { shelfLaunchEntry } from './scripts/shelf-launch-entry.mjs'
 import { studioEnvironmentVersion } from './scripts/studio-environment-version.mjs'
 
 const resolvePath = p => fileURLToPath(new URL(p, import.meta.url))
@@ -14,7 +15,7 @@ const resolvePath = p => fileURLToPath(new URL(p, import.meta.url))
 // GitHub Pages sirve el proyecto bajo /inhouse-read/, no en la raíz del dominio.
 export default defineConfig({
   base: '/inhouse-read/',
-  plugins:[foliateFixedLayoutPatch(), foliateBackgroundPatch(), foliateArchivePatch(), pdfBackgroundPatch(), pdfImageTrackingPatch(), neuralVoiceAssets(),
+  plugins:[shelfLaunchEntry(resolvePath('./src/js/shelf-launch-preview.js')), foliateFixedLayoutPatch(), foliateBackgroundPatch(), foliateArchivePatch(), pdfBackgroundPatch(), pdfImageTrackingPatch(), neuralVoiceAssets(),
     shelfBakeVersion(resolvePath('.')), studioEnvironmentVersion(resolvePath('.'))],
   // Keep the same guarded source in development as in production; otherwise
   // dependency prebundling would bypass the fixed-layout transform in dev.
