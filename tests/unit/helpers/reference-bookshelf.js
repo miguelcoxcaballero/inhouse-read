@@ -1,3 +1,5 @@
+// Contract amendments: 1.7.282 reserves the reader origin; 1.7.284 records raw pointer timing.
+// The frozen orchestration and every transcript comparison remain otherwise intact.
 import { notifyCloudSettingsChanged } from '../../../src/js/cloud-settings.js';
 import { needsDriveDownload } from '../../../src/js/book-storage-policy.js';
 /**
@@ -1050,7 +1052,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // New grip-height contract (1.7.272); all original drag behaviour stays below.
     if (!backgroundOnly && state.shelfScene) state.shelfScene.setObjectGrip?.(node, event.clientX, event.clientY);
     const drag = state.dragSession = {
-      node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startedAt:event.timeStamp,
       x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
       pointerType: event.pointerType, target: null, after: false, moved: false,
       active: false, scrolling: false, cancelled: false, timer: 0,
@@ -1071,6 +1073,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       root.classList.add('is-arranging');
       node.classList.remove('is-pressed', 'is-press-pending');
       node.classList.add('is-lifted');
+      // 1.7.284: input timing is independent of the renderer.
+      state.shelfScene?.recordBookPointer?.(node, 0, drag.startedAt, 0);
       state.shelfScene?.flush();
     }, REORDER_HOLD_MS);
   }
@@ -1097,6 +1101,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     event.preventDefault();
     drag.x = event.clientX; drag.y = event.clientY;
     const dx = drag.x - drag.startX, dy = drag.y - drag.startY + scroller.scrollTop - drag.scrollTop;
+    state.shelfScene?.recordBookPointer?.(node, dx, event.timeStamp, 1);
     drag.moved = true;
     node.classList.remove('is-lifted');
     node.classList.add('is-dragging');
@@ -1140,6 +1145,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function finishSpineDrag(event, node, cancelled = false, activateTouch = false) {
     const drag = state.dragSession;
     if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
+    if (drag.active) state.shelfScene?.recordBookPointer?.(node, (event.clientX ?? drag.x) - drag.startX, event.timeStamp, cancelled || drag.cancelled ? 3 : 2);
     clearTimeout(drag.timer);
     clearPlacementPreview(drag);
     cancelAnimationFrame(drag.previewFrame);
@@ -1421,7 +1427,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         spineStyleVars(style) +
         (item.tilt ? `--ihr-spine-tilt:${item.tilt}deg;` : '')
     });
-    if (state.returningBookId === String(book.id)) node.classList.add('is-away');
+    if (state.returningBookId === String(book.id)) node.classList.add('is-away','is-reader-origin');
     if (item.tilt) node.classList.add('is-tilted');
     // En un lomo estrecho el autor no cabe sin pisar al título.
     if (style.width < 32) node.classList.add('ihr-spine--slim');
@@ -2301,12 +2307,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     function finishClose({ silent = false, instant = false } = {}) {
       state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
-      spineEl.classList.remove('is-away');
+      spineEl.classList.remove('is-away','is-reader-origin');
       state.shelfScene?.flush();
       view?.dispose();
       flyout.remove();
       if (state.session === session) { state.session = null; state.busy = false; }
-      spineEl.classList.remove('is-away');
+      spineEl.classList.remove('is-away','is-reader-origin');
       if (!silent && !instant && typeof previousFocus?.focus === 'function') {
         previousFocus.focus({ preventScroll:true });
       }
@@ -2617,7 +2623,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const hadFocus = document.activeElement === existingSpine;
       const wasAway = existingSpine.classList.contains('is-away');
       const replacement = buildSpine(item);
-      if (wasAway) replacement.classList.add('is-away');
+      if (wasAway) replacement.classList.add('is-away','is-reader-origin');
       existingSpine.replaceWith(replacement);
       spineEl = replacement;
       if (previousFocus === existingSpine) previousFocus = replacement;
@@ -3428,7 +3434,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // connected stage before replacing the resting book; detached setup needs
     // no GPU draw or full-screen readback.
     view?.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
-    spineEl.classList.add('is-away');
+    spineEl.classList.add('is-away','is-reader-origin');
     state.shelfScene?.flush();
     state.shelfScene?.setModalBackgroundDeferred?.(spineEl);
     flyout.focus?.();
@@ -3899,8 +3905,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.returningBookId = next;
     state.shelfScene?.setPaintHeld?.(next !== null);
     for (const node of root.querySelectorAll('.ihr-spine')) {
-      if (previous !== next && node.dataset.bookId === previous) node.classList.remove('is-away');
-      if (node.dataset.bookId === next) node.classList.add('is-away');
+      if (previous !== next && node.dataset.bookId === previous) node.classList.remove('is-away','is-reader-origin');
+      if (node.dataset.bookId === next) node.classList.add('is-away','is-reader-origin');
     }
   }
 
@@ -4039,7 +4045,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     const pose = (x, y, scale, angle, pitch=0) => ({ x,y,scale,angle,pitch });
     document.body.append(flyout);
-    spine.classList.add('is-away');
+    spine.classList.add('is-away','is-reader-origin');
     state.shelfScene?.updateEntry?.(spine, book, previous.style, coverUrl);
     state.shelfScene?.flush();
     const duration = durations.flight;
@@ -4056,7 +4062,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const restoreShelfSpine = ({ flush = true } = {}) => {
       const current = [...root.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === String(bookId)) || spine
-      current.classList.remove('is-away')
+      current.classList.remove('is-away','is-reader-origin')
       // A queued record refresh rebuilds the resting spine before the caller's
       // final cleanup. Release this return's marker with its actual landing so
       // that rebuilt DOM cannot briefly hide the already inserted book again.

@@ -46,4 +46,7 @@ mod reader_position;
 mod app_reader_relocate;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_cover_background;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod book_customization;

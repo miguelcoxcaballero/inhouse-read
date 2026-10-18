@@ -778,38 +778,25 @@ els.driveSignOutBtn.addEventListener('click', () => {
 })
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
 function extractCoverInBackground(record) {
-  if (closingReader || currentBookId !== record.id) return Promise.resolve()
-  const epoch = reader.epoch
-  const previous = coverUpgrades.get(record.id)
-  if (previous?.epoch === epoch) return previous.promise
-  const controller = new AbortController()
-  const firstCover = !record.cover
-  const entry = { epoch, controller, firstCover, retainedOnClose:false }
-  const current = () => !appDisposed && !controller.signal.aborted && (
-    !closingReader && reader.epoch === epoch && currentBookId === record.id ||
-    entry.retainedOnClose && (currentBookId === null || closingReader && currentBookId === record.id)
-  )
-  const coverNeedsUpgrade = async () => {
-    if (!record.cover) return true
-    if (record.format !== 'PDF' || typeof createImageBitmap !== 'function') return false
-    try {
-      const bitmap = await createImageBitmap(record.cover)
-      const small = Math.max(bitmap.width, bitmap.height) < 800
-      bitmap.close()
-      return small
-    } catch { return false }
+  return bookDataModule().app_extract_cover_background(coverBackgroundHost, record)
+}
+const coverBackgroundHost = {
+  reader, coverUpgrades, library, refreshShelf, scheduleLibraryBackup, global:globalThis, console,
+  now: () => Date.now(),
+  measureSmallCover: bitmap => bookDataModule().app_cover_bitmap_small(bitmap),
+  coverBitmapFailed: () => bookDataModule().app_cover_bitmap_failed(),
+  coverPatchGuard: flight => latest => bookDataModule().app_cover_patch_allowed(coverBackgroundHost, flight, latest),
+  coverFlowCallbacks: flight => ({
+    fetch: needed => bookDataModule().app_cover_fetch(coverBackgroundHost, flight, needed),
+    persist: blob => bookDataModule().app_cover_persist(coverBackgroundHost, flight, blob),
+    updated: record => bookDataModule().app_cover_updated(coverBackgroundHost, flight, record),
+    failed: error => bookDataModule().app_cover_failed(coverBackgroundHost, flight, error),
+    finish: () => bookDataModule().app_cover_finished(coverBackgroundHost, flight)
+  }),
+  state: {
+    get appDisposed() { return appDisposed }, get closingReader() { return closingReader },
+    get currentBookId() { return currentBookId }
   }
-  const task = coverNeedsUpgrade()
-    .then(needsCover => needsCover && current() ? reader.getCoverBlob({ signal:controller.signal, ...(firstCover && record.format === 'PDF' ? { retainOnClose:true } : {}) }) : null)
-    .then(blob => {
-      if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:latest => current() && (!firstCover || !latest.cover && (!record.contentRevision || latest.contentRevision === record.contentRevision)) })
-    })
-    .then(updated => { if (updated && current()) refreshShelf() })
-    .catch(err => { if (!controller.signal.aborted) console.warn('No se pudo extraer la portada:', err) })
-    .finally(() => { if (coverUpgrades.get(record.id) === entry) coverUpgrades.delete(record.id); scheduleLibraryBackup() })
-  entry.promise = task
-  coverUpgrades.set(record.id, entry)
-  return task
 }
 
 function onReaderRelocate({ fraction, cfi, index, textOffset }) {
@@ -937,9 +924,9 @@ initAndroidFileImports({
   onFile: async file => {
     await shelf?.close()
     await progressWrites.get(currentBookId)?.catch(() => {})
-    return new Promise((resolve, reject) => {
-      openFile(file, { restoreRemoved:true, onImportReady:resolve }).then(resolve, reject)
-    })
+    // Resolve the import after the loading wrapper has released its controls.
+    // Its successful result already guarantees committed original bytes.
+    return openFile(file, { restoreRemoved:true })
   },
   onError: error => alert(`No se pudo importar el libro: ${error.message}`)
 })
