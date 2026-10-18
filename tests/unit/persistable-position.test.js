@@ -30,9 +30,10 @@ describe('committed reading anchors survive incomplete layout notifications',()=
   })
   it('guards actual relocation writes while keeping reader notifications',async()=>{
     const source=readFileSync('src/js/app.js','utf8'),start=source.indexOf('function onReaderRelocate(')
-    const code=source.slice(start,source.indexOf('// JS owns callback lifetimes',start))
+    const code=source.slice(start,source.indexOf('\nconst readerRuntimeHost',start))
     const writes=[];let notices=0
     const env={els:{readerProgressFill:{style:{}}},readingExperience:{relocate:()=>notices++},currentBookId:'book',restoringProgress:false,closingReader:false,reader:{format:{engine:'foliate'}},persistableRelocation,progressWrites:{updateProgress:(...args)=>{writes.push(args);return Promise.resolve()}},console}
+    env.bookDataModule=()=>rustShelf;env.readerRuntimeHost={...env,state:env,warnReaderProgress:error=>env.console.warn('No se pudo guardar el progreso:',error)}
     const relocate=new Function('env',`with(env){return (${code})}`)(env)
     relocate({fraction:0,cfi:null,index:0});relocate({fraction:.6,cfi:'epubcfi(/6/8!/4/2)'})
     await Promise.resolve();expect(notices).toBe(2);expect(writes).toEqual([['book',.6,{kind:'cfi',value:'epubcfi(/6/8!/4/2)'}]])

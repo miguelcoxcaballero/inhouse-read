@@ -40,4 +40,10 @@ mod app_reader_opening;
 mod app_file_content;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod reader_position;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_reader_relocate;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod book_customization;
