@@ -39,6 +39,17 @@ pub(super) fn portable_layout_matches(saved:&[f64],current:&[f64],metal:bool)->b
 impl RustBookGravity{
  /// A remote snapshot may arrive before covers/book geometry. Do not seed a
  /// partial solver and then lose the saved poses as the remaining books load.
+ pub fn restored_room(&self)->bool{
+  self.initialized&&!self.books.is_empty()&&self.saved.len()==self.books.len()&&self.books.iter().all(|(key,b)|{
+   let Some(pose)=self.saved.get(key)else{return false;};
+   let solid_matches=match self.solids.get(key){Some(s)=>s.description.matches_signature(pose.solid.as_deref()),None=>pose.solid.is_none()};
+   if !b.restored||b.held||!pose.matches(b.kind,b.base,b.size,b.bay)||!solid_matches{return false;}
+   let body=&self.world.bodies[b.handle];let [dx,dy]=pose.offset(b.base,b.bay);
+   (body.translation().x as f64-pose.x as f64-dx).abs()<0.000001
+    &&(body.translation().y as f64-pose.y as f64-dy).abs()<0.000001
+    &&(body.rotation().to_scaled_axis().z-pose.angle).abs()<0.000001
+  })
+ }
  pub fn matches_keys(&self,keys:Array)->bool{
   let keys:BTreeSet<Vec<u16>>=keys.iter().filter(|k|k.is_string()).map(|k|k.unchecked_ref::<JsString>().iter().collect()).collect();
   !keys.is_empty()&&keys.len()==self.saved.len()&&self.saved.keys().all(|key|keys.contains(key))

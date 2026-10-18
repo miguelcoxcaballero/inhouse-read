@@ -25,7 +25,7 @@ for(const [name,core]of [['UI',ui],['shelf',shelf]]){
 function fixture(names,scale=1,dx=0,dy=0){
  const solver=new shelf.RustBookGravity(),scene=new shelf.RustScene(600*scale,1200*scale,600*scale,250*scale,false,false,0)
  const inverse=Float64Array.of(0,0,0,1),out=new Float64Array(names.length*4);let clock=0
- return {resize:factor=>{scale=factor},apply:value=>solver.apply_snapshot(value),restore:value=>solver.restore(value),snapshot:()=>solver.snapshot(),step(frames=1,held=false){
+ return {isRestored:()=>solver.restored_room(),resize:factor=>{scale=factor},apply:value=>solver.apply_snapshot(value),restore:value=>solver.restore(value),snapshot:()=>solver.snapshot(),step(frames=1,held=false){
   for(let f=0;f<frames;f++){
    scene.beginEntries(clock,false,1,inverse,1,600*scale,0,18)
    const states=new Float64Array(names.length*37),geometry=new Float64Array(names.length*9)
@@ -113,4 +113,33 @@ it('keeps a shared resting room exact when its existing viewport changes scale',
  c.resize(1.4333333333333333);c.step(120);const after=JSON.parse(ui.room_physics_for_cloud(c.snapshot(),books))[2]
  for(let i=0;i<initial.length;i++)for(const k of [5,6,7])expect(after[i][k]).toBeCloseTo(initial[i][k],5)
  c.free()
+})
+
+for(const [name,core]of [['UI',ui],['shelf',shelf]])it(`${name}: shares a revision between local and cloud identities and ignores viewport anchors`,()=>{
+ const raw=JSON.stringify(pose()),cloud=core.room_physics_for_cloud(raw,books),device=core.room_physics_for_device(cloud,remote)
+ const revision=core.room_physics_revision(raw,books)
+ expect(revision).toMatch(/^room-[0-9a-f]{16}$/)
+ expect(core.room_physics_revision(device,remote)).toBe(revision)
+ const rounded=JSON.parse(cloud);rounded[2][0][2][0]+=.00045
+ expect(core.room_physics_revision(JSON.stringify(rounded),books)).toBe(revision)
+ rounded[2][0][7]+=.01;expect(core.room_physics_revision(JSON.stringify(rounded),books)).not.toBe(revision)
+ expect(core.room_physics_revision('{bad',books)).toBe('')
+})
+for(const [name,core]of [['UI',ui],['shelf',shelf]])it(`${name}: keeps unuploaded books local without poisoning the shared room or its revision`,()=>{
+ const root=pose(),extra=structuredClone(root[2][0]);extra[0]='book:private';root[2].push(extra)
+ const records=[...books,{id:'private'}],local=core.room_physics_canonical(JSON.stringify(root),records)
+ expect(JSON.parse(local)[2]).toHaveLength(3)
+ const cloud=core.room_physics_for_cloud(local,records);expect(JSON.parse(cloud)[2]).toHaveLength(2)
+ expect(core.room_physics_revision(local,records)).toBe(core.room_physics_revision(cloud,remote))
+ const restored=core.room_physics_with_local(core.room_physics_for_device(cloud,records),local,records)
+ expect(JSON.parse(restored)[2].find(r=>r[0]==='book:private')).toEqual(JSON.parse(local)[2].find(r=>r[0]==='book:private'))
+ expect(core.room_physics_for_cloud(restored,records)).toBe(cloud)
+})
+
+it('acknowledges only the installed checkpoint, never an incompatible room that later settles locally',()=>{
+ const a=fixture(['book:local-A']);a.step(600);const saved=a.snapshot();a.free()
+ const exact=fixture(['book:local-A']);expect(exact.restore(saved)).toBe(true);exact.step();expect(exact.isRestored()).toBe(true);exact.free()
+ const incompatible=JSON.parse(saved);incompatible[2][0][3][0]*=2
+ const b=fixture(['book:local-A']);expect(b.restore(JSON.stringify(incompatible))).toBe(true)
+ b.step(600);b.snapshot();expect(b.isRestored()).toBe(false);b.free()
 })

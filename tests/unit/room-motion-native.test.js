@@ -24,7 +24,7 @@ describe('Rust live room gesture previews',()=>{
   expect(room.receive(frame({sequence:4,phase:'end'}),20)).toBe(true)
   expect(room.receive(frame({sequence:5}),30)).toBe(false)
   expect(room.active(5021)).toBe(false);expect(room.pose('book:drive:one',5021,out)).toBe(false)
-  expect(room.receive(frame({gesture:'new',sequence:1}),6000)).toBe(true);room.clear('peer-b');expect(room.active(6001)).toBe(false);room.free()
+  expect(room.receive(frame({gesture:'new',sequence:6}),6000)).toBe(true);room.clear('peer-b');expect(room.active(6001)).toBe(false);room.free()
  })
  it('uses a shortest quaternion arc and handles cancelled gestures',()=>{
   const room=new ui.RustRoomMotion(),out=new Float64Array(9)
@@ -69,4 +69,49 @@ it('bridges a committed room in physical coordinates without mutating its target
  expect(target[0]).toBe(.4);expect(bridge.pose('missing',target,220,out)).toBe(false)
  expect(bridge.pose('book:drive:a',target,340,out)).toBe(false);expect(bridge.moving(340)).toBe(false)
  bridge.begin([['book:drive:a',NaN,0,0,0,0,0,1,1]],400);expect(bridge.moving(400)).toBe(false);bridge.free()
+})
+
+it('keeps a v2 final pose until its physical commit is applied, even after a long backup delay',()=>{
+ const room=new ui.RustRoomMotion(),out=new Float64Array(9)
+ room.acknowledge('room-base')
+ expect(room.receive(frame({base:'room-base'}),0)).toBe(true)
+ expect(room.receive(frame({base:'room-base',commit:'room-final',sequence:2,phase:'end',poses:[pose(.23)]}),100)).toBe(true)
+ expect(room.pose('book:drive:one',20000,out)).toBe(true);expect(out[1]).toBe(.23)
+ expect(room.gesturing(20000)).toBe(false);expect(room.moving(20000)).toBe(false)
+ room.acknowledge('room-final');expect(room.active(20001)).toBe(false)
+ expect(room.receive(frame({base:'room-base',sequence:3}),20002)).toBe(false);room.free()
+})
+it('fences late frames when the durable commit arrives first and ignores unrelated state refreshes',()=>{
+ const room=new ui.RustRoomMotion(),out=new Float64Array(9)
+ room.acknowledge('room-base');room.receive(frame({base:'room-base'}),0)
+ room.acknowledge('room-base');expect(room.pose('book:drive:one',20,out)).toBe(true)
+ room.acknowledge('room-final');expect(room.active(30)).toBe(false)
+ expect(room.receive(frame({base:'room-base',commit:'room-final',sequence:2,phase:'end'}),40)).toBe(false)
+ expect(room.receive(frame({base:'room-final',gesture:'next',sequence:3}),50)).toBe(true);room.free()
+})
+it('retains sequence fences after expiry instead of resurrecting an abandoned gesture',()=>{
+ const room=new ui.RustRoomMotion();room.receive(frame({sequence:9}),0)
+ expect(room.receive(frame({sequence:8}),5000)).toBe(false)
+ expect(room.receive(frame({gesture:'new',sequence:10}),5001)).toBe(true);room.free()
+})
+
+it('finishes a careful put-back at the unchanged physical revision without holding a ghost lift',()=>{
+ const room=new ui.RustRoomMotion();room.acknowledge('room-base')
+ room.receive(frame({base:'room-base'}),0)
+ expect(room.receive(frame({base:'room-base',commit:'room-base',phase:'end',sequence:2}),200)).toBe(true)
+ expect(room.active(201)).toBe(false);room.free()
+})
+it('retains a committed end preview during disconnect, while explicit local takeover can clear it',()=>{
+ const room=new ui.RustRoomMotion();room.acknowledge('room-base')
+ room.receive(frame({base:'room-base',commit:'room-final',phase:'end'}),0)
+ room.clear('peer-b');expect(room.active(20000)).toBe(true)
+ room.clear('');expect(room.active(20001)).toBe(false);room.free()
+})
+it('converges simultaneous previews to the installed physical revision and fences the losing branch',()=>{
+ const room=new ui.RustRoomMotion();room.acknowledge('room-base')
+ room.receive(frame({base:'room-base',from:'peer-a'}),0)
+ room.receive(frame({base:'room-base',from:'peer-b',poses:[pose(.3)]}),1)
+ room.acknowledge('room-winner');expect(room.active(100)).toBe(false)
+ expect(room.receive(frame({base:'room-base',commit:'room-loser',sequence:2,phase:'end'}),101)).toBe(false)
+ expect(room.receive(frame({base:'room-winner',sequence:3,gesture:'next'}),102)).toBe(true);room.free()
 })
