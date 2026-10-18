@@ -119,13 +119,13 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     if (!raw.length) {
       const pcm = silence(sampleRate, 120)
       post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
-      await yieldToMessages()
       return
     }
     const done = finishSupertonic(raw, text, timeline, { sampleRate, rate })
     if (!done) throw new Error('invalid Supertonic audio') // a sample that is not a number
     post({ type:'chunk', id, index:0, last:true, pcm:done.pcm, sampleRate, ms:performance.now() - t, marks:done.marks }, [done.pcm.buffer])
-    await yieldToMessages()
+    // Inference already yields between its steps. This fragment is complete:
+    // deliver 'end' now so the page can request its next prefetched fragment.
     return
   }
   const sampleRate = config.audio.sample_rate

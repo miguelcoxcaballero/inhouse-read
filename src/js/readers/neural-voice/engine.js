@@ -158,7 +158,7 @@ export class NeuralEngine extends EventTarget {
     try { client = ui().neural_client(this); await client.prepare(voice.piperId); return ui().neural_warm_done(this, client) }
     catch { return ui().neural_warm_failed(this, client) }
   }
-  /** Prepare two opening fragments silently; Play adopts even in-flight synthesis. */
+  /** Prepare up to six opening fragments silently; Play adopts even in-flight synthesis. */
   prime(request) { return ui().neural_prime(this, request) }
   speak(request) { ui().neural_speak(this, request) }
   /** Append a prepared page while this fragment plays, without restarting it.

@@ -37,12 +37,15 @@ describe('worker runtime routing and cancellation',()=>{
   })
   it('drains FIFO, cancels queued work and frees the actual worker with timers suspended',async()=>{
     await superLoad()
+    let finishFirst
+    runtime.synthesize.mockImplementationOnce(()=>new Promise(resolve=>{finishFirst=resolve}))
     const timer=vi.spyOn(globalThis,'setTimeout').mockImplementation(()=>0)
     try {
       await send({type:'synth',id:51,text:'Primero.',lang:'es',style:'F1'})
       await send({type:'synth',id:52,text:'Cancelado.',lang:'es',style:'F1'})
       await send({type:'synth',id:53,text:'Segundo.',lang:'es',style:'F1'})
       await send({type:'cancel',id:52})
+      finishFirst({pcm:Float32Array.from({length:500},(_,i)=>Math.sin(i/10)*.2),sampleRate:24000})
       // free must wait for synthesis completion, without polling a timer.
       await send({type:'free',id:54})
       expect(runtime.synthesize.mock.calls.map(([text])=>text)).toEqual(['Primero.','Segundo.'])
@@ -142,4 +145,12 @@ describe('worker runtime routing and cancellation',()=>{
     }
     expect(runtime.synthesize).not.toHaveBeenCalled()
   })
+})
+
+it('publishes completed Supertonic PCM and end without waiting for another worker task',async()=>{
+ await superLoad();const channel=vi.fn(()=>{throw new Error('A finished fragment must not wait on a message task')});vi.stubGlobal('MessageChannel',channel)
+ await send({type:'synth',id:71,text:'The quiet room.',lang:'en',style:'F5',rate:1})
+ for(let i=0;i<12;i++)await Promise.resolve()
+ expect(messages.filter(({message})=>message.id===71).map(({message})=>message.type)).toEqual(['plan','chunk','end'])
+ expect(channel).not.toHaveBeenCalled()
 })

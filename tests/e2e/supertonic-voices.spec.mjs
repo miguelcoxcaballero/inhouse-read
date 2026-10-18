@@ -201,4 +201,27 @@ test.describe('Supertonic 3: 22 app languages × ten real offline profiles',()=>
     await page.evaluate(()=>window.supertonic.stopReading());
   });
 
+  test('Lucy continuous reader keeps natural audio ready between sentences',async({},testInfo)=>{
+    const voiceId='supertonic3:F5:en';
+    const text='The room was quiet. A little lamp glowed beside the books. Outside the window, soft rain fell over the garden. She opened the old book and began to read. Every page carried another small discovery. The evening passed slowly and peacefully.';
+    const before=await page.evaluate(()=>({events:window.supertonic.events.length,starts:window.supertonic.starts.length,requests:window.supertonic.workerRequests.length}));
+    await page.evaluate(({voiceId,text})=>window.supertonic.prepareReading(voiceId,text,'en'),{voiceId,text});
+    await page.waitForFunction(()=>{const d=window.supertonic.engine.getDiagnosticState();return d.run&&d.done===d.entryCount&&d.entryCount>0&&!d.job;});
+    const prepared=await page.evaluate(()=>({requests:window.supertonic.workerRequests.length,diagnostic:window.supertonic.engine.getDiagnosticState()}));
+    expect(prepared.diagnostic.done).toBe(6);expect(prepared.diagnostic.entryCount).toBe(6);
+    await page.click('#play-reading');
+    await page.waitForFunction(from=>window.supertonic.events.slice(from).filter(e=>e.type==='done').length>=6,before.events,{timeout:150000});
+    const result=await page.evaluate(from=>({events:window.supertonic.events.slice(from.events),starts:window.supertonic.starts.slice(from.starts).map(({data,...v})=>v),requests:window.supertonic.workerRequests.slice(from.requests),stats:window.supertonic.engine.stats,workers:window.supertonic.workers}),before);
+    const gaps=result.starts.slice(1).map((v,i)=>v.when-result.starts[i].when-result.starts[i].seconds);
+    await testInfo.attach('lucy-continuity',{body:JSON.stringify({...result,gaps}),contentType:'application/json'});
+    writeFileSync(join(EVIDENCE,'lucy-continuity.json'),JSON.stringify({...result,gaps},null,2));
+    expect(result.events.filter(e=>e.type==='error')).toEqual([]);
+    expect(result.requests.filter(r=>r.type==='load')).toHaveLength(0);
+    expect(result.workers).toBe(1);
+    expect(result.requests.filter(r=>r.type==='synth')).toHaveLength(6);
+    expect(await page.evaluate(at=>window.supertonic.workerRequests.slice(at).filter(r=>r.type==='synth').length,prepared.requests)).toBe(0);
+    expect(Math.max(...gaps)).toBeLessThan(.15);
+    await page.evaluate(()=>window.supertonic.stopReading());
+  });
+
 });

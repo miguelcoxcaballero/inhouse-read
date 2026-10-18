@@ -71,8 +71,8 @@ fn playback(host:&JsValue,items:JsValue,active:&Function,generation:&JsValue,loc
  if !active.call0(&JsValue::UNDEFINED)?.is_truthy()||get(host,"generation")?!=*generation||location(host)?!=*loc||settings(host)?!=*prefs||!idle(host)?||!get(&items,"length")?.is_truthy(){return Ok(JsValue::FALSE);}
  let first=Reflect::get_u32(&items,0)?;let voice=get(&one(host,"voiceFor",&get(&first,"text")?)?,"voice")?;
  if !optional(&voice,"neural")?.is_truthy(){return Ok(JsValue::FALSE);}
- let next:Array=two(&items,"slice",&1.into(),&2.into())?.unchecked_into();let upcoming=Array::new();
- for i in 0..next.length(){if Reflect::has(&next,&i.into())?{let item=next.get(i);if optional(&get(&one(host,"voiceFor",&get(&item,"text")?)?,"voice")?,"id")?==get(&voice,"id")?{upcoming.push(&one(host,"audioItem",&item)?);}}}
+ let next:Array=two(&items,"slice",&1.into(),&6.into())?.unchecked_into();let upcoming=Array::new();
+ for i in 0..next.length(){if Reflect::has(&next,&i.into())?{let item=next.get(i);if optional(&get(&one(host,"voiceFor",&get(&item,"text")?)?,"voice")?,"id")?!=get(&voice,"id")?{break;}upcoming.push(&one(host,"audioItem",&item)?);}}
  let args=object(&[("text",get(&first,"text")?),("voiceId",get(&voice,"id")?),("rate",get(host,"rate")?),("upcoming",upcoming.into())])?;
  let marks=get(&first,"marks")?;if optional(&marks,"length")?.is_truthy(){let marks:Array=marks.unchecked_into();let offsets=Array::new_with_length(marks.length());for i in 0..marks.length(){if Reflect::has(&marks,&i.into())?{offsets.set(i,get(&marks.get(i),"offset")?);}}set(&args,"marks",&offsets)?;}
  maybe(&engine.call0(&JsValue::UNDEFINED)?,"prime",&Array::of1(&args))

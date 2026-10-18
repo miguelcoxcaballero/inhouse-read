@@ -1,6 +1,7 @@
 import {declaredLanguage,isNeuralId,langBase,resolveVoice} from './reference-voice-catalog.js'
 import {neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
-const NEURAL_LOOKAHEAD=4
+// 1.7.291: match the engine six-fragment lookahead, including deferred pages.
+const NEURAL_LOOKAHEAD=6
 export class LegacyVoiceSelection{
   voiceFor(text) {
     const language = this.options.multilingual ? this.detectLanguage(text) : this.languageOverride || this.reader.language || navigator.language || 'es-ES'
@@ -27,7 +28,7 @@ export class LegacyVoiceSelection{
     const deferAfter = upcoming.length
     const plan = this.aheadPage?.plan
     if (this.index + 1 + upcoming.length === this.chunks.length && plan?.items) {
-      for (const item of plan.items.slice(0, NEURAL_LOOKAHEAD)) {
+      for (const item of plan.items.slice(0, NEURAL_LOOKAHEAD - upcoming.length)) {
         if (this.voiceFor(item.text).voice?.id !== voice.id) break
         upcoming.push(this.audioItem(item))
       }

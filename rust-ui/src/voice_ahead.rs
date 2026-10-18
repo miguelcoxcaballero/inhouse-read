@@ -34,7 +34,7 @@ pub fn voice_prepare_ahead(host:JsValue,make_active:Function,engine:Function)->R
  if optional(&optional(&ahead,"error")?,"name")?==JsValue::from_str("AbortError")||{
   let plan=optional(&ahead,"plan")?;plan.is_truthy()&&!one(&host,"pagePlanValid",&plan)?.is_truthy()
  }{call(&host,"clearAhead")?;}
- if get(&host,"state")?!=JsValue::from_str("playing")||get(&host,"aheadPage")?.is_truthy()||get(&host,"deferredPage")?.is_truthy()||number(&get(&get(&host,"chunks")?,"length")?)?-number(&get(&host,"index")?)?-1.0>4.0||!get(&get(&host,"reader")?,"getNextSpeechSource")?.is_function(){return Ok(());}
+ if get(&host,"state")?!=JsValue::from_str("playing")||get(&host,"aheadPage")?.is_truthy()||get(&host,"deferredPage")?.is_truthy()||number(&get(&get(&host,"chunks")?,"length")?)?-number(&get(&host,"index")?)?-1.0>6.0||!get(&get(&host,"reader")?,"getNextSpeechSource")?.is_function(){return Ok(());}
  let request:Object=Object::new();set(&request,"generation",&get(&host,"generation")?)?;set(&request,"source",&get(&host,"source")?)?;set(&request,"plan",&JsValue::UNDEFINED)?;set(&request,"cancelled",&JsValue::FALSE)?;set(&host,"aheadPage",&request)?;
  let active=make_active.call2(&JsValue::UNDEFINED,&host,&request)?;
  let pending=(||{let args=Object::new();set(&args,"isActive",&active)?;set(&args,"afterPage",&optional(&get(&host,"source")?,"physicalPage")?)?;one(&get(&host,"reader")?,"getNextSpeechSource",&args)})();

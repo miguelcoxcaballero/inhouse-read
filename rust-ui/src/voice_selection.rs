@@ -58,7 +58,7 @@ pub fn voice_needs_join(host:JsValue,item:JsValue,index:JsValue)->Result<JsValue
 #[wasm_bindgen]
 pub fn voice_upcoming(host:JsValue,voice:JsValue)->Result<JsValue,JsValue>{
  let upcoming=Array::new();let mut next=number(&get(&host,"index")?)?+1.0;
- while next<number(&get(&get(&host,"chunks")?,"length")?)?&&upcoming.length()<4{
+ while next<number(&get(&get(&host,"chunks")?,"length")?)?&&upcoming.length()<6{
   let item=Reflect::get(&get(&host,"items")?,&next.into())?;
   if two(&host,"needsPageJoin",&item,&next.into())?.is_truthy()&&!get(&Reflect::get(&get(&host,"items")?,&next.into())?,"joinChecked")?.is_truthy(){break;}
   if get(&get(&host,"options")?,"multilingual")?.is_truthy(){let selection=one(&host,"voiceFor",&Reflect::get(&get(&host,"chunks")?,&next.into())?)?;if optional(&get(&selection,"voice")?,"id")?!=get(&voice,"id")?{break;}}
@@ -68,7 +68,7 @@ pub fn voice_upcoming(host:JsValue,voice:JsValue)->Result<JsValue,JsValue>{
  }
  let defer=upcoming.length();let plan=optional(&get(&host,"aheadPage")?,"plan")?;
  if JsValue::from_f64(number(&get(&host,"index")?)?+1.0+upcoming.length() as f64)==get(&get(&host,"chunks")?,"length")?&&optional(&plan,"items")?.is_truthy(){
-  let items:Array=two(&get(&plan,"items")?,"slice",&0.into(),&4.into())?.dyn_into()?;
+  let items:Array=two(&get(&plan,"items")?,"slice",&0.into(),&(6-upcoming.length()).into())?.dyn_into()?;
   for item in items.iter(){let selection=one(&host,"voiceFor",&get(&item,"text")?)?;if optional(&get(&selection,"voice")?,"id")?!=get(&voice,"id")?{break;}upcoming.push(&one(&host,"audioItem",&item)?);}
  }
  let result=Object::new();set(&result,"upcoming",&upcoming)?;set(&result,"deferAfter",&defer.into())?;Ok(result.into())

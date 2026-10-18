@@ -1,5 +1,6 @@
 import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
-const NEURAL_LOOKAHEAD=4
+// 1.7.291: prepare the one detached page at the same six-fragment horizon.
+const NEURAL_LOOKAHEAD=6
 export class LegacyVoiceAhead{
   prepareAhead() {
     if (this.aheadPage?.error?.name === 'AbortError' ||

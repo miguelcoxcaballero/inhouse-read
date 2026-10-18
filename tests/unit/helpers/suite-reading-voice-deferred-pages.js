@@ -170,17 +170,20 @@ describe('prepared page sources follow only an audible natural fragment', () => 
     expect(t.visible()).toBe(0)
     t.emit('start'); expect(t.visible()).toBe(1)
   })
-  it('starts at most one page ahead near the end and caps the deferred future to four fragments', async () => {
+  it('keeps one detached page and caps the combined current/future reserve at six fragments', async () => {
     const t = reading(['Uno. Dos. Tres. Cuatro. Cinco. Seis.', 'Primera nueva. Segunda nueva. Tercera nueva. Cuarta nueva. Quinta nueva. Sexta nueva.'])
+    const speak=vi.spyOn(t.engine,'speak')
     await t.voice.play(); t.emit('start'); await drain()
-    expect(t.reader.getNextSpeechSource).not.toHaveBeenCalled()
-    t.emit('done'); t.emit('start'); await drain()
     expect(t.reader.getNextSpeechSource).toHaveBeenCalledOnce()
     const ahead = t.engine.extendUpcoming.mock.calls[0][0]
-    expect(ahead.deferAfter).toBe(4)
-    expect(ahead.upcoming.slice(ahead.deferAfter)).toHaveLength(4)
+    expect(ahead.deferAfter).toBe(5); expect(ahead.upcoming).toHaveLength(6)
+    expect(ahead.upcoming.slice(ahead.deferAfter)).toHaveLength(1)
+    for(let i=0;i<5;i++){t.emit('done');t.emit('start');await drain()}
+    const tail=speak.mock.calls.at(-1)[0]
+    expect(tail.deferAfter).toBe(0);expect(tail.upcoming).toHaveLength(6)
+    expect(t.reader.getNextSpeechSource).toHaveBeenCalledOnce();expect(t.visible()).toBe(0)
     expect(t.stages).toHaveLength(1)
-    expect(t.voice.aheadPage.plan.items.length).toBeGreaterThan(4)
+    expect(t.voice.aheadPage.plan.items).toHaveLength(6)
   })
   it('cancels a ready ahead page on Pause without skipping the current audible fragment on resume', async () => {
     const t = reading()
