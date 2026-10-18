@@ -1,0 +1,642 @@
+{
+"book_cover_close_t0": {
+"offset": 0,
+"length": 8590,
+"rate": 48000
+},
+"book_cover_open_t0": {
+"offset": 8590,
+"length": 5020,
+"rate": 48000
+},
+"book_drop_t0": {
+"offset": 13610,
+"length": 14217,
+"rate": 48000
+},
+"book_flip_t0": {
+"offset": 27827,
+"length": 19183,
+"rate": 48000
+},
+"book_flip_t1": {
+"offset": 47010,
+"length": 16253,
+"rate": 48000
+},
+"book_flip_t2": {
+"offset": 63263,
+"length": 8997,
+"rate": 48000
+},
+"book_pageturn_t0": {
+"offset": 72260,
+"length": 16865,
+"rate": 48000
+},
+"book_pickup_t0": {
+"offset": 89125,
+"length": 13776,
+"rate": 48000
+},
+"book_pickup_t1": {
+"offset": 102901,
+"length": 18171,
+"rate": 48000
+},
+"book_pickup_t2": {
+"offset": 121072,
+"length": 8920,
+"rate": 48000
+},
+"book_set_t0": {
+"offset": 129992,
+"length": 9579,
+"rate": 48000
+},
+"book_set_t1": {
+"offset": 139571,
+"length": 9604,
+"rate": 48000
+},
+"book_set_t2": {
+"offset": 149175,
+"length": 8746,
+"rate": 48000
+},
+"cloth_rustle_t0": {
+"offset": 157921,
+"length": 52800,
+"rate": 48000
+},
+"cloth_rustle_t1": {
+"offset": 210721,
+"length": 3210,
+"rate": 48000
+},
+"creak_t0": {
+"offset": 213931,
+"length": 23405,
+"rate": 48000
+},
+"creak_t1": {
+"offset": 237336,
+"length": 32492,
+"rate": 48000
+},
+"creak_t2": {
+"offset": 269828,
+"length": 10803,
+"rate": 48000
+},
+"impact_ceramic_L0_t0": {
+"offset": 280631,
+"length": 10491,
+"rate": 48000
+},
+"impact_ceramic_L0_t3": {
+"offset": 291122,
+"length": 6090,
+"rate": 48000
+},
+"impact_ceramic_L0_t4": {
+"offset": 297212,
+"length": 9146,
+"rate": 48000
+},
+"impact_ceramic_L1_t0": {
+"offset": 306358,
+"length": 12899,
+"rate": 48000
+},
+"impact_ceramic_L1_t1": {
+"offset": 319257,
+"length": 11716,
+"rate": 48000
+},
+"impact_ceramic_L1_t2": {
+"offset": 330973,
+"length": 16397,
+"rate": 48000
+},
+"impact_ceramic_L2_t0": {
+"offset": 347370,
+"length": 14598,
+"rate": 48000
+},
+"impact_ceramic_L2_t1": {
+"offset": 361968,
+"length": 12840,
+"rate": 48000
+},
+"impact_ceramic_L2_t3": {
+"offset": 374808,
+"length": 8033,
+"rate": 48000
+},
+"impact_glass_L0_t0": {
+"offset": 382841,
+"length": 5113,
+"rate": 48000
+},
+"impact_glass_L0_t3": {
+"offset": 387954,
+"length": 5044,
+"rate": 48000
+},
+"impact_glass_L0_t4": {
+"offset": 392998,
+"length": 5073,
+"rate": 48000
+},
+"impact_glass_L1_t0": {
+"offset": 398071,
+"length": 12275,
+"rate": 48000
+},
+"impact_glass_L1_t1": {
+"offset": 410346,
+"length": 12234,
+"rate": 48000
+},
+"impact_glass_L1_t3": {
+"offset": 422580,
+"length": 12201,
+"rate": 48000
+},
+"impact_glass_L2_t0": {
+"offset": 434781,
+"length": 11647,
+"rate": 48000
+},
+"impact_glass_L2_t3": {
+"offset": 446428,
+"length": 8465,
+"rate": 48000
+},
+"impact_glass_L2_t4": {
+"offset": 454893,
+"length": 9541,
+"rate": 48000
+},
+"impact_linen_L0_t0": {
+"offset": 464434,
+"length": 13271,
+"rate": 48000
+},
+"impact_linen_L0_t1": {
+"offset": 477705,
+"length": 14481,
+"rate": 48000
+},
+"impact_linen_L0_t4": {
+"offset": 492186,
+"length": 14476,
+"rate": 48000
+},
+"impact_linen_L1_t0": {
+"offset": 506662,
+"length": 13321,
+"rate": 48000
+},
+"impact_linen_L1_t1": {
+"offset": 519983,
+"length": 14478,
+"rate": 48000
+},
+"impact_linen_L1_t4": {
+"offset": 534461,
+"length": 14479,
+"rate": 48000
+},
+"impact_linen_L2_t0": {
+"offset": 548940,
+"length": 13322,
+"rate": 48000
+},
+"impact_linen_L2_t1": {
+"offset": 562262,
+"length": 14479,
+"rate": 48000
+},
+"impact_linen_L2_t4": {
+"offset": 576741,
+"length": 14475,
+"rate": 48000
+},
+"impact_metal_L0_t0": {
+"offset": 591216,
+"length": 11135,
+"rate": 48000
+},
+"impact_metal_L0_t1": {
+"offset": 602351,
+"length": 9216,
+"rate": 48000
+},
+"impact_metal_L0_t3": {
+"offset": 611567,
+"length": 11151,
+"rate": 48000
+},
+"impact_metal_L1_t0": {
+"offset": 622718,
+"length": 13208,
+"rate": 48000
+},
+"impact_metal_L1_t2": {
+"offset": 635926,
+"length": 12212,
+"rate": 48000
+},
+"impact_metal_L1_t3": {
+"offset": 648138,
+"length": 13205,
+"rate": 48000
+},
+"impact_metal_L2_t0": {
+"offset": 661343,
+"length": 13355,
+"rate": 48000
+},
+"impact_metal_L2_t2": {
+"offset": 674698,
+"length": 12279,
+"rate": 48000
+},
+"impact_metal_L2_t3": {
+"offset": 686977,
+"length": 14112,
+"rate": 48000
+},
+"impact_paper_L0_t0": {
+"offset": 701089,
+"length": 9115,
+"rate": 48000
+},
+"impact_paper_L0_t1": {
+"offset": 710204,
+"length": 9669,
+"rate": 48000
+},
+"impact_paper_L0_t3": {
+"offset": 719873,
+"length": 9513,
+"rate": 48000
+},
+"impact_paper_L1_t0": {
+"offset": 729386,
+"length": 9122,
+"rate": 48000
+},
+"impact_paper_L1_t1": {
+"offset": 738508,
+"length": 9627,
+"rate": 48000
+},
+"impact_paper_L1_t3": {
+"offset": 748135,
+"length": 9459,
+"rate": 48000
+},
+"impact_paper_L2_t0": {
+"offset": 757594,
+"length": 9491,
+"rate": 48000
+},
+"impact_paper_L2_t3": {
+"offset": 767085,
+"length": 9194,
+"rate": 48000
+},
+"impact_paper_L2_t4": {
+"offset": 776279,
+"length": 9668,
+"rate": 48000
+},
+"impact_wood_L0_t1": {
+"offset": 785947,
+"length": 9403,
+"rate": 48000
+},
+"impact_wood_L0_t3": {
+"offset": 795350,
+"length": 10275,
+"rate": 48000
+},
+"impact_wood_L0_t4": {
+"offset": 805625,
+"length": 5988,
+"rate": 48000
+},
+"impact_wood_L1_t0": {
+"offset": 811613,
+"length": 9401,
+"rate": 48000
+},
+"impact_wood_L1_t1": {
+"offset": 821014,
+"length": 10881,
+"rate": 48000
+},
+"impact_wood_L1_t4": {
+"offset": 831895,
+"length": 7481,
+"rate": 48000
+},
+"impact_wood_L2_t0": {
+"offset": 839376,
+"length": 13320,
+"rate": 48000
+},
+"impact_wood_L2_t1": {
+"offset": 852696,
+"length": 12467,
+"rate": 48000
+},
+"impact_wood_L2_t4": {
+"offset": 865163,
+"length": 10051,
+"rate": 48000
+},
+"impact_wood_plank_t1": {
+"offset": 875214,
+"length": 10302,
+"rate": 48000
+},
+"impact_wood_plank_t2": {
+"offset": 885516,
+"length": 6915,
+"rate": 48000
+},
+"impact_wood_plank_t4": {
+"offset": 892431,
+"length": 10174,
+"rate": 48000
+},
+"lamp_fall_metal_t0": {
+"offset": 902605,
+"length": 45557,
+"rate": 48000
+},
+"lamp_fall_metal_t1": {
+"offset": 948162,
+"length": 47407,
+"rate": 48000
+},
+"lamp_fall_metal_t2": {
+"offset": 995569,
+"length": 44514,
+"rate": 48000
+},
+"lamp_fall_wood_t0": {
+"offset": 1040083,
+"length": 37483,
+"rate": 48000
+},
+"lamp_fall_wood_t1": {
+"offset": 1077566,
+"length": 38230,
+"rate": 48000
+},
+"lamp_fall_wood_t2": {
+"offset": 1115796,
+"length": 38837,
+"rate": 48000
+},
+"lamp_setdown_metal_t0": {
+"offset": 1154633,
+"length": 20665,
+"rate": 48000
+},
+"lamp_setdown_metal_t1": {
+"offset": 1175298,
+"length": 21215,
+"rate": 48000
+},
+"lamp_setdown_metal_t2": {
+"offset": 1196513,
+"length": 18789,
+"rate": 48000
+},
+"lamp_setdown_plastic_t0": {
+"offset": 1215302,
+"length": 15134,
+"rate": 48000
+},
+"lamp_setdown_plastic_t1": {
+"offset": 1230436,
+"length": 16166,
+"rate": 48000
+},
+"lamp_setdown_plastic_t2": {
+"offset": 1246602,
+"length": 16235,
+"rate": 48000
+},
+"lamp_setdown_wood_t0": {
+"offset": 1262837,
+"length": 17315,
+"rate": 48000
+},
+"lamp_setdown_wood_t1": {
+"offset": 1280152,
+"length": 18833,
+"rate": 48000
+},
+"lamp_setdown_wood_t2": {
+"offset": 1298985,
+"length": 29849,
+"rate": 48000
+},
+"leaves_rustle_t0": {
+"offset": 1328834,
+"length": 30044,
+"rate": 48000
+},
+"leaves_rustle_t6": {
+"offset": 1358878,
+"length": 34944,
+"rate": 48000
+},
+"leaves_rustle_t9": {
+"offset": 1393822,
+"length": 15930,
+"rate": 48000
+},
+"metal_pot_t0": {
+"offset": 1409752,
+"length": 33600,
+"rate": 48000
+},
+"metal_pot_t1": {
+"offset": 1443352,
+"length": 30578,
+"rate": 48000
+},
+"metal_pot_t2": {
+"offset": 1473930,
+"length": 31109,
+"rate": 48000
+},
+"paper_crumple_t0": {
+"offset": 1505039,
+"length": 57600,
+"rate": 48000
+},
+"paper_crumple_t1": {
+"offset": 1562639,
+"length": 57600,
+"rate": 48000
+},
+"pot_fall_t0": {
+"offset": 1620239,
+"length": 36288,
+"rate": 48000
+},
+"pot_fall_t1": {
+"offset": 1656527,
+"length": 35493,
+"rate": 48000
+},
+"pot_fall_t2": {
+"offset": 1692020,
+"length": 36222,
+"rate": 48000
+},
+"pot_setdown_glazed_t0": {
+"offset": 1728242,
+"length": 15160,
+"rate": 48000
+},
+"pot_setdown_glazed_t1": {
+"offset": 1743402,
+"length": 16475,
+"rate": 48000
+},
+"pot_setdown_glazed_t2": {
+"offset": 1759877,
+"length": 19203,
+"rate": 48000
+},
+"pot_setdown_terracotta_t0": {
+"offset": 1779080,
+"length": 17625,
+"rate": 48000
+},
+"pot_setdown_terracotta_t1": {
+"offset": 1796705,
+"length": 19190,
+"rate": 48000
+},
+"pot_setdown_zinc_t0": {
+"offset": 1815895,
+"length": 6760,
+"rate": 48000
+},
+"pot_setdown_zinc_t1": {
+"offset": 1822655,
+"length": 5063,
+"rate": 48000
+},
+"pot_setdown_zinc_t2": {
+"offset": 1827718,
+"length": 4525,
+"rate": 48000
+},
+"switch_light_off_t0": {
+"offset": 1832243,
+"length": 5249,
+"rate": 48000
+},
+"switch_light_on_t0": {
+"offset": 1837492,
+"length": 3140,
+"rate": 48000
+},
+"switch_metal_click_t0": {
+"offset": 1840632,
+"length": 16800,
+"rate": 48000
+},
+"switch_metal_latch_t0": {
+"offset": 1857432,
+"length": 7712,
+"rate": 48000
+},
+"switch_plastic_t0": {
+"offset": 1865144,
+"length": 1471,
+"rate": 48000
+},
+"switch_plastic_t2": {
+"offset": 1866615,
+"length": 5242,
+"rate": 48000
+},
+"switch_plastic_t4": {
+"offset": 1871857,
+"length": 1517,
+"rate": 48000
+},
+"view_front_t0": {
+"offset": 1873374,
+"length": 23622,
+"rate": 48000
+},
+"view_front_t1": {
+"offset": 1896996,
+"length": 22975,
+"rate": 48000
+},
+"view_front_t2": {
+"offset": 1919971,
+"length": 23169,
+"rate": 48000
+},
+"view_iso_t0": {
+"offset": 1943140,
+"length": 23315,
+"rate": 48000
+},
+"view_iso_t1": {
+"offset": 1966455,
+"length": 23479,
+"rate": 48000
+},
+"view_iso_t2": {
+"offset": 1989934,
+"length": 23714,
+"rate": 48000
+},
+"zoom_in_t0": {
+"offset": 2013648,
+"length": 14756,
+"rate": 48000
+},
+"zoom_in_t1": {
+"offset": 2028404,
+"length": 14866,
+"rate": 48000
+},
+"zoom_in_t2": {
+"offset": 2043270,
+"length": 15008,
+"rate": 48000
+},
+"zoom_out_t0": {
+"offset": 2058278,
+"length": 14500,
+"rate": 48000
+},
+"zoom_out_t1": {
+"offset": 2072778,
+"length": 14741,
+"rate": 48000
+},
+"zoom_out_t2": {
+"offset": 2087519,
+"length": 14421,
+"rate": 48000
+}
+}
