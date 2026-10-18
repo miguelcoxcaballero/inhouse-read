@@ -87,3 +87,11 @@ it('releases native handles after repeated successful and failed returns',async(
  for(let n=0;n<60;n++)await run(true,[{}, {fail:'snapshot'},{fail:'get'},{notReturned:true},{noSnapshot:true}][n%5]);
  await flush();expect(rustShelf.shelf_live_handles()).toBe(handles);expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks);
 });
+it('applies deferred reader-time metadata only after the return animation completes',async()=>{
+ const f=fixture(true,{pendingReturn:true});f.state.shelfRefreshDeferred=true;
+ const pending=f.close();await flush();
+ expect(f.events.some(event=>event[0]==='refresh')).toBe(false);
+ f.returnWait.resolve(true);await pending;
+ expect(f.state.closingReader).toBe(false);
+ expect(f.events.filter(event=>event[0]==='refresh')).toHaveLength(1);
+});

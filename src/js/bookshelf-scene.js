@@ -2182,7 +2182,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function pollPrograms() {
     programsPoll = 0;
     if (disposed || programsReady === true || pageSuspended || document.visibilityState === 'hidden') return;
-    if (!canPresent() && !hasOngoingMotion()) return;
+    if (!canPresent()) return;
     if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
   }
 
@@ -2190,7 +2190,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     pointerHit = null;
     raf = 0;
     if (disposed) return;
-    if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return; }
+    if (!canPresent()) { drawPending = true; return; }
     if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
     if (!batchQuality) hideInspectionSnapshot();
@@ -2559,7 +2559,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
     drawPending = true;
-    if (!disposed && !raf && !paintHeld && !pageSuspended && document.visibilityState !== 'hidden' && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
+    if (!disposed && !raf && !paintHeld && !pageSuspended && document.visibilityState !== 'hidden' && canPresent() && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
   }
 
   function canDeferModalPaint() {
@@ -2613,9 +2613,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       !bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging'));
   }
 
-  // Do not interrupt an owner's actual flight, insertion or camera turn when
-  // a screen changes. Only stationary background repaints are deferred; their
-  // dirty image/shadow/projection state survives until the screen is visible.
+  // Motion continues only while the shelf is presented. An opaque reader
+  // owns the screen completely: retain poses/resources and resume on return,
+  // without advancing physics or painting an invisible room.
   function hasOngoingMotion() {
     return Boolean(sceneView.turning || sceneView.reordering || sceneView.trashEasing || lastSceneMoving || lighting.settling ||
       bookEntries.some(entry => entry.insertion && !entry.insertion.complete || entry.trashDrop && !entry.trashDrop.complete));
@@ -2623,9 +2623,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function presentationChanged() {
     if (disposed) return;
-    if (pageSuspended || document.visibilityState === 'hidden' || !canPresent() && !hasOngoingMotion()) {
+    if (!canPresent()) {
       bookGravity.pause();
-      if (raf) drawPending = true;
+      if (raf || hasOngoingMotion()) drawPending = true;
       releaseUnusedNativeRoomFrames();
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
@@ -2653,8 +2653,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // in the same task, before MutationObserver's asynchronous notification.
     observeEntryChanges(mutations.takeRecords());
     if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); }
-    if (pageSuspended || document.visibilityState === 'hidden') return false;
-    if (!force && (!canPresent() && !hasOngoingMotion() || canDeferModalPaint())) return false;
+    if (!canPresent()) return false;
+    if (!force && canDeferModalPaint()) return false;
     if (!force && !drawPending && viewportChanged()) invalidate(true, false, 'viewport-sync');
     if (!force && !drawPending && !hasOngoingMotion()) return false;
     if (force) { inspectionOverview = null; shelfSnapshotDirty = shadowDirty = true; }

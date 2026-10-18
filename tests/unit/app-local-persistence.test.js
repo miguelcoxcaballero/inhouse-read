@@ -18,7 +18,7 @@ vi.mock('../../src/js/library-store.js', async importOriginal => {
 })
 vi.mock('../../src/js/bookshelf.js', () => ({ renderBookshelf:vi.fn((container, books, options) => {
   state.options = options; state.books = books
-  state.shelf = { close:vi.fn(), hasReaderOrigin:vi.fn(() => true),
+  state.shelf = { close:vi.fn(), prepareCloudRoom:vi.fn(), hasReaderOrigin:vi.fn(() => true),
     update:vi.fn(next => { state.books = next }), prepareOpeningPage:vi.fn(), returnToShelf:vi.fn() }
   return state.shelf
 }) }))
@@ -42,13 +42,14 @@ vi.mock('../../src/js/readers/reader-experience.js', () => ({ ReaderExperience:c
   constructor(reader, options) {
     state.experience = this
     state.persist = options.persist
+    state.acceptLength = options.onLengthMetadata
     this.voice = { stop:vi.fn() }; this.panel = { close:vi.fn(), open:false }
     this.preferences = {}; this.open = vi.fn(); this.reset = vi.fn(); this.relocate = vi.fn(); this.step = vi.fn()
   }
 } }))
 // There is no shelf frame in jsdom: the post-first-frame work (which loads the lazy reader panel) runs at once.
 vi.mock('../../src/js/idle-startup.js', () => ({
-  shelfPresented:async () => {}, idleSlice:async () => {},
+  shelfPresented:async () => {}, idleSlice:async () => {}, setShelfWorkActive:vi.fn(), shelfWorkReady:async()=>{}, idleWork:callback=>callback(),
   runAfterFirstFrame:async tasks => { for (const task of tasks) await task() }
 }))
 vi.mock('../../src/js/drive-client.js', () => ({ isDriveConfigured:() => true,
@@ -314,3 +315,23 @@ describe('cover extraction belongs to the reader session', () => {
     expect([...new Uint8Array(await (await state.library.get(book.id)).cover.arrayBuffer())]).toEqual([0,255,17])
   })
 })
+
+it('reuses a completed reader count and rejects late counts from replaced book bytes',async()=>{
+  const book=await importBook();
+  await state.acceptLength(book,{wordCount:900,wordCountVersion:2,wordCountComplete:true});
+  const saved=await state.library.get(book.id);
+  expect(saved.wordCount).toBe(900);expect(saved.wordCountContentRevision).toBe(book.contentRevision);
+  await state.library.patch(book.id,{contentRevision:'replacement',wordCount:null,wordCountComplete:false});
+  await state.acceptLength(book,{wordCount:1200,wordCountVersion:2,wordCountComplete:true});
+  expect((await state.library.get(book.id)).wordCount).toBeNull();
+});
+it('coalesces shelf notifications during reading without rereading the library, then refreshes on return',async()=>{
+ await importBook();await new Promise(resolve=>setTimeout(resolve,100));
+ const reads=vi.spyOn(state.library,'listAll');reads.mockClear();state.shelf.update.mockClear();
+ for(let i=0;i<3;i++)window.dispatchEvent(new StorageEvent('storage',{storageArea:localStorage,key:'inhouse-read-shelf-lamps',newValue:'[]'}));
+ await new Promise(resolve=>setTimeout(resolve,100));
+ expect(reads).not.toHaveBeenCalled();expect(state.shelf.update).not.toHaveBeenCalled();
+ document.getElementById('reader-back').click();
+ await vi.waitFor(()=>expect(reads).toHaveBeenCalled());
+ await vi.waitFor(()=>expect(document.body.classList.contains('is-closing-reader')).toBe(false));
+});

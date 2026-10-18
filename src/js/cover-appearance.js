@@ -1,3 +1,4 @@
+import { shelfWorkReady } from './idle-startup.js';
 /*
  * Appearance extracted from a book cover image. This stays local to the
  * browser: a small pixel sample supplies the dominant binding colour, while
@@ -396,7 +397,7 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
     if (step.done) { onSlice?.(performance.now() - sliceStart); return step.value; }
     if (performance.now() - sliceStart >= sliceMs) {
       onSlice?.(performance.now() - sliceStart);
-      await yieldToMain(); sliceStart = performance.now();
+      await yieldToMain(); await shelfWorkReady(); sliceStart = performance.now();
     }
   }
 }
@@ -414,7 +415,7 @@ async function runRemoteFamily(task, scoreMasks) {
   while (!step.done) {
     if (step.value?.mask) masks.push(step.value.mask);
     if (performance.now() - sliceStart >= SLICE_MS) {
-      await yieldToMain(); sliceStart = performance.now();
+      await yieldToMain(); await shelfWorkReady(); sliceStart = performance.now();
     }
     step = task.next(0);
   }
@@ -422,6 +423,7 @@ async function runRemoteFamily(task, scoreMasks) {
 }
 
 async function matchTitleFont(gray, width, height, title, preparedNear) {
+  await shelfWorkReady();
   if (!title || String(title).trim().length < 3 || typeof document === 'undefined') return null;
   const scoreByFamily = [];
   const work = document.createElement('canvas');
@@ -443,6 +445,7 @@ async function matchTitleFont(gray, width, height, title, preparedNear) {
   };
   try {
     for (const candidate of FONT_CANDIDATES) {
+      await shelfWorkReady();
       const task = scoreFamily(candidate, gray, near, width, height, work.height, title, remote ? remoteFontScore : scoreFontMask);
       const score = remote ? await runRemoteFamily(task, scoreMasks) : await runInSlices(task);
       scoreByFamily.push({ candidate, score });

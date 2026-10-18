@@ -10,9 +10,14 @@ export const isBookLengthReady = book => bookDataModule().length_is_ready(book);
  * serial work, cancellation, failures and commits. Construction starts no WASM
  * download before the shelf's first frame. */
 export function createBookLengthQueue(library, { measureFile = measureFileBookLength,
-  onChange = () => {}, onError = () => {} } = {}) {
+  onChange = () => {}, onError = () => {}, yieldTask } = {}) {
   const state = { entries:new Map(), tail:Promise.resolve(), disposed:false };
-  const env = { library, measureFile, onChange, onError, newRevision:newContentRevision,
+  const measure = yieldTask ? async (file, options) => {
+    await yieldTask()
+    if (!options.isActive()) return null
+    return measureFile(file, { ...options, yieldTask })
+  } : measureFile;
+  const env = { library, measureFile:measure, onChange, onError, newRevision:newContentRevision,
     ignore:() => {}, missingRevision:current => needRustShelf().length_queue_missing_revision(current),
     makeJob:(id, entry) => () => needRustShelf().length_queue_run(state, env, id, entry),
     makeFailure:(id, entry, record) => error => needRustShelf().length_queue_failed(state, env, id, entry, record, error),

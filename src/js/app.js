@@ -30,7 +30,7 @@ import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
 import { rememberLaunchFrames } from './shelf-launch-cache.js'
-import { idleWork } from './idle-startup.js'
+import { idleWork, shelfWorkReady, setShelfWorkActive } from './idle-startup.js'
 import { runAfterFirstFrame } from './idle-startup.js'
 import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
@@ -99,6 +99,7 @@ let requestedPreparationId = null
 let activePreparedBookId = null
 let activeOpeningContext = null
 let closingReader = false
+let shelfRefreshDeferred = false
 let readerPreparationQueue = Promise.resolve()
 // The page the open book lands on, prepared while the book is lifted off the
 // shelf (see prepared-page.js and the 'Página preparada' block below).
@@ -205,6 +206,12 @@ function scheduleLengthRefresh() {
   }, 80)
 }
 const wordCountQueue = createBookLengthQueue(library, {
+  // The visible reader owns its own cached metrics. Detached library parsers
+  // wait at page/section boundaries until Home is visible again.
+  yieldTask:async () => {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await shelfWorkReady()
+  },
   onChange: record => {
     if (appDisposed) return
     lengthStatusVersion += 1
@@ -221,7 +228,26 @@ function persistBookState(bookId, fields) {
 
 // The reading panel and voice code load after the shelf has settled (see the
 // end of this file); a book never opens before they are in.
-const readingExperience = createLazyReaderExperience(reader, { persist:persistBookState })
+const readingExperience = createLazyReaderExperience(reader, {
+  persist:persistBookState,
+  async onLengthMetadata(record, metadata) {
+    if (appDisposed) return
+    // Reuse the visible reader's count rather than parsing this book again in
+    // a detached worker. A replacement file must never inherit the old count.
+    const revision = record.contentRevision
+    const fields = { wordCount:metadata.wordCount, wordCountComplete:metadata.wordCountComplete,
+      wordCountVersion:metadata.wordCountVersion, wordCountContentRevision:revision, lengthDirty:true }
+    if (!revision || !isBookLengthReady({ ...record, ...fields })) return
+    const saved = await library.patch(record.id, fields, {
+      ifCurrent:current => Boolean(current?.content) && current.contentRevision === revision
+    })
+    if (!saved) return
+    wordCountQueue.cancel(record.id)
+    lengthStatusVersion += 1
+    scheduleLengthRefresh()
+    if (saved.driveFileId && hasDriveSession()) { cloudSync.scheduleProgress(saved.id); scheduleLibraryBackup() }
+  }
+})
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -258,7 +284,9 @@ function showScreen(name) {
   document.body.classList.toggle('is-reading', name === 'reader')
   els.homeScreen.hidden = name !== 'home'
   els.readerScreen.hidden = name !== 'reader'
+  setShelfWorkActive(name === 'home')
   shelf?.setPresentationActive?.(name === 'home')
+  if (name === 'home' && shelfRefreshDeferred && !closingReader) refreshShelf().catch(error => console.warn('Estantería pendiente:', error))
   if (name === 'home' && shelfLengthStatusVersion !== lengthStatusVersion) scheduleLengthRefresh()
 }
 
@@ -307,6 +335,10 @@ async function performShelfRefresh({ immediate = false } = {}) {
   // Discard that one-shot snapshot even when its room is deferred, so returning
   // from the reader fetches the newly committed book instead of an empty shelf.
   if (appDisposed || nativeImportShelfGate.deferRefresh()) return
+  // Sync may keep receiving records while reading. Retain that notification;
+  // do not reread every cover/blob or rebuild hidden shelf geometry for it.
+  if (!els.readerScreen.hidden) { shelfRefreshDeferred = true; return }
+  shelfRefreshDeferred = false
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
   if (document.querySelector('.ihr-flyout')) {
@@ -893,6 +925,7 @@ const readerCloseHost = {
     get closingReader() { return closingReader }, set closingReader(value) { closingReader = value },
     get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
     get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
+    get shelfRefreshDeferred() { return shelfRefreshDeferred },
     get cloudRoomChanged() { return cloudRoomChanged }, get shelf() { return shelf }
   }
 }

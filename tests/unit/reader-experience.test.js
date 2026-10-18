@@ -81,21 +81,25 @@ it('shows pages without audio and updates both remaining-time labels on rate cha
 })
 it('ignores a late count after switching books and never awaits counting to open', async () => {
   const {experience,reader}=await setup(), count=deferred()
+  experience.onLengthMetadata=vi.fn()
   reader.getLengthMetadata=vi.fn(()=>count.promise)
   await experience.open({id:'old',title:'Old'})
   await experience.open({id:'new',title:'New',wordCount:600,wordCountComplete:true})
   count.resolve({wordCount:30000,wordCountComplete:true});await Promise.resolve();await Promise.resolve()
   expect(experience.locationButton.textContent).toContain('/2')
   expect(experience.lengthMetadata.id).toBe('new')
+  expect(experience.onLengthMetadata).not.toHaveBeenCalled()
 })
 it('refreshes the page and time labels when a background count completes', async () => {
   const {experience,reader}=await setup(),count=deferred()
+  experience.onLengthMetadata=vi.fn()
   reader.getLengthMetadata=vi.fn(()=>count.promise)
   await experience.open({id:'counting',title:'Counting'})
   expect(experience.locationButton.textContent).toContain('—/—')
   count.resolve({wordCount:21600,wordCountComplete:true});await Promise.resolve();await Promise.resolve()
   expect(experience.locationButton.textContent).toContain('/72')
   expect(experience.panel.querySelector('[data-audio-remaining]').textContent).toBe('0h 48min')
+  expect(experience.onLengthMetadata).toHaveBeenCalledWith(expect.objectContaining({id:'counting'}),{wordCount:21600,wordCountComplete:true})
 })
 
 describe('reader navigation during asynchronous history writes', () => {

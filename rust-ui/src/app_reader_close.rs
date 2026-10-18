@@ -112,7 +112,7 @@ pub fn app_close_reader(host:JsValue)->Promise{
   method_opt(&read(&state,"shelf")?,"setReturningBook",&[&JsValue::NULL])?;
   method_opt(&read(&flight,"stillFade")?,"cancel",&[])?;remove_still(&flight)?;
   classes(&body(&host)?,"remove",&["is-closing-reader","is-reader-page-leaving"])?;set(&state,"closingReader",&JsValue::FALSE)?;
-  if truthy(&read(&state,"cloudRoomChanged")?){let task=method(&host,"refreshShelf",&[])?;method(&task,"catch",&[&read(&host,"warnPendingShelf")?])?;}
+  if truthy(&read(&state,"cloudRoomChanged")?)||truthy(&optional(&state,"shelfRefreshDeferred")?){let task=method(&host,"refreshShelf",&[])?;method(&task,"catch",&[&read(&host,"warnPendingShelf")?])?;}
   caught?;Ok(JsValue::UNDEFINED)
  })
 }

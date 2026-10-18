@@ -36,11 +36,11 @@ for(let trial=0;trial<200;trial++){
  for(const native of [false,true]){
   const {host,events,complete}=setup(native,trial)
   const record={id:trial%2?`${trial}`:trial,title:['A book','字 📖','العَرَبِيَّة','<img onerror=x>'][trial%4],author:trial%2?{name:'Author'}:undefined,metadata:{creator:[{name:'Writer'}]},format:'PDF',sizeBytes:trial*12500,readingHistory:[{fraction:.2,locator:{kind:'pdf-page',value:2}}],bookmarks:[],quotes:[{id:'quote',text:'Some text',fraction:.3}]}
-  const opening=host.open(record);const synchronous=structuredClone(events);assert.equal(host.book,record);complete();let error='';try{await opening}catch(e){error=e.message}
+  const opening=host.open(record);const synchronous=structuredClone(events.filter(row=>row[0]!=='warm'));if(native)expect(events.some(row=>row[0]==='warm')).toBe(false);assert.equal(host.book,record);complete();let error='';try{await opening}catch(e){error=e.message}
   host.refreshNames('wrong',{title:'Wrong'});host.refreshNames(String(trial),{title:'Updated',author:'Other author'})
   host.show(trial%2?'audio':'appearance');host.screen.setAttribute('aria-busy','true');host.show('audio');host.screen.removeAttribute('aria-busy')
   host.closeVoice();host.reset()
-  outputs.push({synchronous,error,events,html:document.body.innerHTML,book:host.book,history:host.history,bookmarks:host.bookmarks,quotes:host.quotes,keep:host.keepSearchHits})
+  outputs.push({synchronous,error,events:events.filter(row=>row[0]!=='warm'),html:document.body.innerHTML,book:host.book,history:host.history,bookmarks:host.bookmarks,quotes:host.quotes,keep:host.keepSearchHits})
  }
  assert.deepEqual(outputs[1],outputs[0]);checks++
 }
