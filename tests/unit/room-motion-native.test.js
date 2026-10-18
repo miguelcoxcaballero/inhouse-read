@@ -115,3 +115,43 @@ it('converges simultaneous previews to the installed physical revision and fence
  expect(room.receive(frame({base:'room-base',commit:'room-loser',sequence:2,phase:'end'}),101)).toBe(false)
  expect(room.receive(frame({base:'room-winner',sequence:3,gesture:'next'}),102)).toBe(true);room.free()
 })
+
+it('accepts consecutive gestures before their durable checkpoints arrive and retains untouched final poses',()=>{
+ const room=new ui.RustRoomMotion(),out=new Float64Array(9);room.acknowledge('base');
+ room.receive(frame({base:'base',commit:'first',phase:'end',poses:[pose(.23)]}),0);
+ const other=['book:drive:two',1,.4,.1,.02,0,0,0,1,1];
+ expect(room.receive(frame({base:'first',gesture:'second',sequence:2,poses:[other]}),100)).toBe(true);
+ expect(room.pose('book:drive:one',200,out)).toBe(true);expect(out[1]).toBe(.23);
+ room.acknowledge('first');
+ expect(room.pose('book:drive:two',200,out)).toBe(true);expect(out[1]).toBe(.4);
+ expect(room.gesturing(200)).toBe(true);
+ expect(room.receive(frame({base:'first',commit:'second',gesture:'second',sequence:3,phase:'end',poses:[other]}),300)).toBe(true);
+ room.acknowledge('second');expect(room.active(301)).toBe(false);room.free();
+});
+it('retains the complete causal preview across several delayed physical commits',()=>{
+ const room=new ui.RustRoomMotion(),out=new Float64Array(9);room.acknowledge('base');
+ for(let i=1;i<=3;i++)expect(room.receive(frame({base:i===1?'base':`commit-${i-1}`,commit:`commit-${i}`,gesture:`g-${i}`,sequence:i,phase:'end',poses:[[ `book:drive:${i}`,1,i*.1,.1,.02,0,0,0,1,1]]}),i*100)).toBe(true);
+ room.acknowledge('commit-1');room.acknowledge('commit-2');
+ for(let i=1;i<=3;i++){expect(room.pose(`book:drive:${i}`,1000,out)).toBe(true);expect(out[1]).toBeCloseTo(i*.1)}
+ room.acknowledge('commit-3');expect(room.active(1001)).toBe(false);
+ expect(room.receive(frame({base:'base',sequence:10}),1002)).toBe(false);room.free();
+});
+
+it('recovers the complete causal room when transport coalescing skips an end frame',()=>{
+ const sender=new ui.RustLiveRoom('account','peer-a'),receiver=new ui.RustLiveRoom('account','peer-b'),room=new ui.RustRoomMotion(),out=new Float64Array(9);
+ room.acknowledge('base');
+ sender.publishMotion(frame({base:'base',commit:'first',phase:'end',poses:[pose(.23)]})); // deliberately lost
+ const second=sender.publishMotion(frame({base:'first',gesture:'second',sequence:2,poses:[['book:drive:two',1,.4,.1,.02,0,0,0,1,1]]}));
+ const packet=receiver.receiveMotion(second);expect(packet.lineage).toEqual(['base','first']);expect(packet.poses).toHaveLength(2);
+ expect(room.receive(packet,100)).toBe(true);expect(room.pose('book:drive:one',200,out)).toBe(true);expect(out[1]).toBe(.23);
+ room.acknowledge('first');expect(room.pose('book:drive:two',200,out)).toBe(true);
+ sender.publishMotion(frame({base:'unrelated',gesture:'third',sequence:3,poses:[]}));
+ const reset=JSON.parse(sender.publishMotion(frame({base:'unrelated',gesture:'third',sequence:4,poses:[]})));
+ expect(reset.lineage).toEqual(['unrelated']);expect(reset.poses).toEqual([]);expect(room.receive(reset,300)).toBe(false);
+ sender.free();receiver.free();room.free();
+});
+it('rejects malformed or unbounded causal histories',()=>{
+ const sender=new ui.RustLiveRoom('account','peer-a');
+ for(const lineage of ['bad',Array(33).fill('base'),['x'.repeat(129),'base'],['wrong']])expect(sender.publishMotion(frame({base:'base',lineage}))).toBeNull();
+ sender.free();
+});
