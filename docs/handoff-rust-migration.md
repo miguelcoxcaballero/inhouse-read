@@ -1,3 +1,9 @@
+# Entrega 1.7.287: ingestión de archivos en Rust
+
+Metadatos, cancelación, configuración del reader, persistencia de bytes, recuento, posición y confirmación de importaciones pasan a Rust compartido UI/Shelf. El bootstrap JS permite esperar o informar de un módulo nativo que aún no existe, conservando la carga fría y los controles bloqueados por generación. Pasan 427 pruebas específicas, incluidas 47 nuevas diferenciales y comprobaciones reales de anclas; trece E2E finales pasan en una ejecución sin fallos. Inventario 35224 líneas Rust / 20523 JavaScript = 63,19 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúan las políticas restantes de app.js y el resto de la migración; preservar todos los WIP/stashes y ramas ajenas.
+
+---
+
 # Entrega 1.7.286: apertura del lector en Rust
 
 Selección, propiedad/cancelación de la apertura, reutilización de preparaciones, recuperación local/carpeta/Drive, selector manual y transición de la misma página se coordinan en Rust compartido UI/Shelf. Los callbacks y APIs del navegador quedan como transporte recogible por GC. Pasan 323 pruebas específicas, incluidas 59 nuevas diferenciales, animación y ciclos de recursos; catorce E2E distintos finales pasan en dos ejecuciones sin fallos. Inventario 35113 líneas Rust / 20611 JavaScript = 63,01 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúa la ingestión de archivos y el resto de app.js; preservar todos los WIP/stashes y ramas ajenas.

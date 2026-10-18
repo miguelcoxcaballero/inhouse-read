@@ -1,3 +1,17 @@
+# 1.7.287 — ingestión de archivos del lector en Rust
+
+Changelog: «Importación de archivos coordinada en Rust».
+
+Después de cargar el lector nativo, Rust coordina toda la ingestión: recuperación del registro por id, cancelaciones, exclusión de la cola de preparación, estado de pantalla, opciones iniciales, callbacks de navegación/enlaces/chrome, metadatos y persistencia del archivo. Conserva el orden de evaluación y los respaldos diferidos de metadatos, incluido un registro con getters; el título/autor no se sustituyen por campos de respaldo innecesarios. Guarda los bytes antes de confirmar la importación Android, inicia el recuento separado, restaura la posición con su finally y revela la lectura por la transición existente.
+
+El adaptador JavaScript conserva el bootstrap anterior a la existencia de WASM: desestructura las opciones, espera readingExperience.ready y puede mostrar el error de descarga con su causa. No fuerza una descarga de Shelf para leer ni llama al nativo antes de que UI esté preparada. El contenedor de carga mantiene inmediatamente aria-busy, inert y su generación, sin dejar que una carga anterior libere los controles de la nueva.
+
+Pasan 427/427 pruebas específicas en veinte archivos. Las 47 nuevas comparan los wrappers reales de app.js y el coordinador con una referencia congelada de 1.7.286: campos/orden/getters, fuentes, ids UTF-16, errores, cancelaciones, almacenamiento y restauración, navegación y modo infantil, cola de preparación, carga fría, UI sin Shelf y 60 ciclos de recursos. Una prueba antigua que buscaba texto de JS se sustituye por dos verificaciones de ejecución: la relocación real notifica al lector pero ignora un CFI incompleto, y el cierre Rust con el validador real conserva el ancla y termina aunque Drive permanezca pendiente.
+
+Pasan trece E2E finales en una ejecución sin fallos ni reintentos: cuatro importaciones Android (app cerrada/abierta, acceso Google pendiente y WebView sin APIs recientes), cuatro devoluciones de página (PDF nativo, fallback, adaptado y EPUB), doble cierre y reapertura en la página guardada, dos importaciones con el gate nativo normal/retrasado y dos aperturas compiladas normal/retrasada. Estas últimas observan la ejecución real de app_open_file_content además de apertura/preparación en Rust. Se comprueban los bytes exactos antes de confirmar el inbox y la continuidad de los mismos píxeles, sin capas retenidas. Build final: UI 3101677 B, SHA256 52356e64781e047951c44932d68d51e688f8dac89c81ce3d1b939eccc3e370b0; Shelf 3776550 B, SHA256 8ba983715af4e6c5da15d1941ee7b2121702f867768ec68e3d985fc5b6215134. Shell 111 archivos / 35791333 B, revisión 2c329bcfb04c. Inventario 35224 líneas Rust / 20523 JavaScript, 63,19 %; reparto de fuentes, no funciones completadas. Continúan pendientes otras políticas de app.js, guardas de posición y coordinación de cuenta/arranque. Sin cambios en calidades, Android, actualizador, vendor ni workflows; los tests de Android simulan el puente web, no son una APK publicada ni una prueba en teléfono físico. No se declara batería general completa. Preservar WIP, ramas y stashes anteriores.
+
+---
+
 # 1.7.286 — coordinación de apertura del lector en Rust
 
 Changelog: «Apertura del lector coordinada en Rust».
