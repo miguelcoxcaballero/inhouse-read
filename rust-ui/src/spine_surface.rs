@@ -135,6 +135,16 @@ pub fn draw_device(c:&JsValue,kind:&JsValue,size:&JsValue)->R<()>{
 /// mottles colour; 'lighter' with a single channel adds to one PBR channel.
 #[wasm_bindgen]
 pub fn paint_field(c:&JsValue,width:&JsValue,height:&JsValue,random:&JsValue,options:&JsValue)->R<()>{
+ paint_field_with(c,width,height,options,||Ok(num(&call(random,"random",&[])?)))
+}
+#[wasm_bindgen]
+pub fn paint_field_seeded(c:&JsValue,width:&JsValue,height:&JsValue,seed:u32,options:&JsValue)->Array{
+ let mut stream=Stream(seed);
+ let result=paint_field_with(c,width,height,options,||Ok(stream.next()));
+ let output=Array::new();output.push(&val(stream.0 as f64));output.push(&JsValue::from_bool(result.is_ok()));
+ output.push(&result.err().unwrap_or(JsValue::UNDEFINED));output
+}
+fn paint_field_with<F:FnMut()->R<f64>>(c:&JsValue,width:&JsValue,height:&JsValue,options:&JsValue,mut next:F)->R<()>{
  let pick=|key:&str|->R<JsValue>{if options.is_undefined(){Ok(JsValue::UNDEFINED)}else{read(options,key)}};
  let operation=pick("operation")?;let operation=if operation.is_undefined(){txt("soft-light")}else{operation};
  let spread=pick("spread")?;let spread=undefined_or(&spread,40.0);
@@ -145,18 +155,27 @@ pub fn paint_field(c:&JsValue,width:&JsValue,height:&JsValue,random:&JsValue,opt
  let f=method(&field,"getContext",&[&txt("2d")])?;
  let image=method_opt(&f,"createImageData",&[&val(cw),&val(ch)])?.unwrap_or(JsValue::UNDEFINED);
  let data=if absent(&image){JsValue::UNDEFINED}else{read(&image,"data")?};
+ // Real ImageData uses one bulk copy instead of four JS property writes per pixel.
+ let typed=data.dyn_ref::<js_sys::Uint8ClampedArray>();
+ let mut pixels=typed.map(|array|array.to_vec());
  let mut i=0.0;
  while i<cw*ch{
-  let r=num(&call(random,"random",&[])?);
+  let r=next()?;
   let v=if truthy(&channel){jround(r*spread)}else{
    let r=r-0.5;jround(128.0+r*2.0*spread)};
   if truthy(&data){
-   let put=|index:f64,value:f64|->R<()>{Reflect::set(&data,&val(index),&val(value))?;Ok(())};
    let z=if truthy(&channel){0.0}else{v};
-   put(i*4.0+2.0,z)?;put(i*4.0,z)?;put(i*4.0+1.0,v)?;put(i*4.0+3.0,255.0)?;
+   if let Some(bytes)=pixels.as_mut(){
+    let at=i as usize*4;
+    if at+3<bytes.len(){bytes[at..at+4].copy_from_slice(&[z as u8,v as u8,z as u8,255]);}
+   }else{
+    let put=|index:f64,value:f64|->R<()>{Reflect::set(&data,&val(index),&val(value))?;Ok(())};
+    put(i*4.0+2.0,z)?;put(i*4.0,z)?;put(i*4.0+1.0,v)?;put(i*4.0+3.0,255.0)?;
+   }
   }
   i+=1.0;
  }
+ if let (Some(array),Some(bytes))=(typed,pixels){array.copy_from(&bytes);}
  if truthy(&data){method(&f,"putImageData",&[&image,&val(0.0),&val(0.0)])?;}
  method(c,"save",&[])?;set(c,"globalCompositeOperation",&operation)?;set(c,"imageSmoothingEnabled",&JsValue::TRUE)?;
  set(c,"imageSmoothingQuality",&txt("high"))?;method(c,"drawImage",&[&field,&val(0.0),&val(0.0),width,height])?;method(c,"restore",&[])?;
@@ -342,7 +361,7 @@ pub fn spine_surface(book:&JsValue,style:&JsValue,physical_height:&JsValue,thick
  // mottle there reads as hammered metal.
  if !metal_binding&&!thumb{
   let field=object(&[("operation",txt("lighter")),("spread",val(24.0)),("channel",txt("g")),("cells",pair(7.0,24.0))])?;
-  paint_field(&pc,&val(design_width),&val(1024.0),&random,&field)?;
+  call(&read(host,"paintField")?,"paintField",&[&pc,&val(design_width),&val(1024.0),&random,&field])?;
  }
  let ridge=|h:f64|->String{rgb(&show(h),&show(binding_roughness),&show(metal))};
  for y in &layout.bands{
@@ -387,3 +406,51 @@ pub fn spine_surface(book:&JsValue,style:&JsValue,physical_height:&JsValue,thick
 }
 #[inline(never)]
 fn txt_of(value:&JsValue)->String{string_of(value).as_string().unwrap_or_default()}
+
+// The host retains only an owned batch cursor for each random callback.
+// No closure, handle or allocation remains in WASM between calls.
+#[wasm_bindgen]
+pub fn spine_random_batch(seed:u32)->Vec<f64>{
+ let mut stream=Stream(seed);let mut output=Vec::with_capacity(128);
+ for _ in 0..64{let value=stream.next();output.push(stream.0 as f64);output.push(value);}
+ output
+}
+fn to_uint32(value:f64)->u32{
+ if !value.is_finite()||value==0.0{return 0;}
+ let v=value.trunc()%4294967296.0;
+ (if v<0.0{v+4294967296.0}else{v}) as u32
+}
+#[wasm_bindgen]
+pub fn spine_random_seed(value:f64)->u32{let seed=to_uint32(value);if seed==0{1}else{seed}}
+#[wasm_bindgen]
+pub fn spine_text_seed(text:JsString)->u32{text_seed(&text)}
+#[wasm_bindgen]
+pub fn spine_lattice(i:f64,j:f64,salt:f64)->f64{
+ let mut h=to_uint32(i*374761393.0+j*668265263.0+salt*1442695041.0).wrapping_mul(1274126177);
+ h=(h^(h>>13)).wrapping_mul(1103515245);
+ (h^(h>>16)) as f64/4294967296.0
+}
+
+/// Arbitrary callbacks and unusual widths retain the original draw order in
+/// Rust too. Normal owned streams use the batched numeric core plan.
+#[wasm_bindgen]
+pub fn paint_cloth_callback(c:&JsValue,width:f64,random:&JsValue,metal:bool)->R<()>{
+ let cells=pair(js_sys::Math::max(4.0,js_sys::Math::round(width/34.0)),30.0);
+ let options=object(&[("operation",txt("soft-light")),("spread",val(if metal{5.0}else{9.0})),("cells",cells)])?;
+ paint_field(c,&val(width),&val(1024.0),random,&options)?;
+ let next=||->R<f64>{Ok(num(&call(random,"random",&[])?))};
+ for _ in 0..if metal{40}else{110}{
+  let y=next()?*1024.0;let x=next()?*width*0.7;let length=width*(0.2+next()?*0.6);
+  let light=next()?>0.45;
+  let alpha=if light{0.012+next()?*0.03}else{0.015+next()?*0.035};
+  let color=cat(&[if light{"rgba(255,248,235,"}else{"rgba(0,0,0,"},&show(alpha),")"]);
+  set(c,"fillStyle",&txt(&color))?;let height=0.5+next()?*0.8;fill_rect(c,x,y,length,height)?;
+ }
+ if !metal{for _ in 0..26{
+  let x=next()?*width;let y=next()?*900.0;let length=60.0+next()?*380.0;
+  let light=next()?>0.5;let alpha=if light{0.012+next()?*0.025}else{0.015+next()?*0.03};
+  let color=cat(&[if light{"rgba(255,248,235,"}else{"rgba(0,0,0,"},&show(alpha),")"]);
+  set(c,"fillStyle",&txt(&color))?;let thickness=0.5+next()?*0.7;fill_rect(c,x,y,thickness,length)?;
+ }}
+ Ok(())
+}

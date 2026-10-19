@@ -20,28 +20,19 @@ export const spineLayout = book => needRustShelf().spine_layout(book)
 export const drawDevice = (c, kind, size) => needRustShelf().draw_device(c, kind, size)
 
 /** Integer hash noise in [0, 1): the same cell always gets the same value. */
-export const lattice = (i, j, salt) => {
-  let h = Math.imul(i * 374761393 + j * 668265263 + salt * 1442695041 | 0, 1274126177)
-  h = Math.imul(h ^ h >>> 13, 1103515245)
-  return ((h ^ h >>> 16) >>> 0) / 4294967296
-}
+export const lattice = (i, j, salt) => needRustShelf().spine_lattice(i, j, salt)
+export const textSeed = text => needRustShelf().spine_text_seed(text)
 
-export function textSeed(text) {
-  let h = 2166136261
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
-  return h >>> 0
-}
-/** Small deterministic PRNG: the same book always gets the same cloth. */
+// Only the callback/cursor lives in JS. Rust generates 64 exact PRNG values
+// per call; the consumed state is retained when a cloth plan takes over.
 const randomStates = new WeakMap()
 export function seededRandom(seed) {
-  let s = seed >>> 0 || 1
+  let state = needRustShelf().spine_random_seed(seed), batch = null, cursor = 0
   const random = () => {
-    s = s + 0x6D2B79F5 | 0
-    let t = Math.imul(s ^ s >>> 15, 1 | s)
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
-    return ((t ^ t >>> 14) >>> 0) / 4294967296
+    if (!batch || cursor === batch.length) { batch = needRustShelf().spine_random_batch(state); cursor = 0 }
+    state = batch[cursor++]; return batch[cursor++]
   }
-  randomStates.set(random, { get: () => s, set: value => { s = value | 0 } })
+  randomStates.set(random, { get: () => state, set: value => { state = value; batch = null; cursor = 0 } })
   return random
 }
 
@@ -54,7 +45,14 @@ export function withStops(gradient, stops) {
 /** Low-frequency variation from a tiny random raster, upscaled in one pass.
  * soft-light around mid-grey mottles colour; 'lighter' with a single channel
  * adds to one PBR channel. Far cheaper than stacking large radial gradients. */
-export const paintField = (c, width, height, random, options) => needRustShelf().paint_field(c, width, height, random, options)
+export function paintField(c, width, height, random, options) {
+  const stream = randomStates.get(random), rust = needRustShelf()
+  if (stream) {
+    const [state, ok, error] = rust.paint_field_seeded(c, width, height, stream.get(), options)
+    stream.set(state); if (!ok) throw error
+  }
+  else rust.paint_field(c, width, height, random, options)
+}
 
 // Book cloth: slow dye mottling plus irregular warp/weft slubs. Mipmaps turn
 // the threads into a quiet tooth on the shelf and a real weave up close.
@@ -68,20 +66,7 @@ export function paintCloth(c, designWidth, random, { threads = true, metal = fal
     paintClothPlan(c, designWidth, plan)
     return
   }
-  // Dye variation in real cloth is a few percent at most; more reads as camouflage.
-  paintField(c, designWidth, 1024, random, { operation:'soft-light', spread:metal ? 5 : 9,
-    cells:[Math.max(4, Math.round(designWidth / 34)), 30] })
-  for (let i = 0; i < (metal ? 40 : 110); i++) {
-    const y = random() * 1024, x = random() * designWidth * .7, length = designWidth * (.2 + random() * .6)
-    c.fillStyle = random() > .45 ? `rgba(255,248,235,${.012 + random() * .03})` : `rgba(0,0,0,${.015 + random() * .035})`
-    c.fillRect(x, y, length, .5 + random() * .8)
-  }
-  if (metal) return
-  for (let i = 0; i < 26; i++) {
-    const x = random() * designWidth, y = random() * 900, length = 60 + random() * 380
-    c.fillStyle = random() > .5 ? `rgba(255,248,235,${.012 + random() * .025})` : `rgba(0,0,0,${.015 + random() * .03})`
-    c.fillRect(x, y, .5 + random() * .7, length)
-  }
+  needRustShelf().paint_cloth_callback(c, designWidth, random, metal)
 }
 
 // Replay the same Canvas operations after the numeric plan has been copied.
@@ -108,30 +93,12 @@ function weaveTile(kind) {
   if (!weaveTiles) {
     weaveTiles = {}
     const pixels = rustBookWeavePixels(getRustCore())
-    const shade = pixels ? null : new Float32Array(64 * 64)
-    if (!pixels) for (let y = 0; y < 128; y += 2) for (let x = 0; x < 128; x += 2) {
-      const i = x >> 3, j = y >> 3, warp = (i + j) % 2
-      const lift = warp ? Math.sin(Math.PI * (x % 8 + 1) / 8) : Math.sin(Math.PI * (y % 8 + 1) / 8)
-      const yarn = warp ? lattice(i, y >> 4, 3) : lattice(j, x >> 4, 4)
-      shade[(y >> 1) * 64 + (x >> 1)] = (lift - .62) * (.6 + yarn * .8) + (lattice(i, j, 5) - .5) * .25
-    }
+    if (!pixels) { weaveTiles = null; throw new Error('No se pudo generar el tejido del libro en Rust.') }
     for (const name of ['color', 'channels']) {
       const canvas = Object.assign(document.createElement('canvas'), { width:128, height:128 })
       const t = canvas.getContext('2d'), image = t?.createImageData?.(128, 128), data = image?.data
       if (data) {
-        if (pixels) data.set(pixels[name])
-        else for (let p = 0; p < 128 * 128; p++) {
-          const s = shade[(p >> 8) * 64 + ((p & 127) >> 1)], k = p * 4
-          if (name === 'color') {
-            // Shadowed gaps carry the weave; a bright dot at every crossing
-            // read as a screen door on phones, so the crowns barely lighten.
-            data.set(s > 0 ? [255, 248, 236, Math.round(s * .035 * 255)] : [0, 0, 0, Math.round(-s * .075 * 255)], k)
-          } else {
-            // Multiplied into R height / G roughness: gaps sink, crowns are
-            // burnished smoother, metalness (B) is untouched.
-            data.set([Math.round(255 * (1 - Math.max(0, -s) * .16)), Math.round(255 * (1 - Math.max(0, s) * .2)), 255, 255], k)
-          }
-        }
+        data.set(pixels[name])
         t.putImageData(image, 0, 0)
       }
       weaveTiles[name] = canvas
@@ -174,7 +141,7 @@ function releaseScratch() {
 }
 
 const host = {
-  scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, random: seededRandom, paintCloth, paintWeave,
+  scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, random: seededRandom, paintCloth, paintWeave, paintField,
   surface: value => SURFACE_FINISHES[surfaceFinish(value, 'matte')]
 }
 
