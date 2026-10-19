@@ -680,140 +680,38 @@ async function revealPreparedReader() {
   els.readerScreen.classList.remove('is-preparing')
 }
 
-async function handleCoverAction(action, book, button) {
-  button.disabled = true
-  // The shelf renders a long and a short (narrow screens) label; keep both in
-  // step, each with its own wording so the short one never truncates. An
-  // icon-only button keeps its icon and says it in its accessible name.
-  const labels = button.classList.contains('ihr-btn--icon') ? []
-    : button.querySelectorAll('span').length ? [...button.querySelectorAll('span')] : [button]
-  const originals = labels.map(label => label.textContent)
-  const originalAria = button.getAttribute('aria-label')
-  const setLabel = (text, short = text) => {
-    labels.forEach(label => { label.textContent = label.classList.contains('ihr-btn__label--short') ? short : text })
-    button.setAttribute('aria-label', text)
-    if (button.classList.contains('ihr-btn--icon')) button.title = text
-  }
-  const restoreLabel = () => {
-    labels.forEach((label, index) => { label.textContent = originals[index] })
-    if (originalAria) button.setAttribute('aria-label', originalAria)
-    else button.removeAttribute('aria-label')
-    if (originalAria && button.classList.contains('ihr-btn--icon')) button.title = originalAria
-  }
-  let saved = false
-  setLabel(action === 'offline' ? 'Descargando…' : 'Guardando…', action === 'offline' ? 'Offline…' : 'Drive…')
-  button.setAttribute('aria-busy', 'true')
-  try {
-    if (action === 'offline') {
-      if (book.content) {
-        setLabel('Disponible offline', 'Offline')
-        saved = true
-        return
-      }
-      if (!hasDriveSession()) await requestDriveAccess()
-      if (book.driveFileId) {
-        await cloudSync.downloadForOffline(book)
-      } else throw new Error('Este libro ya tiene su copia en el dispositivo.')
-      setLabel('Disponible offline', 'Offline')
-      saved = true
-    } else if (action === 'drive') {
-      if (!hasDriveSession()) throw new Error('Conecta tu cuenta de Google para subir este libro.')
-      const updated = await uploadBookToDrive(book)
-      if (!updated) return
-      Object.assign(book, updated)
-      // The same discreet Drive mark, with a small tick.
-      const status = document.createElement('span')
-      status.className = 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__cloud-saved'
-      status.setAttribute('role', 'status')
-      status.setAttribute('aria-label', 'Guardado en Google Drive')
-      status.title = 'Guardado en Google Drive'
-      const icon = button.querySelector('svg')?.cloneNode(true)
-      if (icon) status.append(icon)
-      const check = document.createElement('span')
-      check.className = 'ihr-flyout__cloud-check'
-      check.setAttribute('aria-hidden', 'true')
-      check.innerHTML = '<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>'
-      status.append(check)
-      button.replaceWith(status)
-      saved = true
-    }
-  } catch (error) {
-    restoreLabel()
-    await reportDriveConnectionError(error)
-  } finally {
-    button.disabled = saved
-    button.removeAttribute('aria-busy')
+const driveActionsHost = {
+  els, document, console, library, cloudSync, liveRoom, libraryBackup, profileView,
+  hasDriveSession, requestDriveAccess, getDriveProfile, getRememberedDriveProfile,
+  isAndroidShell, restoreLegacyBookBytes, offerAvailableAndroidUpdate,
+  showAuthNotice, closeProfileMenu, setDriveSyncStatus, signOutDrive, cancelDriveConnection, refreshShelf,
+  online: () => navigator.onLine,
+  uploadProgressFailure: error => bookDataModule().app_drive_upload_progress_failure(driveActionsHost,error),
+  authFailure: reportDriveConnectionError,
+  resumeReady: () => bookDataModule().app_drive_resume_ready(driveActionsHost),
+  resumeFailure: error => bookDataModule().app_drive_resume_failure(driveActionsHost,error),
+  savedCheckMarkup:'<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>',
+  state: {
+    get driveProfile(){return driveProfile}, set driveProfile(value){driveProfile=value},
+    get cloudRoomChanged(){return cloudRoomChanged},
+    get driveUploadsInFlight(){return driveUploadsInFlight}, set driveUploadsInFlight(value){driveUploadsInFlight=value}
   }
 }
 
-async function uploadBookToDrive(book) {
-  driveUploadsInFlight += 1
-  try {
-    const updated = await cloudSync.uploadBook(book)
-    if (!updated) return null
-    // The file is saved already. Its progress update stays asynchronous so a
-    // slow network cannot hold up opening the cover or returning to the shelf.
-    cloudSync.flushProgress(updated.id)
-      .catch(error => setDriveSyncStatus(`Progreso pendiente: ${error.message}`))
-    setDriveSyncStatus('Guardado en Google Drive')
-    return updated
-  } finally {
-    driveUploadsInFlight = Math.max(0, driveUploadsInFlight - 1)
-    if (!driveUploadsInFlight) {
-      els.driveUploadScreen.hidden = true
-      els.driveUploadScreen.setAttribute('aria-busy', 'false')
-    }
-  }
+function handleCoverAction(action, book, button) {
+  return withBookDataModule(module => module.app_drive_cover_action(driveActionsHost, action, book, button))
 }
 
 function setDriveSyncStatus(message, syncing = false) {
   profileView.syncStatus(message, syncing)
 }
 
-async function loadDriveAccountProfile() {
-  if (!hasDriveSession()) {
-    driveProfile = null
-    cloudSync.reset()
-    liveRoom.pause()
-    libraryBackup.reset()
-    profileView.visibility(false)
-    profileView.localAccount()
-    return null
-  }
-  profileView.visibility(true)
-  const previousAccount = driveProfile?.id
-  try {
-    driveProfile = await getDriveProfile()
-  } catch (error) {
-    console.warn('No se pudo cargar el perfil de Google:', error)
-    if (!hasDriveSession()) return loadDriveAccountProfile()
-    driveProfile = getRememberedDriveProfile()
-    if (!driveProfile?.id) throw new Error('No se pudo identificar la cuenta de Google. Vuelve a conectar.')
-    setDriveSyncStatus(`Perfil guardado · ${error.message}`)
-  }
-  if (previousAccount && previousAccount !== driveProfile?.id) { liveRoom.pause(); libraryBackup.reset(); cloudSync.reset() }
-  cloudSync.setProfile(driveProfile)
-  profileView.account(driveProfile)
-  return driveProfile
+function loadDriveAccountProfile() {
+  return withBookDataModule(module => module.app_drive_load_profile(driveActionsHost))
 }
 
-async function syncLibraryToDrive({ silent = false, poll = false } = {}) {
-  if (!hasDriveSession()) {
-    if (silent) {
-      // Android uses the same PKCE refresh-token flow as Inhouse Notes.
-      const nativeShell = isAndroidShell()
-      if (!nativeShell || !getRememberedDriveProfile()) return
-      try { await requestDriveAccess({ interactive: false }) } catch { return }
-    } else await requestDriveAccess()
-  }
-  const profile = driveProfile || await loadDriveAccountProfile()
-  if (!profile) {
-    if (silent) return
-    throw new Error('Sesión caducada. Pulsa Conectar.')
-  }
-  try { if (!poll) await restoreLegacyBookBytes(library) }
-  catch (error) { console.warn('No se pudieron recuperar libros antiguos de la carpeta local:', error) }
-  return poll ? libraryBackup.poll(profile.id) : libraryBackup.sync(profile.id)
+function syncLibraryToDrive(options = {}) {
+  return withBookDataModule(module => module.app_drive_sync(driveActionsHost, options))
 }
 
 const authNotice = document.getElementById('drive-auth-notice')
@@ -827,37 +725,20 @@ function showAuthNotice(message, { retry = false, pending = false } = {}) {
   authCancel.hidden = !pending
 }
 
-async function connectGoogleAccount() {
-  closeProfileMenu()
-  els.driveConnectBtn.disabled = true
-  showAuthNotice('Completa el acceso en Google.', { pending: true })
-  try {
-    await requestDriveAccess()
-    showAuthNotice('')
-    await syncLibraryToDrive()
-  }
-  catch (error) { await reportDriveConnectionError(error) }
-  finally { els.driveConnectBtn.disabled = false }
+function connectGoogleAccount() {
+  return withBookDataModule(module => module.app_drive_connect(driveActionsHost))
 }
+
 els.driveConnectBtn.addEventListener('click', connectGoogleAccount)
 authRetry.addEventListener('click', connectGoogleAccount)
-authCancel.addEventListener('click', () => { cancelDriveConnection(); showAuthNotice('') })
+authCancel.addEventListener('click', () => withBookDataModule(module => module.app_drive_cancel(driveActionsHost)))
 document.getElementById('drive-auth-dismiss').addEventListener('click', () => { authNotice.hidden = true })
-globalThis.addEventListener('inhouse-drive-auth', event => {
-  if (event.detail.connected) {
-    showAuthNotice('')
-    syncLibraryToDrive().catch(reportDriveConnectionError)
-  } else if (event.detail.error) showAuthNotice(event.detail.error, { retry: true })
-})
+globalThis.addEventListener('inhouse-drive-auth', event => withBookDataModule(module => module.app_drive_auth_event(driveActionsHost,event.detail)))
 
-async function reportDriveConnectionError(error) {
-  if (error?.code === 'ANDROID_SHELL_OUTDATED') {
-    if (await offerAvailableAndroidUpdate()) return
-    showAuthNotice('Actualiza la app para conectar Drive.', { retry: true })
-    return
-  }
-  showAuthNotice(error.message === 'Conexión cancelada.' ? '' : `No se pudo conectar. ${error.message}`, { retry: true })
+function reportDriveConnectionError(error) {
+  return withBookDataModule(module => module.app_drive_report_error(driveActionsHost, error))
 }
+
 els.driveThemeToggle.addEventListener('change', () => {
   const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
@@ -870,24 +751,8 @@ function closeProfileMenu() {
   profileView.closeMenu()
 }
 profileView.connect(closeAndroidUpdateSettings, els.driveThemeToggle)
-els.driveSyncBtn.addEventListener('click', async () => {
-  els.driveSyncBtn.disabled = true
-  try { await syncLibraryToDrive() }
-  catch (error) { setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`) }
-  finally { els.driveSyncBtn.disabled = false }
-})
-els.driveSignOutBtn.addEventListener('click', () => {
-  signOutDrive()
-  cloudSync.reset()
-  liveRoom.pause()
-  libraryBackup.reset()
-  driveProfile = null
-  closeProfileMenu()
-  loadDriveAccountProfile()
-  showAuthNotice('')
-  els.driveProfileBtn.setAttribute('aria-expanded', 'false')
-  refreshShelf()
-})
+els.driveSyncBtn.addEventListener('click', () => withBookDataModule(module => module.app_drive_manual_sync(driveActionsHost)))
+els.driveSignOutBtn.addEventListener('click', () => withBookDataModule(module => module.app_drive_sign_out(driveActionsHost)))
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
 function extractCoverInBackground(record) {
   return bookDataModule().app_extract_cover_background(coverBackgroundHost, record)
@@ -1049,10 +914,8 @@ initAndroidFileImports({
 if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
-function resumeDriveSync({ poll = false } = {}) {
-  liveRoom.resume()
-  if (!navigator.onLine || (!hasDriveSession() && !getRememberedDriveProfile())) return
-  syncLibraryToDrive({ silent: true, poll }).then(() => { if (cloudRoomChanged) return refreshShelf() }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
+function resumeDriveSync(options = {}) {
+  return withBookDataModule(module => module.app_drive_resume(driveActionsHost,options))
 }
 globalThis.addEventListener('online', resumeDriveSync)
 const backupPoll = setInterval(() => {

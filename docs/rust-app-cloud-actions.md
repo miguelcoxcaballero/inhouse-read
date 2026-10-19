@@ -1,0 +1,13 @@
+# App account and cover lifecycle in Rust
+
+`app_cloud_actions.rs` owns the application flows for remembered/remote Google profiles, account replacement resets, silent Android refresh, manual/background synchronization, connect/cancel/error recovery and sign-out. It reuses the existing CloudSync, LibraryBackup and LiveRoom instances and the state already shared with the app. It does not introduce another App or replace the separate room-capture controller.
+
+The same module owns the offline/download and explicit-upload cover actions, long/short/icon button labels, busy cleanup and the concurrent-upload counter. Progress upload remains background work: an unresolved progress request never keeps a saved cover open. With an already-loaded core, the initiating OAuth callback still runs synchronously while its user gesture is active. Failed requests and failed error reporting both release owned controls. Existing artwork stays a declarative host field. Promise reactions that may never fire use JS-owned adapters forwarding to Rust, so successful requests do not retain Rust once-closures. Repeated completed/rejected flows are checked against the live WASM handle count.
+
+The JavaScript entry points select an already-loaded shelf/UI module, or the existing shelf load gate. They keep browser event wiring and browser/Drive/library objects; reader and voice imports are not added. Existing imported bytes, reading position, reader preparation and room capture paths keep their respective Rust owners.
+
+Validation compares both compiled variants against the frozen previous app functions, including exact UI/result/error/callback effects, offline availability, OAuth cancellation, account resets, legacy recovery, backup failure and background progress. Additional cases cover overlapping uploads, user-gesture timing, cancel/sign-out, silent resume and finally cleanup when an error lacks a message or its reporter fails. Existing app import/open/close and app-room suites are retained.
+
+Remaining app policy is explicitly still listed in the migration boundary audit: import/modal selection, reader loading generations, length refresh, screen/disposal and viewport-cache invalidation. This batch makes no rendering/startup speedup or whole-program completion claim.
+
+Verified: 115 tests pass across five suites, including 76 shared-module flow/lifetime tests and the existing import/open/close/app-room tests. The close suite used the current-main fixture from `5ddcada7`; that fixture was restored afterward and is not part of this delta. Both Rust variants and the web/offline build pass. Browser E2E remains an integration check owned by the parent branch.
