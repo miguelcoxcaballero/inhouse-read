@@ -127,3 +127,25 @@ pub unsafe extern "C" fn binding_finish(params: *const f64, lengths: *const f64,
     }
     binding_mesh(coefficients, relief, p[0], p[1], p[2], segments, rows, positions, normals, uvs, indices);
 }
+
+/// Exact sampling of the generated RGBA spine relief, in mesh vertex order.
+/// The host copies the bitmap once, instead of calling JS for every vertex.
+#[no_mangle]
+pub extern "C" fn binding_relief_index(u:f64,v:f64,width:u32,height:u32)->f64{
+ (crate::jsnum::min(height as f64-1.0,((1.0-v)*height as f64).floor())*width as f64
+  +crate::jsnum::min(width as f64-1.0,(u*width as f64).floor()))*4.0+3.0
+}
+#[no_mangle]
+pub extern "C" fn binding_relief_alpha(alpha:f64)->f64{alpha/255.0}
+#[no_mangle]
+pub unsafe extern "C" fn binding_sample_relief(raw:*const u8,width:u32,height:u32,segments:u32,rows:u32,out:*mut f64)->u32{
+ if width==0||height==0||width>2048||height>2048||width as usize*height as usize>1048576
+  ||segments==0||segments>512||rows==0||rows>1024||(segments+1)*(rows+1)>200000{return 0;}
+ let pixels=std::slice::from_raw_parts(raw,width as usize*height as usize*4);
+ let output=std::slice::from_raw_parts_mut(out,(segments as usize+1)*(rows as usize+1));
+ for i in 0..=segments{for j in 0..=rows{
+  let at=binding_relief_index(i as f64/segments as f64,j as f64/rows as f64,width,height) as usize;
+  output[i as usize*(rows as usize+1)+j as usize]=pixels[at] as f64/255.0;
+ }}
+ 1
+}

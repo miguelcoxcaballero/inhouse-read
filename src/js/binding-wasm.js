@@ -4,6 +4,19 @@ import { resolveHostMath } from './host-math.js';
 // builds the mesh; the engine's Math answers the sines, cosines and lengths it asks for, in two
 // rounds. Owned output arrays survive WASM growth, recursive relief sampling and disposal of
 // every scratch allocation.
+// Only samplers produced here can use the native raster path. Arbitrary caller
+// callbacks retain their observable order and may still reenter/grow WASM.
+const reliefSources = new WeakMap();
+export function createBindingRelief(core, pixels, width = 256, height = 1024) {
+  if (!(pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray) ||
+      !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
+      width > 2048 || height > 2048 || width * height > 1048576 || pixels.length !== width * height * 4)
+    throw new TypeError('Invalid binding relief raster');
+  const sample = (u, v) => core.binding_relief_alpha(pixels[core.binding_relief_index(u, v, width, height)]);
+  reliefSources.set(sample, { pixels, width, height });
+  return sample;
+}
+
 const align8 = bytes => Math.ceil(bytes / 8) * 8;
 
 export function rustBindingBuffers(core, width, height, thickness, segments = 96, relief = null, reliefRows = 384) {
@@ -13,6 +26,7 @@ export function rustBindingBuffers(core, width, height, thickness, segments = 96
     || !Number.isInteger(segments) || segments < 1 || segments > 512
     || !Number.isInteger(rows) || rows < 1 || rows > 1024
     || vertices > 200_000 || relief && typeof relief !== 'function') return null;
+  const source = reliefSources.get(relief);
   const regions = {};
   let size = 0;
   const take = (name, bytes) => { regions[name] = size; size += align8(bytes); };
@@ -20,6 +34,7 @@ export function rustBindingBuffers(core, width, height, thickness, segments = 96
   take('askedA', (segments + 1) * 2 * 3 * 8); take('answeredA', (segments + 1) * 2 * 8);
   take('askedB', (segments + 1) * 3 * 8); take('answeredB', (segments + 1) * 8);
   take('relief', relief ? vertices * 8 : 0);
+  take('reliefPixels', source ? source.pixels.byteLength : 0);
   take('positions', vertices * 3 * 4); take('normals', vertices * 3 * 4); take('uvs', vertices * 2 * 4);
   const indexCount = segments * rows * 6;
   take('indices', indexCount * 4);
@@ -37,7 +52,11 @@ export function rustBindingBuffers(core, width, height, thickness, segments = 96
     const second = core.binding_plan_b(at('params'), at('answeredA'), at('coefficients'), at('askedB'));
     resolveHostMath(core, at('askedB'), at('answeredB'), second);
     let buffer = core.memory.buffer;
-    if (relief) {
+    if (source) {
+      new Uint8Array(buffer, at('reliefPixels'), source.pixels.length).set(source.pixels);
+      if (core.binding_sample_relief(at('reliefPixels'), source.width, source.height, segments, rows, at('relief')) !== 1)
+        throw new Error('Native binding relief rejected');
+    } else if (relief) {
       let samples = new Float64Array(buffer, at('relief'), vertices);
       for (let i = 0; i <= segments; i++) for (let j = 0; j <= rows; j++) {
         // Preserve the callback's order and exact coordinates. It may call

@@ -1,9 +1,18 @@
-// Only bounded sampled RGBA crosses the WASM boundary. Browser colour/contrast
-// formatting and Math.round remain in the host; no complete image is retained.
+// Only bounded sampled RGBA crosses the WASM boundary. Rust returns the final
+// cover, shade and ink strings together; no complete image is retained.
 const MAX_SAMPLES = 32768;
 
 export function rustDominantCoverRgb(core, data, width, height) {
-  if (typeof core?.cover_dominant_rgb !== 'function' || !core.memory
+  return analyze(core, data, width, height, false);
+}
+
+export function rustCoverColor(core, data, width, height) {
+  return analyze(core, data, width, height, true);
+}
+
+function analyze(core, data, width, height, style) {
+  const kernel = style ? 'cover_dominant_style' : 'cover_dominant_rgb';
+  if (typeof core?.[kernel] !== 'function' || !core.memory
     || typeof core.alloc_f64 !== 'function' || typeof core.free_f64 !== 'function'
     || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray)
     || !Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) return null;
@@ -18,7 +27,7 @@ export function rustDominantCoverRgb(core, data, width, height) {
   scan: for (let y = 0; y < height; y += stride) for (let x = 0; x < width; x += stride) {
     if (data[(y * width + x) * 4 + 3] >= 48) { included = true; break scan; }
   }
-  if (!included) return [90, 65, 48];
+  if (!included && !style) return [90, 65, 48];
   const outputOffset = Math.ceil(count * 4 / 8) * 8;
   const length = outputOffset / 8 + 3;
   let pointer;
@@ -35,7 +44,12 @@ export function rustDominantCoverRgb(core, data, width, height) {
         samples[at++] = data[offset + 2]; samples[at++] = data[offset + 3];
       }
     }
-    core.cover_dominant_rgb(pointer, count, pointer + outputOffset);
+    core[kernel](pointer, count, pointer + outputOffset);
+    if (style) {
+      const bytes = new Uint8Array(core.memory.buffer, pointer + outputOffset, 21);
+      const value = String.fromCharCode(...bytes);
+      return { color:value.slice(0, 7), shade:value.slice(7, 14), ink:value.slice(14, 21) };
+    }
     const rgb = new Float64Array(core.memory.buffer, pointer + outputOffset, 3);
     return [Math.round(rgb[0]), Math.round(rgb[1]), Math.round(rgb[2])];
   } catch { return null; }

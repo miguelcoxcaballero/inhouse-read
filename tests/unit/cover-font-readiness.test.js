@@ -1,7 +1,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({ready:false,prepare:vi.fn((core,raw,w,h)=>core?{gray:new Uint8Array(w*h),near:null,busy:false}:null)}));
 vi.mock('../../src/js/rust-core.js',()=>({loadedRustCore:()=>({available:true}),requireRustCore:async()=>({available:true})}));
-vi.mock('../../src/js/cover-color-wasm.js',()=>({rustDominantCoverRgb:()=>[90,65,48]}));
+vi.mock('../../src/js/cover-color-wasm.js',()=>({rustCoverColor:()=>({color:'#5a4130',shade:'#443125',ink:'#fffaf0'})}));
 vi.mock('../../src/js/font-glyph-wasm.js',()=>({rustPrepareCoverPixels:state.prepare,rustGlyphMask:()=>undefined}));
 const originalFonts=Object.getOwnPropertyDescriptor(document,'fonts');
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();if(originalFonts)Object.defineProperty(document,'fonts',originalFonts);else delete document.fonts;});

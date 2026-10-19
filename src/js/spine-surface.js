@@ -1,3 +1,4 @@
+import { createBindingRelief } from './binding-wasm.js'
 import { getRustCore } from './rust-core.js'
 import { rustBookWeavePixels, rustBookClothPlan } from './book-surface-wasm.js'
 import * as THREE from 'three'
@@ -154,7 +155,7 @@ export function spineSurface(book, style, physicalHeight, thickness, options) {
   const map = new THREE.CanvasTexture(raw.color); map.colorSpace = THREE.SRGBColorSpace
   const channels = new THREE.CanvasTexture(raw.packed)
   const pixels = raw.relief
-  const relief = pixels ? (u,v) => pixels[(Math.min(1023, Math.floor((1-v)*1024))*256 + Math.min(255, Math.floor(u*256)))*4+3]/255 : null
+  const relief = pixels ? createBindingRelief(getRustCore(), pixels) : null
   return { map, channels, relief, material:{
     map, roughness:1, metalness:1, roughnessMap:channels, metalnessMap:channels,
     bumpMap:raw.bump ? channels : null, bumpScale:raw.bump,

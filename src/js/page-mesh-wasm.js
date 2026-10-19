@@ -46,6 +46,35 @@ function withMesh(core, stages, params, counts, groups) {
 const STAGES = ['page_block_plan_a', 'page_block_plan_b', 'page_block_finish'];
 const LEAF_STAGES = ['leaf_stack_plan_a', 'leaf_stack_plan_b', 'leaf_stack_finish'];
 
+/** One bounded transfer for both endpapers; Three only installs the owned arrays. */
+export function rustBookPaperBuffers(core, pasteWidth, pasteHeight, pageWidth, pageHeight, inset, overview = false) {
+  if (!available(core, 'book_paper_planes')) return null;
+  const columns = overview ? 3 : 10, pasteVertices = (columns + 1) * 2;
+  const vertices = pasteVertices + 6, indexCount = columns * 6 + 12;
+  const offsets = {}, sizes = { positions:vertices * 3 * 4, normals:vertices * 3 * 4,
+    uvs:vertices * 2 * 4, colors:vertices * 3 * 4, indices:indexCount * 2 };
+  let size = 0;
+  for (const [name, bytes] of Object.entries(sizes)) { offsets[name] = size; size += align8(bytes); }
+  const length = size / 8;
+  let pointer;
+  try { pointer = core.alloc_f64(length); } catch { return null; }
+  if (!pointer) return null;
+  try {
+    const at = name => pointer + offsets[name];
+    if (!core.book_paper_planes(pasteWidth, pasteHeight, pageWidth, pageHeight, inset, overview ? 1 : 0,
+      at('positions'), at('normals'), at('uvs'), at('colors'), at('indices'))) return null;
+    const meshes = [{ groups:[] }, { groups:[] }];
+    for (const [name, itemSize] of [['positions', 3], ['normals', 3], ['uvs', 2], ['colors', 3], ['indices', 1]]) {
+      const Type = name === 'indices' ? Uint16Array : Float32Array;
+      const split = name === 'indices' ? columns * 6 : pasteVertices * itemSize;
+      const array = new Type(new Type(core.memory.buffer, at(name), sizes[name] / Type.BYTES_PER_ELEMENT));
+      meshes[0][name] = array.subarray(0, split); meshes[1][name] = array.subarray(split);
+    }
+    return { pastedown:meshes[0], paper:meshes[1] };
+  } catch { return null; }
+  finally { core.free_f64(pointer, length); }
+}
+
 export function rustPageBlockBuffers(core, width, height, thickness,
   { board = height * .007, inset = height * .009, detail = false } = {}) {
   if (!available(core, 'page_block_mesh') || !available(core, 'page_block_plan_a')) return null;

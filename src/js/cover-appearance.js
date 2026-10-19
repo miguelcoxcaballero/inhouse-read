@@ -1,5 +1,5 @@
 import { loadedRustCore, requireRustCore } from './rust-core.js';
-import { rustDominantCoverRgb } from './cover-color-wasm.js';
+import { rustCoverColor } from './cover-color-wasm.js';
 import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from './font-glyph-wasm.js';
 import { createRustFontScorer } from './font-score-wasm.js';
 export { scoreFontMask } from './font-score-core.js';
@@ -69,42 +69,12 @@ export async function readCoverAspectRatio(url) {
   }
 }
 
-function rgbHex(r, g, b) {
-  return `#${[r, g, b].map(value => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
-}
-
-function linearChannel(value) {
-  const channel = value / 255;
-  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-}
-
-function relativeLuminance(r, g, b) {
-  return 0.2126 * linearChannel(r) + 0.7152 * linearChannel(g) + 0.0722 * linearChannel(b);
-}
-
-function contrastInk(r, g, b) {
-  const luminance = relativeLuminance(r, g, b);
-  const white = 1.05 / (luminance + 0.05);
-  const dark = (luminance + 0.05) / (0.025 + 0.05);
-  return white >= dark ? '#fffaf0' : '#171512';
-}
-
-function darken(r, g, b, amount = 0.24) {
-  return rgbHex(r * (1 - amount), g * (1 - amount), b * (1 - amount));
-}
-
-function dominantRgb(data, width, height) {
-  const rgb = rustDominantCoverRgb(loadedRustCore(), data, width, height);
-  if (!rgb) throw new Error('Invalid cover pixels');
-  return rgb;
-}
-
 /** Pure pixel helper, exported so the colour and contrast rules stay testable. */
 export function coverColorFromPixels(data, width, height) {
   if (!data || !Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null;
-  const [r, g, b] = dominantRgb(data, width, height);
-  const color = rgbHex(r, g, b);
-  return { color, shade: darken(r, g, b), ink: contrastInk(r, g, b) };
+  const style = rustCoverColor(loadedRustCore(), data, width, height);
+  if (!style) throw new Error('Invalid cover pixels');
+  return style;
 }
 
 function titleLines(context, title, maxWidth) {

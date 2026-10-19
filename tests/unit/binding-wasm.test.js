@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { rustBindingBuffers } from '../../src/js/binding-wasm.js';
+import { createBindingRelief, rustBindingBuffers } from '../../src/js/binding-wasm.js';
 import { bindingGeometry } from '../../src/js/book-model.js';
 import { referenceBindingGeometry } from './helpers/reference-binding-geometry.js';
 
@@ -123,5 +123,57 @@ describe('compiled curved binding keeps the exact original surface', () => {
     expect(rustBindingBuffers({ ...core, alloc_f64:() => { throw new RangeError('WASM memory exhausted'); } },
       132, 200, 40, 96, () => { sampled = true; return 0; })).toBeNull();
     expect(sampled).toBe(false);
+  });
+});
+
+
+describe('native RGBA binding relief sampling', () => {
+  const width = 256, height = 1024;
+  const pixels = Uint8ClampedArray.from({ length:width * height * 4 }, (_, index) =>
+    index % 4 === 3 ? ((index >>> 2) * 73 + ((index >>> 10) * 29)) % 256 : 117);
+  // Frozen pre-migration canvas sampler, including top/bottom inversion and edge clamp.
+  const original = (u, v) => pixels[(Math.min(1023, Math.floor((1-v)*1024))*256 + Math.min(255, Math.floor(u*256)))*4+3]/255;
+  for (const [segments, rows] of [[1,1], [16,96], [32,96], [96,384], [255,255]]) {
+    it(`preserves full geometry bytes at ${segments}/${rows}`, () => {
+      const sample = createBindingRelief(core, pixels);
+      const reference = referenceBindingGeometry(132, 200, 40, segments, original, rows);
+      try { compare(rustBindingBuffers(core, 132, 200, 40, segments, sample, rows), reference); }
+      finally { reference.dispose(); }
+    });
+  }
+  it('preserves scalar samples at every raster edge and adjacent float boundary', () => {
+    const sample = createBindingRelief(core, pixels);
+    const coordinates = [0, Number.EPSILON, 1/1024 - Number.EPSILON, 1/256, .5, 1-Number.EPSILON, 1];
+    for (const u of coordinates) for (const v of coordinates) expect(sample(u,v)).toBe(original(u,v));
+  });
+  it('samples in one kernel, frees its arena and survives allocation and kernel memory growth', () => {
+    const allocations = [], releases = []; let calls = 0;
+    const tracked = { ...core,
+      alloc_f64(length) { const pointer = core.alloc_f64(length); allocations.push([pointer,length]); core.memory.grow(1); return pointer; },
+      binding_sample_relief(...args) { calls++; core.memory.grow(1); return core.binding_sample_relief(...args); },
+      free_f64(pointer,length) { releases.push([pointer,length]); core.free_f64(pointer,length); },
+    };
+    const buffers = rustBindingBuffers(tracked, 132, 200, 40, 96, createBindingRelief(core,pixels), 384);
+    const reference = referenceBindingGeometry(132, 200, 40, 96, original, 384);
+    try {
+      compare(buffers,reference); const snapshot = Buffer.from(bytes(buffers.positions)); core.memory.grow(1);
+      expect(bytes(buffers.positions)).toEqual(snapshot); expect(calls).toBe(1); expect(releases).toEqual(allocations);
+      expect(buffers.positions.buffer).not.toBe(core.memory.buffer);
+    } finally { reference.dispose(); }
+  });
+  it('releases the arena if the raster kernel rejects its input', () => {
+    const allocations = [], releases = [];
+    const tracked = { ...core,
+      alloc_f64(length) { const pointer=core.alloc_f64(length); allocations.push([pointer,length]); return pointer; },
+      free_f64(pointer,length) { releases.push([pointer,length]); core.free_f64(pointer,length); },
+      binding_sample_relief() { return 0; },
+    };
+    expect(() => rustBindingBuffers(tracked,132,200,40,96,createBindingRelief(core,pixels),384)).toThrow('Native binding relief rejected');
+    expect(releases).toEqual(allocations);
+  });
+  it('rejects malformed raster inputs before allocation', () => {
+    for (const args of [[[],256,1024],[pixels,0,1024],[pixels,256,1023],[pixels,1.5,1024]])
+      expect(() => createBindingRelief(core,...args)).toThrow(TypeError);
+    expect(core.binding_sample_relief(0,0,1024,96,384,0)).toBe(0);
   });
 });

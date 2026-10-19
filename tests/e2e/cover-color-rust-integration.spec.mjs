@@ -24,11 +24,9 @@ const sample = async kind => {
 };
 window.warmCoverCore = async()=>{
   const core=await loadRustCore();
-  if(!core?.cover_dominant_rgb)throw new Error('Real cover-color WASM kernel unavailable');
+  if(!core?.cover_dominant_style)throw new Error('Real cover-color WASM kernel unavailable');
   // Import caching is real production module loading, not a substituted adapter.
-  // The analyzer adopts all three numeric helpers together. Wait for that
-  // same dependency set before asserting a ready-kernel call; a slow glyph
-  // module otherwise keeps the correct compatibility result in this case.
+  // Numeric helpers are statically imported; extraction awaits the native core.
   await Promise.all([
     import('/inhouse-read/src/js/cover-color-wasm.js'),
     import('/inhouse-read/src/js/rust-core.js'),
@@ -89,12 +87,12 @@ test.beforeEach(async({page})=>{
     window.__realCoverKernelCalls=[];window.__realCoverKernelInstances=0;
     const observe=result=>{
       const instance=result.instance||result,actual=instance.exports;
-      if(typeof actual?.cover_dominant_rgb!=='function')return result;
+      if(typeof actual?.cover_dominant_style!=='function')return result;
       window.__realCoverKernelInstances++;
-      const exports={...actual,cover_dominant_rgb(...args){
-        const value=actual.cover_dominant_rgb(...args);
-        const means=Array.from(new Float64Array(actual.memory.buffer,args[2],3));
-        window.__realCoverKernelCalls.push({sampleCount:args[1],means});
+      const exports={...actual,cover_dominant_style(...args){
+        const value=actual.cover_dominant_style(...args);
+        const style=String.fromCharCode(...new Uint8Array(actual.memory.buffer,args[2],21));
+        window.__realCoverKernelCalls.push({sampleCount:args[1],style});
         return value;
       }};
       const observed=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
@@ -114,7 +112,7 @@ function assertReady(result){
     expect(record.first).toEqual(record.expected);expect(record.actual).toEqual(record.expected);
     expect(record.pure).toEqual(record.expectedPure);expect(record.pureCalls).toBe(1);
     expect(record.calls).toHaveLength(1);expect(record.calls[0].sampleCount).toBe(39*58);
-    expect(record.calls[0].means.every(Number.isFinite)).toBe(true);
+    expect(record.calls[0].style).toMatch(/^(#[0-9a-f]{6}){3}$/);
   }
 }
 test('real URL cover analyzer invokes the actual Rust kernel and preserves decoded-image colors',async({page},info)=>{
@@ -125,32 +123,36 @@ test('real URL cover analyzer invokes the actual Rust kernel and preserves decod
   await info.attach('production-cover-rust-proof.json',{contentType:'application/json',body:Buffer.from(JSON.stringify(result,null,2))});
   assertReady(result);expect(errors).toEqual([]);
 });
-test('a pending glyph helper preserves cover extraction and ready calls adopt every numeric helper',async({page},info)=>{
-  let release,started,prepared;
+test('a delayed glyph module keeps the page responsive and resumes native extraction',async({page},info)=>{
+  let release,started;
   const held=new Promise(resolve=>{release=resolve}),requested=new Promise(resolve=>{started=resolve});
   await page.route('**/src/js/font-glyph-wasm.js*',async route=>{started();await held;await route.continue()});
   try{
-    await page.goto(url);await page.waitForFunction(()=>window.coverIntegrationReady);
-    prepared=page.evaluate(()=>window.warmCoverCore());
-    await requested;
-    const pending=await page.evaluate(()=>window.exerciseColdCover());
-    expect(pending.actual).toEqual(pending.expected);expect(pending.coreAvailable).toBe(true);expect(pending.calls).toBe(0);
-    release();await prepared;
+    await page.goto(url,{waitUntil:'commit'});await requested;
+    const pending=await page.evaluate(async()=>{
+      await new Promise(requestAnimationFrame);
+      return {ready:!!window.coverIntegrationReady,calls:window.__realCoverKernelCalls.length};
+    });
+    expect(pending).toEqual({ready:false,calls:0});
+    release();await page.waitForFunction(()=>window.coverIntegrationReady);
+    await page.evaluate(()=>window.warmCoverCore());
     const ready=await page.evaluate(()=>window.exerciseReadyCover());
     await info.attach('delayed-cover-glyph-proof.json',{contentType:'application/json',body:Buffer.from(JSON.stringify({pending,ready},null,2))});
     assertReady(ready);
-  }finally{release();await prepared?.catch(()=>{});}
+  }finally{release();}
 });
-test('pending WASM download never blocks cover extraction and later ready calls use the real kernel',async({page},info)=>{
-  let release, started;
-  const held=new Promise(resolve=>{release=resolve;}),requested=new Promise(resolve=>{started=resolve;});
-  await page.route('**/src/wasm/inhouse_read_core.wasm',async route=>{started();await held;await route.continue();});
+test('a delayed WASM download keeps the page responsive and resumes exact native extraction',async({page},info)=>{
+  let release,started;
+  const held=new Promise(resolve=>{release=resolve}),requested=new Promise(resolve=>{started=resolve});
+  await page.route('**/src/wasm/inhouse_read_core.wasm',async route=>{started();await held;await route.continue()});
   try{
     await page.goto(url);await page.waitForFunction(()=>window.coverIntegrationReady);
-    const cold=await page.evaluate(()=>window.exerciseColdCover());
+    await page.evaluate(()=>{window.coldFinished=false;window.coldPromise=window.exerciseColdCover().then(result=>{window.coldFinished=true;return result;});});
     await requested;
-    expect(cold.actual).toEqual(cold.expected);expect(cold.coreAvailable).toBe(false);expect(cold.calls).toBe(0);
-    release();await page.evaluate(()=>window.warmCoverCore());
+    const pending=await page.evaluate(async()=>{await new Promise(requestAnimationFrame);return {finished:window.coldFinished,calls:window.__realCoverKernelCalls.length};});
+    expect(pending).toEqual({finished:false,calls:0});
+    release();const cold=await page.evaluate(()=>window.coldPromise);
+    expect(cold.actual).toEqual(cold.expected);expect(cold.coreAvailable).toBe(true);expect(cold.calls).toBe(1);
     const ready=await page.evaluate(()=>window.exerciseReadyCover());
     await info.attach('nonblocking-cover-rust-proof.json',{contentType:'application/json',body:Buffer.from(JSON.stringify({cold,ready},null,2))});
     assertReady(ready);

@@ -172,6 +172,47 @@ pub unsafe extern "C" fn leaf_stack_mesh(
 fn positive(value: f64) -> bool { value.is_finite() && value > 0.0 }
 fn nonnegative(value: f64) -> bool { value.is_finite() && value >= 0.0 }
 
+/// Both visible endpaper planes in one batch. Positions are rounded to f32 before
+/// joint shading, exactly as Three.PlaneGeometry's BufferAttribute was read back.
+/// # Safety
+/// Host allocates 2*(columns+1)+6 vertices and columns*6+12 indices, where
+/// columns is 3 for overview and 10 otherwise. The second plane's indices are local.
+#[no_mangle]
+pub unsafe extern "C" fn book_paper_planes(
+    paste_width: f64, paste_height: f64, page_width: f64, page_height: f64,
+    inset: f64, overview: u32, positions: *mut f32, normals: *mut f32,
+    uvs: *mut f32, colors: *mut f32, indices: *mut u16,
+) -> u32 {
+    if ![paste_width, paste_height, page_width, page_height].iter().all(|&v| positive(v))
+        || !nonnegative(inset) { return 0; }
+    let columns = if overview != 0 { 3 } else { 10 };
+    let paste_vertices = (columns + 1) * 2;
+    let mut mesh = Mesh::new(paste_vertices + 6, columns * 6 + 12,
+        positions, normals, uvs, colors, indices);
+    for (kind, width, height, cols) in [(0, paste_width, paste_height, columns),
+        (1, page_width + inset, page_height, 2)] {
+        let segment_width = width / cols as f64;
+        for iy in 0..2 { for ix in 0..=cols {
+            let mut x = (ix as f64 * segment_width - width / 2.0) as f32;
+            let shade = if kind == 0 {
+                let from_joint = (paste_width / 2.0 - x as f64) / paste_width;
+                let joint = (1.0 - from_joint / 0.14).max(0.0);
+                1.0 - 0.3 * (joint * joint) - 0.06 * (from_joint - 0.88).max(0.0) / 0.12
+            } else {
+                if (x as f64).abs() < 1e-6 { x = (-page_width / 2.0 + inset / 2.0) as f32; }
+                if (x as f64) < -page_width / 2.0 { 0.74 } else { 1.0 }
+            };
+            mesh.vertex(x as f64, -(iy as f64 * height - height / 2.0), 0.0,
+                [0.0, 0.0, 1.0], ix as f64 / cols as f64, 1.0 - iy as f64, shade);
+        }}
+        for ix in 0..cols {
+            let a = ix as u16; let b = (ix + cols + 1) as u16;
+            mesh.triangles([a, b, a + 1, b, b + 1, a + 1]);
+        }
+    }
+    1
+}
+
 /// The sizes a page block is built from, or None when they cannot make one.
 struct Block { half: f64, bend: f64, columns: usize, rows: usize }
 impl Block {

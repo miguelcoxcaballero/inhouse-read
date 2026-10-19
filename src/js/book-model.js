@@ -9,7 +9,7 @@ import { needRustShelf } from './rust-shelf.js';
 import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
 import { rustBookmarkBuffers } from './bookmark-wasm.js';
 import { rustBindingBuffers } from './binding-wasm.js';
-import { rustPageBlockBuffers, rustLeafStackBuffers } from './page-mesh-wasm.js';
+import { rustPageBlockBuffers, rustLeafStackBuffers, rustBookPaperBuffers } from './page-mesh-wasm.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
@@ -588,15 +588,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // into the joint. Built here, drawn only while the board is open.
   const turnIn = height * .028, joint = height * .004;
   const pasteWidth = width - turnIn - joint, pasteHeight = height - turnIn * 2;
-  const pasteGeometry = new THREE.PlaneGeometry(pasteWidth, pasteHeight, overview ? 3 : 10, 1);
-  const pastePositions = pasteGeometry.getAttribute('position'), pasteShade = [];
-  for (let i = 0; i < pastePositions.count; i++) {
-    // Turned to face the pages, the plane's +x edge lies in the joint.
-    const fromJoint = (pasteWidth / 2 - pastePositions.getX(i)) / pasteWidth;
-    const shade = 1 - .3 * Math.max(0, 1 - fromJoint / .14) ** 2 - .06 * Math.max(0, fromJoint - .88) / .12;
-    pasteShade.push(shade, shade, shade);
-  }
-  pasteGeometry.setAttribute('color', new THREE.Float32BufferAttribute(pasteShade, 3));
+  const paperBuffers = rustBookPaperBuffers(rustCore(), pasteWidth, pasteHeight,
+    width - height * .009 * 2, height - height * .009 * 2, height * .009, overview);
+  if (!paperBuffers) throw new RangeError('Medidas de guardas no válidas.');
+  const pasteGeometry = paperMeshGeometry(paperBuffers.pastedown);
   const endpaper = new THREE.MeshStandardMaterial({ color:'#ffffff', roughness:1, vertexColors:true,
     map:overview ? null : sharedTexture('endpaper', endpaperTexture) });
   endpaper.map?.repeat.set(3 * pasteWidth / pasteHeight, 3);
@@ -631,14 +626,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const pageFront = thickness / 2 - board * 1.2 + board * .03;
   // The paper runs on into the joint, where the leaf bends down into shade,
   // so no strip of bare text block shows between the two pages.
-  const paperGeometry = new THREE.PlaneGeometry(pageWidth + inset, pageHeight, 2, 1);
-  const paperCorners = paperGeometry.getAttribute('position'), paperShade = [];
-  for (let i = 0; i < paperCorners.count; i++) {
-    if (Math.abs(paperCorners.getX(i)) < 1e-6) paperCorners.setX(i, -pageWidth / 2 + inset / 2);
-    const shade = paperCorners.getX(i) < -pageWidth / 2 ? .74 : 1;
-    paperShade.push(shade, shade, shade);
-  }
-  paperGeometry.setAttribute('color', new THREE.Float32BufferAttribute(paperShade, 3));
+  const paperGeometry = paperMeshGeometry(paperBuffers.paper);
   const pagePaper = new THREE.Mesh(paperGeometry,
     new THREE.MeshBasicMaterial({ color:'#ffffff', toneMapped:false, vertexColors:true }));
   pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
