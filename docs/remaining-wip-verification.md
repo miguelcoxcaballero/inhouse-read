@@ -1,3 +1,17 @@
+# 1.7.313 — luz de la estantería, oclusores, reflejos y BAGGEBO en Rust (unidad shelf-tail, bloque 3)
+
+Changelog: «Montaje de luz, oclusores y BAGGEBO en Rust».
+
+Qué se movió. `shelf_light_rig.rs`: `shelf_light_rig` (mapa 1024, sesgo -0,0004, sesgo normal 0,45, radio 9, 12/6 muestras u 8/4 en pantalla compacta, intensidad 0,84; la pantalla compacta se decide igual, `Math.min(innerWidth || 1024, innerHeight || 1024) < 600`), `shelf_firm_bleed` (sustitución del suelo 0,3 por 0,62 solo si existe), `shelf_panel_taps`/`shelf_panel_shadow` (texto GLSL completo con `Math.sqrt/cos/sin` y `toFixed` del navegador) y `occluder_records` (roles de `shelf-<n>-board`, `top-cap`, `shelf-<n>-mesh`, `top-mesh`, montantes, y cajas, en el orden de lectura original). `book_reflection.rs`: `reflection_environment`, `reflection_slope`, `reflection_uv_scale` (con `Number(value?.[0] ?? value?.x)`). `shelf_lib.rs`: `baggebo_layout` (ancho válido o 600, escala, dimensiones físicas y baldas) y `baggebo_materials`. `geo-packet.js` gana `makeMaterials`, que también usan la papelera y el folleto.
+
+Verificado. 140/140 pruebas específicas en 17 archivos, entre ellas la nueva `shelf-rig-wasm` (4) y las existentes `baggebo-geometry-wasm` (modelo original a cada ancho, materiales y grano), `baggebo-model`, `baggebo-scene`, `shelf-lighting-wasm` (300 secuencias de ajuste), `shelf-lighting`, `shelf-light-occlusion(-wasm)`, `book-reflection-surface`, `book-reflection-profile-wasm`, `shelf-occlusion-wasm`, `occlusion-table-wasm`, y las del bloque 1. Unidad en 4 bloques: 2171 + 1566 + 1749 + 2107 = 7593, un fallo intermitente (`live-room-transport`). Visual contra `main` 1.7.309: 24 estados, 16 idénticos, máx. 1/255. E2E (`shelf-types`, `lamp-switches`, `smoke`): 15/17; `lamp-switches` 136 y `smoke` 304 fallan también en `main` 1.7.309 a solas.
+
+Descartado. Un traslado completo de `shelf-placement-wasm.js` (configuración, puerta de descriptores, normalización, superficies, ensamblado de baldas y sesiones de arrastre) a Rust pasaba las 85 pruebas de colocación, pero medía 1,8–2,1 ms frente a 0,07–0,13 ms (40 objetos) y 11–13 ms frente a 0,2–0,7 ms (300 objetos) por diseño o movimiento: se retiró sin publicar. Igualmente la lectura de entradas de lámparas (ver 1.7.312).
+
+No verificado. Sin teléfono ni GPU real; un estado visual muestra 2 programas de escena menos (informativo, sin diferencia de píxeles). Build: Shelf 4381454 B, SHA256 cba1f877bfaf343aa30f4bb839aafd985c39d942cdae67f1183ead81eba3624e (sin `lamp_entries`). La captura visual y los E2E de este bloque se hicieron con el build anterior, que aún leía las entradas de lámparas en Rust; la versión final vuelve al `shelf-lamp-lighting.js` de 1.7.310 (ya capturado en el bloque 1) y vuelve a pasar sus pruebas unitarias de luces (60/60), pero no se recapturó. Inventario 42886 / 19783 = 68,43 %.
+
+---
+
 # 1.7.312 — estudios del catálogo en Rust (unidad shelf-tail, bloque 2)
 
 Changelog: «Estudios del catálogo en Rust».
