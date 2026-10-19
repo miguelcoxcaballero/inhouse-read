@@ -1,4 +1,5 @@
 import {getRustUI} from './rust-ui.js'
+import {getRustShelf} from './rust-shelf.js'
 import {visibleBounds as legacyBounds} from './book-projection-legacy.js'
 export const createBookProjectionPacket=()=>({data:new Float64Array(22*32)})
 export function nativeBounds(ui,model,camera,width,height,packet){
@@ -21,5 +22,6 @@ export function nativeBounds(ui,model,camera,width,height,packet){
 }
 
 export function projectVisibleBookBounds(model,camera,width,height,point,packet){
- return nativeBounds(getRustUI(),model,camera,width,height,packet)||legacyBounds(model,camera,width,height,point)
+ const ui=getRustUI(),runtime=ui?.book_projection_bounds?ui:getRustShelf()
+ return nativeBounds(runtime,model,camera,width,height,packet)||legacyBounds(model,camera,width,height,point)
 }

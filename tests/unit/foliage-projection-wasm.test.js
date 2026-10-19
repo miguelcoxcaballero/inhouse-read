@@ -6,6 +6,9 @@ import {projectPlantFoliage} from '../../src/js/foliage-projection.js'
 import {projectPlantFoliage as legacy} from '../../src/js/foliage-projection-legacy.js'
 import {createShelfPlant} from '../../src/js/shelf-plants.js'
 const runtime=vi.hoisted(()=>({ui:null,calls:0}));vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}));
+// These cases isolate the historical UI/cold route. Shelf-only home readiness
+// and the shared kernels are exercised separately in projection-runtime.test.js.
+vi.mock('../../src/js/rust-shelf.js',async importOriginal=>({...await importOriginal(),getRustShelf:()=>null}));
 let wasm;const native={...ui,foliage_path:(...args)=>{runtime.calls++;return ui.foliage_path(...args)}};
 beforeAll(()=>{wasm=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})});beforeEach(()=>{runtime.ui=native;runtime.calls=0});
 describe.each(['legacy','rust','late'])('native foliage pointer surface (%s)',mode=>{

@@ -3,7 +3,12 @@ import * as projectionUI from '../../src/wasm/ui/inhouse_read_ui.js';
 import { afterEach, beforeEach, describe, expect, it, vi, beforeAll, afterAll } from 'vitest';
 
 const projectionRuntime=vi.hoisted(()=>({ui:null}));let projections=0;
-vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
+// Keep these historical legacy/UI comparisons independent of the home Shelf route.
+vi.mock('../../src/js/rust-shelf.js', async () => {
+  const host=await (await import('./helpers/rust-shelf-real.js')).rustShelfMock();
+  const shelf={...host.getRustShelf(),book_projection_bounds:undefined};
+  return {...host,getRustShelf:()=>shelf};
+})
 vi.mock('../../src/js/rust-core.js', async () => (await import('./helpers/rust-core-real.js')).rustCoreMock())
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>projectionRuntime.ui}));
 const observedProjectionUI={...projectionUI,book_projection_bounds:(...args)=>{projections++;return projectionUI.book_projection_bounds(...args)}};

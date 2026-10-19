@@ -55,6 +55,10 @@ mod cover_relief;
 mod cloud_host;
 mod bookshelf;
 mod book_paint;
+// Home projections must use the already-ready shelf runtime; UI is deferred until
+// a reader/catalog is opened. Share the kernels rather than wake that module.
+mod book_projection;
+mod foliage;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
