@@ -65,7 +65,7 @@
   <!-- The cores start downloading/compiling while the app modules load.
        The shelf tables (catalogue-core.js, decor-catalogue.js) wait for them as
        the modules evaluate; the loaders adopt each promise once. -->
-  <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_core-Brd316TK.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_core-g57GSvqw.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -82,7 +82,7 @@
   </script>
   <!-- The live shelf's pointer controllers (swipe, pinch zoom): a small module compiled with the page
        head. The first shelf render awaits it; rust-shelf.js adopts the compiled module once. -->
-  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-C6PEbqe-.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-CB0KIJCY.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -97,7 +97,7 @@
       }
     } catch (error) { /* unsupported host: the loader fetches the module itself */ }
   </script>
-  <link id="ihr-rust-decor" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_decor-DQxwAOhl.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-decor" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_decor-7OfrRt_z.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -139,13 +139,13 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-D7_XQI9f.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-Cr0KrJGy.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-nNprJxya.js">
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-qvqtl53n.js">
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-DPXmiIQC.js">
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-C5vLd7pW.js">
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-BbxDFUTm.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-JwWmTiyy.css">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-DDUZycLD.css">
-  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-TheO56k0.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-BKoUMDUk.js"></script>
 </head>
 <body>
   <script>
