@@ -9,7 +9,6 @@ mod shelf_trash;
 mod shelf_models;
 mod shelf_catalog;
 mod catalog_studio;
-mod lamp_entries;
 mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;
