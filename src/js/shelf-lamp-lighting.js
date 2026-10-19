@@ -5,7 +5,6 @@ import { needRustShelf } from './rust-shelf.js';
 // Every lamp a library holds gets its own light up to this many: a lamp
 // that glows lights the room, whatever the camera or the other lamps do.
 export const MAX_SHELF_LAMP_LIGHTS = 8;
-const MAX_LAMP_SHADOWS = 2;
 // Rust owns fixture quotas, assignment/rank caches, light math, colour caches and shadow
 // invalidation/transport state (lamp_light.rs). The host owns Three lights/scene graph,
 // marshals emitter/model data and applies the returned light values and shadow commands.
@@ -26,28 +25,15 @@ export function ensureAreaLights() {
 export function savedLampsNeedAreaLights() {
   try { return /"lampId"\s*:\s*"tarnaby"/.test(localStorage.getItem('inhouse-read-shelf-lamps') || ''); } catch { return false; }
 }
-// The shelf lights filament lamps with a point light (see lampKind): only the
+// The shelf lights filament lamps with a point light (lamp_entries.rs): only the
 // catalogue's studio needs the area-light tables, and loads them itself.
 
-// Reused every frame; emptied before returning so no entry is retained.
-const candidates = [];
-const FILAMENT_KINDS = [];
-const filamentKind = count => FILAMENT_KINDS[count] ||= `filaments:${count}`;
-// Which lights a lamp needs. A culled model is known from the catalogue, so
-// scrolling a lamp out of the pool's reach never changes the set of lights.
-// On the shelf a filament lamp is one point light of the same flux: its four
-// area emitters (an LTC integral each, per pixel) cost more than every other
-// light of a room together, and a phone could not draw the room at its
-// refresh rate. The catalogue's single studio lamp keeps the four strips.
-function lampKind(entry, filamentAreas = false) {
-  const emitter = entry.model?.userData.lightEmitter;
-  if (emitter) return emitter.filaments?.length ? filamentAreas ? filamentKind(emitter.filaments.length) : 'point' :
-    Array.isArray(emitter.direction) ? 'cone' : 'point';
-  const light = getCatalogLamp(entry.lampId)?.light ?? null;
-  return !filamentAreas && light?.startsWith('filaments:') ? 'point' : light;
-}
-const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
-  entry.model.userData.lightEmitter && !entry.node?.classList.contains('is-away') && !entry.trashDrop;
+// Which lights a lamp needs and which entries are candidates are read in Rust (lamp_entries.rs): a culled
+// model is known from the catalogue, so scrolling a lamp out of the pool's reach never changes the set of
+// lights. On the shelf a filament lamp is one point light of the same flux: its four area emitters (an LTC
+// integral each, per pixel) cost more than every other light of a room together, and a phone could not draw
+// the room at its refresh rate. The catalogue's single studio lamp keeps the four strips.
+const catalogLight = getCatalogLamp;
 
 /** Warm fixtures light the actual shelf materials. A small shared budget avoids
  * an ever-growing shader when a library has many decorated rows. Circular
@@ -70,17 +56,13 @@ const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
  * with a stable key resolving equal scores.
  */
 export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false } = {}) {
-  const kindOf = entry => lampKind(entry, filamentAreas);
   const slots = [];
-  let pool = null;
+  let pool = null, entriesState = null;
   const poolState = () => pool ||= new (needRustShelf().LampPoolState)();
-  const kindCode = kind => kind === 'cone' ? 0 : kind === 'point' ? 1 : Number(kind.slice(10)) + 1;
-  const kindName = code => code === 0 ? 'cone' : code === 1 ? 'point' : filamentKind(code - 1);
-  // Per-instance protocol state: the packed candidates and slots, the quotas, and what makes the ids of the keys.
-  let kindsIn = new Float64Array(0), poolSlots = new Float64Array(0);
+  const entryState = () => entriesState ||= new (needRustShelf().LampEntries)(filamentAreas, catalogLight);
+  // Per-instance protocol state: the packed candidates and slots and the plan.
+  let poolSlots = new Float64Array(0), candidates = [];
   let candidateIn = new Float64Array(0), slotIn = new Float64Array(0), planOut = new Float64Array(2);
-  const keyIds = new Map(), identities = new Map();
-  let nextKeyId = 0;
   // Rust invalidates ranks; locale-specific String collation is a browser primitive.
   let disposed = false, shadowRefresh = false, prepared = false;
   function removeLights(slot) {
@@ -91,14 +73,14 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     }
   }
   function createSlot(kind, index) {
-    const filaments = kind.startsWith('filaments:') ? Number(kind.slice(10)) : 0, spotlight = kind === 'cone';
+    const [filaments, cone, shadow, mapSize, radius, blurSamples, bias, intensity] = needRustShelf().lamp_slot_plan(kind, index), spotlight = cone === 1;
     // Not loaded yet (a lamp added in a way the saved list did not announce):
     // the slot is created on the update after the tables arrive.
     if (filaments && !areaLights) {
       ensureAreaLights().then(() => { if (!disposed) onAreaLightsReady?.(); }).catch(error => console.warn('No se pudo cargar la luz de filamentos:', error));
       return false;
     }
-    const slot = { kind, filaments, spotlight, shadow:spotlight && index < MAX_LAMP_SHADOWS, key:null,
+    const slot = { kind, code:needRustShelf().lamp_kind_code(kind), filaments, spotlight, shadow:shadow === 1, key:null,
       power:0, lit:false, state:new (needRustShelf().LampLightState)(filaments) };
     if (filaments) {
       slot.lights = Array.from({ length:filaments }, (_, strip) => {
@@ -111,9 +93,9 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       light.intensity = 0;
       if (spotlight) {
         light.castShadow = slot.shadow;
-        light.shadow.mapSize.set(512, 512); light.shadow.autoUpdate = false;
-        light.shadow.radius = 2; light.shadow.blurSamples = 4;
-        light.shadow.bias = -.0002; light.shadow.intensity = .8;
+        light.shadow.mapSize.set(mapSize, mapSize); light.shadow.autoUpdate = false;
+        light.shadow.radius = radius; light.shadow.blurSamples = blurSamples;
+        light.shadow.bias = bias; light.shadow.intensity = intensity;
         scene.add(light.target);
       }
       slot.lights = [light];
@@ -133,17 +115,13 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   // Every kind of lamp the library owns gets one slot before any gets a
   // second, in a fixed order: the pool never depends on the entries' order.
   function reconcile(entries) {
-    if (kindsIn.length !== entries.length) kindsIn = new Float64Array(entries.length);
+    const kindsIn = needRustShelf().lamp_entry_kinds(entries, filamentAreas, catalogLight);
     if (poolSlots.length !== slots.length) poolSlots = new Float64Array(slots.length);
-    for (let index = 0; index < entries.length; index++) {
-      const entry = entries[index], kind = entry.kind === 'lamp' ? kindOf(entry) : null;
-      kindsIn[index] = kind ? kindCode(kind) : -1;
-    }
-    for (let index = 0; index < slots.length; index++) poolSlots[index] = kindCode(slots[index].kind);
+    for (let index = 0; index < slots.length; index++) poolSlots[index] = slots[index].code;
     const poolOut = poolState().reconcile(kindsIn, poolSlots, Number(maxLights));
     let changed = false;
     for (let at = 0; at < poolOut.length; at += 3) {
-      const kind = kindName(poolOut[at]), want = poolOut[at + 1];
+      const kind = needRustShelf().lamp_kind_name(poolOut[at]), want = poolOut[at + 1];
       let have = poolOut[at + 2];
       for (; have < want; have++) { if (createSlot(kind, have) === false) break; changed = true; }
       for (; have > want; have--) {
@@ -153,7 +131,6 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     }
     return changed;
   }
-  const idOf = key => { let id = keyIds.get(key); if (id === undefined) keyIds.set(key, id = nextKeyId++); return id; };
   function rankKeys() {
     const count = candidates.length, order = Array.from({ length:count }, (_, index) => index);
     order.sort((a, b) => String(candidates[a].key).localeCompare(String(candidates[b].key)));
@@ -167,18 +144,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     if (filamentIn.length < 24 + 10 * count) filamentIn = new Float64Array(24 + 10 * count);
     if (filamentOut.length < 3 + 10 * count) filamentOut = new Float64Array(3 + 10 * count);
     filamentIn.set(model.matrixWorld.elements, 0);
-    filamentIn[16] = count; filamentIn[17] = Math.floor(emitter.color ?? 0xffd19a) | 0;
-    const tint = emitter.tint;
-    filamentIn[18] = tint ? 1 : 0;
-    if (tint) { filamentIn[19] = tint[0]; filamentIn[20] = tint[1]; filamentIn[21] = tint[2]; }
-    filamentIn[22] = Number(emitter.intensity); filamentIn[23] = slot.power;
-    for (let index = 0; index < count; index++) {
-      const strip = emitter.filaments[index], at = 24 + 10 * index;
-      filamentIn[at] = strip.start[0]; filamentIn[at + 1] = strip.start[1]; filamentIn[at + 2] = strip.start[2];
-      filamentIn[at + 3] = strip.end[0]; filamentIn[at + 4] = strip.end[1]; filamentIn[at + 5] = strip.end[2];
-      filamentIn[at + 6] = strip.normal[0]; filamentIn[at + 7] = strip.normal[1]; filamentIn[at + 8] = strip.normal[2];
-      filamentIn[at + 9] = strip.width;
-    }
+    needRustShelf().lamp_filament_input(emitter, count, slot.power, filamentIn);
     const flags = slot.state.filaments(slot.lit, wasLit, filamentIn, filamentOut);
     if (!(flags & 8)) throw refused('filamentos');
     const out = filamentOut;
@@ -205,21 +171,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       for (let index = 0; index < 16; index++) lightIn[17 + index] = rootOut[1 + index];
       lightIn.set(rootMatrix.elements, 33);
     }
-    lightIn[82] = emitter.position[0]; lightIn[83] = emitter.position[1]; lightIn[84] = emitter.position[2];
-    if (spotlight) { lightIn[85] = emitter.direction[0]; lightIn[86] = emitter.direction[1]; lightIn[87] = emitter.direction[2]; }
-    lightIn[88] = Math.floor(emitter.color ?? 0xffd19a) | 0;
-    const tint = emitter.tint;
-    lightIn[89] = tint ? 1 : 0;
-    if (tint) { lightIn[90] = tint[0]; lightIn[91] = tint[1]; lightIn[92] = tint[2]; }
-    lightIn[93] = Number(emitter.intensity); lightIn[94] = slot.power; lightIn[95] = Number(emitter.distance);
-    lightIn[96] = Number(entry.width); lightIn[97] = Number(emitter.decay);
-    lightIn[98] = emitter.angle == null ? 0 : 1; lightIn[99] = emitter.angle;
-    lightIn[100] = emitter.penumbra == null ? 0 : 1; lightIn[101] = emitter.penumbra;
-    // Raw non-number emitter values compared unequal to Float64 stamps even
-    // when their numeric conversion was unchanged (including undefined).
-    lightIn[102] = typeof emitter.distance !== 'number' ||
-      typeof emitter.position[0] !== 'number' || typeof emitter.position[1] !== 'number' || typeof emitter.position[2] !== 'number' ||
-      (spotlight && (typeof emitter.direction[0] !== 'number' || typeof emitter.direction[1] !== 'number' || typeof emitter.direction[2] !== 'number')) ? 1 : 0;
+    needRustShelf().lamp_light_input(emitter, entry, slot.power, spotlight, lightIn);
     const flags = slot.state.light(spotlight, shadowed, slot.lit, wasLit, shadowDirty, lightIn, lightOut);
     if (!(flags & 8)) throw refused('luz');
     const out = lightOut;
@@ -262,36 +214,16 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       shadowRefresh = false;
       let changed = reconcile(entries) || prepared;
       prepared = false;
-      candidates.length = 0;
-      for (const entry of entries) if (isCandidate(entry)) candidates.push(entry);
       // The lit lamps are the powered ones nearest the view (or picked up),
       // as many of each kind as it has slots. An unpowered lamp never takes
       // a slot, but keeps the one it already holds until another needs it.
+      candidates = entryState().candidates(entries);
       const count = candidates.length, total = slots.length;
-      if (keyIds.size > Math.max(32, 2 * (count + total))) {
-        const liveKeys = new Set(candidates.map(entry => entry.key));
-        for (const slot of slots) liveKeys.add(slot.key);
-        for (const key of keyIds.keys()) if (!liveKeys.has(key)) keyIds.delete(key);
-      }
       if (candidateIn.length !== 7 * count) candidateIn = new Float64Array(7 * count);
       if (slotIn.length !== 3 * total) slotIn = new Float64Array(3 * total);
       if (planOut.length < 2 + 2 * count + 3 * total) planOut = new Float64Array(2 + 2 * count + 3 * total);
-      identities.clear();
-      for (let index = 0; index < total; index++) {
-        const slot = slots[index];
-        slotIn[3 * index] = kindCode(slot.kind); slotIn[3 * index + 1] = idOf(slot.key); slotIn[3 * index + 2] = slot.lit ? 1 : 0;
-      }
-      for (let index = 0; index < count; index++) {
-        const entry = candidates[index], at = 7 * index;
-        candidateIn[at] = kindOf(entry) ? kindCode(kindOf(entry)) : -1;
-        candidateIn[at + 1] = idOf(entry.key);
-        candidateIn[at + 2] = entry.node?.classList.contains('is-dragging') ? 1 : 0;
-        candidateIn[at + 3] = Number(entry.model.userData.lightEmitter.power ?? 1);
-        candidateIn[at + 4] = (entry.rect?.top + entry.rect?.bottom) / 2;
-        let first = identities.get(entry);
-        if (first === undefined) identities.set(entry, first = index);
-        candidateIn[at + 5] = first;
-      }
+      entryState().pack(candidates, Float64Array.from(slots, slot => slot.code), slots.map(slot => slot.key),
+        Float64Array.from(slots, slot => slot.lit ? 1 : 0), slotIn, candidateIn);
       if (!poolState().plan(candidateIn, slotIn, middle, planOut, rankKeys)) throw refused('plan');
       const events = planOut[1];
       for (let event = 0; event < events; event++) {
@@ -309,7 +241,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
         if (lit !== wasLit) changed = true;
         if (slot.filaments ? updateFilaments(slot, entry, wasLit) : updateLight(slot, entry, wasLit, shadowDirty, rootMatrix)) changed = true;
       }
-      candidates.length = 0; identities.clear();
+      candidates = [];
       return changed;
     },
     get activeCount() {
@@ -333,7 +265,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       if (disposed) return;
       disposed = true;
       for (const slot of slots) removeLights(slot);
-      slots.length = 0; keyIds.clear(); pool?.free(); pool = null;
+      slots.length = 0; pool?.free(); pool = null; entriesState?.free(); entriesState = null;
     }
   };
 }
