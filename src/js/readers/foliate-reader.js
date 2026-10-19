@@ -59,7 +59,7 @@ export class FoliateReader {
       // Foliate already tracks touch drag/velocity and snaps to the next page.
       // A second pointerup navigation here used to advance twice per swipe.
       nativeTouchSwipes:true,
-      onNativeSwipe:() => { onUserNavigation?.(); if (!s.speechCursor?.browsing) s.speechCursor?.reset() },
+      onNativeSwipe:() => { onUserNavigation?.(); ui.foliate_reset_cursor(s) },
       onManualPan:() => { if (s.preferences.flow === 'scrolled') onUserNavigation?.() },
       canSwipe:() => s.preferences.flow !== 'scrolled'
     }
@@ -129,15 +129,9 @@ export class FoliateReader {
   async next({ isActive = () => true } = {}) { await readerUI().foliate_turn(this.s, 'next', isActive) }
   async prev() { await readerUI().foliate_turn(this.s, 'prev', () => true) }
 
-  async goToFraction(fraction) {
-    if (!this.s.speechCursor?.browsing) this.s.speechCursor?.reset()
-    await this.s.view?.goToFraction(fraction)
-  }
-  async goToCfi(cfi) {
-    if (!this.s.speechCursor?.browsing) this.s.speechCursor?.reset()
-    if (cfi) await this.s.view?.goTo(cfi)
-  }
-  async goToTarget(target) { if (!this.s.speechCursor?.browsing) this.s.speechCursor?.reset(); await this.s.view?.goTo(target) }
+  async goToFraction(fraction) { readerUI().foliate_reset_cursor(this.s); await this.s.view?.goToFraction(fraction) }
+  async goToCfi(cfi) { readerUI().foliate_reset_cursor(this.s); if (cfi) await this.s.view?.goTo(cfi) }
+  async goToTarget(target) { readerUI().foliate_reset_cursor(this.s); await this.s.view?.goTo(target) }
   browseSpeech() { this.s.followTicket++; this.s.speechCursor?.browse() }
   async returnToSpeech() { await this.s.speechCursor?.returnToSpeech() }
   stopSpeech() { this.s.speechCursor?.reset() }
@@ -184,23 +178,5 @@ export class FoliateReader {
     this.#styles()
   }
 
-  close() {
-    const s = this.s
-    s.speechCursor?.close()
-    s.speechCursor = null
-    s.lengthMetadata = null
-    s.resizeObserver?.disconnect()
-    s.resizeObserver = null
-    clearTimeout(s.resizeTimer)
-    s.resizeTimer = null
-    s.detachGestures()
-    for (const detach of s.documentGestures) detach()
-    s.documentGestures = []
-    s.view?.close()
-    s.view?.remove()
-    s.view = null
-    s.turns = { followPending:0, pageTurnPending:0 }
-    s.pageTurn = Promise.resolve()
-    if (s.container) { s.container.innerHTML = ''; s.container.classList.remove('foliate-reader', 'is-paginated') }
-  }
+  close() { readerUI().foliate_close(this.s) }
 }

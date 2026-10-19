@@ -118,7 +118,7 @@ export class ReaderExperience {
     const metrics = this.readingMetrics()
     this.view.updateReadingMetrics(metrics.time, metrics.pagesDescription)
   }
-  label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
+  label(place) { return readerUI().reader_place_label(place, this.reader) }
   show(tab) { return this.lifecycle.show(tab) }
   showTab(name) {
     if (name !== 'search') this.endSearch()
@@ -181,14 +181,13 @@ export class ReaderExperience {
   async shareBook() {
     const content = this.book?.content
     if (!content) { this.error('Archivo original no disponible.'); return }
-    const file = new File([content],this.book.fileName || `${this.book.title}.${String(this.book.format||'pdf').toLowerCase()}`,{type:this.book.mimeType || content.type || 'application/octet-stream'})
+    const [name, type] = readerUI().reader_share_file(this.book, content), file = new File([content],name,{type})
     try {
       if (navigator.canShare?.({files:[file]}) && navigator.share) await navigator.share({title:displayBookTitle(this.book),files:[file]})
       else { const url = URL.createObjectURL(file), link = document.createElement('a'); link.href=url; link.download=file.name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),30000) }
       this.panel.close()
     } catch (error) { if (error.name !== 'AbortError') this.error('No se pudo compartir.') }
   }
-  formatSize(bytes = 0) { return bytes >= 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(bytes/1024))} KB` }
   renderPlaces() {
     this.updateBookmarkButton()
     this.updateReturnButton()

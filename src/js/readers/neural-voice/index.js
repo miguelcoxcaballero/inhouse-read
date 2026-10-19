@@ -124,15 +124,17 @@ export class NeuralVoiceEngine extends EventTarget {
     if (this.core) return this.core.warmUp(voiceId)
     const generation = this.plan ? this.plan.capture() : {ticket:this.resourceToken,generation:0}
     const core = await this.preload()
-    if (!this.plan.current(generation)) return false
+    if (!this.current(generation)) return false
     return core.warmUp(voiceId)
   }
   async prime(request) {
     const generation = this.plan ? this.plan.capture() : {ticket:this.resourceToken,generation:0}
     const core = await this.preload()
-    if (!this.plan.current(generation)) return false
+    if (!this.current(generation)) return false
     return core.prime(request)
   }
+  // A release while the module loaded replaced the resource ticket (and invalidated the plan).
+  current(generation) { return this.plan ? this.plan.current(generation) : generation.ticket === this.resourceToken }
   /** Call synchronously inside a user gesture (the play tap): creates/resumes the AudioContext. */
   unlock({ playback = true } = {}) {
     const env = this.options.env || globalThis

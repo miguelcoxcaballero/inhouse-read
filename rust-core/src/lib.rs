@@ -4,6 +4,8 @@ mod abi;
 mod hebrew;
 #[cfg(feature = "voice")]
 mod duration_marks;
+#[cfg(feature = "voice")]
+mod onnx_durations;
 // The synthesis worker's kernels (cleaning, tempo, boundaries, the per-chunk flow) live in the
 // voice core alone: the worker loads those few KB and not the app core.
 #[cfg(feature = "voice")]
@@ -68,6 +70,8 @@ mod plant_foliage;
 mod pdf_layout;
 #[cfg(feature = "app")]
 mod pdf_rows;
+#[cfg(feature = "app")]
+mod pdf_text_geometry;
 #[cfg(feature = "app")]
 mod pdf_order;
 #[cfg(feature = "app")]

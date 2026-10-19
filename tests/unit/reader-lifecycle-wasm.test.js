@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import {it,vi,expect,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
-import {displayBookTitle,normalizeBookAuthor} from '../../src/js/book-title.js'
 import {cleanPlaces,cleanQuotes} from '../../src/js/readers/reading-state.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {LegacyReaderLifecycle} from './helpers/reference-reader-lifecycle.js'
@@ -22,9 +21,9 @@ function setup(native,trial){
  host.showTab=tab=>events.push(['tab',tab]);host.keepSearchHits=true
  let complete;host.applyPreferences=()=>{events.push(['preferences']);return new Promise((resolve,reject)=>{complete=()=>trial%7===0?reject(Error('apply failed')):resolve()})}
  if(native){
-  const describe=record=>{const title=displayBookTitle(record),author=normalizeBookAuthor(record.author)||normalizeBookAuthor(record.metadata?.creator);return [title,author,`${title}${author?` · ${author}`:''}\n${record.format||'Documento'} · ${host.formatSize(record.sizeBytes)}`]}
-  host.open=async record=>ui.reader_open(host,record,cleanPlaces,cleanQuotes,describe)
-  host.refreshNames=(id,fields)=>ui.reader_refresh_names(host,id,fields,describe)
+  // The panel description (title, author, format and size) is Rust too since 1.7.310; the legacy host keeps the frozen formatSize.
+  host.open=async record=>ui.reader_open(host,record,cleanPlaces,cleanQuotes)
+  host.refreshNames=(id,fields)=>ui.reader_refresh_names(host,id,fields)
   host.closeVoice=()=>ui.reader_close_voice(host,()=>engine);host.reset=()=>ui.reader_reset(host);host.show=tab=>ui.reader_show(host,tab)
  }
  return {host,events,complete:()=>complete()}

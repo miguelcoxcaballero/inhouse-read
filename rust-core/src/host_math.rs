@@ -10,6 +10,8 @@ pub const SIN: f64 = 0.0;
 pub const COS: f64 = 1.0;
 pub const POW: f64 = 2.0;
 pub const HYPOT: f64 = 3.0;
+/// `Math.atan2(a, b)`.
+pub const ATAN2: f64 = 5.0;
 /// A request the plan does not need for this input: the host skips it.
 pub const NONE: f64 = 4.0;
 

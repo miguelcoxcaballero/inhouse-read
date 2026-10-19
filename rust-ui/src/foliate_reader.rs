@@ -499,3 +499,47 @@ pub fn foliate_outline(rects: &JsValue, options: &JsValue) -> Result<JsValue, Js
     }
     Ok(group)
 }
+
+/// `if (!s.speechCursor?.browsing) s.speechCursor?.reset()`: a jump or a swipe forgets the
+/// audible cursor unless the person is browsing away from it on purpose.
+#[wasm_bindgen]
+pub fn foliate_reset_cursor(s: &JsValue) -> Result<(), JsValue> {
+    let cursor = read(s, "speechCursor")?;
+    if !absent(&cursor) && truthy(&read(&cursor, "browsing")?) { return Ok(()); }
+    let cursor = read(s, "speechCursor")?;
+    if !absent(&cursor) { method(&cursor, "reset", &[])?; }
+    Ok(())
+}
+
+/// Leaving the book: the cursor, the observer and its timer, every gesture and the view go,
+/// the turn queues start again and the container is emptied.
+#[wasm_bindgen]
+pub fn foliate_close(s: &JsValue) -> Result<(), JsValue> {
+    let cursor = read(s, "speechCursor")?;
+    if !absent(&cursor) { method(&cursor, "close", &[])?; }
+    set(s, "speechCursor", &JsValue::NULL)?;
+    set(s, "lengthMetadata", &JsValue::NULL)?;
+    let observer = read(s, "resizeObserver")?;
+    if !absent(&observer) { method(&observer, "disconnect", &[])?; }
+    set(s, "resizeObserver", &JsValue::NULL)?;
+    crate::host::clear_timeout(&read(s, "resizeTimer")?)?;
+    set(s, "resizeTimer", &JsValue::NULL)?;
+    method(s, "detachGestures", &[])?;
+    let gestures = read(s, "documentGestures")?;
+    let iterator = (if absent(&gestures) { None } else { js_sys::try_iter(&crate::host::boxed(&gestures))? }).ok_or_else(|| JsValue::from(js_sys::TypeError::new("s.documentGestures is not iterable")))?;
+    for detach in iterator { call(&detach?, "detach", &[])?; }
+    set(s, "documentGestures", &Array::new())?;
+    for name in ["close", "remove"] {
+        let view = read(s, "view")?;
+        if !absent(&view) { method(&view, name, &[])?; }
+    }
+    set(s, "view", &JsValue::NULL)?;
+    set(s, "turns", &plain(&[("followPending", 0.into()), ("pageTurnPending", 0.into())])?)?;
+    set(s, "pageTurn", &Promise::resolve(&JsValue::UNDEFINED))?;
+    let container = read(s, "container")?;
+    if truthy(&container) {
+        set(&container, "innerHTML", &"".into())?;
+        method(&read(&container, "classList")?, "remove", &[&"foliate-reader".into(), &"is-paginated".into()])?;
+    }
+    Ok(())
+}
