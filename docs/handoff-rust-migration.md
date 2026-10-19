@@ -1,6 +1,6 @@
-# Entrega 1.7.312 (unidad shelf-tail, bloques 1 y 2): papelera, folleto, estudios del catálogo y lámparas en Rust
+# Entrega 1.7.312 (unidad shelf-tail, bloques 1 y 2): papelera, folleto y estudios del catálogo en Rust
 
-Modelos de la papelera y del folleto del armario, y el dibujo de la portada, generados en Rust; JS solo crea objetos three.js. Inventario 41836 Rust / 20083 JS = 67,57 %. Fallos E2E de papelera (408, 495, 653) y tres pruebas de voz neuronal fallan igual en `main` 1.7.309. Detalles en remaining-wip-verification.md. Bloque 2: estudios del catálogo y lectura de entradas de las lámparas en Rust; 42335 Rust / 19830 JS = 68,10 %; el fallo E2E restante (`lamp-switches` 136) falla igual en `main`.
+Modelos de la papelera y del folleto del armario, y el dibujo de la portada, generados en Rust; JS solo crea objetos three.js. Inventario 41836 Rust / 20083 JS = 67,57 %. Fallos E2E de papelera (408, 495, 653) y tres pruebas de voz neuronal fallan igual en `main` 1.7.309. Detalles en remaining-wip-verification.md. Bloque 2: estudios del catálogo en Rust (la lectura de entradas de lámparas se retiró por coste por fotograma); tras mezclar `main` 1.7.311, 42737 Rust / 19835 JS = 68,30 %; el fallo E2E restante (`lamp-switches` 136) falla igual en `main`.
 ---
 
 # Entrega 1.7.311: etiquetas, URLs de voces y cierre EPUB en Rust
