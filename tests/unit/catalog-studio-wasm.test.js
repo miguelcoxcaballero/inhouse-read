@@ -48,7 +48,9 @@ function model(kind) {
       const group = new three.Group(), serial = log.models.length;
       group.name = `${kind}-${serial}`;
       group.add(new three.Mesh(new three.BoxGeometry(60 + serial, 100, 60), new three.MeshStandardMaterial()));
-      log.entries.push(['create', kind, JSON.stringify(options ?? null)]);
+      // Uuids are random per object: the options are compared without them.
+      log.entries.push(['create', kind, JSON.stringify(options ?? null, (key, value) =>
+        typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value) ? 'uuid' : value)]);
       group.userData.setTint = tint => log.entries.push(['setTint', group.name, ...tint]);
       group.userData.dispose = () => log.entries.push(['model.dispose', group.name]);
       group.userData.updatePotColor = color => { log.entries.push(['recolour', group.name, color]); return color !== 'blue'; };
@@ -119,7 +121,7 @@ function run(kind, create, seed, steps) {
     else if (roll < .76) { visibility = visibility === 'hidden' ? 'visible' : 'hidden'; label.push('visibility', visibility); document.dispatchEvent(new Event('visibilitychange')); }
     else if (roll < .82) { width = 180 + Math.floor(r() * 3) * 30; label.push('resize', width); observers.forEach(notify => notify()); }
     else if (roll < .86 && kind === 'plant') { label.push('prepare'); preview.prepare(); }
-    else if (roll < .88) { label.push('dispose'); preview.dispose(); }
+    else if (roll < .866) { label.push('dispose'); preview.dispose(); }
     else { label.push('settle'); for (let round = 0; round < 10 && (frames.size || vi.getTimerCount()); round++) { const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(16)); vi.runOnlyPendingTimers(); } }
     trace.push([JSON.stringify(label), snapshot(host, renderer), log.entries.splice(0)]);
   }
@@ -130,12 +132,19 @@ function run(kind, create, seed, steps) {
 }
 
 describe.each(Object.keys(factories))('%s studio against the frozen JavaScript', kind => {
-  it('does the same thing at every step of 40 random scripts', () => {
+  it('does the same thing at every step of 60 random scripts', () => {
     const [frozen, production] = factories[kind];
-    for (let seed = 1; seed <= 40; seed++) {
-      const expected = run(kind, frozen, seed, 60), actual = run(kind, production, seed, 60);
+    const seen = { render:0, create:0, 'model.dispose':0, setSize:0, setTint:0, recolour:0 };
+    for (let seed = 1; seed <= 60; seed++) {
+      const expected = run(kind, frozen, seed, 80), actual = run(kind, production, seed, 80);
       for (let step = 0; step < expected.length; step++) expect(actual[step], `${kind} seed ${seed} step ${step} ${expected[step][0]}`).toEqual(expected[step]);
+      for (const step of actual.slice(1)) for (const [name] of step[2]) if (name in seen) seen[name]++;
     }
+    // Not an empty comparison: models were built, drawn, resized, replaced (and tinted or recoloured).
+    console.log(kind, JSON.stringify(seen)); expect(seen.render).toBeGreaterThan(100); expect(seen.create).toBeGreaterThan(40);
+    expect(seen['model.dispose']).toBeGreaterThan(20); expect(seen.setSize).toBeGreaterThan(20);
+    if (kind === 'lamp') expect(seen.setTint).toBeGreaterThan(40);
+    if (kind === 'plant') expect(seen.recolour).toBeGreaterThan(5);
   });
 
   it('keeps no module handles and no callbacks once disposed', () => {
