@@ -4,6 +4,8 @@ mod abi;
 mod hebrew;
 #[cfg(feature = "voice")]
 mod duration_marks;
+#[cfg(feature = "voice")]
+mod onnx_durations;
 // The synthesis worker's kernels (cleaning, tempo, boundaries, the per-chunk flow) live in the
 // voice core alone: the worker loads those few KB and not the app core.
 #[cfg(feature = "voice")]
