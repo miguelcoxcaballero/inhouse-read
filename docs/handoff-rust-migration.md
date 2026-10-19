@@ -1,3 +1,9 @@
+# Entrega 1.7.310 (unidad shelf-tail, bloque 1): papelera y folleto en Rust
+
+Modelos de la papelera y del folleto del armario, y el dibujo de la portada, generados en Rust; JS solo crea objetos three.js. Inventario 41836 Rust / 20083 JS = 67,57 %. Fallos E2E de papelera (408, 495, 653) y tres pruebas de voz neuronal fallan igual en `main` 1.7.309. Detalles en remaining-wip-verification.md. Siguientes bloques de la unidad (estudios del catálogo, lectura de entradas de las lámparas) en `wip/shelf-tail`, aún sin verificar.
+
+---
+
 # Entrega 1.7.288: anclas y progreso en Rust
 
 Las guardas de posiciones y la escritura del progreso del lector se ejecutan en Rust compartido UI/Shelf. Se conservan CFIs exactos y la última posición válida ante avisos incompletos. Pasan 447 pruebas específicas, incluidas 20 nuevas y 20 000 comparaciones, y nueve E2E finales en una sola ejecución sin fallos. Inventario 35281 líneas Rust / 20509 JavaScript = 63,24 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúan la extracción de portadas y las políticas restantes de app.js; preservar todos los WIP/stashes y ramas ajenas.
