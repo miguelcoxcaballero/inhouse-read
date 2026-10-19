@@ -4,6 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><main id="result"></main><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
 import {rustPDFPlaceFigures} from '/inhouse-read/src/js/readers/pdf-figures-wasm.js';
 import {placeFigures as referenceFigures} from '/inhouse-read/tests/unit/helpers/reference-pdf-figures.js';
 import {rustPDFImageRects} from '/inhouse-read/src/js/readers/pdf-images-wasm.js';
@@ -15,6 +16,7 @@ import {getDocument,GlobalWorkerOptions} from '/inhouse-read/node_modules/pdfjs-
 import workerURL from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 GlobalWorkerOptions.workerSrc=workerURL;
 const core=await loadRustCore();if(!core?.pdf_place_figures)throw Error('Actual compiled image bounds required');
+if(!await requireRustUI())throw Error('Rust UI required for the PDF reflow');
 window.checkFigurePlacement=()=>{
  const results=[];
  for(const [count,images,columns] of [[60,8,2],[120,32,3],[240,128,4],[400,512,4],[600,2000,4]]){

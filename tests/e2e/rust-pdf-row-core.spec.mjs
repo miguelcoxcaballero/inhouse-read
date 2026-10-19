@@ -9,6 +9,7 @@ import { PDF_ROW_BENCH_CASES } from '../helpers/pdf-row-cases.mjs'
 let server,httpServer,fixtureUrl,artifact
 const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="result"></main><script type="module">
 import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
+import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
 import coreURL from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
 import { rustPDFRowLines,pdfRowLines } from '/inhouse-read/src/js/readers/pdf-row-layout-wasm.js';
 import { legacyPDFRowLines } from '/inhouse-read/tests/unit/helpers/reference-pdf-pipeline.js';
@@ -26,6 +27,7 @@ const bytes=await (await fetch(coreURL)).arrayBuffer();
 const digest=await crypto.subtle.digest('SHA-256',bytes);
 const artifact={bytes:bytes.byteLength,sha256:[...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('')};
 const core=await loadRustCore({bytes});
+if(!await requireRustUI())throw Error('Rust UI required for the PDF reflow');
 if(typeof core?.pdf_row_lines!=='function')throw new Error('The actual PDF row kernel did not load');
 const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
 const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
