@@ -1,3 +1,9 @@
+# Entrega 1.7.310: papelera y catálogo de papel en Rust
+
+Los modelos completos de la papelera (perfiles, colores por vértice, normales inclinadas, pedal biselado, bisagra, asa, tapa y su movimiento, boca) y del folleto IKEA colgado del armario (bloque, hojas, portada curvada, lomo, pinza con pliegue suavizado, alambres, grapas, clavo y el dibujo completo de la portada en el canvas) salen ahora de Rust (`shelf_trash.rs`, `shelf_catalog.rs`, `shelf_models.rs`); JavaScript solo crea los objetos de three.js y el canvas. Se añaden a Rust los generadores exactos de three r180 que faltaban (cápsula, plano, arco de toro, extrusión biselada y normales con pliegue). Pasan 35 pruebas específicas que comparan bit a bit con los originales congelados y con three.js; la batería unitaria en 4 bloques da 7556/7560, con 3 fallos que también tiene `main` 1.7.309 (voz neuronal) y uno intermitente de live-room. Comparación visual contra `main`: 24 estados capturados idénticos (máx. 1/255); 10 estados de transición expiraron en ambos builds. Los E2E de papelera y catálogo que fallan aquí fallan igual en `main`. Inventario 41836 líneas Rust / 20083 JavaScript = 67,57 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md).
+
+---
+
 # Entrega 1.7.288: anclas y progreso en Rust
 
 Las guardas de posiciones y la escritura del progreso del lector se ejecutan en Rust compartido UI/Shelf. Se conservan CFIs exactos y la última posición válida ante avisos incompletos. Pasan 447 pruebas específicas, incluidas 20 nuevas y 20 000 comparaciones, y nueve E2E finales en una sola ejecución sin fallos. Inventario 35281 líneas Rust / 20509 JavaScript = 63,24 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md). Continúan la extracción de portadas y las políticas restantes de app.js; preservar todos los WIP/stashes y ramas ajenas.
