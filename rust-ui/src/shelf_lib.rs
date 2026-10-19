@@ -19,6 +19,7 @@ mod scene_frame;
 mod scene_entries;
 mod book_gravity;
 mod cozy_audio;
+mod cozy_transport;
 mod cozy_synth;
 mod decor_contacts;
 mod scene_plan;

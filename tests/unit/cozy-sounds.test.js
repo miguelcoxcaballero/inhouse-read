@@ -1,7 +1,12 @@
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 const synth=vi.hoisted(()=>vi.fn(()=>new Float32Array([0,.1,0])));
 const clip=vi.hoisted(()=>vi.fn(()=>''));
-vi.mock('../../src/js/rust-shelf.js',()=>({needRustShelf:()=>({cozy_sound:synth,cozy_clip:clip,cozy_sample_rate:()=>48000})}));
+vi.mock('../../src/js/rust-shelf.js',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const native=await import('../../src/wasm/shelf/inhouse_read_shelf.js');
+ native.initSync({module:readFileSync('src/wasm/shelf/inhouse_read_shelf_bg.wasm')});
+ return {needRustShelf:()=>({...native,cozy_sound:synth,cozy_clip:clip,cozy_sample_rate:()=>48000})};
+});
 let contexts,disposed,module,fetches;
 class Node{
  constructor(){this.gain={value:0,setTargetAtTime:vi.fn()};this.pan={value:0};this.playbackRate={value:1};this.connect=vi.fn();this.disconnect=vi.fn();}
