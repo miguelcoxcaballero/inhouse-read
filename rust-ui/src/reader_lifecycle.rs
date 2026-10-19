@@ -15,24 +15,24 @@ fn optional(host:&JsValue,name:&str)->Result<(),JsValue>{
  if absent(host){return Ok(());}let method=get(host,name)?;
  if !absent(&method){method.dyn_into::<Function>().map_err(|_|JsValue::from(js_sys::TypeError::new("Reader method is not callable")))?.call0(host)?;}Ok(())
 }
-fn describe(host:&JsValue,record:&JsValue,description:&Function,mini:bool)->Result<(),JsValue>{
- let values:Array=description.call1(&JsValue::UNDEFINED,record)?.dyn_into()?;
+fn describe(host:&JsValue,record:&JsValue,mini:bool)->Result<(),JsValue>{
+ let values=crate::reader_labels::reader_description(record)?;
  values.push(&mini.into());invoke(&get(host,"view")?,"setDocumentInfo",&values)?;Ok(())
 }
 #[wasm_bindgen]
-pub fn reader_refresh_names(host:JsValue,id:JsValue,fields:JsValue,description:Function)->Result<(),JsValue>{
+pub fn reader_refresh_names(host:JsValue,id:JsValue,fields:JsValue)->Result<(),JsValue>{
  let book=get(&host,"book")?;
  if !book.is_truthy()||string(&get(&book,"id")?)?!=string(&id)?{return Ok(());}
  assign(&get(&host,"book")?,&fields)?;
- describe(&host,&get(&host,"book")?,&description,true)
+ describe(&host,&get(&host,"book")?,true)
 }
 #[wasm_bindgen]
-pub fn reader_open(host:JsValue,record:JsValue,clean_places:Function,clean_quotes:Function,description:Function)->Result<Promise,JsValue>{
+pub fn reader_open(host:JsValue,record:JsValue,clean_places:Function,clean_quotes:Function)->Result<Promise,JsValue>{
  call(&host,"cancelNavigation")?;set(&host,"book",&record)?;
  set(&host,"history",&clean_places.call1(&JsValue::UNDEFINED,&get(&record,"readingHistory")?)?)?;
  set(&host,"bookmarks",&clean_places.call2(&JsValue::UNDEFINED,&get(&record,"bookmarks")?,&100.into())?)?;
  set(&host,"quotes",&clean_quotes.call1(&JsValue::UNDEFINED,&get(&record,"quotes")?)?)?;
- describe(&host,&record,&description,false)?;
+ describe(&host,&record,false)?;
  let format=get(&get(&host,"reader")?,"format")?;
  let pdf=!absent(&format)&&get(&format,"engine")?==JsValue::from_str("pdf");
  let count=get(&get(&host,"reader")?,"pageCount")?;let count=if count.is_truthy(){count}else{1.into()};

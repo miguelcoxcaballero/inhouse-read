@@ -52,6 +52,7 @@ mod voice_stop;
 mod voice_start;
 mod reader_chrome;
 mod reader_lifecycle;
+mod reader_labels;
 mod voice_flow;
 mod preference_flow;
 mod reader_controls;
