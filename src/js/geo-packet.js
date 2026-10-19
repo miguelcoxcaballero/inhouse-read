@@ -32,6 +32,18 @@ export function geometryOf(packet, { type, attributes, index, groups = [] }) {
   return geometry;
 }
 
+/** The materials of a Rust material table (`[{ role, class, options, name? }]`), in table order: an option whose
+ * value is a key of `values` (a texture placeholder such as "peel") takes that value, in its own place. */
+export function makeMaterials(table, values = {}) {
+  const materials = {};
+  for (const { role, class:kind, options, name } of table) {
+    for (const key of Object.keys(options)) if (typeof options[key] === 'string' && Object.hasOwn(values, options[key])) options[key] = values[options[key]];
+    const material = materials[role] = new THREE[kind](options);
+    if (name !== undefined) material.name = name;
+  }
+  return materials;
+}
+
 /** The scene graph of a prop packet (rust-ui/src/shelf_models.rs): a Mesh per node with geometry (its material is
  * `materials[role]`), a Group per node without, each added to its parent (or `root`) in packet order with its
  * position and, where the packet has them, its rotation and scale. Returns the objects in packet order. */

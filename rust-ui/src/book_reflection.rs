@@ -19,3 +19,30 @@ pub fn reflection_profile(seed:&JsValue)->Vec<f64>{
  let (x,y,z)=(random()*tau*2.0,random()*tau*2.0,random()*tau*2.0);
  vec![x,y,z,0.88+random()*0.24]
 }
+
+fn finite_number(value: &JsValue) -> Option<f64> { let number = crate::host::num(value); number.is_finite().then_some(number) }
+
+/// How much of the environment a cover reflects: `Number(value)` within `[0, 1]`, 1 when not finite.
+#[wasm_bindgen]
+pub fn reflection_environment(value: &JsValue) -> f64 { finite_number(value).map_or(1.0, |n| crate::host::jmax(0.0, crate::host::jmin(1.0, n))) }
+
+/// The dimensionless slope of the waviness: `Number(value)` within `[0, .05]`, 0 when not finite (`.018` cover,
+/// `.014` binding, `.010` cap; 0 is the uniform-only A/B).
+#[wasm_bindgen]
+pub fn reflection_slope(value: &JsValue) -> f64 { finite_number(value).map_or(0.0, |n| crate::host::jmin(0.05, crate::host::jmax(0.0, n))) }
+
+/// The UV scale of one wave field per surface: `Number(value?.[0] ?? value?.x)` and the same for y, each 1
+/// unless finite and positive (unnormalised cap UVs).
+#[wasm_bindgen]
+pub fn reflection_uv_scale(value: &JsValue) -> Result<Vec<f64>, JsValue> {
+    let axis = |index: &str, name: &str| -> Result<f64, JsValue> {
+        let read = |key: &str| -> Result<JsValue, JsValue> { if absent(value) { Ok(JsValue::UNDEFINED) } else { crate::host::read(value, key) } };
+        let first = read(index)?;
+        let chosen = if absent(&first) { read(name)? } else { first };
+        let number = crate::host::num(&chosen);
+        Ok(if number.is_finite() && number > 0.0 { number } else { 1.0 })
+    };
+    let x = axis("0", "x")?;
+    let y = axis("1", "y")?;
+    Ok(vec![x, y])
+}

@@ -1,26 +1,22 @@
 import * as THREE from 'three';
 import { needRustShelf } from './rust-shelf.js';
 import { BAGGEBO_SPEC } from './shelf-types.js';
+import { makeMaterials, openPacket } from './geo-packet.js';
 
 // The cabinet's geometry (posts, feet, folded pans and lips, mount tabs, screws, the expanded-metal sheets
 // and the rear brace, merged by material) is drawn by the Rust shelf module once, as one packet; this file
 // builds three's objects from it. Materials and the powder-coat texture are three.js objects.
 let modelTemplate;
-const TYPES = { f32: Float32Array, i16: Int16Array, u8: Uint8Array };
 
-/** The packet: [u32 header length][JSON header][padding][typed data]. Arrays are copied out of it. */
+/** The packet (see geo-packet.js); arrays are copied out of it. */
 function unpackTemplate() {
-  const bytes = needRustShelf().baggebo_template();
-  const headerLength = new DataView(bytes.buffer, bytes.byteOffset).getUint32(0, true);
-  const header = JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + headerLength)));
-  const base = bytes.byteOffset + Math.ceil((4 + headerLength) / 4) * 4;
-  const copy = (Type, at, length) => new Type(bytes.buffer.slice(base + at, base + at + length * Type.BYTES_PER_ELEMENT));
+  const { header, copy } = openPacket(needRustShelf().baggebo_template());
   const batches = header.batches.map(({ material, attributes, index }) => {
     const geometry = new THREE.BufferGeometry();
     for (const [name, size, kind, at, length] of attributes) {
-      geometry.setAttribute(name, new THREE.BufferAttribute(copy(TYPES[kind], at, length), size, kind !== 'f32'));
+      geometry.setAttribute(name, new THREE.BufferAttribute(copy(kind, at, length), size, kind !== 'f32'));
     }
-    geometry.setIndex(new THREE.BufferAttribute(copy(index[0] === 'u32' ? Uint32Array : Uint16Array, index[1], index[2]), 1));
+    geometry.setIndex(new THREE.BufferAttribute(copy(index[0] === 'u32' ? 'u32' : 'u16', index[1], index[2]), 1));
     geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     const template = { materialIndex:material, attributes:geometry.attributes, index:geometry.index.array,
       boundingBox:geometry.boundingBox, boundingSphere:geometry.boundingSphere };
@@ -55,32 +51,22 @@ function createPaintTexture() {
 
 /** BAGGEBO 504.811.72. Coordinates are millimetres at width=600: x centred,
  * top y=0, feet y=-1160, front z=0 and back z=-250. Uniform scaling preserves
- * the real proportions; the original has three internal shelves and a mesh top. */
+ * the real proportions; the original has three internal shelves and a mesh top.
+ * The fit, the shelf positions and the material table come from Rust (shelf_lib.rs). */
 export function createBaggebo({ width = 600 } = {}) {
-  const actualWidth = Number.isFinite(width) && width > 0 ? width : 600;
-  const scale = actualWidth / BAGGEBO_SPEC.dimensions.width;
-  const { height, depth } = BAGGEBO_SPEC.dimensions;
+  const shelf = needRustShelf(), layout = shelf.baggebo_layout(width, BAGGEBO_SPEC);
   const group = new THREE.Group();
   group.name = 'IKEA BAGGEBO white powder-coated steel';
-  group.scale.setScalar(scale);
+  group.scale.setScalar(layout.scale);
   group.userData.furniture = true;
   group.userData.shelfType = 'baggebo';
-  group.userData.physicalDimensions = { width:actualWidth, depth:depth * scale, height:height * scale };
+  group.userData.physicalDimensions = layout.physicalDimensions;
   group.userData.specification = BAGGEBO_SPEC;
-  group.userData.shelfPositions = BAGGEBO_SPEC.shelfBottoms.map(bottom => ({ bottom:bottom * scale, y:-bottom * scale, fromFloor:(height - bottom) * scale }));
+  group.userData.shelfPositions = layout.shelfPositions;
   group.userData.parts = [];
 
   const paintTexture = createPaintTexture();
-  const paint = new THREE.MeshPhysicalMaterial({ color:0xf7f8f6, roughness:.36, metalness:.08,
-    bumpMap:paintTexture, bumpScale:.024, clearcoat:.16, clearcoatRoughness:.4 });
-  paint.name = 'Warm white epoxy polyester powder-coated steel';
-  const meshPaint = new THREE.MeshStandardMaterial({ color:0xf7f8f6, roughness:.38, metalness:.08,
-    bumpMap:paintTexture, bumpScale:.018, side:THREE.DoubleSide });
-  meshPaint.name = 'Open expanded white-painted steel';
-  const hardware = new THREE.MeshStandardMaterial({ color:0xd1d2cd, roughness:.32, metalness:.5, vertexColors:true });
-  hardware.name = 'Zinc plated recessed fixing heads';
-  const footMaterial = new THREE.MeshStandardMaterial({ color:0xe8e8df, roughness:.76, metalness:0 });
-  footMaterial.name = 'Polypropylene adjustable feet';
+  const { paint, meshPaint, hardware, foot:footMaterial } = makeMaterials(JSON.parse(shelf.baggebo_materials()), { paint:paintTexture });
   const geometries = [], materials = [paint, meshPaint, hardware, footMaterial];
 
   // Cache the entire finished furniture as immutable CPU data, not live GPU

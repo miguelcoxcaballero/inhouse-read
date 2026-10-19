@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
+import { needRustShelf } from './rust-shelf.js';
 
 /**
  * Solid boards and panels stop a shelf lamp's light. Only two cones have a
@@ -99,7 +100,6 @@ const core = () => {
   return loaded;
 };
 const DESCRIPTION = 19, FRAME_INPUT = 51, FRAME_OUTPUT = 28;
-const partKind = name => /^(shelf-\d+-board|top-cap)$/.test(name) ? 1 : /^(shelf-\d+-mesh|top-mesh)$/.test(name) ? 2 : /^(left|right)-upright$/.test(name) ? 3 : 0;
 
 /** The cabinet's boards, sides and front, from its units' parts, in the
  * cabinet's own units: walnut boards and sides are solid, a BAGGEBO's mesh
@@ -108,15 +108,9 @@ export function shelfOccluders(root) {
   if (!root) return null;
   const units = Array.isArray(root.userData?.parts) ? [[root, new THREE.Matrix4()]]
     : root.children.filter(child => Array.isArray(child.userData?.parts)).map(child => { child.updateMatrix(); return [child, child.matrix]; });
-  const matrices = [], records = [];
-  units.forEach(([unit, matrix], index) => {
-    matrices.push(...matrix.elements);
-    for (const part of unit.userData.parts) {
-      if (!part?.bounds) continue;
-      const { min, max } = part.bounds;
-      records.push(index, partKind(part.name), min.x, min.y, min.z, max.x, max.y, max.z);
-    }
-  });
+  const matrices = units.flatMap(([, matrix]) => matrix.elements);
+  // The parts' roles (boards, mesh shelves, uprights) and boxes are read in Rust (rust-ui/src/shelf_light_rig.rs).
+  const records = needRustShelf().occluder_records(units.map(([unit]) => unit.userData.parts));
   const wasm = core(), inputLength = matrices.length + records.length, length = inputLength + DESCRIPTION, pointer = wasm.alloc_f64(length);
   if (!pointer) throw new Error('El módulo numérico no pudo reservar memoria. Recarga la página.');
   try {

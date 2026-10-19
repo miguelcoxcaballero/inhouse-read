@@ -1,47 +1,18 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
+import { needRustShelf } from './rust-shelf.js';
 
-const SHADOW_SIZE = 1024;
-// Parameter and result lengths of the Rust rig (rust-core/src/shelf_lighting.rs).
+// Parameter and result lengths of the Rust rig (rust-core/src/shelf_lighting.rs). The fit itself (penumbra
+// width, slack of a screen beyond each edge, the aspect limit that keeps the blur round on tall phone screens),
+// the shadow map's settings, the firmer variance light-bleed floor and the back panel's Vogel disk are decided
+// in Rust (the core's rig and rust-ui/src/shelf_light_rig.rs).
 const PARAMS = 47, OUTPUT = 19;
-// The fit itself (penumbra width, slack of a screen beyond each edge, the aspect limit that
-// keeps the blur round on tall phone screens) is decided in the Rust rig.
-const compactScreen = () => Math.min(globalThis.innerWidth || 1024, globalThis.innerHeight || 1024) < 600;
-// three's variance shadows keep a 0.3 light-bleed floor. Books standing a
-// finger's width from the back panel, under a shelf far above them, need a
-// firmer one or a lit halo opens between the two shadows. Patched once,
-// before any shelf program is compiled; a later three simply skips it.
-const BLEED = '( softness_probability - 0.3 ) / ( 0.95 - 0.3 )';
+// Patched once, before any shelf program is compiled; a later three simply skips it.
 function firmVarianceShadows() {
   const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
-  if (chunk?.includes(BLEED)) THREE.ShaderChunk.shadowmap_pars_fragment = chunk.replace(BLEED,
-    '( softness_probability - 0.62 ) / ( 0.97 - 0.62 )');
+  const patched = chunk ? needRustShelf().shelf_firm_bleed(chunk) : undefined;
+  if (patched !== undefined) THREE.ShaderChunk.shadowmap_pars_fragment = patched;
 }
-
-// The back panel stands a whole shelf depth behind every board, where a
-// window's shadow arrives with a wide penumbra: it averages the (already
-// blurred) map over a Vogel disk this many blur radii across.
-const PANEL_REACH = 3.6;
-// Every pixel uses the same Vogel disk, so its taps reach the shader as
-// constants (radius and angle evaluated here) instead of a sqrt, cos and sin
-// per tap and pixel.
-const panelShadow = taps => `
-#ifdef USE_SHADOWMAP
-float getPanelShadow( sampler2D map, vec2 size, float intensity, float bias, float radius, vec4 coord ) {
-  // Taps slide along the panel itself (screen derivatives of the shadow
-  // coordinate), so a wide disk never compares against the panel's own slope.
-  float reach = radius * ${PANEL_REACH.toFixed(2)} / size.x;
-  vec3 du = dFdx( coord.xyz ), dv = dFdy( coord.xyz );
-  du *= reach / max( length( du.xy ), 1e-7 ); dv *= reach / max( length( dv.xy ), 1e-7 );
-  float sum = 0.0;
-${Array.from({ length:taps }, (_, k) => {
-    const r = Math.sqrt((k + .5) / taps), a = k * 2.39996 + .4;
-    return `  sum += getShadow( map, size, intensity, bias, radius, coord + vec4( ${(r * Math.cos(a)).toFixed(8)} * du + ${
-      (r * Math.sin(a)).toFixed(8)} * dv, 0.0 ) );`;
-  }).join('\n')}
-  return sum / float( PANEL_TAPS );
-}
-#endif`;
 
 /** Soft, wide shelf shadows and dimmer room bounce for the cabinet's back
  * panel only, so each shelf's shadow fades out instead of ending in a hard
@@ -49,11 +20,11 @@ ${Array.from({ length:taps }, (_, k) => {
  * string patches: a later three without these lines compiles stock shaders. */
 export function widePenumbra(material) {
   // Phones shade many more device pixels: fewer taps, fixed for the session.
-  const taps = compactScreen() ? 9 : 12;
+  const shelf = needRustShelf(), taps = shelf.shelf_panel_taps();
   material.defines = { ...material.defines, PANEL_TAPS:taps };
   material.onBeforeCompile = shader => {
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <shadowmap_pars_fragment>', `#include <shadowmap_pars_fragment>\n${panelShadow(taps)}`)
+      .replace('#include <shadowmap_pars_fragment>', `#include <shadowmap_pars_fragment>\n${shelf.shelf_panel_shadow(taps)}`)
       .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin
         .replace('getShadow( directionalShadowMap[ i ]', 'getPanelShadow( directionalShadowMap[ i ]'))
       // Deep inside the carcass, sides and shelves hide much of the room:
@@ -78,23 +49,17 @@ export function createShelfLighting(scene, renderer) {
   firmVarianceShadows();
   // The rig's own direction; the light is only moved along it.
   const toLight = key.position.clone().sub(key.target.position).normalize();
+  const [mapSize, bias, normalBias, radius, restSamples, movingSamples, intensity] = needRustShelf().shelf_light_rig();
   key.castShadow = true;
-  key.shadow.mapSize.set(SHADOW_SIZE, SHADOW_SIZE);
-  // Variance maps need only a small constant bias; a modest normal offset
-  // keeps grazing boards free of acne without detaching books (peter-panning).
-  key.shadow.bias = -.0004;
-  key.shadow.normalBias = .45;
-  // A window is an area light: wide, even penumbrae under every shelf. The
-  // radius (in texels) follows the fit; fewer taps suffice on phone screens.
-  // While anything moves the map is redrawn (and blurred) every frame: half
-  // the taps then, and one full-quality redraw once the scene settles. Each
-  // count compiles its two small blur programs once; three caches both.
-  const restSamples = compactScreen() ? 8 : 12, movingSamples = restSamples / 2;
+  key.shadow.mapSize.set(mapSize, mapSize);
+  key.shadow.bias = bias;
+  key.shadow.normalBias = normalBias;
+  // The radius (in texels) follows the fit. Each sample count compiles its two
+  // small blur programs once; three caches both.
   let coarse = false;
-  key.shadow.radius = 9;
+  key.shadow.radius = radius;
   key.shadow.blurSamples = restSamples;
-  // Room bounce never lets a shelf shadow go fully black.
-  key.shadow.intensity = .84;
+  key.shadow.intensity = intensity;
   key.shadow.autoUpdate = false;
   scene.add(key.target);
   // The Rust rig decides when the window is refitted, when a pure similarity of the view

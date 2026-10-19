@@ -7,7 +7,7 @@ import { needRustShelf } from './rust-shelf.js';
 const CACHE_KEY = 'book-reflection-surface-v2';
 const installed = new WeakMap();
 
-// The profile (wave phases and amplitude of a book's identity) is computed in Rust
+// The profile (wave phases and amplitude of a book's identity) and the clamps of every setter are computed in Rust
 // (rust-ui/src/book_reflection.rs, the `shelf` module the first shelf render awaits).
 function reflectionProfile(seed) {
   const [x, y, z, amplitude] = needRustShelf().reflection_profile(seed);
@@ -131,12 +131,10 @@ export function applyBookReflectionSurface(material, { seed = '', strength = .01
   const controls = {
     uniforms,
     setEnvironmentReflection(value) {
-      const number = Number(value);
-      uniforms.bookEnvironmentReflection.value = Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 1;
+      uniforms.bookEnvironmentReflection.value = needRustShelf().reflection_environment(value);
     },
     setStrength(value) {
-      const number = Number(value);
-      slope = Number.isFinite(number) ? Math.min(.05, Math.max(0, number)) : 0;
+      slope = needRustShelf().reflection_slope(value);
       uniforms.bookReflectionStrength.value = slope * profile.amplitude;
     },
     setSeed(value) {
@@ -145,9 +143,8 @@ export function applyBookReflectionSurface(material, { seed = '', strength = .01
       uniforms.bookReflectionStrength.value = slope * profile.amplitude;
     },
     setUvScale(value) {
-      const x = Number(value?.[0] ?? value?.x), y = Number(value?.[1] ?? value?.y);
-      uniforms.bookReflectionUvScale.value.set(Number.isFinite(x) && x > 0 ? x : 1,
-        Number.isFinite(y) && y > 0 ? y : 1);
+      const [x, y] = needRustShelf().reflection_uv_scale(value);
+      uniforms.bookReflectionUvScale.value.set(x, y);
     }
   };
   controls.setStrength(strength);

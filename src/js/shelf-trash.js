@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { needRustShelf } from './rust-shelf.js';
-import { buildNodes, openPacket } from './geo-packet.js';
+import { buildNodes, makeMaterials, openPacket } from './geo-packet.js';
 
 /** The book travels above the open rim, then falls into the actual hollow body.
  * All positions use the same world axes as the cabinet and its shared camera. The flight's
@@ -30,11 +30,7 @@ export function createShelfTrash({ radius = 44, height = 140 } = {}) {
   const basket = new THREE.Group();
   basket.name = 'Shelf wastebasket';
   const peel = powderCoat(), textures = new Set([peel]);
-  const packet = openPacket(shelf.trash_model(size, tall)), materials = {};
-  for (const { role, class:kind, options } of packet.header.materials) {
-    for (const key of Object.keys(options)) if (options[key] === 'peel') options[key] = peel;
-    materials[role] = new THREE[kind](options);
-  }
+  const packet = openPacket(shelf.trash_model(size, tall)), materials = makeMaterials(packet.header.materials, { peel });
   const lid = buildNodes(packet, materials, basket).find(object => object.isGroup);
   basket.traverse(mesh => { if (mesh.isMesh) { mesh.castShadow = true; mesh.receiveShadow = true; } });
   const geometries = new Set(), owned = new Set();

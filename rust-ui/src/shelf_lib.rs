@@ -10,6 +10,7 @@ mod shelf_models;
 mod shelf_catalog;
 mod catalog_studio;
 mod lamp_entries;
+mod shelf_light_rig;
 mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;
@@ -96,6 +97,46 @@ pub fn plant_model(seed: &[u16], skip: u32, variant: &str, pot_id: &str, pot_mod
 /// The 32 x 32 RGBA powder-coat grain texture of the BAGGEBO's paint.
 #[wasm_bindgen]
 pub fn baggebo_paint_texture() -> Vec<u8> { baggebo_model::paint_texture() }
+
+/// A BAGGEBO fitted to `width` (600 mm when it is not a positive finite number) from its specification:
+/// `{ width, scale, physicalDimensions, shelfPositions }`. Uniform scaling preserves the real proportions;
+/// every shelf keeps its bottom, its scene y and its height above the floor.
+#[wasm_bindgen]
+pub fn baggebo_layout(width: &JsValue, spec: &JsValue) -> Result<JsValue, JsValue> {
+    use crate::host::{read, set};
+    let actual = match width.as_f64() { Some(value) if value.is_finite() && value > 0.0 => value, _ => 600.0 };
+    let dimensions = read(spec, "dimensions")?;
+    let scale = actual / crate::host::num(&read(&dimensions, "width")?);
+    let (height, depth) = (crate::host::num(&read(&dimensions, "height")?), crate::host::num(&read(&dimensions, "depth")?));
+    let object = |fields: &[(&str, f64)]| -> Result<JsValue, JsValue> {
+        let value: JsValue = js_sys::Object::new().into();
+        for (key, number) in fields { set(&value, key, &JsValue::from_f64(*number))?; }
+        Ok(value)
+    };
+    let positions = js_sys::Array::new();
+    for bottom in js_sys::Array::from(&read(spec, "shelfBottoms")?).iter() {
+        let bottom = crate::host::num(&bottom);
+        positions.push(&object(&[("bottom", bottom * scale), ("y", -bottom * scale), ("fromFloor", (height - bottom) * scale)])?);
+    }
+    let layout: JsValue = js_sys::Object::new().into();
+    set(&layout, "width", &actual.into())?;
+    set(&layout, "scale", &scale.into())?;
+    set(&layout, "physicalDimensions", &object(&[("width", actual), ("depth", depth * scale), ("height", height * scale)])?)?;
+    set(&layout, "shelfPositions", &positions.into())?;
+    Ok(layout)
+}
+
+/// The BAGGEBO's materials by role (the template's material indices), in the order they are made; `"paint"`
+/// stands for the powder-coat texture.
+#[wasm_bindgen]
+pub fn baggebo_materials() -> String {
+    concat!("[",
+        r##"{"role":"paint","class":"MeshPhysicalMaterial","name":"Warm white epoxy polyester powder-coated steel","options":{"color":16251126,"roughness":0.36,"metalness":0.08,"bumpMap":"paint","bumpScale":0.024,"clearcoat":0.16,"clearcoatRoughness":0.4}},"##,
+        r##"{"role":"meshPaint","class":"MeshStandardMaterial","name":"Open expanded white-painted steel","options":{"color":16251126,"roughness":0.38,"metalness":0.08,"bumpMap":"paint","bumpScale":0.018,"side":2}},"##,
+        r##"{"role":"hardware","class":"MeshStandardMaterial","name":"Zinc plated recessed fixing heads","options":{"color":13750989,"roughness":0.32,"metalness":0.5,"vertexColors":true}},"##,
+        r##"{"role":"foot","class":"MeshStandardMaterial","name":"Polypropylene adjustable feet","options":{"color":15263967,"roughness":0.76,"metalness":0}}"##,
+        "]").to_string()
+}
 
 /// The room's transform for the lamps' lights: `out[0]` is 1 when lights may follow it, `out[1..17]` its inverse
 /// (see `lamp_light::root`). `false` for a buffer of the wrong size.
