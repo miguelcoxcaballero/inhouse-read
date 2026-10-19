@@ -18,6 +18,8 @@ mod profile_view;
 mod catalog_art;
 mod catalog_view;
 mod catalog_controller;
+mod catalog_present;
+mod catalog_motion;
 mod book_projection;
 mod speech_mask;
 mod speech_pipeline;

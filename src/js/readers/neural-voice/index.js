@@ -51,7 +51,8 @@ export class NeuralVoiceEngine extends EventTarget {
     this.core = null
     this.loading = null
     this.queue = []
-    this.resourceGeneration = 0
+    this.resourceToken = {}
+    this.plan = null
   }
 
   get supported() { return NeuralVoiceEngine.isSupported(this.options.env || globalThis) }
@@ -76,12 +77,31 @@ export class NeuralVoiceEngine extends EventTarget {
 
   /** ADDED: starts loading the engine code (not the worker, not a model). Call it when the picker opens or a neural voice is chosen. Resolves when it is ready. */
   preload() {
-    return this.loading ||= import('./engine.js').then(({ NeuralEngine }) => {
+    return this.loading ||= Promise.all([import('./engine.js'), import('./client-plan.js')]).then(async ([{ NeuralEngine }, { VoiceClientPlan }]) => {
+      // Requested voice code owns its small voice-domain planner. The cold
+      // facade has no WASM dependency, Worker or model before this explicit use.
+      const plan = this.plan ||= new VoiceClientPlan(() => new Error('Voice released'), this.resourceToken)
+      for (;;) {
+        const attempt = plan.capture()
+        try { await plan.ready(); break }
+        catch (error) { if (plan.pending(attempt)) throw error }
+      }
       const core = new NeuralEngine(this.options)
       core.addEventListener('change', () => this.dispatchEvent(new Event('change')))
       core.addEventListener('status', () => this.dispatchEvent(new Event('status')))
       this.core = core
-      for (const task of this.queue.splice(0)) task(core)
+      // Browser callbacks remain handles; Rust owns ordered admission and
+      // cancellation once readiness allows the bootstrap queue to be adopted.
+      const tasks = new Map()
+      for (const task of this.queue.splice(0)) {
+        const id = plan.next('handle'); tasks.set(id, task); plan.enqueue(id)
+      }
+      try {
+        for (let id = plan.take(); !Number.isNaN(id); id = plan.take()) {
+          const task = tasks.get(id); tasks.delete(id)
+          if (plan.workerActive(id)) { plan.cancel(id); task(core) }
+        }
+      } finally { plan.clearQueue() }
       return core
     }).catch(error => { this.loading = null; throw error })
   }
@@ -99,18 +119,18 @@ export class NeuralVoiceEngine extends EventTarget {
   cancel(id) { this.core?.cancel(id) }
   /** Deletes a downloaded voice. If it is the one being read, the current id gets an 'error' event with reason 'not-installed' (stop() itself fires none). */
   async remove(id) { return (await this.preload()).remove(id) }
-  /** ADDED: loads the worker and the voice's model ahead of the first speak() (cold start 3-6 s). Call it when a book opens with a neural voice selected. Never rejects. */
+  /** Explicit playback preparation only: loads the worker and voice model before speak(). Opening or pausing a reader must not call this. */
   async warmUp(voiceId) {
     if (this.core) return this.core.warmUp(voiceId)
-    const generation = this.resourceGeneration
+    const generation = this.plan ? this.plan.capture() : {ticket:this.resourceToken,generation:0}
     const core = await this.preload()
-    if (generation !== this.resourceGeneration) return false
+    if (!this.plan.current(generation)) return false
     return core.warmUp(voiceId)
   }
   async prime(request) {
-    const generation = this.resourceGeneration
+    const generation = this.plan ? this.plan.capture() : {ticket:this.resourceToken,generation:0}
     const core = await this.preload()
-    if (generation !== this.resourceGeneration) return false
+    if (!this.plan.current(generation)) return false
     return core.prime(request)
   }
   /** Call synchronously inside a user gesture (the play tap): creates/resumes the AudioContext. */
@@ -143,23 +163,26 @@ export class NeuralVoiceEngine extends EventTarget {
   extendUpcoming(request) { return this.core?.extendUpcoming(request) ?? false }
   /** Stops playback and drops queued synthesis; fires no event for the cancelled id. Frees the workers after an idle spell (~90 s). */
   stop() {
-    if (this.core) return this.core.stop()
     this.queue.length = 0
+    this.plan?.clearQueue()
+    if (this.core) return this.core.stop()
     stopNativeAudio()
   }
   // Explicit reader close: never load the module/client or wait for native disposal.
   release() {
-    ++this.resourceGeneration
+    this.resourceToken = {}
+    this.plan?.invalidate()
     this.queue.length = 0
     if (this.core) this.core.release()
     else stopNativeAudio()
   }
   pause() {
-    if (this.core) return this.core.pause()
     this.queue.length = 0
+    this.plan?.clearQueue()
+    if (this.core) return this.core.pause()
     pauseNativeAudio()
   }
-  cancelCurrent() { if (this.core) this.core.cancelCurrent(); else this.queue.length = 0 }
+  cancelCurrent() { this.queue.length = 0; this.plan?.clearQueue(); this.core?.cancelCurrent() }
 }
 
 let shared = null

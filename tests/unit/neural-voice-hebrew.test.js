@@ -5,6 +5,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createHebrewPhonemizer, nakdimonInputIds, mergeNiqqud, hebrewToIpa, phonemeIdsFromIpa } from '../../src/js/readers/neural-voice/hebrew.js'
 import * as flow from '../../src/js/readers/neural-voice/synth-flow.js'
 import { requireRustVoiceCore } from '../../src/js/rust-voice-core.js'
+import { VoiceClientPlan } from '../../src/js/readers/neural-voice/client-plan.js'
 import { yieldToMessages } from '../../src/js/readers/neural-voice/task-yield.js'
 import { IPA_ORACLES, NAKDIMON_ORACLE, NON_DECIMAL_DIGIT_RANGES } from './fixtures/hebrew-oracles.js'
 
@@ -223,7 +224,7 @@ function workerHarness({ voiceFailure = false } = {}) {
     .replace("import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs')", 'Promise.resolve(__ort)')
   runInNewContext(source, { self, __ort: fake.ort, createPhonemizer: async () => espeak, createHebrewPhonemizer,
     exposePiperDurations:bytes=>({bytes,name:null}), phonemeMarks:async()=>[],
-    ...flow, requireRustVoiceCore, yieldToMessages, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
+    ...flow, requireRustVoiceCore, VoiceClientPlan, yieldToMessages, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
   let id = 0
   const send = async message => { const request = { ...message, id: ++id }; await self.onmessage({ data: request }); return request.id }
   return { ...fake, voiceSession, espeak, messages, send }

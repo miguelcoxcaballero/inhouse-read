@@ -98,3 +98,12 @@ mod app_room_coordination;
 
 #[cfg(feature = "shelf")]
 mod book_image_resources;
+
+#[cfg(feature = "shelf")]
+mod plant_layout_policy;
+
+#[cfg(feature = "shelf")]
+mod idle_startup_policy;
+
+#[cfg(feature = "shelf")]
+mod book_view_motion;

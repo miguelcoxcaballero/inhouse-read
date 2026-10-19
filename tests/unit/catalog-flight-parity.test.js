@@ -28,7 +28,7 @@ beforeEach(()=>{
   const animation={target:this.className||this.tagName,frames,timing,playState:'running',cancelled:false,finish:null}
   animation.finished=new Promise((resolve,reject)=>{animation.finish=()=>{animation.playState='finished';resolve(animation)};animation.fail=reject})
   animation.cancel=()=>{animation.cancelled=true;animation.playState='idle';trace('cancel',animation.target)}
-  animations.push(animation);trace('animate',animation.target,JSON.stringify(frames.map(frame=>frame.transform??null)),timing.duration);return animation
+  animations.push(animation);trace('animate',animation.target,JSON.stringify(frames),JSON.stringify(timing));return animation
  }
  Element.prototype.getBoundingClientRect=function(){
   if(this.classList?.contains('booklet'))return rect(20,600,80,100)
@@ -137,5 +137,69 @@ describe('catalogue failures against the frozen reference',()=>{
   const shipped=await failures(options=>createPlantCatalogNative(options,'ihr-plant-catalog-failures',catalogueUI))
   expect(reference.some(line=>line.includes('No se pudo añadir. Reintenta.'))).toBe(true)
   expect(shipped).toEqual(reference)
+ })
+})
+
+describe('catalogue flight eligibility and fallback parity',()=>{
+ const cases=[
+  ['visible',()=>{}],
+  ['hidden booklet',({trigger})=>{trigger.hidden=true}],
+  ['detached booklet',({trigger})=>trigger.remove()],
+  ['bottom at zero',({trigger})=>{trigger.getBoundingClientRect=()=>rect(20,-100,80,100)}],
+  ['right at zero',({trigger})=>{trigger.getBoundingClientRect=()=>rect(-80,20,80,100)}],
+  ['top at viewport edge',({trigger})=>{trigger.getBoundingClientRect=()=>rect(20,innerHeight,80,100)}],
+  ['left at viewport edge',({trigger})=>{trigger.getBoundingClientRect=()=>rect(innerWidth,20,80,100)}],
+  ['partly visible',({trigger})=>{trigger.getBoundingClientRect=()=>rect(20,-99,80,100)}],
+  ['reduced motion',()=>{globalThis.matchMedia=()=>({matches:true})}],
+  ['without matchMedia',()=>{globalThis.matchMedia=undefined}],
+  ['without stage',({options})=>{options.motionTarget=()=>null}],
+  ['without stage animate',({stage})=>{stage.animate=undefined}],
+  ['without frame scheduling',()=>{globalThis.requestAnimationFrame=undefined}]
+ ];
+ it.each(cases)('%s preserves exact animation frames and restored styles',async(_,configure)=>{
+  const execute=async make=>{
+   const events=[];studios.log=events;animations.length=0
+   const trigger=document.createElement('button');trigger.className='booklet';document.body.append(trigger)
+   const stage=document.createElement('div');stage.className='stage';stage.style.transformOrigin='20px 30px';stage.style.willChange='opacity';document.body.append(stage)
+   const options={motionTarget:()=>stage,onMotion:phase=>events.push('motion '+phase),onClose:()=>events.push('close')}
+   configure({trigger,stage,options})
+   const catalog=make(options)
+   try{
+    catalog.open(trigger);await tick();events.push('opening '+snapshot())
+    finishFlight();await vi.advanceTimersByTimeAsync(40);events.push('open '+snapshot())
+    catalog.close();await tick();events.push('closing '+snapshot())
+    finishFlight();await vi.advanceTimersByTimeAsync(40);events.push('closed '+snapshot())
+    events.push('restored '+stage.style.cssText)
+   }finally{catalog.destroy();await vi.runAllTimersAsync();trigger.remove();stage.remove()}
+   return events
+  }
+  studios.ui=null
+  const reference=await execute(options=>createPlantCatalogLegacy(options,'ihr-plant-catalog-gates'))
+  document.body.replaceChildren();studios.ui=catalogueUI
+  const shipped=await execute(options=>createPlantCatalogNative(options,'ihr-plant-catalog-gates',catalogueUI))
+  expect(shipped).toEqual(reference)
+ })
+ it('waits while a visible animation runs but lands after the tab hides',async()=>{
+  const descriptor=Object.getOwnPropertyDescriptor(document,'visibilityState')
+  const execute=async make=>{
+   let visible=true
+   Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>visible?'visible':'hidden'})
+   const events=[];studios.log=events;animations.length=0
+   const trigger=document.createElement('button');trigger.className='booklet';document.body.append(trigger)
+   const stage=document.createElement('div');stage.className='stage';document.body.append(stage)
+   const catalog=make({motionTarget:()=>stage,onMotion:phase=>events.push('motion '+phase)})
+   try{
+    catalog.open(trigger);await tick()
+    await vi.advanceTimersByTimeAsync(1600);events.push('visible '+snapshot())
+    visible=false;await vi.advanceTimersByTimeAsync(300);events.push('hidden '+snapshot())
+   }finally{catalog.destroy();await vi.runAllTimersAsync();trigger.remove();stage.remove()}
+   return events
+  }
+  try{
+   studios.ui=null;const reference=await execute(options=>createPlantCatalogLegacy(options,'ihr-plant-catalog-hidden'))
+   document.body.replaceChildren();studios.ui=catalogueUI
+   const shipped=await execute(options=>createPlantCatalogNative(options,'ihr-plant-catalog-hidden',catalogueUI))
+   expect(shipped).toEqual(reference)
+  }finally{if(descriptor)Object.defineProperty(document,'visibilityState',descriptor);else delete document.visibilityState}
  })
 })

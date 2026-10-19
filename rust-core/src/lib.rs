@@ -16,6 +16,8 @@ mod speech_tempo;
 mod synth_flow;
 #[cfg(feature = "voice")]
 mod supertonic_text;
+#[cfg(feature = "voice")]
+mod phonemizer_runtime;
 #[cfg(feature = "app")]
 mod reader_preferences;
 #[cfg(feature = "app")]
@@ -129,6 +131,8 @@ mod book_colors;
 mod frame_padding;
 #[cfg(feature="app")]
 mod shell_signature;
+#[cfg(feature = "app")]
+mod content_freshness;
 #[cfg(feature="app")]
 mod file_name;
 
@@ -140,3 +144,6 @@ mod paper_tone;
 
 #[cfg(feature = "voice")]
 mod voice_client;
+
+#[cfg(feature="voice")]
+mod supertonic_runtime;

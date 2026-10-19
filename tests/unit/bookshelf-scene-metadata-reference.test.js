@@ -77,7 +77,7 @@ describe('scene metadata adoption validates a complete clean batch before mutati
     const before = JSON.stringify({ ...shelf.canvas.dataset });
     const transforms = retained.map(model => model.matrixWorld.toArray());
     const materials = retained.map(model => model.children[0].material), geometries = retained.map(model => model.children[0].geometry);
-    const next = nextBooks(); expect(adopt(books, next)).toBe(true); drain();
+    const next = books.map(book => ({ ...book, progressUpdatedAt:13 })); expect(adopt(books, next)).toBe(true); drain();
     for (let i = 0; i < next.length; i++) {
       expect(model(next[i].id)).toBe(retained[i]); expect(retained[i].userData.entry.book).toBe(next[i]);
       expect(retained[i].userData.entry.node).toBe(entries[i].node);
@@ -86,6 +86,20 @@ describe('scene metadata adoption validates a complete clean batch before mutati
     }
     expect(gpu.creations).toBe(creations); expect(gpu.renderer.render).not.toHaveBeenCalled();
     expect(JSON.stringify({ ...shelf.canvas.dataset })).toBe(before); expect(shelf.flush()).toBe(false);
+  });
+  it('refreshes live identities learned after the scene was prepared without mutating prior snapshots', async () => {
+    books = nextBooks().map(book => ({ ...book, driveFileId:`drive-${book.id}` }));
+    for (let i = 0; i < books.length; i++) shelf.updateEntry(entries[i].node, books[i], entries[i].style);
+    await Promise.resolve(); await Promise.resolve();
+    shelf.invalidate(); shelf.flush({ force:true }); drain();
+    const next = books.map(book => ({ ...book, progressUpdatedAt:13 })); expect(adopt(books, next)).toBe(true);
+    shelf.invalidate(); shelf.flush({ force:true }); drain();
+    const entry = model('a').userData.entry, before = entry.localMotionPose, snapshot = [...before];
+    expect(before[0]).toBe('book:drive:drive-a');
+    shelf.updateEntry(entries[0].node, { ...next[0], driveFileId:'replacement-drive' }, entries[0].style);
+    shelf.invalidate(); shelf.flush({ force:true }); drain();
+    expect(model('a').userData.entry.localMotionPose[0]).toBe('book:drive:replacement-drive');
+    expect(before).toEqual(snapshot);
   });
   it('rejects stale, malformed, visual/order/unknown and disconnected batches without partially adopting another book', () => {
     const next = nextBooks();

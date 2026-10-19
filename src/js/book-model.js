@@ -1221,7 +1221,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
-  let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
+  let disposed = false, current, pendingModel = null, appearanceRevision = 0;
   let reliefPrepared = false, reliefPreparation = null;
   let currentBook = book, currentSnapshot = null, pageTheme = 1;
   const coverPaintKeyFor = (nextBook, nextStyle) => JSON.stringify([
@@ -1381,23 +1381,21 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     suspendedHost=resume ? canvas.parentElement : null;
     if (!resume) directEnabled=false;
   }
-  let motionFrameCapacity = null;
-  let nativeMotionHolds = 0, nativeMotionCapacity = null;
-  // Keep the largest compact frame across hinge, ribbon and zoom phases.
-  // It grows only when the real book needs more room, never to fill empty
-  // screen space. Tokens do not draw or resize; normal frames apply it.
+  // One shared state object: reading frame capacities never crosses WASM.
+  // Rust owns RAF jobs, cancellation and native frame reservation tokens.
+  const motionNative = needRustShelf();
+  const motionState = motionNative.book_view_motion_state({
+    createSampler:createBookMotionSampler, draw,
+    position:pose => positionModel(pose),
+    measure:pose => { positionModel(pose); return returnFrame(pose,true); },
+    noop:() => {}, tick:motionNative.book_view_motion_tick,
+    cancel:motionNative.book_view_motion_cancel, release:motionNative.book_view_motion_release,
+  });
+  const motionOptions = () => ({ direct:directEnabled, compact:compactReturnFrame, adaptive:adaptiveNativeFrame,
+    ratio:pixelRatio, width:viewportWidth, height:viewportHeight });
   function holdNativeMotionFrame() {
-    if (disposed || !directEnabled || !compactReturnFrame || !adaptiveNativeFrame ||
-        !Number.isInteger(pixelRatio) || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return () => {};
-    if (!nativeMotionHolds) nativeMotionCapacity = { width:displayedFrame?.width || 0, height:displayedFrame?.height || 0 };
-    nativeMotionHolds++;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      nativeMotionHolds = Math.max(0, nativeMotionHolds - 1);
-      if (!nativeMotionHolds) nativeMotionCapacity = null;
-    };
+    if (disposed) return () => {};
+    return motionNative.book_view_motion_hold(motionState,displayedFrame,motionOptions());
   }
   function placeModel(placed) {
     if (model.userData.setMotionPose) model.userData.setMotionPose(placed.opening, placed.withdrawal);
@@ -1417,7 +1415,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const placement = planReturnFrame({ compact:compactReturnFrame, direct:directEnabled, adaptive:adaptiveNativeFrame, measureOnly,
       scale:pose.scale, ratio:pixelRatio, viewportWidth, viewportHeight, coverOpen:current?.coverOpen,
       closedWidth:closedCompactWidth, openWidth:compactWidth, height:compactHeight,
-      motion:motionFrameCapacity, native:nativeMotionCapacity }, () => {
+      motion:motionState.motionCapacity, native:motionState.nativeCapacity }, () => {
       if (!adaptive) return compactBounds();
       model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
       // Project each visible mesh before forming the screen bounds. A world
@@ -1780,47 +1778,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) draw({ ...current, bookmarkWithdraw:amount });
   }
   function animateMotion(frames, { duration, onFrame }) {
-    cancel();
-    if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
-    const sampler=createBookMotionSampler(frames);
-    if (duration > 0 && !onFrame && directEnabled && compactReturnFrame && adaptiveNativeFrame &&
-        Number.isInteger(pixelRatio) && Number.isInteger(viewportWidth) && Number.isInteger(viewportHeight)) {
-      const capacity = { width:0,height:0 };
-      try {
-        // These are geometry-only probes: no draw, GPU allocation, snapshot or
-        // animation-clock advancement. Actual frames retain the original sampler.
-        for (let i=0;i<=16;i++) {
-          const pose=sampler.sample(i/16); positionModel(pose);
-          const frame=returnFrame(pose,true);
-          capacity.width=Math.max(capacity.width,frame.width);
-          capacity.height=Math.max(capacity.height,frame.height);
-        }
-        motionFrameCapacity=capacity;
-      } catch(error) { sampler.dispose(); throw error; }
-      finally { if (current) positionModel(current); }
-    }
-    let raf, resolve; const finished = new Promise(r => resolve = r);
-    cancel = () => { cancelAnimationFrame(raf); sampler.dispose(); motionFrameCapacity=null; resolve(); };
-    const lastFrame = performance.now();
-    const animation = { finished, cancel, lastFrameTime:lastFrame };
-    // Real time, so a slow device finishes each phase on schedule instead of
-    // stretching it frame by frame. A stalled frame on a phone GPU may absorb
-    // at most 100 ms (a fifth of a hinge opening), never half a phase, so the
-    // board and ribbon never visibly jump. The first step only covers the
-    // frame that scheduled the motion. The clock itself is the core's.
-    sampler.start(duration, lastFrame);
-    const tick = () => {
-      if (disposed) { sampler.dispose(); motionFrameCapacity=null; return resolve(); }
-      // RAF's shared frame timestamp can precede a gesture delivered after a
-      // slow draw. Measure when this callback actually runs, on the same clock
-      // that started the motion, so its first painted pose advances too.
-      const t = sampler.step(performance.now());
-      const pose = sampler.sample(t);
-      if (!onFrame?.(pose)) draw(pose);
-      animation.lastFrameTime = performance.now();
-      if (t < 1) raf = requestAnimationFrame(tick); else { sampler.dispose(); motionFrameCapacity=null; resolve(); }
-    };
-    raf = requestAnimationFrame(tick); return animation;
+    return motionNative.book_view_motion_start(motionState,frames,duration,onFrame,current,motionOptions());
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
@@ -1831,7 +1789,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
-    dispose(removeCanvas = true) { cancel(); nativeMotionHolds = 0; nativeMotionCapacity = null; if (!removeCanvas) captureSnapshot();
+    dispose(removeCanvas = true) { motionNative.book_view_motion_dispose(motionState); if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();
       gpu.domElement.removeEventListener('webglcontextlost', invalidatePresentation);
       gpu.domElement.removeEventListener('webglcontextrestored', invalidatePresentation);

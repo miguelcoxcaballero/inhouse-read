@@ -7,6 +7,8 @@ use crate::host::{jmax,jmin,js_round,number_string};
 use crate::jsmath::{Box3,Mat4};
 use crate::scene_view::{cl,or,RustScene};
 #[path="scene_foliage.rs"] mod foliage;
+#[path="scene_motion.rs"] mod motion;
+#[path="scene_projection.rs"] mod projection;
 
 fn put(out:&mut [f64],values:&[f64]){for (slot,value) in out.iter_mut().zip(values){*slot=*value;}}
 fn is_integer(value:f64)->bool{value.is_finite()&&value.floor()==value}

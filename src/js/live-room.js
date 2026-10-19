@@ -7,7 +7,6 @@ import {getDriveLiveContext,readDriveLiveMailbox,writeDriveLiveMailbox,readDrive
 // One identity per JavaScript realm: duplicated tabs clone sessionStorage.
 const realmPeer=crypto.randomUUID()
 const bytes=new TextEncoder(), text=new TextDecoder()
-const b64=b=>{let s='';for(let i=0;i<b.length;i+=16384)s+=String.fromCharCode(...b.subarray(i,i+16384));return btoa(s)}
 const un64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0))
 export class LiveRoom {
   #mailboxes=new Map()
@@ -22,15 +21,32 @@ export class LiveRoom {
   #motion
   #disconnected
   #transport
+  #ui=null
   constructor({receive,receiveMotion=()=>{},disconnected=()=>{},enabled=()=>!document.hidden}) {
     this.#receive=receive;this.#motion=receiveMotion;this.#disconnected=disconnected;this.#enabled=enabled
     // Rust owns pending/in-flight queues, retry cadence and stale-owner checks.
     // These functions only expose browser crypto, timers and Drive I/O.
     this.#transport={
-      valid:s=>this.#valid(s),now:()=>Date.now(),randomId:()=>crypto.randomUUID(),encode:b64,
+      enabled:()=>this.#enabled(),cryptoAvailable:()=>Boolean(crypto.subtle),session:()=>this.#session,setSession:s=>{this.#session=s},
+      desired:()=>this.#desired,publish:(account,snapshot)=>this.publish(account,snapshot),setDesired:desired=>{this.#desired=desired},epoch:()=>this.#epoch,setEpoch:epoch=>{this.#epoch=epoch},stop:()=>this.#stop(),start:s=>this.#start(s),
+      motionClock:()=>this.#motionClock,setMotionClock:value=>{this.#motionClock=value},newRoom:(account,own)=>new this.#ui.RustLiveRoom(account,own),
+      tabsAvailable:()=>Boolean(globalThis.BroadcastChannel),hashAccount:account=>crypto.subtle.digest('SHA-256',bytes.encode(account)),
+      openTabs:(s,name)=>{s.tabs=new BroadcastChannel(name);s.tabs.onmessage=({data})=>s.ui.live_transport_tabs_message(s,data,this.#transport)},
+      armMotion:(s,delay)=>this.#timer(s,()=>s.ui.live_transport_motion_heartbeat(s,this.#transport),delay),
+      armTabRequest:(s,delay)=>this.#timer(s,()=>s.ui.live_transport_request_tabs(s),delay),
+      armHeartbeat:(s,delay)=>this.#timer(s,()=>s.ui.live_transport_heartbeat(s,this.#transport,true),delay),
+      armStart:(s,delay)=>this.#timer(s,()=>{s.ready=this.#start(s)},delay),
+      valid:s=>this.#valid(s),now:()=>Date.now(),clock:()=>performance.now(),utf8:data=>bytes.encode(data),randomId:()=>crypto.randomUUID(),encode:data=>this.#ui.live_transport_base64(data),
       mailboxes:this.#mailboxes,stateFiles:this.#stateFiles,
       writeMailbox:writeDriveLiveMailbox,writeState:writeDriveLiveState,readRevision:readDriveLibraryRevision,
-      getContext:getDriveLiveContext,readState:readDriveLiveState,
+      getContext:getDriveLiveContext,readState:readDriveLiveState,readMailbox:readDriveLiveMailbox,
+      motion:(account,packet)=>this.#motion(account,packet),disconnected:id=>this.#disconnected(id),cancelTimer:id=>clearTimeout(id),
+      armPending:(s,delay)=>this.#timer(s,()=>s.ui.live_transport_pending(s,this.#transport,true),delay),
+      armDisconnected:(s,p,delay)=>this.#timer(s,()=>s.ui.live_transport_peer_event(s,p,'disconnected',this.#transport),delay),
+      armIceSignal:(s,p,delay)=>setTimeout(()=>s.ui.live_transport_peer_event(s,p,'signal',this.#transport),delay),
+      failed:(s,id)=>this.#failed(s,id),closePeer:(s,id)=>this.#close(s,id),peer:(s,id)=>this.#peer(s,id),pending:s=>this.#pending(s),
+      bindChannel:(s,p,c)=>this.#channel(s,p,c),ice:(p,delay)=>this.#ice(p,delay),
+      armHealth:(s,p,delay)=>this.#timer(s,()=>this.#health(s,p),delay),
       receive:(account,snapshot)=>this.#receive(account,snapshot),decode:data=>text.decode(data),
       decrypt:(s,encrypted)=>this.#decrypt(s,encrypted),
       importKey:context=>crypto.subtle.importKey('raw',un64(context.key.replaceAll('-','+').replaceAll('_','/')),'AES-GCM',false,['encrypt','decrypt']),
@@ -41,10 +57,12 @@ export class LiveRoom {
       encrypt:async(s,plain)=>{const iv=crypto.getRandomValues(new Uint8Array(12));
         const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:bytes.encode(s.account)},s.key,bytes.encode(plain));return{iv,data}}
     }
-    this.#onPeers=e=>{const s=this.#session;if(s?.native&&s.folder===e.detail?.folderId)this.#actions(s,s.native.observe(e.detail.peers,Date.now()))}
+    this.#onPeers=e=>{const s=this.#session;s?.ui?.live_transport_observe(s,e.detail,this.#transport)}
     globalThis.addEventListener('inhouse-drive-live-peers',this.#onPeers)
   }
   async publish(account,snapshot) {
+    if(this.#ui)return this.#ui.live_transport_publish(account,snapshot,this.#transport)
+    // Bootstrap-only fallback: Rust cannot govern its own module loading.
     if(!account||!this.#enabled()||!crypto.subtle)return
     this.#desired={account,snapshot}
     let s=this.#session
@@ -53,186 +71,49 @@ export class LiveRoom {
     await s.ready
     if(this.#valid(s)&&s.native)this.#publishNow(s)
   }
-  #publishNow(s){
-    const packet=s.native.publish(s.latest,crypto.randomUUID())
-    if(!packet)return
-    s.tabs?.postMessage({t:'snapshot',from:s.own,packet})
-    const encoded=bytes.encode(packet);for(const peer of s.peers.values())this.#send(peer,encoded)
-    s.statePending=packet;this.#scheduleState(s)
-  }
-  #scheduleState(s,delay=150){return s.ui.live_transport_schedule_state(s,this.#transport,delay)}
+  #publishNow(s){return s.ui.live_transport_publish_now(s,this.#transport)}
   #stateRelay(s){return s.ui.live_transport_state_relay(s,this.#transport)}
-  #accept(s,packet){return s.ui.live_transport_accept(s,packet,this.#transport)}
-  publishMotion(account,frame) {
-    const s=this.#session;if(!s?.native||s.account!==account||!this.#valid(s))return
-    frame.sequence=++this.#motionClock
-    const packet=s.native.publishMotion(frame);if(!packet)return
-    this.#motionClock=frame.sequence
-    s.motionLatest=frame.phase==='frame'?{...frame}:null
-    if(s.motionLatest&&!s.motionHeartbeat)s.motionHeartbeat=this.#timer(s,()=>{
-      s.motionHeartbeat=null;if(s.motionLatest)this.publishMotion(s.account,{...s.motionLatest})
-    },1000)
-    s.tabs?.postMessage({t:'motion',from:s.own,packet})
-    for(const p of s.peers.values())this.#sendMotion(p,packet)
-    if(s.native.peerCount>s.native.connectedCount){s.relayPending=packet;this.#scheduleRelay(s)}
-  }
-  #scheduleRelay(s){return s.ui.live_transport_schedule_relay(s,this.#transport)}
+  publishMotion(account,frame){return this.#ui?.live_transport_publish_motion(account,frame,this.#transport)}
   #relay(s){return s.ui.live_transport_relay(s,this.#transport)}
-  #valid(s){return this.#session===s&&s.epoch===this.#epoch&&this.#enabled()}
-  #timer(s,fn,ms){const t=setTimeout(()=>{s.timers.delete(t);if(this.#valid(s))fn()},ms);s.timers.add(t);return t}
-  #context(s){return s.ui.live_transport_context(s,this.#transport)}
+  #valid(s){return this.#ui?this.#ui.live_transport_is_valid(s,this.#transport):this.#session===s&&s.epoch===this.#epoch&&this.#enabled()}
+  #timer(s,fn,ms){const t=setTimeout(()=>{if(s.ui)s.ui.live_transport_timer_fired(s,t,fn,this.#transport);else{s.timers.delete(t);if(this.#valid(s))fn()}},ms);s.timers.add(t);return t}
   async #start(s) {
     try{
-      if(!s.native){
-      const ui=await cloudModule();if(!this.#valid(s))return
-      s.ui=ui;s.own=realmPeer;s.file=this.#mailboxes.get(s.account)||null;s.stateFile=this.#stateFiles.get(s.account)||null;s.native=new ui.RustLiveRoom(s.account,s.own)
-      if(globalThis.BroadcastChannel){
-        const hash=await crypto.subtle.digest('SHA-256',bytes.encode(s.account));if(!this.#valid(s))return
-        s.tabs=new BroadcastChannel('inhouse-read-room-v1:'+b64(new Uint8Array(hash)))
-        s.tabs.onmessage=async({data})=>{
-          if(!this.#valid(s)||data?.from===s.own)return
-          if(data?.t==='state-request'){if(s.native.latest)s.tabs.postMessage({t:'snapshot',from:s.own,packet:s.native.latest});return}
-          if(data?.t==='motion'){const packet=s.native.receiveMotion(data.packet);if(packet){this.#motion(s.account,packet);for(const p of s.peers.values())if(p.id!==packet.from)this.#sendMotion(p,data.packet)};return}
-          if(data?.t==='snapshot'){try{const packet=s.native.receive(data.packet);await this.#accept(s,packet)}catch{if(this.#valid(s))this.#timer(s,()=>s.tabs?.postMessage({t:'state-request',from:s.own}),1000)}}
-        }
-        s.tabs.postMessage({t:'state-request',from:s.own})
-      }
-      }
-      await this.#context(s);if(!this.#valid(s))return
-      this.#publishNow(s)
-      await this.#write(s);if(!this.#valid(s))return
-      s.initFailures=0;this.#discover(s);this.#heartbeat(s)
-    }catch(error){
-      if(this.#valid(s)){
-        s.initFailures=(s.initFailures||0)+1
-        this.#timer(s,()=>{s.ready=this.#start(s)},Math.min(15000,1000*2**Math.min(s.initFailures,4)))
-      }
+      const ui=s.ui||await cloudModule();if(!this.#valid(s))return
+      this.#ui=ui;s.ui=ui;return ui.live_transport_start(s,realmPeer,this.#transport)
+    }catch{
+      // Only a failed WASM import reaches this path; once loaded, Rust owns
+      // context/channel/bootstrap retries and their cancellation decisions.
+      if(this.#valid(s)){s.initFailures=(s.initFailures||0)+1;this.#timer(s,()=>{s.ready=this.#start(s)},Math.min(15000,1000*2**Math.min(s.initFailures,4)))}
     }
   }
-  #heartbeat(s){this.#timer(s,()=>{this.#write(s).catch(()=>{});this.#heartbeat(s)},20000)}
   #discover(s){return s.ui.live_transport_discover(s,this.#transport)}
   #write(s){return s.ui.live_transport_write(s,this.#transport)}
-  #signal(s,id,description,nonce){return s.ui.live_transport_signal(s,id,description,nonce,this.#transport)}
-  #actions(s,actions){for(const [action,id,file] of actions){if(!this.#valid(s))break;if(action==='close'){this.#close(s,id)}else if(action==='read'){this.#read(s,id,file).catch(()=>{if(this.#valid(s))s.native.readFailed(id)})}else if(action==='offer'){this.#offer(s,id).catch(()=>this.#failed(s,id))}}this.#pending(s);this.#scheduleState(s)}
-  #pending(s){if(s.pending||!this.#valid(s))return;if(![...s.peers.values()].some(p=>!p.open))return;s.pending=this.#timer(s,()=>{s.pending=null;this.#actions(s,s.native.pending(Date.now()))},350)}
-  async #read(s,id,file) {
-    s.reading ||= new Set();if(s.reading.has(id))return;s.reading.add(id)
-    try{
-      const mailbox=await readDriveLiveMailbox(file);if(!this.#valid(s)||mailbox.peer!==id)return
-      if(typeof mailbox.motion?.data==='string'&&mailbox.motion.data.length<=132000){
-        try{
-          const decoded=await this.#decrypt(s,mailbox.motion);if(!this.#valid(s))return
-          const envelope=JSON.parse(text.decode(decoded)),packet=s.native.receiveRelay(id,envelope,Date.now())
-          if(packet){this.#motion(s.account,packet);s.tabs?.postMessage({t:'motion',from:s.own,packet:envelope.packet});for(const p of s.peers.values())if(p.id!==id)this.#sendMotion(p,envelope.packet)}
-        }catch{}
-      }
-      if(mailbox.state)this.#readState(s,id,mailbox.state).catch(()=>{if(this.#valid(s))s.native.readFailed(id)})
-      const encrypted=mailbox.signals[s.own];if(!encrypted||typeof encrypted.data!=='string'||encrypted.data.length>65000)return
-      let decoded
-      try{decoded=await this.#decrypt(s,encrypted)}catch{await this.#context(s);if(!this.#valid(s))return;decoded=await this.#decrypt(s,encrypted)}
-      if(!this.#valid(s))return
-      const signal=s.native.signal(id,JSON.parse(text.decode(decoded)),Date.now());if(!signal)return
-      if(signal.type==='offer'){
-        let p=s.peers.get(id);if(p?.nonce!==signal.nonce){this.#close(s,id);p=this.#peer(s,id);p.nonce=signal.nonce;this.#pending(s)}
-        if(p.pc.remoteDescription){await this.#candidates(p,signal.sdp);return}
-        await p.pc.setRemoteDescription({type:'offer',sdp:signal.sdp});if(!this.#validPeer(s,p))return
-        if(!p.pc.localDescription)await p.pc.setLocalDescription(await p.pc.createAnswer());await this.#ice(s,p)
-        if(this.#validPeer(s,p)){await this.#signal(s,id,p.pc.localDescription,p.nonce)}
-      }else{
-        const p=s.peers.get(id);if(this.#validPeer(s,p)){if(p.pc.remoteDescription)await this.#candidates(p,signal.sdp);else await p.pc.setRemoteDescription({type:'answer',sdp:signal.sdp})}
-      }
-    }finally{s.reading.delete(id)}
-  }
-  #readState(s,id,state){return s.ui.live_transport_read_state(s,id,state,this.#transport)}
-  async #candidates(p,sdp) {
-    const known=new Set((p.pc.remoteDescription?.sdp||'').split(/\r?\n/).filter(l=>l.startsWith('a=candidate:')))
-    p.candidates ||= new Set();let mid='0',index=-1
-    for(const line of sdp.split(/\r?\n/)){
-      if(line.startsWith('m='))index++
-      if(line.startsWith('a=mid:'))mid=line.slice(6)
-      if(line.startsWith('a=candidate:')&&!known.has(line)&&!p.candidates.has(line)){
-        await p.pc.addIceCandidate({candidate:line.slice(2),sdpMid:mid,sdpMLineIndex:Math.max(0,index)});p.candidates.add(line)
-      }
-    }
-  }
+  #pending(s){return s.ui.live_transport_pending(s,this.#transport,false)}
   #decrypt(s,e){return crypto.subtle.decrypt({name:'AES-GCM',iv:un64(e.iv),additionalData:bytes.encode(s.account)},s.key,un64(e.data))}
-  #validPeer(s,p){return p&&this.#valid(s)&&s.peers.get(p.id)===p}
   #peer(s,id) {
-    const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}],iceCandidatePoolSize:0,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'}),p={id,pc,open:false,stream:new s.ui.RustRoomPacketStream(),lastReceived:performance.now(),healthAt:performance.now()};s.peers.set(id,p)
+    const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}],iceCandidatePoolSize:0,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'}),p=s.ui.live_transport_new_peer(s,id,pc,new s.ui.RustRoomPacketStream(),this.#transport)
     pc.ondatachannel=e=>this.#channel(s,p,e.channel)
-    pc.onconnectionstatechange=()=>{
-      if(!this.#validPeer(s,p))return
-      if(['failed','closed'].includes(pc.connectionState))this.#failed(s,id)
-      else if(pc.connectionState==='disconnected')this.#timer(s,()=>{if(this.#validPeer(s,p)&&pc.connectionState==='disconnected')this.#failed(s,id)},5000)
-    }
-    // Keep the complete encrypted candidate list in the directed mailbox.
-    // Unlike a 1.2-second one-shot offer, late STUN candidates are delivered too.
-    pc.onicecandidate=()=>{
-      if(!this.#validPeer(s,p)||!p.nonce||!pc.localDescription)return
-      clearTimeout(p.iceTimer);p.iceTimer=setTimeout(()=>{if(this.#validPeer(s,p))this.#signal(s,id,pc.localDescription,p.nonce).catch(()=>{})},200)
-    }
+    pc.onconnectionstatechange=()=>s.ui.live_transport_peer_event(s,p,'connection',this.#transport)
+    pc.onicecandidate=()=>s.ui.live_transport_peer_event(s,p,'ice',this.#transport)
     return p
   }
-  async #offer(s,id) {
-    await this.#context(s);if(!this.#valid(s))return
-    this.#close(s,id);const nonce=crypto.randomUUID();if(!s.native.beginOffer(id,nonce,Date.now()))return
-    const p=this.#peer(s,id);p.nonce=nonce;this.#pending(s);this.#channel(s,p,p.pc.createDataChannel('inhouse-read-room-v1',{ordered:true}));this.#channel(s,p,p.pc.createDataChannel('inhouse-read-interactive-v1',{ordered:true}))
-    await p.pc.setLocalDescription(await p.pc.createOffer());await this.#ice(s,p)
-    if(this.#validPeer(s,p)){await this.#signal(s,id,p.pc.localDescription,nonce)}
+  #ice(p,delay){if(p.pc.iceGatheringState==='complete')return Promise.resolve();return new Promise(resolve=>{const done=()=>{clearTimeout(timer);p.pc.removeEventListener('icegatheringstatechange',changed);resolve()};const changed=()=>{if(p.pc.iceGatheringState==='complete')done()};const timer=setTimeout(done,delay);p.pc.addEventListener('icegatheringstatechange',changed)})}
+  #channel(s,p,c) {
+    const kind=s.ui.live_transport_bind_channel(p,c);if(!kind)return
+    c.onopen=()=>s.ui.live_transport_channel_event(s,p,c,kind,'open',this.#transport)
+    c.onclose=()=>s.ui.live_transport_channel_event(s,p,c,kind,'close',this.#transport)
+    c.onbufferedamountlow=()=>s.ui.live_transport_channel_event(s,p,c,kind,'low',this.#transport)
+    c.onmessage=e=>kind==='interactive'
+      ?s.ui.live_transport_interactive_message(s,p,c,e.data,this.#transport)
+      :s.ui.live_transport_room_message(s,p,e.data,this.#transport)
   }
-  #ice(s,p){if(p.pc.iceGatheringState==='complete')return Promise.resolve();return new Promise(resolve=>{const done=()=>{clearTimeout(timer);p.pc.removeEventListener('icegatheringstatechange',changed);resolve()};const changed=()=>{if(p.pc.iceGatheringState==='complete')done()};const timer=setTimeout(done,1200);p.pc.addEventListener('icegatheringstatechange',changed)})}
-  #channel(s,p,channel) {
-    if(channel.label==='inhouse-read-interactive-v1'){this.#interactive(s,p,channel);return}
-    if(channel.label!=='inhouse-read-room-v1'){channel.close();return}
-    p.channel=channel;channel.binaryType='arraybuffer';channel.bufferedAmountLowThreshold=65536
-    channel.onopen=()=>{if(!this.#validPeer(s,p))return;p.open=true;p.lastReceived=performance.now();if(p.interactive?.readyState==='open')s.native.connected(p.id);this.#send(p,s.native.latest);this.#health(s,p)}
-    channel.onclose=()=>{if(this.#validPeer(s,p))this.#failed(s,p.id)}
-    channel.onbufferedamountlow=()=>this.#pump(p)
-    channel.onmessage=async e=>{
-      if(!this.#validPeer(s,p))return
-      try{
-        p.lastReceived=performance.now();
-        const assembled=p.stream.receive(typeof e.data==='string'?e.data:new Uint8Array(e.data))
-        if(assembled){const encoded=text.decode(assembled),packet=s.native.receive(encoded);if(packet?.snapshot){s.tabs?.postMessage({t:'snapshot',from:s.own,packet:encoded});await this.#accept(s,packet)}}
-      }catch{if(this.#validPeer(s,p))this.#failed(s,p.id)}
-    }
-  }
-  #interactive(s,p,c) {
-    p.interactive=c;c.bufferedAmountLowThreshold=32768
-    c.onopen=()=>{if(this.#validPeer(s,p)){if(p.open)s.native.connected(p.id);this.#flushMotion(p)}}
-    c.onbufferedamountlow=()=>this.#flushMotion(p)
-    c.onclose=()=>{if(p.interactive===c){p.interactive=null;if(this.#validPeer(s,p))this.#failed(s,p.id)}}
-    c.onmessage=e=>{
-      if(!this.#validPeer(s,p)||typeof e.data!=='string'||e.data.length>98304)return
-      try{
-        const wire=JSON.parse(e.data);p.lastReceived=performance.now()
-        if(wire.t==='ping'){if(c.readyState==='open')c.send(JSON.stringify({t:'pong',at:wire.at}));return}
-        if(wire.t==='pong')return
-        const packet=s.native.receiveMotion(e.data);if(packet){this.#motion(s.account,packet);s.tabs?.postMessage({t:'motion',from:s.own,packet:e.data});for(const other of s.peers.values())if(other!==p&&other.id!==packet.from)this.#sendMotion(other,e.data)}
-      }catch{}
-    }
-  }
-  #health(s,p) {
-    if(!this.#validPeer(s,p)||!p.open)return
-    if(performance.now()-p.lastReceived>12000 || (p.interactive?.readyState!=='open' && performance.now()-p.healthAt>12000)){this.#failed(s,p.id);return}
-    if(p.interactive?.readyState==='open')try{p.interactive.send(JSON.stringify({t:'ping',at:Date.now()}))}catch{}
-    this.#timer(s,()=>this.#health(s,p),2000)
-  }
-  #sendMotion(p,packet){p.motion=packet;this.#flushMotion(p)}
-  #flushMotion(p){const c=p.interactive;if(c?.readyState!=='open'||!p.motion||c.bufferedAmount>32768)return
-    try{c.send(p.motion);p.motion=null}catch{}
-  }
-  #send(p,packet){if(!packet)return;const data=typeof packet==='string'?bytes.encode(packet):packet
-    if(p.stream.queue(data))this.#pump(p)
-  }
-  #pump(p){const c=p.channel;if(c?.readyState!=='open')return
-    try{while(c.bufferedAmount<131072){const part=p.stream.next();if(part===undefined)return;c.send(part)}}catch{c.close()}
-  }
-  #failed(s,id){if(!this.#valid(s))return;this.#close(s,id);s.native.failed(id,Date.now());this.#scheduleState(s)}
-  #close(s,id){const p=s.peers.get(id);if(!p)return;s.peers.delete(id);delete s.signals[id];clearTimeout(p.iceTimer);p.interactive?.close();p.channel?.close();p.pc.close();p.stream.free();this.#disconnected(id)}
-  resume(){const desired=this.#desired;if(desired&&!this.#session&&this.#enabled())return this.publish(desired.account,desired.snapshot).catch(()=>{})}
+  #health(s,p){return s.ui.live_transport_health(s,p,this.#transport)}
+  #failed(s,id){return s.ui.live_transport_failed(s,id,this.#transport)}
+  #close(s,id){return s.ui.live_transport_close(s,id,this.#transport)}
+  resume(){if(this.#ui)return this.#ui.live_transport_resume(this.#transport);const desired=this.#desired;if(desired&&!this.#session&&this.#enabled())return this.publish(desired.account,desired.snapshot).catch(()=>{})}
   suspend(){this.#stop()}
-  pause(){this.#desired=null;this.#stop()}
-  #stop(){const s=this.#session;this.#session=null;this.#epoch++;if(!s)return;s.tabs?.close();this.#disconnected('');for(const timer of s.timers)clearTimeout(timer);for(const id of s.peers.keys())this.#close(s,id);s.native?.free()}
+  pause(){if(this.#ui)return this.#ui.live_transport_pause(this.#transport);this.#desired=null;this.#stop()}
+  #stop(){if(this.#ui)return this.#ui.live_transport_stop(this.#transport);const s=this.#session;this.#session=null;this.#epoch++;if(!s)return;s.tabs?.close();this.#disconnected('');for(const timer of s.timers)clearTimeout(timer);for(const id of s.peers.keys())this.#close(s,id);s.native?.free()}
   destroy(){this.pause();globalThis.removeEventListener('inhouse-drive-live-peers',this.#onPeers)}
 }

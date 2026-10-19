@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { setTimeout as waitForHost } from 'node:timers/promises';
 import { rustUI } from './helpers/rust-ui-ready.js';
-const io=vi.hoisted(()=>({context:vi.fn(),read:vi.fn(),write:vi.fn(),revision:vi.fn(),stateRead:vi.fn(),stateWrite:vi.fn()}));
-vi.mock('../../src/js/cloud-native.js',()=>({cloudModule:async()=>rustUI}));
+const io=vi.hoisted(()=>({module:vi.fn(),context:vi.fn(),read:vi.fn(),write:vi.fn(),revision:vi.fn(),stateRead:vi.fn(),stateWrite:vi.fn()}));
+vi.mock('../../src/js/cloud-native.js',()=>({cloudModule:()=>io.module()}));
 vi.mock('../../src/js/drive-client.js',()=>({getDriveLiveContext:io.context,readDriveLiveMailbox:io.read,
   writeDriveLiveMailbox:io.write,readDriveLibraryRevision:io.revision,readDriveLiveState:io.stateRead,writeDriveLiveState:io.stateWrite}));
 import { LiveRoom } from '../../src/js/live-room.js';
@@ -46,7 +46,7 @@ beforeEach(()=>{
   vi.useFakeTimers({toFake:['setTimeout','clearTimeout','Date','performance']});
   vi.stubGlobal('crypto',webcrypto);vi.stubGlobal('BroadcastChannel',undefined);vi.stubGlobal('RTCPeerConnection',Peer);
   pcs.length=0;for(const fn of Object.values(io))fn.mockReset();
-  io.context.mockResolvedValue({folderId:'folder',key});io.write.mockResolvedValue({id:'own-mailbox'});
+  io.module.mockResolvedValue(rustUI);io.context.mockResolvedValue({folderId:'folder',key});io.write.mockResolvedValue({id:'own-mailbox'});
   io.read.mockResolvedValue({v:1,peer:'zzzzzzzz',signals:{}});io.stateWrite.mockResolvedValue({id:'state-file'});
   io.revision.mockImplementation(async()=>{
     dispatchEvent(new CustomEvent('inhouse-drive-live-peers',{detail:{folderId:'folder',peers:[{
@@ -58,6 +58,50 @@ afterEach(()=>{for(const room of rooms.splice(0))room.destroy();vi.useRealTimers
 // Run identical public transport scenarios against frozen prior JS and Rust.
 describe.each([['Rust',LiveRoom],['previous JS',ReferenceRoom]])('%s asynchronous live transport',(_,Room)=>{
   const create=(options={})=>{const room=new Room({enabled:()=>true,receive:async()=>{},...options});rooms.push(room);return room;};
+  it('recovers a failed cold WASM import without loading another app subsystem',async()=>{
+    io.module.mockRejectedValueOnce(Error('module temporarily unavailable'));
+    const room=create();await room.publish('account',snapshot(true));expect(io.context).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);await flush(()=>io.write.mock.calls.length>0);
+    expect(io.module.mock.calls.length).toBe(2);expect(io.context).toHaveBeenCalled();
+  });
+  it('does not revive an account superseded while its module was loading',async()=>{
+    let finish;io.module.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    io.revision.mockResolvedValue('[]');
+    const room=create(),old=room.publish('old-account',snapshot(true));
+    await room.publish('account',snapshot(false));const writes=io.write.mock.calls.length;
+    finish(rustUI);await old;expect(io.write.mock.calls.length).toBe(writes);
+  });
+  it('abandons startup if suspended during the account hash operation',async()=>{
+    const tabs=[];vi.stubGlobal('BroadcastChannel',class{constructor(){tabs.push(this)}postMessage(){}close(){}});
+    let finish;vi.spyOn(webcrypto.subtle,'digest').mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    const room=create(),pending=room.publish('account',snapshot(true));await flush(()=>Boolean(finish));
+    room.suspend();finish(new Uint8Array(32).buffer);await pending;
+    expect(tabs).toHaveLength(0);expect(io.context).not.toHaveBeenCalled();
+  });
+  it('replies to tab state requests and retries a rejected tab snapshot application',async()=>{
+    const tabs=[];vi.stubGlobal('BroadcastChannel',class{constructor(name){this.name=name;this.postMessage=vi.fn();tabs.push(this)}close(){}});
+    io.revision.mockResolvedValue('[]');const receive=vi.fn().mockRejectedValueOnce(Error('storage busy')).mockResolvedValue();
+    const room=create({receive});await room.publish('account',snapshot(true));const tab=tabs[0];
+    expect(tab.name).toMatch(/^inhouse-read-room-v1:/);
+    const previous=tab.postMessage.mock.calls.length;
+    await tab.onmessage({data:{from:'remote',t:'state-request'}});
+    expect(tab.postMessage.mock.calls.length).toBe(previous+1);expect(tab.postMessage.mock.calls.at(-1)[0].t).toBe('snapshot');
+    const packet=JSON.stringify({v:1,account:'account',from:'remote',id:'tab-state-1',snapshot:snapshot(false)});
+    await tab.onmessage({data:{from:'remote',t:'snapshot',packet}});
+    await vi.advanceTimersByTimeAsync(1000);expect(tab.postMessage.mock.calls.at(-1)[0].t).toBe('state-request');
+    await tab.onmessage({data:{from:'remote',t:'snapshot',packet}});expect(receive).toHaveBeenCalledTimes(2);
+    room.suspend();const calls=receive.mock.calls.length;await tab.onmessage({data:{from:'remote',t:'snapshot',packet}});expect(receive).toHaveBeenCalledTimes(calls);
+  });
+  it('renews a motion lease once per second and stops it at the final gesture frame',async()=>{
+    const tabs=[];vi.stubGlobal('BroadcastChannel',class{constructor(){this.postMessage=vi.fn();tabs.push(this)}close(){}});
+    io.revision.mockResolvedValue('[]');const room=create();await room.publish('account',snapshot(true));
+    const frame={gesture:'motion',phase:'frame',shelfType:'baggebo',poses:[['book:drive:one',1,0,.1,.02,0,0,0,1,1]]};
+    const sent=()=>tabs[0].postMessage.mock.calls.map(([packet])=>packet).filter(packet=>packet.t==='motion').map(packet=>JSON.parse(packet.packet));
+    room.publishMotion('account',frame);expect(sent()).toHaveLength(1);await vi.advanceTimersByTimeAsync(1000);
+    expect(sent()).toHaveLength(2);expect(sent()[1].sequence).toBeGreaterThan(sent()[0].sequence);
+    room.publishMotion('account',{...frame,phase:'end'});expect(sent()).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(3000);expect(sent()).toHaveLength(3);
+  });
   it('keeps a newer pending lamp state when an older in-flight state write fails',async()=>{
     let rejectFirst;
     io.stateWrite.mockImplementationOnce(()=>new Promise((_,reject)=>{rejectFirst=reject;}));

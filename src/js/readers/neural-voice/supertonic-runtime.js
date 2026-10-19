@@ -2,9 +2,10 @@
 // Copyright (c) 2025 Supertone Inc. See /licenses/supertonic-sdk-MIT.txt.
 // The model weights have the separate OpenRAIL-M licence.
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
-import { synthesisRate, speedUpSpeech } from './synth-flow.js';
+import { speedUpSpeech } from './synth-flow.js';
 import { getText, layout, putText, withArena } from './core-call.js';
 import { loadedRustVoiceCore } from '../../rust-voice-core.js';
+import {supertonicRuntimeConfig,supertonicTextIds,supertonicLocalMarks,supertonicNoise,createSupertonicPcmJoin,supertonicStyleValid,createSupertonicState} from './supertonic-plan.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
 import { yieldToMessages as yieldTask } from './task-yield.js';
@@ -18,7 +19,7 @@ export const SUPERTONIC_STEPS = 6;
  * processing, after inference. A percentage margin still lost words at 2x.
  */
 export function supertonicSeconds(predicted,rate) {
-  return predicted/synthesisRate(rate);
+  return loadedRustVoiceCore().supertonic_seconds(+predicted,Number(rate));
 }
 /** `<es>text.</es>` for the model, or '' when nothing speakable is left. The cleanup is Rust (rust-core supertonic_text.rs, the voice
  * core); the compatibility decomposition of Unicode is the browser's. */
@@ -52,10 +53,8 @@ export function supertonicTextChunks(text,lang) {
  * one active utterance; no engine/download/UI dependency enters this module. */
 export async function createSupertonicRuntime({ort,buffers,config,indexer,styles,steps=SUPERTONIC_STEPS,random=Math.random,yieldToMessages=yieldTask}={}) {
   if(!ort?.InferenceSession||!ort.Tensor||!Array.isArray(indexer))throw new Error('Configuración Supertonic inválida');
-  const sampleRate=Number(config?.ae?.sample_rate),chunkSize=Number(config?.ae?.base_chunk_size)*Number(config?.ttl?.chunk_compress_factor),latentDim=Number(config?.ttl?.latent_dim)*Number(config?.ttl?.chunk_compress_factor);
-  if(!Number.isInteger(sampleRate)||sampleRate<8000||sampleRate>96000||!Number.isInteger(chunkSize)||chunkSize<1||!Number.isInteger(latentDim)||latentDim<1||latentDim>1024)throw new Error('Dimensiones Supertonic inválidas');
-  if(!Number.isInteger(steps)||steps<2||steps>16)throw new Error('Pasos Supertonic inválidos');
-  const sessions={},styleTensors={};let disposed=false,running=null;
+  const {sampleRate,chunkSize,latentDim}=supertonicRuntimeConfig(config,steps);
+  const sessions={},styleTensors={};let running=null;
   const releaseTensor=t=>{try{t?.dispose?.();}catch{}};
   const releaseAll=async()=>{for(const style of Object.values(styleTensors)){releaseTensor(style.ttl);releaseTensor(style.dp);}for(const session of Object.values(sessions))await session.release?.();};
   try {
@@ -70,29 +69,29 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       const tensors={};styleTensors[name]=tensors;
       for(const [key,field]of [['ttl','style_ttl'],['dp','style_dp']]) {
         const source=raw[field],dims=source?.dims,data=source?.data?.flat(Infinity);
-        if(!Array.isArray(dims)||dims.length!==3||dims[0]!==1||dims.some(n=>!Number.isInteger(n)||n<1)||!data||data.length!==dims.reduce((a,b)=>a*b,1)||data.some(n=>!Number.isFinite(n)))throw new Error(`Estilo ${name} inválido`);
+        if(!supertonicStyleValid(dims,data))throw new Error(`Estilo ${name} inválido`);
         tensors[key]=new ort.Tensor('float32',new Float32Array(data),dims);
       }
     }
   } catch(error){await releaseAll();throw error;}
 
+  const state=createSupertonicState();
   async function infer(text,{lang,style,rate,isActive,marks = [],onMarks = () => {}}) {
     const live=new Set(),own=t=>{live.add(t);return t;},drop=t=>{if(live.delete(t))releaseTensor(t);};
-    const check=()=>{if(disposed||!isActive())throw cancelled();};
+    const check=()=>{if(!state.active()||!isActive())throw cancelled();};
     const checkpoint=async()=>{await yieldToMessages();check();};
     const run=async(name,feeds)=>{check();const output=await sessions[name].run(feeds);for(const t of Object.values(output))own(t);check();return output;};
     try {
       check();const normalized=normalizeSupertonicText(text,lang);if(!normalized)return new Float32Array();
-      const characters=Array.from(normalized),ids=BigInt64Array.from(characters,char=>BigInt(indexer[char.codePointAt(0)]??-1));
+      const ids=supertonicTextIds(normalized,indexer);
       const textIds=own(new ort.Tensor('int64',ids,[1,ids.length])),textMask=own(new ort.Tensor('float32',new Float32Array(ids.length).fill(1),[1,1,ids.length]));
       const selected=styleTensors[style],dp=await run('duration_predictor',{text_ids:textIds,style_dp:selected.dp,text_mask:textMask});
       const seconds=supertonicSeconds(Number(dp.duration?.data?.[0]),rate);drop(dp.duration);
-      if(!Number.isFinite(seconds)||seconds<=0||seconds>40)throw new Error('Duración de audio fuera de rango');
+      if(!loadedRustVoiceCore().supertonic_duration_ok(seconds))throw new Error('Duración de audio fuera de rango');
       await checkpoint();
       const encoded=await run('text_encoder',{text_ids:textIds,style_ttl:selected.ttl,text_mask:textMask});
-      const frames=Math.ceil(Math.floor(seconds*sampleRate)/chunkSize),shape=[1,latentDim,frames];
-      const noise=new Float32Array(latentDim*frames);
-      for(let i=0;i<noise.length;i++)noise[i]=Math.sqrt(-2*Math.log(Math.max(.0001,random())))*Math.cos(2*Math.PI*random());
+      const frames=loadedRustVoiceCore().supertonic_audio_frames(seconds,sampleRate,chunkSize),shape=[1,latentDim,frames];
+      const noise=supertonicNoise(latentDim*frames,random);
       let latent=own(new ort.Tensor('float32',noise,shape));
       const latentMask=own(new ort.Tensor('float32',new Float32Array(frames).fill(1),[1,1,frames]));
       const totalStep=own(new ort.Tensor('float32',Float32Array.of(steps),[1]));
@@ -114,8 +113,8 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       const predict = async value => {
         const normalized = normalizeSupertonicText(value,lang)
         if (!normalized) return 0
-        const chars = Array.from(normalized), ids = own(new ort.Tensor('int64',BigInt64Array.from(chars,ch=>BigInt(indexer[ch.codePointAt(0)]??-1)),[1,chars.length]))
-        const mask = own(new ort.Tensor('float32',new Float32Array(chars.length).fill(1),[1,1,chars.length]))
+        const values=supertonicTextIds(normalized,indexer),ids=own(new ort.Tensor('int64',values,[1,values.length]))
+        const mask = own(new ort.Tensor('float32',new Float32Array(values.length).fill(1),[1,1,values.length]))
         const result = await run('duration_predictor',{text_ids:ids,style_dp:selected.dp,text_mask:mask})
         const duration = Number(result.duration?.data?.[0])
         drop(ids); drop(mask); drop(result.duration)
@@ -124,7 +123,7 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       const timeline = []
       for (const offset of marks) {
         const before = await predict(text.slice(0,offset)), after = await predict(text.slice(offset))
-        if (before + after > 0) timeline.push({offset,sample:Math.min(pcm.length-1,Math.round(pcm.length * before / (before + after))),estimated:true})
+        if (before + after > 0) timeline.push({offset,sample:loadedRustVoiceCore().supertonic_mark_sample(pcm.length,before,after),estimated:true})
       }
       onMarks(timeline)
       return pcm;
@@ -133,25 +132,30 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
   return {
     sampleRate,
     synthesize(text,{lang,style='F1',rate=1,isActive=()=>true,marks=[]}={}) {
-      if(disposed)return Promise.reject(cancelled());if(running)return Promise.reject(new Error('Síntesis ya en curso'));
-      if(!SUPERTONIC_LANGUAGES.includes(lang)||!styleTensors[style]||!Number.isFinite(rate)||rate<.5||rate>2)return Promise.reject(new Error('Opciones de voz inválidas'));
-      const job=(async()=>{const chunks=supertonicTextChunks(text,lang),parts=[],timeline=[];let length=0,searchFrom=0;
+      const token=state.begin(SUPERTONIC_LANGUAGES.includes(lang)&&!!styleTensors[style],rate);
+      if(token<0)return Promise.reject(token===-1?cancelled():new Error(token===-2?'Síntesis ya en curso':'Opciones de voz inválidas'));
+      const job=(async()=>{const chunks=supertonicTextChunks(text,lang),parts=[],timeline=[];let searchFrom=0;
         if(chunks.length>32)throw new Error('Texto de voz demasiado largo');
-        for(const chunk of chunks){
-          const start=text.indexOf(chunk,searchFrom);searchFrom=start+chunk.length
-          const local=marks.filter(n=>Number.isInteger(n)&&n>start&&n<searchFrom).map(n=>n-start)
-          let chunkMarks=[]
-          const pcm=await infer(chunk,{lang,style,rate,isActive,marks:local,onMarks:values=>{chunkMarks=values}})
-          if(!pcm.length)continue
-          if(parts.length){const gap=new Float32Array(Math.floor(sampleRate*.15));parts.push(gap);length+=gap.length;}
-          if(marks.includes(start))timeline.push({offset:start,sample:length})
-          timeline.push(...chunkMarks.map(mark=>({...mark,offset:mark.offset+start,sample:mark.sample+length})))
-          parts.push(pcm);length+=pcm.length;
-        }
-        if(disposed||!isActive())throw cancelled();const pcm=new Float32Array(length);let offset=0;for(const part of parts){pcm.set(part,offset);offset+=part.length;}
-        return {...speedUpSpeech(pcm,sampleRate,rate,timeline),sampleRate};
-      })();running=job;job.finally(()=>{if(running===job)running=null;}).catch(()=>{});return job;
+        const join=createSupertonicPcmJoin(sampleRate);
+        try {
+          for(const chunk of chunks){
+            const start=text.indexOf(chunk,searchFrom);searchFrom=start+chunk.length;
+            const local=supertonicLocalMarks(marks,start,searchFrom);
+            let chunkMarks=[];
+            const pcm=await infer(chunk,{lang,style,rate,isActive,marks:local,onMarks:values=>{chunkMarks=values}});
+            const offset=join.append(pcm.length);if(offset<0)continue;
+            if(marks.includes(start))timeline.push({offset:start,sample:offset});
+            timeline.push(...chunkMarks.map(mark=>({...mark,offset:mark.offset+start,sample:mark.sample+offset})));
+            parts.push({pcm,offset});
+          }
+          if(!state.active()||!isActive())throw cancelled();
+          // Typed arrays are host audio buffers; their initial zeroes also
+          // supply Rust-planned inter-chunk gaps without allocating gap arrays.
+          const pcm=new Float32Array(join.length);for(const part of parts)pcm.set(part.pcm,part.offset);
+          return {...speedUpSpeech(pcm,sampleRate,rate,timeline),sampleRate};
+        } finally {join.dispose();}
+      })();running=job;job.finally(()=>{state.finish(token);if(running===job)running=null;}).catch(()=>{});return job;
     },
-    async dispose(){if(disposed)return;disposed=true;await running?.catch(()=>{});await releaseAll();}
+    async dispose(){if(!state.close())return;try{await running?.catch(()=>{});await releaseAll();}finally{state.dispose();}}
   };
 }

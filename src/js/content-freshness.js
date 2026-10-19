@@ -31,10 +31,9 @@
 
 import { getRustCore, loadRustCore } from './rust-core.js'
 import { requireCore } from './core-tables.js'
+import {createContentFreshnessPlan} from './content-freshness-plan.js'
 
-const CHECK_INTERVAL_MS = 10 * 60 * 1000
 const RELOAD_KEY = 'inhouse-read-fresh-reload'
-const RELOAD_RETRY_MS = 2 * 60 * 1000
 
 // Read while the app's modules evaluate, before a lazy chunk can add a
 // stylesheet of its own to the document.
@@ -49,6 +48,7 @@ delete globalThis.__inhouseDeployed
 // span of each file reference; the page's own URL rules resolve them. The app core is awaited
 // like the shelf's tables are: the page compiles it while these modules load.
 const core = await requireCore(getRustCore, loadRustCore, 'shell_file_refs')
+const freshness=createContentFreshnessPlan(core,startedFrom)
 
 function fileReferences(html) {
   if (typeof html !== 'string') throw new TypeError('html.match is not a function')
@@ -91,7 +91,7 @@ async function fetchDeployedHtml(location) {
 /** No se recarga a media lectura: solo cuando la pantalla del lector está oculta. */
 function isSafeToReload() {
   const readerScreen = document.getElementById('reader-screen')
-  return !readerScreen || readerScreen.hidden !== false
+  return freshness.safe(readerScreen)
 }
 
 // A deploy that a reload did not bring (an edge cache still serving the old
@@ -99,7 +99,8 @@ function isSafeToReload() {
 function reloadInto(latest, location) {
   try {
     const last = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || 'null')
-    if (last?.to === latest && Date.now() - last.at < RELOAD_RETRY_MS) return false
+    const same=last?.to === latest
+    if (!freshness.retry(same,same?Date.now():NaN,same?Number(last.at):NaN)) return false
     sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ to:latest, at:Date.now() }))
   } catch { /* storage blocked: reload anyway */ }
   location.reload()
@@ -110,7 +111,7 @@ function reloadInto(latest, location) {
 function openIfNewer(html, location, canReload) {
   if (typeof html !== 'string' || !startedFrom) return false
   const latest = extractShellSignature(html, location.href)
-  if (!latest || latest === startedFrom) return false
+  if (!freshness.newer(latest)) return false
   // The offline shell starts fetching the deploy now rather than when the
   // browser next checks on its own, so the next launch opens it directly.
   globalThis.navigator?.serviceWorker?.getRegistration?.().then(registration => registration?.update()).catch(() => {})
@@ -119,19 +120,17 @@ function openIfNewer(html, location, canReload) {
   return canReload() && reloadInto(latest, location)
 }
 
-let checking = false
 
 /** Resolves true when it has started a reload into a newer deploy. */
 export async function checkContentFreshness({ canReload = isSafeToReload, location = window.location, deployed = null } = {}) {
-  if (checking) return false
-  checking = true
+  if (!freshness.begin()) return false
   try {
     return openIfNewer(await (deployed ?? fetchDeployedHtml(location)), location, canReload)
   } catch (err) {
     console.warn('No se pudo comprobar si hay una versión nueva del sitio:', err)
     return false
   } finally {
-    checking = false
+    freshness.finish()
   }
 }
 
@@ -140,19 +139,19 @@ export async function checkContentFreshness({ canReload = isSafeToReload, locati
  * the app that the page is being replaced by a newer deploy, so it does not
  * build a shelf for it. */
 export function initContentFreshnessChecks({ isIdle = () => true, location = window.location, deployed = deployedAtLaunch } = {}) {
-  let touched = false, reloading = false
-  const touch = () => { touched = true }
+  const launch=freshness.launch()
+  const touch = () => launch.touch()
   for (const type of ['pointerdown', 'keydown', 'wheel']) window.addEventListener(type, touch, { capture:true, passive:true, once:true })
-  const atLaunch = () => !touched && document.visibilityState === 'visible' && isSafeToReload() && isIdle()
+  const atLaunch = () => launch.untouched() && document.visibilityState === 'visible' && isSafeToReload() && isIdle()
   // An answer that came in while the app's code was loading is acted on now,
   // before the shelf is built; a later one as soon as it arrives.
-  if (typeof deployed?.html === 'string') reloading = openIfNewer(deployed.html, location, atLaunch)
-  else checkContentFreshness({ location, canReload:atLaunch, deployed:deployed?.done }).then(started => { reloading ||= started })
+  if (typeof deployed?.html === 'string') launch.reloading(openIfNewer(deployed.html, location, atLaunch))
+  else checkContentFreshness({ location, canReload:atLaunch, deployed:deployed?.done }).then(started => { launch.reloading(started) })
   const check = () => checkContentFreshness({ location })
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') check()
   })
   window.addEventListener('focus', check)
-  setInterval(check, CHECK_INTERVAL_MS)
-  return { reloading: () => reloading }
+  setInterval(check, freshness.interval())
+  return { reloading: () => launch.reloading(false) }
 }

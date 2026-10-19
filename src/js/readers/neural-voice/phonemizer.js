@@ -11,6 +11,8 @@
 
 import { fetchDictionary, dictionaryUrl } from './dictionary-cache.js'
 import { loadPhonemizerFactory } from './phonemizer-assets.js'
+import { requireRustVoiceCore } from '../../rust-voice-core.js'
+import { PhonemizerPlan } from './phonemizer-plan.js'
 
 /**
  * espeak-ng dictionaries that are NOT inside piper_phonemize.data (the languages added after the first seven: ru alone is 8 MB):
@@ -36,62 +38,84 @@ export const PHONEMIZER_REVISION = '20261002-dictionaries'
  *   base: absolute URL (ending in '/') of the folder holding piper_phonemize.{mjs,wasm,data}.
  * @returns {Promise<{phonemize:(text:string, espeakVoice:string)=>Promise<number[]>, destroy:()=>void}>}
  */
-export async function createPhonemizer({ base, importModule = loadPhonemizerFactory, rebuildEvery = REBUILD_EVERY, fetchFile = url => fetchDictionary(url) }) {
+export async function createPhonemizer({ base, importModule = loadPhonemizerFactory, rebuildEvery = REBUILD_EVERY, fetchFile }) {
   const assetUrl = name => `${base}${name}?v=${PHONEMIZER_REVISION}`
-  const { default: factory } = await importModule(assetUrl('piper_phonemize.mjs'))
-  let line = null, errors = [], module = null, calls = 0
-  const written = new Set() // extra dictionaries written into the current module's file system
-  const downloaded = new Map() // their bytes, kept so a rebuilt module does not fetch them again
+  const [{ default: factory }, core] = await Promise.all([importModule(assetUrl('piper_phonemize.mjs')), requireRustVoiceCore()])
+  const plan = new PhonemizerPlan(core, Number(rebuildEvery))
+  const downloads = new AbortController()
+  let line = null, errors = [], module = null, chain = Promise.resolve(), generation = NaN
+  const downloaded = new Map() // Byte handles only; Rust owns reuse/install decisions.
+  const released = () => new Error('phonemizer was released')
+  const terminate = value => { try { value?.PThread?.terminateAllThreads?.() } catch { /* single threaded */ } }
+  const check = () => { if (!plan.current(generation)) throw released() }
   const build = async () => {
-    line = null; errors = []; calls = 0; written.clear()
-    module = null // the old one is dropped (and collected) before the new one is allocated
-    module = await factory({
+    const token = plan.build()
+    if (Number.isNaN(token)) throw released()
+    generation = token; line = null; errors = []
+    terminate(module); module = null
+    const created = await factory({
       // The program prints one JSON object per call: {"phoneme_ids":[...], ...}
-      print: text => { line = text },
-      printErr: text => { errors.push(text) },
+      print: text => { if (plan.current(token)) line = text },
+      printErr: text => { if (plan.current(token)) errors.push(text) },
       // The glue asks for 'piper_phonemize.wasm' and 'piper_phonemize.data': both come from our own folder (never a CDN).
       locateFile: assetUrl
     })
+    if (!plan.accept(token)) { terminate(created); throw released() }
+    module = created
   }
-  await build()
+  try { await build() } catch (error) { plan.close(); throw error }
   const ensureDictionary = async espeakVoice => {
+    check()
     const name = extraDictionaryOf(espeakVoice)
-    if (!name || written.has(name)) return
+    if (!name) return
+    const id = EXTRA_DICTIONARIES.indexOf(name), action = plan.dictionary(id)
+    if (action === 0) return
     // Some of these dictionaries are already in the shipped pack. Creating the same file again throws EEXIST before
     // the first word (Pim/nl, among others). Inspect the real module rather than guessing its packaged languages.
     if (module.FS_analyzePath?.(`/espeak-ng-data/${name}_dict`)?.exists) {
-      written.add(name)
+      plan.dictionary(id, 2)
       return
     }
-    let bytes = downloaded.get(name)
-    if (!bytes) {
-      const response = await fetchFile(dictionaryUrl(base, name))
+    let bytes = action === 2 ? downloaded.get(name) : null
+    if (action === 1) {
+      const url = dictionaryUrl(base, name)
+      const response = await (fetchFile ? fetchFile(url) : fetchDictionary(url, { signal:downloads.signal }))
+      check()
       if (!response?.ok) throw new Error(`phonemizer dictionary "${name}" not available (${response?.status ?? 'no response'})`)
       bytes = new Uint8Array(await response.arrayBuffer())
-      downloaded.set(name, bytes)
+      check(); downloaded.set(name, bytes); plan.dictionary(id, 1)
     }
     if (typeof module.FS_createDataFile !== 'function') throw new Error('phonemizer module cannot take extra dictionaries')
     module.FS_createDataFile('/espeak-ng-data', `${name}_dict`, bytes, true, true, true)
-    written.add(name)
+    plan.dictionary(id, 2)
   }
   const run = (text, espeakVoice) => {
-    line = null; errors = []; calls++
+    if (!plan.attempt()) throw released()
+    line = null; errors = []
     module.callMain(['-l', espeakVoice, '--input', JSON.stringify([{ text }]), '--espeak_data', '/espeak-ng-data'])
   }
-  return {
-    /** Phoneme ids for `text` spoken with the espeak-ng voice of the Piper config (config.espeak.voice). Several '^...$' sentences come back concatenated. */
-    async phonemize(text, espeakVoice) {
-      if (calls >= rebuildEvery) await build()
+  const phonemize = async (text, espeakVoice) => {
+      const action = plan.begin()
+      if (action < 0) throw released()
+      if (action === 1) await build()
       await ensureDictionary(espeakVoice)
       try { run(text, espeakVoice) } catch (first) {
         // A module that threw is not trusted again: a fresh one gets this text once more, and only then is it an error.
+        if (!plan.retry()) throw first
         try { await build(); await ensureDictionary(espeakVoice); run(text, espeakVoice) } catch (second) { throw new Error(`phonemizer failed: ${second?.message || first?.message || second || first}`, { cause: second }) }
       }
       let result = null
       try { if (line != null) result = JSON.parse(line) } catch { /* reported below */ }
       if (!result) throw new Error(`phonemizer gave no output${errors.length ? ': ' + errors.join(' ') : ''}`)
       return result.phoneme_ids || []
+  }
+  return {
+    /** Same espeak program/IDs. Serial host scheduling prevents overlapping callers from rebuilding each other's heap. */
+    phonemize(text, espeakVoice) {
+      const job = chain.then(() => phonemize(text, espeakVoice))
+      chain = job.catch(() => {})
+      return job
     },
-    destroy() { try { module?.PThread?.terminateAllThreads?.() } catch { /* single threaded: nothing to stop */ } }
+    destroy() { plan.close(); downloads.abort(); terminate(module); module = null; downloaded.clear() }
   }
 }

@@ -4,6 +4,9 @@ Snapshot: `423ce4ba` (1.7.306) plus cache/frame policy commit `5636c584`.
 This inventory covers every one of the 252 tracked `src/js/**/*.js` modules in
 that snapshot exactly once. Parallel branches are intentionally not claimed as
 completed here. Reconcile their final source before removing any listed work.
+The live transport row and priority note were subsequently reconciled with the
+completed queue, receive, RTC and lifecycle batches in this branch; the file
+list and its denominator remain the original snapshot.
 
 This is a functional inventory, not a new percentage or denominator. The user's
 requested language percentage is GitHub's language statistic; neither line
@@ -48,12 +51,14 @@ down: migrate coherent batches and retain host-owned large images/tensors.
    audio APIs remain host. `engine`, PCM processing and much of player policy
    already delegate Rust: do not re-migrate them. Keep lazy loading; do not make
    the worker import the full reader UI module to get a small controller.
-3. **Live transport reliability/state.** `live-room.js` still owns session
-   lifecycle, retry/backoff, relay writes, health and ICE parsing despite Rust
-   registers/identity/negotiation. `app.js` owns capture retries, backup timer,
-   account changes and refresh gating. Migrate explicit transport commands and
-   cancellation generations, then test two contexts on direct and relay paths,
-   reconnect, background/foreground, account change and stale completions.
+3. **Live transport reliability/state.** The subsequent transport batches move
+   runtime session lifecycle, retry/backoff, relay writes, health, ICE parsing,
+   channel queues and BroadcastChannel publication into `live_transport.rs`.
+   The remaining JS transport fallback runs only before UI WASM is available:
+   it starts/cancels/retries that import without eagerly loading reader or voice.
+   `app.js` capture retries, backup timer, account changes and refresh gating are
+   separate root-owned work. Verify two contexts on direct and relay paths,
+   reconnect, background/foreground, account changes and stale completions.
 4. **Small coherent record/placement rules (next implementation batch).**
    `readers/reading-state.js`, `shelf-metadata-records.js`,
    `lamp-catalog-data.normalizeShelfLamp`, `decor-geometry-spec`,
@@ -183,7 +188,7 @@ function-level note and inspect the final integrated source for extraction.
 | `legacy-book-recovery.js` | M | Legacy recovery initialization/queue around Rust book data and browser files. |
 | `library-backup.js` | M | Rust backup state owns merge/sync; wrapper native-ready state and polling gate remain local orchestration. |
 | `library-store.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
-| `live-room.js` | M | Rust identity/registers/negotiation/packet stream; JS still owns session, retry/relay scheduling, health, ICE candidate parsing and backpressure. |
+| `live-room.js` | R | Runtime lifecycle, publication, crypto transport formatting, retry/relay, health, ICE and queues delegate to Rust. Host RTC/crypto/Drive/timer capabilities plus a cold WASM import/cancellation fallback remain; no early reader/voice import. |
 | `local-folder-store.js` | M | Rust filename/folder policies; host IDB handles and synchronous file picker retained, small database fallback/selection orchestration remains. |
 | `native-canvas-resize.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `native-frame-policy.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |

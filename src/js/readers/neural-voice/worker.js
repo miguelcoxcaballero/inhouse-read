@@ -23,57 +23,72 @@ import { exposePiperDurations, phonemeMarks } from './piper-alignment.js'
 import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
-import { requireRustVoiceCore } from '../../rust-voice-core.js'
+import { VoiceClientPlan } from './client-plan.js'
 import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, lengthScaleFor, synthesisRate } from './synth-flow.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
-const cancelled = new Set()
-const queue = []
-let draining = false, current = null, drainDone = Promise.resolve()
+const plan = new VoiceClientPlan(() => new Error('voice runtime was released'))
+const jobs = new Map() // Host message handles; admission, FIFO and cancellation are Rust.
+let drainDone = Promise.resolve()
 let durationOutput = null
-let diagnostics = false
+let bootstrapDiagnostics = false
 
 const post = (message, transfer = []) => self.postMessage(message, transfer)
 // Finite receipts at original await boundaries, enabled only by the native
 // diagnostic bridge. No text, PCM, timers, polling or playback changes.
-const stage = (domain, stage, id, part = 0) => { if (diagnostics) post({type:'stage',domain,stage,id,part}) }
+const stage = (domain, stage, id, part = 0) => { if (plan.pointer ? plan.diagnostics : bootstrapDiagnostics) post({type:'stage',domain,stage,id,part}) }
 // A segment of compute blocks this thread; yielding between segments lets 'cancel'/'load' messages in before the next one.
 
 async function init({ ortBase, phonBase, runtime }) {
-  // ONNX Runtime, the phonemizer and the Rust voice core (a few KB: the rules, the cleaning and the tempo of the audio, which
-  // have no other implementation) are independent: load them side by side (a cold start is the sum of everything serial).
+  // Module/phonemizer/core startup remains parallel. A late phonemizer must
+  // not outlive an init failure or an explicit free during initialization.
+  const generation = plan.capture()
   phonBaseURL = phonBase
-  const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), runtime === 'supertonic3' ? null : createPhonemizer({ base: phonBase }), requireRustVoiceCore()])
-  ort = module
-  ort.env.wasm.wasmPaths = ortBase       // ort-wasm-simd-threaded.{mjs,wasm}: our own copy, never a CDN
-  ort.env.wasm.numThreads = 1            // 1 => never needs SharedArrayBuffer / COOP+COEP
-  ort.env.wasm.proxy = false             // we ARE the worker already
-  phonemizer = phon
+  let localPhon = null, released = false
+  const phonReady = runtime === 'supertonic3' ? Promise.resolve(null) : Promise.resolve(createPhonemizer({ base: phonBase })).then(phon => {
+    localPhon = phon
+    if (released) { try { phon?.destroy() } catch {} }
+    return phon
+  })
+  try {
+    const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), phonReady,
+      plan.ready().then(() => { plan.diagnostics = bootstrapDiagnostics })])
+    if (!plan.current(generation)) throw new Error('voice runtime was released')
+    module.env.wasm.wasmPaths = ortBase
+    module.env.wasm.numThreads = 1
+    module.env.wasm.proxy = false
+    ort = module; phonemizer = phon
+  } catch (error) {
+    released = true
+    try { localPhon?.destroy() } catch {}
+    throw error
+  }
 }
 
 async function releaseVoice() {
   const oldSession = session, oldHebrew = hebrewPhonemizer, oldSupertonic = supertonicRuntime
   session = null; hebrewPhonemizer = null; supertonicRuntime = null; config = null; voice = null
+  if (plan.pointer) plan.model(3)
   if (oldSession) await oldSession.release().catch(() => {})
   if (oldHebrew) await oldHebrew.destroy().catch(() => {})
   if (oldSupertonic) await Promise.resolve(oldSupertonic.dispose()).catch(() => {})
 }
 
 async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }) {
-  while (draining) await drainDone // a cancelled synth finishes its segment first
+  while (plan.draining) await drainDone // a cancelled synth finishes its segment first
   await releaseVoice()
-  const t = performance.now()
+  const t = performance.now(), kind = plan.classifyRuntime(cfg)
   // Every fragment has another length, so the shapes change on each run. With the memory arena and the memory-pattern planner
   // on (ort's defaults) each new shape keeps its buffers and the WASM heap only grows: a phone's WebView runs out of memory
   // after a sentence or two and the worker dies. Off, buffers are freed after every run (a little slower, flat memory).
   try {
-    if (cfg.runtime === 'supertonic3') {
+    if (kind === 2) {
       supertonicRuntime = await createSupertonicRuntime({ ort, buffers, config:cfg.config, indexer:cfg.indexer, styles:cfg.styles })
-      config = cfg; voice = key
+      config = cfg; voice = key; plan.model(2, key)
       return { createMs:performance.now() - t }
     }
-    if (!phonemizer && cfg.phoneme_type !== 'hebrew') phonemizer = await createPhonemizer({ base:phonBaseURL })
-    if (cfg.phoneme_type === 'hebrew') {
+    if (!phonemizer && kind !== 1) phonemizer = await createPhonemizer({ base:phonBaseURL })
+    if (kind === 1) {
       hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
     }
     const aligned = exposePiperDurations(new Uint8Array(model))
@@ -83,7 +98,7 @@ async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }
     await releaseVoice()
     throw error
   }
-  config = cfg; voice = key
+  config = cfg; voice = key; plan.model(2, key)
   return { createMs: performance.now() - t, inputs: session.inputNames }
 }
 
@@ -110,9 +125,9 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     post({ type:'plan', id, counts:[Math.max(1, [...text].length)] })
     const t = performance.now()
     stage(3,3,id)
-    const { pcm:raw, sampleRate, marks:timeline = [] } = await supertonicRuntime.synthesize(text, { lang, style, rate, marks, isActive:() => !cancelled.has(id) })
+    const { pcm:raw, sampleRate, marks:timeline = [] } = await supertonicRuntime.synthesize(text, { lang, style, rate, marks, isActive:() => plan.workerActive(id) })
     stage(3,4,id)
-    if (cancelled.has(id)) return
+    if (!plan.workerActive(id)) return
     if (!(raw instanceof Float32Array) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
     // The SDK deliberately returns no samples when normalization removes all
     // speakable text (for example an ornament). Keep Piper's short-rest policy.
@@ -130,10 +145,12 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
   }
   const sampleRate = config.audio.sample_rate
   stage(3,1,id)
-  const phonemize = async value => limitIds(config.phoneme_type === 'hebrew' ? await hebrewPhonemizer.phonemize(value) : await phonemizer.phonemize(value, config.espeak.voice),config.num_symbols)
+  const phonemize = async value => limitIds(plan.runtimeKind === 1 ? await hebrewPhonemizer.phonemize(value) : await phonemizer.phonemize(value, config.espeak.voice),config.num_symbols)
   const ids = await phonemize(text)
+  if (!plan.workerActive(id)) return
   const points = durationOutput ? await phonemeMarks(text,marks,ids,phonemize) : []
   stage(3,2,id)
+  if (!plan.workerActive(id)) return
   const segments = splitSegments(ids)
   if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
     post({ type: 'plan', id, counts: [0] })
@@ -143,17 +160,18 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
   }
   post({ type: 'plan', id, counts: segments.map(ids => ids.length) })
   for (let index = 0; index < segments.length; index++) {
-    if (cancelled.has(id)) return
+    if (!plan.workerActive(id)) return
     const t = performance.now()
     stage(3,3,id,index)
     const {pcm:raw,durations} = await runSegment(segments[index], { rate:synthesisRate(rate), speaker })
     stage(3,4,id,index)
+    if (!plan.workerActive(id)) return
     const last = index === segments.length - 1
     // Cleaned, its page boundaries placed, sped up, and with its rests: sentences of one fragment are separated by a rest at
     // their start; the rest after the fragment comes with its last one (both shorten with the speaking rate, like the speech).
     const done = finishPiper(raw, durations, points, text, { sampleRate, model:voice, rate, last, first:index === 0,
       base:segments.slice(0,index).reduce((n,p)=>n+p.length,0), count:segments[index].length })
-    if (cancelled.has(id)) return
+    if (!plan.workerActive(id)) return
     post({ type: 'chunk', id, index, last, pcm:done.pcm, sampleRate, ms:performance.now()-t, marks:done.marks }, [done.pcm.buffer])
     stage(3,5,id,index)
     await yieldToMessages()
@@ -162,61 +180,62 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
 }
 
 async function drain() {
-  if (draining) return
-  draining = true
   let finishDrain
   drainDone = new Promise(resolve => { finishDrain = resolve })
   try {
-  while (queue.length) {
-    const job = queue.shift()
-    if (cancelled.has(job.id)) { cancelled.delete(job.id); continue }
-    current = job.id
-    try {
-      if (!session && !supertonicRuntime) throw new Error('no voice loaded')
-      await synth(job)
-      stage(3,7,job.id)
-      if (!cancelled.has(job.id)) post({ type: 'end', id: job.id })
-    } catch (error) {
-      if (!cancelled.has(job.id)) post({ type: 'error', id: job.id, error: String(error?.stack || error) })
+    for (let id = plan.take(); !Number.isNaN(id); id = plan.take()) {
+      const job = jobs.get(id); jobs.delete(id)
+      if (!plan.workerActive(id)) continue
+      try {
+        if (!session && !supertonicRuntime) throw new Error('no voice loaded')
+        await synth(job)
+        stage(3,7,job.id)
+        if (plan.workerActive(id)) post({ type:'end', id })
+      } catch (error) {
+        if (plan.workerActive(id)) post({ type:'error', id, error:String(error?.stack || error) })
+      }
+      plan.cancel(id)
     }
-    cancelled.delete(job.id)
-  }
-  } finally {
-    current = null
-    draining = false
-    finishDrain()
-  }
+  } finally { plan.stopDraining(); finishDrain() }
 }
 
 self.onmessage = async ({ data: m }) => {
   try {
-    if (m.type === 'init') {
-      diagnostics = m.diagnostics === true
+    // Before init owns a core, only bootstrap routing is possible. It must not
+    // download WASM in response to a stray cancel/free or an invalid synth.
+    const command = plan.pointer ? plan.command(m.type) : ({init:1,load:2,synth:3,cancel:4,free:5}[m.type] || 0)
+    if (command === 1) {
+      bootstrapDiagnostics = m.diagnostics === true
+      plan.diagnostics = bootstrapDiagnostics
       stage(1,1,m.id)
-      await (initPromise ||= init(m))
+      const initializing = initPromise ||= init(m)
+      try { await initializing } catch (error) { if (initPromise === initializing) initPromise = null; throw error }
       stage(1,2,m.id)
-      post({ type: 'ready', id: m.id, version: ort.env.versions?.common, crossOriginIsolated: self.crossOriginIsolated })
-    } else if (m.type === 'load') {
+      post({ type:'ready', id:m.id, version:ort.env.versions?.common, crossOriginIsolated:self.crossOriginIsolated })
+    } else if (command === 2) {
       await initPromise
-      // One load at a time: two overlapping loads (the voice changed while the first model was still loading) would both
-      // see "no session", and the first session would leak (~150 MB) when the second one overwrote it.
+      if (!plan.pointer) throw new Error('no voice runtime initialized')
       const loading = loadChain.then(async () => { stage(2,1,m.id); const result = await load(m); stage(2,2,m.id); return result })
       loadChain = loading.catch(() => {})
-      post({ type: 'loaded', id: m.id, ...(await loading) })
-    } else if (m.type === 'synth') {
-      queue.push(m); drain()
-    } else if (m.type === 'cancel') {
-      if (current === m.id || queue.some(job => job.id === m.id)) cancelled.add(m.id)
-    } else if (m.type === 'free') {
+      post({ type:'loaded', id:m.id, ...(await loading) })
+    } else if (command === 3) {
+      if (!plan.pointer) throw new Error('no voice loaded')
+      const action = plan.enqueue(m.id)
+      if (action === 2) throw new Error('invalid synthesis request id')
+      if (action === 3) return // retransmission of an owned request, never infer twice
+      jobs.set(m.id,m)
+      if (action === 1) drain()
+    } else if (command === 4) {
+      plan.cancel(m.id)
+    } else if (command === 5) {
       const freeing = loadChain.then(async () => {
-        while (draining) await drainDone
+        while (plan.draining) await drainDone
         await releaseVoice()
+        plan.invalidate(); jobs.clear()
       })
       loadChain = freeing.catch(() => {})
       await freeing
-      post({ type: 'freed', id: m.id })
+      post({ type:'freed', id:m.id })
     }
-  } catch (error) {
-    post({ type: 'error', id: m.id, error: String(error?.stack || error) })
-  }
+  } catch (error) { post({ type:'error', id:m.id, error:String(error?.stack || error) }) }
 }

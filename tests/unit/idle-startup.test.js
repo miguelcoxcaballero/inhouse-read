@@ -1,13 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { needRustShelf } from '../../src/js/rust-shelf.js';
+const native = needRustShelf();
+
+describe.each(['bootstrap', 'rust'])('%s startup policy', mode => {
 
 let startup;
 beforeEach(async () => {
   vi.resetModules(); vi.useFakeTimers();
   vi.stubGlobal('requestIdleCallback', undefined);
   document.body.innerHTML='';
+  vi.doMock('../../src/js/rust-shelf.js', () => ({ getRustShelf: () => mode === 'rust' ? native : null }));
   startup=await import('../../src/js/idle-startup.js');
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); document.body.innerHTML=''; });
+afterEach(() => { vi.doUnmock('../../src/js/rust-shelf.js'); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); document.body.innerHTML=''; });
 const frame = () => { document.body.innerHTML='<canvas class="ihr-bookshelf-scene" data-render-count="1"></canvas>'; };
 
 describe('startup tasks belong to their document', () => {
@@ -72,3 +77,5 @@ it('parks optional work without background polling and rechecks a queued idle ca
   await vi.advanceTimersByTimeAsync(60_000);expect(task).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
   startup.setShelfWorkActive(true);await vi.advanceTimersByTimeAsync(50);expect(task).toHaveBeenCalledOnce();
  });
+
+});

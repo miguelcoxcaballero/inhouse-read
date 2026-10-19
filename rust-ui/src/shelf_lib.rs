@@ -39,6 +39,7 @@ mod lamp_model;
 mod lamp_light;
 mod lamp_material;
 mod catalog_camera;
+mod decor_adapters;
 mod plant_parts;
 mod plant_model;
 mod baggebo_model;

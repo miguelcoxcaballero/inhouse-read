@@ -37,6 +37,7 @@ const runtime=vi.hoisted(()=>({ui:null,mode:'legacy',roots:new Set(),views:new S
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui,loadRustUI:()=>Promise.resolve(runtime.ui)}));
 const observedUI={...catalogueUI,
  catalog_build(...args){const dialog=catalogueUI.catalog_build(...args);runtime.roots.add(dialog);return dialog;},
+ catalog_dialog(...args){const dialog=catalogueUI.catalog_dialog(...args);runtime.roots.add(dialog);return dialog;},
  RustCatalogController:class extends catalogueUI.RustCatalogController{constructor(...args){super(...args);runtime.controllers++;}},
  RustCatalogView:class extends catalogueUI.RustCatalogView{
   constructor(dialog){super(dialog);runtime.views.add(dialog);}
