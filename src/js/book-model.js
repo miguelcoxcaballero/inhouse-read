@@ -35,14 +35,8 @@ const rustCore = () => getRustCore() ?? loadedRustCore();
 // Procedural micro-detail shared by every book: generated once, uploaded once.
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
 // texture until the last clone is disposed, so every model owns its copy.
-const sharedSources = new Map();
 function sharedTexture(key, build) {
-  if (!sharedSources.has(key)) sharedSources.set(key, build());
-  // Texture.copy() flags the shared Source dirty; keep its version so a new
-  // clone reuses the pixels already on the GPU instead of uploading again.
-  const base = sharedSources.get(key), version = base.source.version, copy = base.clone();
-  copy.source.version = version;
-  return copy;
+  return needRustShelf().book_shared_texture(key, build);
 }
 // The woven-cloth and printed-paper tooth, and the swallowtail cut, are produced by the numeric core.
 function tileNormals(kind) {
@@ -139,19 +133,11 @@ function capGeometry(width, thickness, segments, rim = 0) {
 
 // Paper edges are fibrous: even "brillante" is a burnished edge, not lacquer.
 function applyPaperFinish(material, value) {
-  applySurfaceFinish(material, value, 'satin');
-  material.roughness = .35 + material.roughness * .6;
-  material.clearcoat *= .3;
-  material.specularIntensity = .7;
+  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(value, 'satin')], 'paper', false);
 }
 
 function applySurfaceFinish(material, value, fallback = 'satin') {
-  const finish = SURFACE_FINISHES[surfaceFinish(value, fallback)];
-  material.roughness = finish.roughness;
-  material.clearcoat = finish.clearcoat;
-  material.clearcoatRoughness = finish.clearcoatRoughness;
-  material.envMapIntensity = finish.envMapIntensity;
-  material.needsUpdate = true;
+  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(value, fallback)], 'surface', false);
 }
 
 // Seen almost edge-on (the lifted book's front view), spine lettering shrinks
@@ -186,12 +172,11 @@ function spineGrazingFade(material) {
 }
 
 function applyCoverFinish(material, value) {
-  applySurfaceFinish(material, value, 'satin');
   // Dielectric reflection belongs to the laminate, above the printed image.
   // Suppressing it uniformly erased both the glossy/satin distinction and
   // warm lamp highlights. The physical clearcoat keeps highlights local and
   // leaves the artwork's diffuse colour and texture untouched.
-  material.specularIntensity = 1;
+  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(value, 'satin')], 'cover', false);
 }
 
 // A cover that can carry relief keeps a clearcoat program from the start: a
@@ -250,15 +235,8 @@ function neutralTexture(r, g, b, a = 255) {
 }
 
 function applySpineCapFinish(material, book) {
-  const metallic = ['gold', 'silver'].includes(book.spineFinish);
-  material.metalness = metallic ? 1 : 0;
-  if (metallic) {
-    // Keep the foil's existing response; its base layer already reflects the
-    // lamp, so a second full laminate would over-brighten the metal.
-    material.roughness = .3; material.envMapIntensity = 1.8;
-    material.clearcoat = .42; material.clearcoatRoughness = .16;
-    material.needsUpdate = true;
-  } else applySurfaceFinish(material, book.spineSurfaceFinish, 'matte');
+  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(book.spineSurfaceFinish, 'matte')],
+    'cap', book.spineFinish === 'gold' || book.spineFinish === 'silver');
 }
 
 // A half-ellipse extruded along the binding. Shared vertices give the entire
@@ -409,9 +387,7 @@ export function mixPaperTone(target, stock, theme, mix) {
 export const fitCoverImage = fitImage;
 
 function coverRasterDimensions(ratio, textureHeight, maxDimension = Infinity) {
-  const height = textureHeight, width = Math.max(1, Math.round(height * (Number(ratio) || .66)));
-  const scale = Math.min(1, maxDimension / Math.max(width, height));
-  return { width:Math.max(1, Math.round(width * scale)), height:Math.max(1, Math.round(height * scale)) };
+  return needRustShelf().book_cover_raster_size(ratio, textureHeight, maxDimension);
 }
 
 const coverSeed = (book, style, salt) => seededRandom(textSeed(`${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}|${style?.color}|${salt}`));
@@ -443,21 +419,8 @@ function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity
 }
 
 function shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution = 0) {
-  if (overview) return spineSurface(book, style, height, thickness,
-    { textureWidth:64, textureHeight:256, engraving:false, level:'overview' });
-  // Shelf copies are rastered at their final size, never shrunk from 2048.
-  const lifted = inspectionResolution || liftedTextureHeight(height);
-  if (inspectionResolution) return spineSurface(book, style, height, thickness, {textureWidth:512,textureHeight:inspectionResolution,level:'detail'});
-  return shelf ? spineSurface(book, style, height, thickness, { textureWidth:256, textureHeight:1024, level:'shelf' })
-    : spineSurface(book, style, height, thickness, { textureWidth:lifted / 2, textureHeight:lifted, level:'detail' });
-}
-
-// A lifted book is at most ~440 CSS px tall at pixel ratio ≤ 2, so 1024
-// texels already exceed the screen. 2048 (four times the memory, painting and
-// upload) only when a caller really draws it larger.
-function liftedTextureHeight(height) {
-  const ratio = Math.min(2, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
-  return height * ratio > 1100 ? 2048 : 1024;
+  return spineSurface(book, style, height, thickness, needRustShelf().book_spine_options(height,
+    Boolean(shelf), Boolean(overview), inspectionResolution, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1));
 }
 
 // Shelf and lifted copies of a book overlap during a transition. Keep the
@@ -467,15 +430,15 @@ function liftedTextureHeight(height) {
 export function createBookModel(book, style, width, height, thickness, coverUrl,
   { shelf = false, overview = false, inspectionResolution = 0, eagerRelief = true } = {}) {
   const group = new THREE.Group();
-  inspectionResolution = shelf && !overview ? (inspectionResolution >= 2048 ? 2048 : inspectionResolution >= 1024 ? 1024 : 0) : 0;
+  const quality = needRustShelf().book_model_plan(height, Boolean(shelf), Boolean(overview), inspectionResolution,
+    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
+  inspectionResolution = quality.inspectionResolution;
   group.userData.inspectionResolution = inspectionResolution;
   group.userData.overview = group.userData.isOverview = Boolean(overview);
-  group.userData.detailLevel = overview ? 'overview' : shelf ? 'shelf' : 'detail';
-  const textureHeight = inspectionResolution || (overview ? 256 : shelf ? 512 : liftedTextureHeight(height));
-  const maxTextureDimension = overview ? 256 : Infinity;
-  const bindingSegments = overview ? 16 : shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
-  const ribbonSegments = overview ? 8 : 32, ribbonSeed = textSeed(`ribbon|${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}`) || 1;
-  const detail = !shelf && !overview, level = group.userData.detailLevel, ratio = width / height;
+  group.userData.detailLevel = quality.detailLevel;
+  const { textureHeight, maxTextureDimension, bindingSegments, reliefRows, ribbonSegments, detail } = quality;
+  const ribbonSeed = textSeed(`ribbon|${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}`) || 1;
+  const level = group.userData.detailLevel, ratio = width / height;
   const surfaceSeed = String(book?.shelfVisualId ?? book?.id ?? book?.path ?? book?.title ?? 'book');
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
   applyBookReflectionSurface(cloth, { seed:`${surfaceSeed}|back`, strength:.018 });
@@ -826,12 +789,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     return texture;
   };
   const adoptReliefTextures = (normal, material) => {
-    const fresh = new Set([normal, material]);
-    for (const old of reliefOwned) if (!fresh.has(old)) old.dispose();
-    for (const old of [cover.clearcoatNormalMap, cover.clearcoatMap]) if (old && !fresh.has(old) && !reliefOwned.has(old)) old.dispose();
-    reliefOwned = fresh;
-    cover.clearcoatNormalMap = normal;
-    cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = material;
+    reliefOwned = needRustShelf().book_adopt_relief_textures(cover, reliefOwned, normal, material);
   };
   const reliefGain = strength => 3.5 * strength;
   const reliefKey = choice => choice.layers ? JSON.stringify(['layers',...coverReliefLayers(choice)
@@ -1004,14 +962,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     releaseImage(); resolveCoverReady(false);
     reliefController?.abort();
     disposed = true; reliefRevision++; materialRevision++; reliefMaps = null; coverMaskSource = null;
-    const materials = new Set([insideCover]), textures = new Set([surface.map, surface.channels]);
-    group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
-    for (const m of materials) {
-      for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap', 'normalMap', 'alphaMap', 'clearcoatMap', 'clearcoatRoughnessMap', 'clearcoatNormalMap']) if (m[key]) textures.add(m[key]);
-      m.dispose();
-    }
-    // Shared procedural sources survive: only this model's clones release.
-    for (const texture of textures) texture?.dispose();
+    needRustShelf().book_dispose_resources(group, insideCover, surface);
   };
   group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
     const previous = surface;
@@ -1126,8 +1077,6 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
 }
 
 let renderer, studioEnvironment, presentationRenderer;
-const presentationPreparations = new WeakMap();
-const detailPresentationPreparations = new WeakMap();
 const rendererSize = new THREE.Vector2();
 export function getBookRenderer() {
   if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
@@ -1171,77 +1120,34 @@ export function lightBookScene(scene, activeRenderer = renderer) {
   return scene;
 }
 
-/** Prepare the existing shelf book's exact shader variants in the flyout rig.
- * Borrow only its mesh/material references: no clone, texture upload, render,
- * parent change or presentation ownership is needed. Work begins after the
- * shelf has painted and stops between idle slices when its owner is busy. */
-export async function prepareBookPresentation(model, idle, current = () => true) {
-  if (typeof idle !== 'function' || typeof model?.traverse !== 'function') return false;
-  await idle();
-  if (!current()) return false;
-  const gpu = getPresentationBookRenderer();
-  if (!gpu || typeof gpu.compile !== 'function') return false;
-  const existing = presentationPreparations.get(gpu);
-  if (existing) return existing;
-  const task = (async () => {
-    const scene = lightBookScene(new THREE.Scene(), gpu);
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 10000);
-    camera.position.z = 3000;
-    const objects = { traverse:callback => model.traverse(callback), traverseVisible() {} };
-    const materials = gpu.compile(objects, camera, scene);
-    if (materials?.size) gpu.getContext?.()?.flush?.();
-    // The borrowed materials can be culled or disposed before selection.
-    // Pin the compiled programs using the renderer's existing bounded policy.
-    if (Array.isArray(gpu.info?.programs)) retainPrograms(gpu);
-    return prepareProgramUniforms(gpu, materials, { idle, current });
-  })();
-  presentationPreparations.set(gpu, task);
-  try {
-    const ready = await task;
-    if (!ready && presentationPreparations.get(gpu) === task) presentationPreparations.delete(gpu);
-    return ready;
-  } catch (error) {
-    if (presentationPreparations.get(gpu) === task) presentationPreparations.delete(gpu);
-    throw error;
-  }
-}
-
-/** The lifted model has its own grazing fade, paper normals and read leaves.
- * Prepare those real detail variants after the resting model, without drawing
- * or retaining an extra book. One temporary model per presentation context;
- * cancellation and driver failures release its owned rasters and geometry. */
-export async function prepareBookDetailPresentation(build, idle, current = () => true) {
-  if (typeof build !== 'function' || typeof idle !== 'function') return false;
-  await idle();
-  if (!current()) return false;
-  const gpu = getPresentationBookRenderer();
-  if (!gpu || typeof gpu.compile !== 'function') return false;
-  const existing = detailPresentationPreparations.get(gpu);
-  if (existing) return existing;
-  const task = (async () => {
-    const model = build();
-    try {
-      await model.userData.ready;
-      if (!current()) return false;
+// Three owns scene construction and compilation; Rust owns idle sequencing,
+// per-renderer deduplication, cancellation/retry and the temporary model lifetime.
+let presentationPreparationHost;
+function preparationHost() {
+  const rust = needRustShelf();
+  return presentationPreparationHost ||= {
+    getRenderer:getPresentationBookRenderer, retainPrograms, prepareProgramUniforms,
+    compileModel(model, gpu) {
       const scene = lightBookScene(new THREE.Scene(), gpu);
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 10000);
       camera.position.z = 3000;
       const objects = { traverse:callback => model.traverse(callback), traverseVisible() {} };
-      const materials = gpu.compile(objects, camera, scene);
-      if (materials?.size) gpu.getContext?.()?.flush?.();
-      if (Array.isArray(gpu.info?.programs)) retainPrograms(gpu);
-      return await prepareProgramUniforms(gpu, materials, { idle, current });
-    } finally { model.userData.dispose(); }
-  })();
-  detailPresentationPreparations.set(gpu, task);
-  try {
-    const ready = await task;
-    if (!ready && detailPresentationPreparations.get(gpu) === task) detailPresentationPreparations.delete(gpu);
-    return ready;
-  } catch (error) {
-    if (detailPresentationPreparations.get(gpu) === task) detailPresentationPreparations.delete(gpu);
-    throw error;
-  }
+      return gpu.compile(objects, camera, scene);
+    },
+    entered:rust.book_presentation_enter, compile:rust.book_presentation_compile,
+    dispose:rust.book_presentation_dispose, finished:rust.book_presentation_finished,
+    failed:rust.book_presentation_failed
+  };
+}
+
+/** Prepare borrowed shelf materials without drawing, cloning or changing their parent. */
+export async function prepareBookPresentation(model, idle, current = () => true) {
+  return needRustShelf().book_presentation_prepare(preparationHost(), model, idle, current, false);
+}
+
+/** One temporary lifted model per renderer, released on success, cancellation or failure. */
+export async function prepareBookDetailPresentation(build, idle, current = () => true) {
+  return needRustShelf().book_presentation_prepare(preparationHost(), build, idle, current, true);
 }
 
 /** Project the actual fitted page image, rather than the book's outer board. */

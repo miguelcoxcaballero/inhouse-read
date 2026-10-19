@@ -10,6 +10,7 @@ use crate::scene_view::RustScene;
 use crate::decor_contacts::{Description,Solid};
 #[path="book_gravity_snapshot.rs"]mod snapshot;
 use snapshot::RestPose;
+#[path="book_gravity_frame.rs"] mod frame;
 #[path="book_gravity_audio.rs"]mod audio;
 struct GentleSideContacts;
 impl PhysicsHooks for GentleSideContacts{
@@ -345,6 +346,12 @@ impl RustBookGravity{
  pub fn step(&mut self,keys:&Array,states:&mut[f64],geometry:&[f64],scene:&RustScene,now:f64,reduced:bool,out:&mut[f64]){
   let count=keys.length() as usize;
   if states.len()!=count*37||geometry.len()!=count*9||out.len()!=count*4{return;}
+  let names:Vec<Vec<u16>>=keys.iter().map(|k|if k.is_string(){k.unchecked_ref::<JsString>().iter().collect()}else{Vec::new()}).collect();
+  self.step_registered(keys,&names,None,states,geometry,scene,now,reduced,out);
+ }
+}
+impl RustBookGravity {
+ fn step_registered(&mut self,keys:&Array,names:&[Vec<u16>],registered:Option<&BTreeSet<Vec<u16>>>,states:&mut[f64],geometry:&[f64],scene:&RustScene,now:f64,reduced:bool,out:&mut[f64]){
   out.fill(0.0);
   for state in states.chunks_exact_mut(37){
    scene.step_entry(state);
@@ -374,10 +381,10 @@ impl RustBookGravity{
   self.cabinet(geometry,scene.baggebo);
   let frame_dt=self.last.map_or(1.0/60.0,|t|((now-t)/1000.0).clamp(1.0/240.0,0.1));
   let wall=if scene.baggebo{crate::cabinet::BAGGEBO.post_size/1000.0}else{12.0/0.65/1000.0};self.wall=wall;
-  let names:Vec<Vec<u16>>=keys.iter().map(|k|if k.is_string(){k.unchecked_ref::<JsString>().iter().collect()}else{Vec::new()}).collect();
-  let live:BTreeSet<&Vec<u16>>=names.iter().collect();
-  let removed:Vec<Vec<u16>>=self.books.keys().filter(|k|!live.contains(k)).cloned().collect();
-  self.solids.retain(|key,_|live.contains(key));
+  let live:BTreeSet<&Vec<u16>>=if registered.is_none(){names.iter().collect()}else{BTreeSet::new()};
+  let contains=|key:&Vec<u16>|registered.map_or_else(||live.contains(key),|keys|keys.contains(key));
+  let removed:Vec<Vec<u16>>=self.books.keys().filter(|k|!contains(k)).cloned().collect();
+  self.solids.retain(|key,_|contains(key));
   let membership_changed=!removed.is_empty();let mut disturbed=BTreeSet::new();
   if membership_changed{for key in removed{self.wake_contacts(&key);let b=self.books.remove(&key).unwrap();disturbed.insert(key.clone());self.world.remove_body(b.handle);}}
   let any_held=states.chunks_exact(37).any(|s|s[2] as u32&HELD!=0)||self.books.values().any(|b|b.held);

@@ -53,3 +53,18 @@ mod book_customization;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod room_physics_sync;
+
+#[cfg(feature = "shelf")]
+mod book_model_policy;
+
+#[cfg(feature = "shelf")]
+mod plant_surface_queue;
+
+#[cfg(feature = "shelf")]
+mod cover_raster_cache;
+
+#[cfg(feature = "shelf")]
+mod book_presentation;
+
+#[cfg(feature = "shelf")]
+mod plant_surface_policy;

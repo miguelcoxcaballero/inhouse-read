@@ -178,3 +178,135 @@ pub unsafe extern "C" fn font_score_step(
     advance(std::slice::from_raw_parts(gray_ptr, count), std::slice::from_raw_parts(near_ptr, count),
         width, height, rows, &mask, std::slice::from_raw_parts_mut(state_ptr, 7), budget)
 }
+
+// Canvas owns shaping and locale case conversion. Rust retains the title wrap
+// state and search policy; UTF-16 preserves lone surrogates and browser indices.
+pub struct TitleWrap {
+    text: Vec<u16>, ends: Vec<usize>, next: usize, start: usize, end: usize,
+    word_start: usize, word_end: usize, pending: bool, measure: bool,
+    lines: Vec<u32>, finished: bool,
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_new(text: *const u16, len: usize) -> *mut TitleWrap {
+    if len > 1_048_576 { return std::ptr::null_mut(); }
+    let text = std::slice::from_raw_parts(text, len);
+    let mut normalized=Vec::with_capacity(len);let mut ends=Vec::new();
+    for word in text.split(|c| crate::speech_normalize::whitespace(*c)).filter(|word|!word.is_empty()) {
+        if !normalized.is_empty() { normalized.push(32); }
+        normalized.extend_from_slice(word);ends.push(normalized.len());
+    }
+    Box::into_raw(Box::new(TitleWrap {text:normalized,ends,next:0,start:0,end:0,
+        word_start:0,word_end:0,pending:false,measure:false,lines:Vec::new(),finished:false}))
+}
+/// 0 = finished. Otherwise start + end * 2^21 + measure * 2^42.
+/// These bounded UTF-16 spans are exact integers in f64; the browser only
+/// slices its own string for Canvas shaping, without per-word string copies.
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_step(handle:*mut TitleWrap, measured:f64, max_width:f64) -> f64 {
+    let Some(state)=handle.as_mut() else {return 0.0;};
+    if state.finished {return 0.0;}
+    if state.pending {
+        if state.measure && measured>max_width {
+            if state.lines.len()<8 {state.lines.extend_from_slice(&[state.start as u32,state.end as u32]);}
+            state.start=state.word_start;
+        }
+        state.end=state.word_end;state.pending=false;
+    }
+    if state.next==state.ends.len() {
+        if state.end>state.start && state.lines.len()<8 {state.lines.extend_from_slice(&[state.start as u32,state.end as u32]);}
+        state.finished=true;return 0.0;
+    }
+    state.measure=state.end>state.start;
+    state.word_start=if state.next==0 {0} else {state.ends[state.next-1]+1};
+    state.word_end=state.ends[state.next];
+    let start=if state.measure {state.start} else {state.word_start};
+    state.next+=1;state.pending=true;
+    start as f64 + state.word_end as f64*2_097_152.0 + if state.measure {4_398_046_511_104.0} else {0.0}
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_text(handle:*const TitleWrap) -> *const u16 {
+    handle.as_ref().map_or(std::ptr::null(),|state|state.text.as_ptr())
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_text_len(handle:*const TitleWrap) -> usize {
+    handle.as_ref().map_or(0,|state|state.text.len())
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_result(handle:*const TitleWrap) -> *const u32 {
+    handle.as_ref().map_or(std::ptr::null(),|state|state.lines.as_ptr())
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_result_len(handle:*const TitleWrap) -> usize {
+    handle.as_ref().map_or(0,|state|state.lines.len())
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_free(handle:*mut TitleWrap) {
+    if !handle.is_null() {drop(Box::from_raw(handle));}
+}
+
+/// Eight scalar fields per raster request: case, alignment, size, canvas
+/// height, text x, line height, line width and shared wrapping-cache key.
+#[no_mangle]
+pub unsafe extern "C" fn font_search_plan(case_changes:u32, width:f64, out:*mut f64) -> usize {
+    let count = if case_changes != 0 { 24 } else { 12 };
+    let out = std::slice::from_raw_parts_mut(out, count * 8);
+    let mut at=0;
+    for upper in 0..if case_changes != 0 { 2 } else { 1 } {
+        for align in 0..3 {
+            for (index,size) in [11.0_f64,16.0,22.0,29.0].into_iter().enumerate() {
+                let x=match align { 1=>1.0, 2=>width-1.0, _=>width/2.0 };
+                out[at..at+8].copy_from_slice(&[upper as f64,align as f64,size,
+                    (size*5.5).ceil(),x,size*1.08,width-2.0,(upper*4+index) as f64]);
+                at+=8;
+            }
+        }
+    }
+    count
+}
+#[no_mangle]
+pub extern "C" fn font_mask_fits(mask_width:f64, mask_height:f64, width:f64, rows:f64) -> u32 {
+    (!(mask_width > width-2.0 || mask_height > rows-8.0)) as u32
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_family_max(values:*const f64,len:usize) -> f64 {
+    let mut result=0.0_f64;
+    for &score in std::slice::from_raw_parts(values,len) {
+        if score.is_nan() { return f64::NAN; }
+        if score>result { result=score; }
+    }
+    result
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_family_select(values:*const f64,len:usize) -> i32 {
+    if len == 0 || len > 6 { return -1; }
+    let values=std::slice::from_raw_parts(values,len);
+    let mut indices:Vec<usize>=(0..len).collect();
+    indices.sort_by(|&a,&b| values[b].partial_cmp(&values[a]).unwrap_or(std::cmp::Ordering::Equal));
+    let best=indices[0];
+    let margin=if len>1 { (values[best]-values[indices[1]])/values[best].max(1.0) } else { 0.0 };
+    if values[best]<18.0 || margin<0.035 { -1 } else { best as i32 }
+}
+
+// A family renders the same title at three alignments. Canvas measurement is
+// alignment-independent: retain its eight case/size wraps for this one family.
+// The cache owns only completed wraps, and is dropped with the generator.
+pub struct TitleWrapCache { entries:[Option<Box<TitleWrap>>;8] }
+#[no_mangle]
+pub extern "C" fn font_wrap_cache_new() -> *mut TitleWrapCache {
+    Box::into_raw(Box::new(TitleWrapCache{entries:std::array::from_fn(|_|None)}))
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_cache_get(cache:*const TitleWrapCache,key:usize) -> *const TitleWrap {
+    cache.as_ref().and_then(|state|state.entries.get(key)).and_then(|entry|entry.as_deref())
+        .map_or(std::ptr::null(),|state|state as *const TitleWrap)
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_cache_store(cache:*mut TitleWrapCache,key:usize,wrap:*mut TitleWrap) -> u32 {
+    let Some(cache)=cache.as_mut() else {return 0;};
+    if key>=8 || wrap.is_null() || !(*wrap).finished {return 0;}
+    cache.entries[key]=Some(Box::from_raw(wrap));1
+}
+#[no_mangle]
+pub unsafe extern "C" fn font_wrap_cache_free(cache:*mut TitleWrapCache) {
+    if !cache.is_null() {drop(Box::from_raw(cache));}
+}

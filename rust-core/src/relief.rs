@@ -179,6 +179,13 @@ unsafe fn normal_rows(height_map: *const u8, owners: *const u8, mask: *const u8,
             };
             let nx = -(sample(x as i64 + 1, y as i64) - sample(x as i64 - 1, y as i64)) * unit;
             let ny = (sample(x as i64, y as i64 + 1) - sample(x as i64, y as i64 - 1)) * unit;
+            // Flat coated interiors dominate real cover masks. Their tangent
+            // normal is exact, including signed zero and ties-to-even 127.5;
+            // avoid square roots/divisions without changing any shaded pixel.
+            if nx == 0.0 && ny == 0.0 {
+                out[at..at + 4].copy_from_slice(&[128, 128, 255, alpha]);
+                continue;
+            }
             let length = hypot3(nx, ny, 1.0);
             out[at] = clamped_byte((nx / length * 0.5 + 0.5) * 255.0);
             out[at + 1] = clamped_byte((ny / length * 0.5 + 0.5) * 255.0);
@@ -343,4 +350,104 @@ pub unsafe extern "C" fn relief_pigment_pixels(membership: *const f32, distance:
         }
     }
     1
+}
+
+/// One bounded bake keeps classified/coating planes in WASM through composition,
+/// normals and RGBA expansion. The output slot is reused between final planes;
+/// consumers copy a ready plane before stepping again. There is no global cache.
+pub struct ReliefRender {
+    width: u32, height: u32, flags: u32, unit: f64, layers: u32,
+    storage: Vec<u64>, offsets: [usize; 10], cursor: u32, stage: u32,
+}
+impl ReliefRender {
+    fn at(&mut self, index: usize) -> *mut u8 {
+        unsafe { self.storage.as_mut_ptr().cast::<u8>().add(self.offsets[index]) }
+    }
+    unsafe fn step(&mut self) -> i32 {
+        let count = self.width * self.height;
+        match self.stage {
+            0 => {
+                let from = self.cursor; let to = (from + 1024).min(count);
+                if relief_compose_pixels(self.at(1), self.at(5), self.at(6).cast(), self.at(7).cast(),
+                    self.at(8), count, from, to, self.layers) != 1 { return -1; }
+                self.cursor = to;
+                if to == count { self.cursor = 0; self.stage = 1; }
+                if to - from == 1024 { 1 } else { 2 }
+            }
+            1 => {
+                let from = self.cursor; let to = (from + 16).min(self.height);
+                if normal_rows(self.at(0), self.at(1), self.at(2), self.at(9), self.width, self.height,
+                    from, to, self.flags & 1, (self.flags >> 1) & 1, self.unit,
+                    self.flags & 4 != 0, (self.flags >> 3) & 1, self.at(3), self.at(4)) != 1 { return -1; }
+                self.cursor = to;
+                if to == self.height { self.stage = 2; }
+                if to - from == 16 { 1 } else { 2 }
+            }
+            2 => { self.stage = if self.flags & 32 != 0 { 3 } else { 6 }; 3 }
+            3..=5 => {
+                let input = match self.stage { 3 => 0, 4 => 3, _ => 4 };
+                let source = slice::from_raw_parts(self.at(input), count as usize);
+                let target = slice::from_raw_parts_mut(self.at(9), count as usize * 4);
+                for (index, &gray) in source.iter().enumerate() {
+                    target[index * 4..index * 4 + 4].copy_from_slice(&[gray, gray, gray, 255]);
+                }
+                let ready = self.stage as i32 + 1; self.stage += 1; ready
+            }
+            _ => 0,
+        }
+    }
+}
+
+/// flags: owners=1, preserveInk=2, selectionAlpha=4, mask=8, compose=16, RGBA=32.
+/// Host uploads buffers before the first step; no input is retained by reference.
+#[no_mangle]
+pub extern "C" fn relief_render_new(width: u32, height: u32, flags: u32, unit: f64, layers: u32) -> *mut ReliefRender {
+    let Some(count) = extent(width, height, 0, 0, height) else { return std::ptr::null_mut(); };
+    let compose = flags & 16 != 0;
+    if flags > 63 || !unit.is_finite() || layers > 10 || (!compose && layers != 0)
+        || (compose && flags & 9 != 9) || (flags & 2 != 0 && flags & 8 == 0) { return std::ptr::null_mut(); }
+    let extra = flags & 32 != 0 || flags & 12 == 4;
+    let sizes = [if compose { 0 } else { count }, if flags & 1 != 0 { count } else { 0 },
+        if flags & 8 != 0 && !compose { count } else { 0 }, if extra { count } else { 0 },
+        if extra && !compose { count } else { 0 }, if compose { count } else { 0 },
+        if compose { count * 4 } else { 0 }, layers as usize * 8, if compose { count * 3 } else { 0 },
+        if compose { 0 } else { count * 4 }];
+    let mut offsets = [0; 10]; let mut words = 0;
+    for (index, size) in sizes.into_iter().enumerate() { offsets[index] = words * 8; words += size.div_ceil(8); }
+    if compose {
+        offsets[0] = offsets[8] + count * 2;
+        offsets[2] = offsets[8]; offsets[4] = offsets[8] + count;
+        // Classification heights are dead after composition; normals/RGBA reuse
+        // those four bytes per pixel instead of allocating another output plane.
+        offsets[9] = offsets[6];
+    }
+    Box::into_raw(Box::new(ReliefRender { width, height, flags, unit, layers, offsets,
+        storage:vec![0; words], cursor:0, stage:if compose { 0 } else { 1 } }))
+}
+
+/// Buffer indices: height, owners, mask, foil, gloss, baseMask, baseHeight(f32),
+/// strengths(f64), composed(mask/gloss/height), and shared RGBA output.
+/// # Safety
+/// The job must be live, writable and used by only one host task at a time.
+#[no_mangle]
+pub unsafe extern "C" fn relief_render_buffer(job: *mut ReliefRender, index: u32) -> *mut u8 {
+    let Some(job) = job.as_mut() else { return std::ptr::null_mut(); };
+    if index > 9 { return std::ptr::null_mut(); }
+    job.at(index as usize)
+}
+
+/// 1 yields, 2 continues, 3..6 expose normal/height/foil/gloss RGBA; 0 is done.
+/// # Safety
+/// `job` must be a live job and the host must not mutate inputs after stepping.
+#[no_mangle]
+pub unsafe extern "C" fn relief_render_step(job: *mut ReliefRender) -> i32 {
+    job.as_mut().map_or(-1, |job| job.step())
+}
+
+/// # Safety
+/// Free exactly once, after completion, failure or cancellation; no buffer view
+/// may be read afterwards. All input, output and scratch memory is released.
+#[no_mangle]
+pub unsafe extern "C" fn relief_render_free(job: *mut ReliefRender) {
+    if !job.is_null() { drop(Box::from_raw(job)); }
 }

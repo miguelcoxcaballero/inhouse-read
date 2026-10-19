@@ -80,10 +80,13 @@ function randomCatalog() {
   })
 }
 
-it('chooses the voice for 20000 random lists and options exactly like the original', () => {
+// Preserve the same 20,000 seeded cases and RNG stream, split only the
+// watchdog scope so exhaustive validation remains stable under CPU load.
+const corpus = {chosen:0,none:0,thrown:0,multilingual:0};
+it.each(Array.from({length:20},(_,batch)=>batch))('chooses the voice for random lists and options exactly like the original (batch %i)', batch => {
   let chosen = 0, none = 0, thrown = 0, multilingual = 0
   const languages = ['', 'es', 'es-ES', 'es-MX', 'es_AR', 'en', 'en-US', 'en-GB', 'fr', 'pt-BR', 'pt', 'de', 'ca', 'xx', 'it', undefined, null, 'ES-es', 'spa-ESP']
-  for (let round = 0; round < 20000; round++) {
+  for (let round = batch*1000; round < (batch+1)*1000; round++) {
     const clean = round % 11 === 0 ? pick([undefined, null, {}, 'x', []]) : randomCatalog()
     const voices = round % 97 === 0 && Array.isArray(clean) ? [...clean, pick([null, undefined, 5])] : clean
     const options = round % 13 === 0 ? undefined : {
@@ -102,11 +105,13 @@ it('chooses the voice for 20000 random lists and options exactly like the origin
       expect(Object.keys(a.value)).toEqual(Object.keys(b.value))
     }
   }
-  // The corpus must exercise the choice, the empty answer, the errors and the multilingual option.
-  expect(chosen).toBeGreaterThan(5000)
-  expect(none).toBeGreaterThan(1000)
-  expect(thrown).toBeGreaterThan(100)
-  expect(multilingual).toBeGreaterThan(500)
+  corpus.chosen+=chosen;corpus.none+=none;corpus.thrown+=thrown;corpus.multilingual+=multilingual;
+})
+it('exercises choices, empty answers, errors and multilingual options across the entire corpus',()=>{
+  expect(corpus.chosen).toBeGreaterThan(5000);
+  expect(corpus.none).toBeGreaterThan(1000);
+  expect(corpus.thrown).toBeGreaterThan(100);
+  expect(corpus.multilingual).toBeGreaterThan(500);
 })
 
 it('breaks ties between equal voices by the browser collation of their ids, earliest first', () => {

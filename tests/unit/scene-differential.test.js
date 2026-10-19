@@ -3,8 +3,8 @@ import { createBookshelfScene as liveScene } from '../../src/js/bookshelf-scene.
 import { createBookshelfScene as frozen } from './helpers/reference-bookshelf-scene.js'
 import { runScenario } from './helpers/scene-differential.js'
 
-// The independent JS reference adopts the explicitly requested hidden-page
-// pause policy only; arithmetic, geometry, the 24 seeded scripts and strict
+// The independent JS reference adopts the requested hidden-page and opaque-reader
+// suspension policies (1.7.303, faef7e1b) only; arithmetic, geometry, the 24 seeded scripts and strict
 // frame-by-frame comparisons remain intact.
 // New settling is enabled in production by default and covered by contact/idle
 // regressions. Keep the complete original scene corpus as an independent check

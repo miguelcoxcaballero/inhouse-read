@@ -131,3 +131,6 @@ mod frame_padding;
 mod shell_signature;
 #[cfg(feature="app")]
 mod file_name;
+
+#[cfg(feature = "app")]
+mod native_frame;

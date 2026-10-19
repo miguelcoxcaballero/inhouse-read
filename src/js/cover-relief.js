@@ -27,7 +27,7 @@ import { runInSlices } from './cover-appearance.js';
 import { getRustCore, loadRustCore } from './rust-core.js';
 import { needRustShelf } from './rust-shelf.js';
 import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes,
-  wasmAnalyze, wasmMaps } from './cover-relief-wasm.js';
+  wasmAnalyze, wasmMaps, wasmRenderRelief } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -354,8 +354,9 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
   const hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
   const work = choice.layers || COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
   const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
-  const normal = await runSliced(heightToNormals(maps, { selectionAlpha }), { signal, stats });
-  const planes = reliefPlanesToRgba(maps);
+  const unit = MAX_RELIEF_MM / 255 / (2 * (MM_FULL_COVER / Math.max(maps.width, maps.height)));
+  const planes = await runSliced(native(wasmRenderRelief(rust(), maps, unit, { selectionAlpha, rgba:true })), { signal, stats });
+  const { normal } = planes;
   return { height: new ImageData(planes.height, maps.width, maps.height),
     foil: new ImageData(planes.foil, maps.width, maps.height), gloss: new ImageData(planes.gloss, maps.width, maps.height),
     normal, ...(selectionAlpha ? { normalSelectionAlpha: true } : {}), pixels: maps, size: { width: maps.width, height: maps.height }, foilColor: maps.foilColor,
@@ -367,8 +368,15 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
  * the cover that remains on screen. */
 export async function updateReliefMapStrengths(built, selection, { signal } = {}) {
   await ready();
-  const pixels=await runSliced(composeReliefLayerPixels(built.pixels,selection),{signal});
-  const normal=await runSliced(heightToNormals(pixels,{selectionAlpha:built.normalSelectionAlpha === true}),{signal});
+  const maps = built.pixels;
+  const layers = coverReliefLayers(selection).sort((a,b)=>a.color.localeCompare(b.color));
+  if (!maps.owners || layers.length !== maps.layers.length || layers.some((layer,index)=>
+    layer.color !== maps.layers[index].color || layer.tolerance !== maps.layers[index].tolerance)) {
+    throw new TypeError('Las zonas de relieve han cambiado');
+  }
+  const unit = MAX_RELIEF_MM / 255 / (2 * (MM_FULL_COVER / Math.max(maps.width, maps.height)));
+  const { pixels, normal } = await runSliced(native(wasmRenderRelief(rust(), maps, unit,
+    { layers, selectionAlpha:built.normalSelectionAlpha === true })), { signal });
   return { ...built,pixels,normal };
 }
 

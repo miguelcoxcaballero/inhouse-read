@@ -111,9 +111,11 @@ describe('native room presentation and lazy exports',()=>{
     expect(contexts.get(fine).copies).toHaveLength(1);expect(contexts.get(overview).copies).toHaveLength(1);
     expect(contexts.get(fine).frame).toEqual(pixels);expect(contexts.get(overview).frame).toEqual(pixels);expect(driver.cache.capture).not.toHaveBeenCalled();
   });
-  it('forces the original scene redraw on context restoration even while presentation is hidden',()=>{
+  it('defers context restoration work while hidden and redraws the original scene on resume',()=>{
     shelf.setPresentationActive(false);const renders=Number(shelf.canvas.dataset.snapshotRenderCount);
     driver.onRestored();
+    expect(Number(shelf.canvas.dataset.snapshotRenderCount)).toBe(renders);
+    shelf.setPresentationActive(true);shelf.flush();
     expect(Number(shelf.canvas.dataset.snapshotRenderCount)).toBe(renders+1);
     expect(shelf.canvas.dataset.inspectionDirtySource).toBe('context-restored');
     expect(shelf.getNativeRoomBackground()?.lease.isOwner()).toBe(true);

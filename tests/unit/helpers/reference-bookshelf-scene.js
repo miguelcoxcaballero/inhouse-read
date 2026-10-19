@@ -2191,14 +2191,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function pollPrograms() {
     programsPoll = 0;
     if (disposed || programsReady === true || pageSuspended || document.visibilityState === 'hidden') return;
-    if (!canPresent() && !hasOngoingMotion()) return;
+    if (!canPresent()) return;
     if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
   }
 
   function draw(now = performance.now(), force = false) {
     raf = 0;
     if (disposed) return;
-    if (pageSuspended || document.visibilityState === 'hidden') { drawPending = true; return; }
+    if (!canPresent()) { drawPending = true; return; }
     if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
     hideInspectionSnapshot();
@@ -2547,7 +2547,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
     drawPending = true;
-    if (!disposed && !raf && !paintHeld && !pageSuspended && document.visibilityState !== 'hidden' && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
+    if (!disposed && !raf && !paintHeld && !pageSuspended && document.visibilityState !== 'hidden' && canPresent() && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
   }
 
   function canDeferModalPaint() {
@@ -2611,8 +2611,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function presentationChanged() {
     if (disposed) return;
-    if (pageSuspended || document.visibilityState === 'hidden' || !canPresent() && !hasOngoingMotion()) {
-      if (raf) drawPending = true;
+    if (!canPresent()) {
+      if (raf || hasOngoingMotion()) drawPending = true;
       releaseUnusedNativeRoomFrames();
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
@@ -2640,8 +2640,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // in the same task, before MutationObserver's asynchronous notification.
     observeEntryChanges(mutations.takeRecords());
     if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); }
-    if (pageSuspended || document.visibilityState === 'hidden') return false;
-    if (!force && (!canPresent() && !hasOngoingMotion() || canDeferModalPaint())) return false;
+    if (!canPresent()) return false;
+    if (!force && canDeferModalPaint()) return false;
     if (!force && !drawPending && viewportChanged()) invalidate(true, false, 'viewport-sync');
     if (!force && !drawPending && !hasOngoingMotion()) return false;
     if (force) { inspectionOverview = null; shelfSnapshotDirty = shadowDirty = true; }

@@ -1,3 +1,4 @@
+import { createGravityFrame } from './gravity-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -363,7 +364,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
   let physicsStarted = false, physicsInteracted = false, pendingCloudPhysics = null;
   if (settleBooks) { try { bookGravity.restore(localStorage.getItem(physicsStorageKey) || ''); } catch {} }
-  let gravityInput = new Float64Array(0), gravityOutput = new Float64Array(0), physicsStates = new Float64Array(0);
+  const gravityFrame = createGravityFrame(rust);
+  let gravityOutput = gravityFrame.output;
   let bookEntries = entries.map(freshEntry);
   acknowledgeRoom(roomCheckpoint);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
@@ -1426,15 +1428,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const usePhysics = settleBooks && (physicsReady || physicsStarted);
     if (usePhysics) {
       physicsStarted = true;
-      if (gravityInput.length !== bookEntries.length * 9) {
-        gravityInput = new Float64Array(bookEntries.length * 9); gravityOutput = new Float64Array(bookEntries.length * 4);
-        physicsStates = new Float64Array(bookEntries.length * 37);
-      }
+      gravityFrame.prepare(bookEntries); gravityOutput = gravityFrame.output;
       const pixelsPerMetre = unitWidth / SHELF_SPECS[shelfType].width * 1000;
-      const gravityKeys = bookEntries.map((entry,index) => {
+      for (let index = 0; index < bookEntries.length; index++) {
+        const entry = bookEntries[index];
         if (entry.domDirty) { entry.domDirty = false; entry.state = stateFor(entry); }
         const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
-        const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
+        const kind = plant ? 1 : lamp ? 2 : 0;
         if ((plant || lamp) && !undershelf) {
           const stamp = [entry.height,entry.width,entry.catalogId,entry.variant,entry.potId,entry.lampId,pixelsPerMetre].join('|');
           if (entry.collisionStamp !== stamp) {
@@ -1451,22 +1451,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         }
 
         if (entry.bits & 6) physicsInteracted = true;
-        stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
-        stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
-        stepIo[9] = landing ? 1 : 0;
-        if (landing) { stepIo[10] = landing.from; stepIo[11] = landing.started; stepIo[12] = landing.duration; }
-        stepIo[13] = preview.x; stepIo[14] = preview.y; stepIo[15] = preview.fromX; stepIo[16] = preview.fromY;
-        stepIo[17] = preview.targetX; stepIo[18] = preview.targetY; stepIo[19] = preview.started; stepIo[20] = preview.active ? 1 : 0;
-        stepIo[21] = entry.offset.x; stepIo[22] = entry.offset.y;
-        stepIo[23] = entry.x; stepIo[24] = entry.y; stepIo[25] = entry.width; stepIo[26] = entry.height; stepIo[27] = entry.depth; stepIo[28] = entry.depthInset;
-        physicsStates.set(stepIo,index * 37);
         const row = rows[entry.shelf || 0] || rows[0] || {};
-        gravityInput.set([plant || lamp ? entry.width : entry.thickness, undershelf ? 3 : kind, entry.shelf || 0, pixelsPerMetre,
-          row.left || 0, row.right ?? width, row.bottom ?? entry.y + entry.height / 2, row.ceiling ?? row.top ?? 0, entry.gripHeight || 0],index * 9);
-        return entry.key;
-      });
+        gravityFrame.write(index, entry, kind, undershelf, row, pixelsPerMetre, width);
+      }
       bookGravity.sound_enabled(shelfSoundsEnabled());
-      bookGravity.step(gravityKeys, physicsStates, gravityInput, sceneView, now, reducedMotion.matches, gravityOutput);
+      gravityFrame.advance(bookGravity, sceneView, now, reducedMotion.matches);
       if (installedRoom && bookGravity.restored_room()) {
         acknowledgeRoom(installedRoom); installedRoom = null;
       }
@@ -1482,7 +1471,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const away = entry.flags.away;
       // The lift, the preview and the landing ease, and the pose follows, in Rust.
       const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
-      if (usePhysics) stepIo.set(physicsStates.subarray(entryIndex * 37, (entryIndex + 1) * 37));
+      if (usePhysics) gravityFrame.copyState(entryIndex, stepIo);
       else {
         stepIo[0] = kind; stepIo[1] = undershelf ? 1 : 0; stepIo[2] = entry.bits; stepIo[3] = entry.dragNumberX; stepIo[4] = entry.dragNumberY;
         stepIo[5] = lift.value; stepIo[6] = lift.from; stepIo[7] = lift.target; stepIo[8] = lift.started;
@@ -3248,7 +3237,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();

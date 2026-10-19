@@ -22,12 +22,14 @@ it('synthesises every event as short, bounded, balanced PCM that starts and ends
  expect(rustShelf.cozy_sound(35,0,0,1)).toHaveLength(0);
 });
 
-it('keeps variants deterministic but different, and harder hits brighter and louder at their onset',()=>{
- for(const [kind,material] of events()){
+// Each event keeps the exact original PCM comparisons; bounded cases avoid
+// making one 80-event array comparison depend on the machine's CPU load.
+it.each([...events()])('keeps variants deterministic but different for event %i / material %i',(kind,material)=>{
   const a=rustShelf.cozy_sound(kind,material,0,1),b=rustShelf.cozy_sound(kind,material,0,1),c=rustShelf.cozy_sound(kind,material,1,1);
   expect(a).toEqual(b);expect(a).not.toEqual(c);
   expect(rustShelf.cozy_sound(kind,material,3,1)).toEqual(a);
- }
+});
+it('keeps harder hits brighter and louder at their onset',()=>{
  const signatures=new Set();
  for(let material=0;material<6;material++){
   const soft=rustShelf.cozy_sound(3,material,0,0),hard=rustShelf.cozy_sound(3,material,0,2);

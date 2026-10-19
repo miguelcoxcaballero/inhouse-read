@@ -1,3 +1,4 @@
+// Reference contract includes lost capture/cancel recovery from 1.7.299 (92234324).
 /** Touch navigation is sampled once per display frame; book holds remain native. */
 export function createShelfZoom({ root, scroller, getScene, isEnabled, onGestureStart }) {
   const points = new Map(), reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)') || {matches:false};
@@ -120,14 +121,14 @@ export function createShelfZoom({ root, scroller, getScene, isEnabled, onGesture
     if (gesture) {
       sampleVelocity(); consume(event);
       if (points.size>=2) begin('pinch',midpoint(),event.timeStamp);
-      else if (points.size===1 && event.type!=='pointercancel') {
+      else if (points.size===1 && event.type==='pointerup') {
         const point=[...points.values()][0];
         gesture={type:'pan',...point,origin:{...target},lastTime:event.timeStamp,sampleTime:event.timeStamp,
           currentX:point.x,currentY:point.y,sampleX:point.x,sampleY:point.y,sampleDirty:false,vx:gesture.vx,vy:gesture.vy};
       } else {
-        const fresh=event.timeStamp-gesture.lastTime<80 && event.type!=='pointercancel' && !reducedMotion.matches;
+        const fresh=event.timeStamp-gesture.lastTime<80 && event.type==='pointerup' && !reducedMotion.matches;
         coast={x:fresh ? gesture.vx : 0,y:fresh ? gesture.vy : 0}; gesture=null;
-        if (reducedMotion.matches || event.type==='pointercancel') { coast=null; publish(false); }
+        if (reducedMotion.matches || event.type!=='pointerup') { coast=null; publish(false); }
         else { lastFrame=performance.now(); schedule(); }
       }
     }
@@ -136,18 +137,26 @@ export function createShelfZoom({ root, scroller, getScene, isEnabled, onGesture
     }
   };
   const click = event => { if (suppressClick && !excluded(event.target)) consume(event); };
+  const lost = event => { if (!scroller.hasPointerCapture?.(event.pointerId)) end(event); };
+  const cancel = () => {
+    stop();
+    for (const id of points.keys()) { try { scroller.releasePointerCapture(id); } catch {} }
+    points.clear(); gesture=null; suppressClick=false; clearTimeout(clickTimer); clickTimer=0; publish(false);
+  };
   scroller.addEventListener('pointerdown',start,true);
   scroller.addEventListener('pointermove',move,true);
   scroller.addEventListener('pointerup',end,true);
   scroller.addEventListener('pointercancel',end,true);
   scroller.addEventListener('click',click,true);
+  scroller.addEventListener('lostpointercapture',lost,true);
   sync();
-  return {sync,destroy() {
+  return {sync,cancel,destroy() {
     stop(); destroyed=true; clearTimeout(clickTimer);
     for (const id of points.keys()) { try { scroller.releasePointerCapture(id); } catch {} }
     points.clear(); root.classList.remove('is-shelf-zoomed');
     scroller.removeEventListener('pointerdown',start,true); scroller.removeEventListener('pointermove',move,true);
     scroller.removeEventListener('pointerup',end,true); scroller.removeEventListener('pointercancel',end,true);
     scroller.removeEventListener('click',click,true);
+    scroller.removeEventListener('lostpointercapture',lost,true);
   }};
 }

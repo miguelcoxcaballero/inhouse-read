@@ -1,6 +1,6 @@
 //! The light of the shelf's lamps: how many lights each kind of lamp gets, which lamps are lit and which light each of
 //! them takes, and the numbers every light is aimed with. The host keeps the three.js lights, the scene graph (it hands in
-//! each model's world matrix) and the change stamps; everything decided or computed here is three.js' own arithmetic
+//! each model's world matrix); Rust owns persistent change stamps and shadow policy. Arithmetic remains three.js' own
 //! (f64, its order of operations, the host's `Math.pow`) over the numbers handed in, so the lights come out exactly as
 //! `shelf-lamp-lighting.js` used to aim them (the frozen original is `tests/unit/helpers/reference-shelf-lamp-lighting.js`).
 //! No function here panics or traps on a wrong-sized buffer: it answers `false` and writes nothing.
@@ -103,9 +103,9 @@ fn emitter_power(power: f64) -> f64 { if power.is_finite() { jsmath::clamp(power
 
 /// Stable merge sort of `order` by `earlier(a, b)` (true when `a` has to come strictly before `b`); never panics,
 /// whatever the comparison does with infinities.
-fn merge_sort(order: &mut Vec<usize>, before: &dyn Fn(usize, usize) -> bool) {
+fn merge_sort(order: &mut Vec<usize>, buffer: &mut Vec<usize>, before: &dyn Fn(usize, usize) -> bool) {
     let n = order.len();
-    let mut buffer = order.clone();
+    buffer.clear(); buffer.extend_from_slice(order);
     let mut width = 1;
     while width < n {
         let mut start = 0;
@@ -121,7 +121,7 @@ fn merge_sort(order: &mut Vec<usize>, before: &dyn Fn(usize, usize) -> bool) {
             while right < end { buffer[at] = order[right]; right += 1; at += 1; }
             start += 2 * width;
         }
-        std::mem::swap(order, &mut buffer);
+        std::mem::swap(order, buffer);
         width *= 2;
     }
 }
@@ -137,29 +137,39 @@ fn merge_sort(order: &mut Vec<usize>, before: &dyn Fn(usize, usize) -> bool) {
 /// then the ones nearest the middle of the viewport, a stable key rank resolving equal scores. The powered lamps of each
 /// kind take its lights in that order; a lamp keeps the slot it holds, else takes a free one, else one whose lamp is not
 /// wanted.
+#[derive(Default)]
+struct PlanScratch {
+    priority: Vec<f64>, order: Vec<usize>, merge: Vec<usize>, ranks: Vec<f64>,
+    wanted: Vec<f64>, entry: Vec<Option<usize>>,
+}
+
 pub fn plan(candidates: &[f64], slots: &[f64], quota: &[f64], middle: f64, out: &mut [f64]) -> bool {
+    plan_with(candidates, slots, quota, middle, out, &mut PlanScratch::default(), None)
+}
+fn plan_with(candidates: &[f64], slots: &[f64], quota: &[f64], middle: f64, out: &mut [f64], scratch: &mut PlanScratch, key_ranks: Option<&[f64]>) -> bool {
     if candidates.len() % CANDIDATE != 0 || slots.len() % SLOT != 0 { return false; }
     let (n, s) = (candidates.len() / CANDIDATE, slots.len() / SLOT);
     if out.len() < 2 + 2 * n + 3 * s { return false; }
-    let field = |i: usize, f: usize| candidates[i * CANDIDATE + f];
+    let field = |i: usize, f: usize| if f == 6 { key_ranks.map_or(candidates[i * CANDIDATE + f], |ranks| ranks[i]) } else { candidates[i * CANDIDATE + f] };
     let slot_field = |k: usize, f: usize| slots[k * SLOT + f];
     let lit_before = |key: f64| (0..s).any(|k| slot_field(k, 2) != 0.0 && slot_field(k, 1) == key);
-    let priority: Vec<f64> = (0..n).map(|i| {
+    let PlanScratch { priority, order, merge, ranks, wanted, entry } = scratch;
+    priority.clear(); priority.extend((0..n).map(|i| {
         if field(i, 2) != 0.0 { f64::NEG_INFINITY }
         else { (if lit_before(field(i, 1)) { -1e9 } else { 0.0 }) + or_zero((field(i, 4) - middle).abs()) }
-    }).collect();
+    }));
     // The comparison is `priority(a) - priority(b) || rank(a) - rank(b)`: a difference of exactly zero (or none, as with
     // two infinities) leaves the order to the keys.
     let before = |a: usize, b: usize| {
         let difference = priority[a] - priority[b];
         if difference != 0.0 && !difference.is_nan() { difference < 0.0 } else { field(a, 6) - field(b, 6) < 0.0 }
     };
-    let mut order: Vec<usize> = (0..n).collect();
-    merge_sort(&mut order, &before);
+    order.clear(); order.extend(0..n);
+    merge_sort(order, merge, &before);
     // The lit lamps are the powered ones nearest the view (or picked up), as many of each kind as it has slots.
-    let mut ranks = vec![0.0f64; quota.len()];
-    let mut wanted: Vec<f64> = Vec::new();
-    for &i in &order {
+    ranks.resize(quota.len(), 0.0); ranks.fill(0.0);
+    wanted.clear();
+    for &i in order.iter() {
         if emitter_power(field(i, 3)) <= 0.0 { continue; }
         let kind = field(i, 0);
         if !(kind >= 0.0 && (kind as usize) < quota.len()) { continue; }
@@ -170,13 +180,13 @@ pub fn plan(candidates: &[f64], slots: &[f64], quota: &[f64], middle: f64, out: 
     }
     let wants = |key: f64| wanted.contains(&key);
     // A slot keeps the lamp it already lights.
-    let mut entry: Vec<Option<usize>> = vec![None; s];
-    for &i in &order {
+    entry.resize(s, None); entry.fill(None);
+    for &i in order.iter() {
         for k in 0..s { if slot_field(k, 1) == field(i, 1) && slot_field(k, 0) == field(i, 0) { entry[k] = Some(i); } }
     }
     let mut failed = -1.0;
     let mut events = 0usize;
-    for &i in &order {
+    for &i in order.iter() {
         if !wants(field(i, 1)) || entry.iter().flatten().any(|&held| field(held, 5) == field(i, 5)) { continue; }
         let mut target: Option<usize> = None;
         for k in 0..s {
@@ -224,12 +234,15 @@ fn tinted(hex: f64, has_tint: f64, tint: [f64; 3]) -> [f64; 3] {
 /// camera's up; 12..15 the target; 15 angle; 16 penumbra; 17 near; 18 far; 19 normal bias; 20..36 the local matrix (when the
 /// lights follow the room); 36 whether the room is where the slot remembers it; 37 whether the local matrix is.
 pub fn light(spot: bool, input: &[f64], out: &mut [f64]) -> bool {
+    light_with_color(spot, input, out, None)
+}
+fn light_with_color(spot: bool, input: &[f64], out: &mut [f64], color: Option<[f64; 3]>) -> bool {
     if input.len() < LIGHT_IN || out.len() < LIGHT_OUT { return false; }
     let world = mat(&input[0..16]);
     let scale = max_scale(&world);
     let position = world.apply([input[82], input[83], input[84]]);
     out[0..3].copy_from_slice(&position);
-    out[3..6].copy_from_slice(&tinted(input[88], input[89], [input[90], input[91], input[92]]));
+    out[3..6].copy_from_slice(&color.unwrap_or_else(|| tinted(input[88], input[89], [input[90], input[91], input[92]])));
     out[6] = jmax(0.0, or_zero(input[93])) * input[94] * scale * scale;
     let distance_base = if input[95] == 0.0 || input[95].is_nan() { input[96] * 6.0 } else { input[95] };
     out[7] = jmax(0.01, distance_base) * scale;
@@ -271,6 +284,9 @@ pub fn light(spot: bool, input: &[f64], out: &mut [f64]) -> bool {
 /// Outputs: 0..3 the colour; then `STRIP_OUT` numbers a strip from `FILAMENT_OUT_HEAD`: position (3), quaternion (x, y, z,
 /// w), width, height and intensity.
 pub fn filaments(input: &[f64], out: &mut [f64]) -> bool {
+    filaments_with_color(input, out, None)
+}
+fn filaments_with_color(input: &[f64], out: &mut [f64], color: Option<[f64; 3]>) -> bool {
     if input.len() < FILAMENT_HEAD { return false; }
     let count = input[16];
     if !(count >= 0.0 && count <= MAX_STRIPS as f64 && count.fract() == 0.0) { return false; }
@@ -279,7 +295,7 @@ pub fn filaments(input: &[f64], out: &mut [f64]) -> bool {
     let world = mat(&input[0..16]);
     let rotation = world.decompose().1;
     let scale = max_scale(&world);
-    out[0..3].copy_from_slice(&tinted(input[17], input[18], [input[19], input[20], input[21]]));
+    out[0..3].copy_from_slice(&color.unwrap_or_else(|| tinted(input[17], input[18], [input[19], input[20], input[21]])));
     for strip in 0..count {
         let at = FILAMENT_HEAD + STRIP_IN * strip;
         let vector = |from: usize| -> Vec3 { [input[at + from], input[at + from + 1], input[at + from + 2]] };
@@ -304,4 +320,173 @@ pub fn filaments(input: &[f64], out: &mut [f64]) -> bool {
         out[to + 9] = jmax(0.0, or_zero(input[22])) * input[23] * 4.0 / (count as f64 * width * length);
     }
     true
+}
+
+// The lifetime of the numeric state follows its Three.js fixture. Reassignment
+// invalidates stamps; fading only invalidates radiance, never cached depth.
+use wasm_bindgen::prelude::*;
+
+fn stamp(previous: &mut [f64], current: &[f64]) -> bool {
+    let mut changed = false;
+    for (last, &value) in previous.iter_mut().zip(current) {
+        if *last != value && (!last.is_nan() || !value.is_nan()) {
+            *last = value; changed = true;
+        }
+    }
+    changed
+}
+
+// Three.Color#getHex in its existing linear-sRGB working space. Math.pow stays
+// in the engine, including its treatment of NaN/infinity and final rounding.
+fn light_hex(rgb: &[f64]) -> f64 {
+    let channel = |c: f64| {
+        let c = if c < 0.0031308 { c * 12.92 } else { 1.055 * Math::pow(c, 0.41666) - 0.055 };
+        Math::round(jsmath::clamp(c * 255.0, 0.0, 255.0))
+    };
+    channel(rgb[0]) * 65536.0 + channel(rgb[1]) * 256.0 + channel(rgb[2])
+}
+
+/// Persistent cache for one fixture. A computed frame returns bits: valid=8,
+/// visible change=1, carry cached shadow matrix=2, refresh shadow texture=4.
+#[wasm_bindgen]
+pub struct LampLightState {
+    shadow: [f64; 12], radiance: [f64; 5], emitter: [f64; 9], pose: Vec<f64>,
+    local: Mat4, root: Mat4, has_transform: bool, stale: bool,
+    color_inputs: [f64; 5], color: [f64; 3], hex: f64, color_ready: bool,
+}
+
+#[wasm_bindgen]
+impl LampLightState {
+    #[wasm_bindgen(constructor)]
+    pub fn new(strips: usize) -> LampLightState {
+        LampLightState { shadow:[0.0; 12], radiance:[0.0; 5], emitter:[0.0; 9],
+            pose:vec![0.0; strips.min(MAX_STRIPS) * 11], local:Mat4::identity(), root:Mat4::identity(),
+            has_transform:false, stale:false, color_inputs:[0.0; 5], color:[0.0; 3], hex:0.0, color_ready:false }
+    }
+    pub fn assign(&mut self) {
+        self.stale = true; self.has_transform = false;
+        self.shadow.fill(f64::NAN); self.radiance.fill(f64::NAN);
+        self.emitter.fill(f64::NAN); self.pose.fill(f64::NAN);
+    }
+    pub fn light(&mut self, spot: bool, shadowed: bool, lit: bool, was_lit: bool,
+        shadow_dirty: bool, input: &[f64], out: &mut [f64]) -> u32 {
+        if input.len() < LIGHT_IN || out.len() < LIGHT_OUT { return 0; }
+        let mut cached = [0.0; LIGHT_IN + 1];
+        let count = input.len().min(LIGHT_IN + 1); cached[..count].copy_from_slice(&input[..count]);
+        let input = &mut cached;
+        let root = input[16] != 0.0;
+        input[81] = if root && self.has_transform { 1.0 } else { 0.0 };
+        if root {
+            input[49..65].copy_from_slice(&self.local.0);
+            input[65..81].copy_from_slice(&self.root.0);
+        }
+        self.color_for([input[88], input[89], input[90], input[91], input[92]]);
+        if !light_with_color(spot, input, out, Some(self.color)) { return 0; }
+        let mut shadow = [0.0; 12];
+        shadow[..3].copy_from_slice(&out[..3]); shadow[3] = out[7];
+        if spot { shadow[4..7].copy_from_slice(&out[12..15]); shadow[7..10].copy_from_slice(&out[9..12]); shadow[10] = out[15]; }
+        shadow[11] = shadowed as u8 as f64;
+        let shadow_changed = stamp(&mut self.shadow, &shadow);
+        let light_changed = stamp(&mut self.radiance, &[out[6], self.hex, out[8],
+            if spot { out[15] } else { 0.0 }, if spot { out[16] } else { 0.0 }]);
+        let mut emitter = [0.0; 9]; emitter[..3].copy_from_slice(&input[82..85]);
+        if spot { emitter[3..6].copy_from_slice(&input[85..88]); emitter[7] = out[15]; }
+        emitter[6] = input[95]; emitter[8] = shadowed as u8 as f64;
+        let emitter_changed = stamp(&mut self.emitter, &emitter) || input.get(102).copied().unwrap_or(0.0) != 0.0;
+        let root_moved = root && self.has_transform && out[36] == 0.0;
+        let mut flags = 8;
+        if shadowed && (shadow_changed || emitter_changed || shadow_dirty || root_moved) {
+            if root && self.has_transform && !shadow_dirty && !emitter_changed && out[37] != 0.0 {
+                flags |= 2;
+            } else { self.stale = true; }
+        }
+        if shadowed && lit && self.stale { flags |= 4; self.stale = false; }
+        self.has_transform = root;
+        if root { self.local = mat(&out[20..36]); self.root = mat(&input[33..49]); }
+        if (lit || was_lit) && (shadow_changed || light_changed || emitter_changed || shadow_dirty || root_moved) { flags |= 1; }
+        flags
+    }
+    pub fn filaments(&mut self, lit: bool, was_lit: bool, input: &[f64], out: &mut [f64]) -> u32 {
+        if input.len() < FILAMENT_HEAD { return 0; }
+        let count = input[16] as usize;
+        if count * 11 != self.pose.len() { return 0; }
+        self.color_for([input[17], input[18], input[19], input[20], input[21]]);
+        if !filaments_with_color(input, out, Some(self.color)) { return 0; }
+        let mut changed = false;
+        let hex = self.hex;
+        for index in 0..count {
+            let at = FILAMENT_OUT_HEAD + STRIP_OUT * index;
+            let mut pose = [0.0; 11]; pose[..10].copy_from_slice(&out[at..at + 10]); pose[10] = hex;
+            changed |= stamp(&mut self.pose[index * 11..(index + 1) * 11], &pose);
+        }
+        8 | if changed && (lit || was_lit) { 1 } else { 0 }
+    }
+}
+
+impl LampLightState {
+    fn color_for(&mut self, inputs: [f64; 5]) {
+        if self.color_ready && self.color_inputs.iter().zip(inputs).all(|(&a, b)| a.to_bits() == b.to_bits()) { return; }
+        self.color_inputs = inputs; self.color_ready = true;
+        self.color = tinted(inputs[0], inputs[1], [inputs[2], inputs[3], inputs[4]]);
+        self.hex = light_hex(&self.color);
+    }
+}
+
+/// Fixed numeric fixture ids on the host boundary: cone=0, point=1,
+/// filaments:N=N+1. Counting, lexical kind order, quotas and rank-cache
+/// invalidation belong to Rust; only locale collation remains a host primitive.
+#[wasm_bindgen]
+pub struct LampPoolState {
+    kinds: Vec<usize>, quotas: [f64; KINDS], ranked_keys: Vec<f64>, key_ranks: Vec<f64>, scratch: PlanScratch,
+}
+const KINDS: usize = MAX_STRIPS + 2;
+fn kind_name(kind: usize) -> String {
+    match kind { 0 => "cone".into(), 1 => "point".into(), _ => format!("filaments:{}", kind - 1) }
+}
+#[wasm_bindgen]
+impl LampPoolState {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> LampPoolState { LampPoolState { kinds:Vec::new(), quotas:[0.0; KINDS], ranked_keys:Vec::new(), key_ranks:Vec::new(), scratch:PlanScratch::default() } }
+    /// Only structural changes leave Rust: (kind, wanted, existing), in original
+    /// lexical order. An unchanged pool allocates/transfers no output payload.
+    pub fn reconcile(&mut self, entries: &[f64], slots: &[f64], limit: f64) -> Result<Vec<f64>, JsValue> {
+        let mut counts = [0.0; KINDS]; let mut existing = [0.0; KINDS];
+        let mut registered = false;
+        for &code in entries {
+            if code < 0.0 { continue; }
+            if !code.is_finite() || code.fract() != 0.0 || code >= KINDS as f64 { return Err(js_sys::RangeError::new("Tipo de luz no válido.").into()); }
+            let kind = code as usize; counts[kind] += 1.0;
+            if !self.kinds.contains(&kind) { self.kinds.push(kind); registered = true; }
+        }
+        for &code in slots {
+            if !code.is_finite() || code < 0.0 || code.fract() != 0.0 || code >= KINDS as f64 { return Err(js_sys::RangeError::new("Tipo de luz no válido.").into()); }
+            existing[code as usize] += 1.0;
+        }
+        if registered { self.kinds.sort_by_cached_key(|&kind| kind_name(kind)); }
+        let mut ordered = [0.0; KINDS]; let mut result = [0.0; KINDS];
+        for (i, &kind) in self.kinds.iter().enumerate() { ordered[i] = counts[kind]; }
+        quota(&ordered[..self.kinds.len()], limit, &mut result[..self.kinds.len()]);
+        self.quotas.fill(0.0);
+        let mut changes = Vec::new();
+        for (i, &kind) in self.kinds.iter().enumerate() {
+            self.quotas[kind] = result[i];
+            if result[i] != existing[kind] { changes.extend_from_slice(&[kind as f64, result[i], existing[kind]]); }
+        }
+        Ok(changes)
+    }
+    /// `keys` are host identity ids stable for this manager's lifetime. The
+    /// comparator is invoked only when membership/order changes, never per frame.
+    pub fn plan(&mut self, candidates: &[f64], slots: &[f64],
+        middle: f64, out: &mut [f64], rank_keys: &js_sys::Function) -> Result<bool, JsValue> {
+        if candidates.len() % CANDIDATE != 0 { return Ok(false); }
+        let count = candidates.len() / CANDIDATE;
+        let same = self.ranked_keys.len() == count && (0..count).all(|i| self.ranked_keys[i] == candidates[i * CANDIDATE + 1]);
+        if !same {
+            let ranks = js_sys::Float64Array::new(&rank_keys.call0(&JsValue::UNDEFINED)?);
+            if ranks.length() as usize != count { return Ok(false); }
+            self.key_ranks.resize(count, 0.0); ranks.copy_to(&mut self.key_ranks);
+            self.ranked_keys.clear(); self.ranked_keys.extend((0..count).map(|i| candidates[i * CANDIDATE + 1]));
+        }
+        Ok(plan_with(candidates, slots, &self.quotas, middle, out, &mut self.scratch, Some(&self.key_ranks)))
+    }
 }

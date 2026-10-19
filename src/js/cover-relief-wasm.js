@@ -136,6 +136,63 @@ export function wasmReliefRgbaPlanes(core, maps) {
 }
 
 
+/** Keep composition, normals and final RGBA planes in one scoped Rust job.
+ * Inputs cross once; the shared output slot is copied only when a final plane
+ * is ready. No native pointer escapes and cancellation frees the whole bake. */
+export function* wasmRenderRelief(core, maps, unit, { selectionAlpha = false, rgba = false, layers = null } = {}) {
+  const { width, height, owners, mask } = maps, count = width * height;
+  const compose = layers !== null;
+  if (!canUseReliefWasm(core, width, height) || !Number.isFinite(unit)
+    || !['relief_render_new', 'relief_render_buffer', 'relief_render_step', 'relief_render_free']
+      .every(name => typeof core[name] === 'function')
+    || (owners && !bytes(owners, count))) return null;
+  if (compose ? (!Array.isArray(layers) || layers.length > 10 || !bytes(owners, count)
+      || !bytes(maps.baseMask, count) || !(maps.baseHeight instanceof Float32Array) || maps.baseHeight.length !== count
+      || !layers.every(layer => Number.isFinite(layer.strength)))
+    : (!bytes(maps.heightMap, count) || (maps.preserveInk && !bytes(mask, count)))) return null;
+  const hasMask = compose || Boolean(mask && (maps.preserveInk || selectionAlpha));
+  const extra = rgba || (selectionAlpha && !hasMask);
+  if ((!compose && hasMask && !bytes(mask, count))
+    || (!compose && extra && (!bytes(maps.foil, count) || !bytes(maps.gloss, count)))) return null;
+  // Native-backed input views could detach when the job allocates. Public map
+  // arrays are owned host buffers; reject incompatible callers before mutation.
+  const inputs = compose ? [owners, maps.baseMask, maps.baseHeight] : [maps.heightMap, owners, ...(hasMask ? [mask] : []), ...(extra ? [maps.foil, maps.gloss] : [])];
+  if (inputs.some(input => input?.buffer === core.memory.buffer)) return null;
+  const flags = (owners ? 1 : 0) | (maps.preserveInk ? 2 : 0) | (selectionAlpha ? 4 : 0)
+    | (hasMask ? 8 : 0) | (compose ? 16 : 0) | (rgba ? 32 : 0);
+  const job = core.relief_render_new(width, height, flags, unit, layers?.length || 0);
+  if (!job) return null;
+  const view = (index, Type, length) => new Type(core.memory.buffer, core.relief_render_buffer(job, index), length);
+  try {
+    if (owners) view(1, Uint8Array, count).set(owners);
+    if (compose) {
+      view(5, Uint8Array, count).set(maps.baseMask);
+      view(6, Float32Array, count).set(maps.baseHeight);
+      view(7, Float64Array, layers.length).set(layers.map(layer => layer.strength));
+    } else {
+      view(0, Uint8Array, count).set(maps.heightMap);
+      if (hasMask) view(2, Uint8Array, count).set(mask);
+      if (extra) { view(3, Uint8Array, count).set(maps.foil); view(4, Uint8Array, count).set(maps.gloss); }
+    }
+    const output = {};
+    let pixels = maps;
+    for (;;) {
+      const code = core.relief_render_step(job);
+      if (code === 0) return { ...output, pixels };
+      if (code < 0) throw new Error('El núcleo de relieve rechazó los datos');
+      if (code === 1) yield;
+      else if (code >= 3 && code <= 6) {
+        output[['normal', 'height', 'foil', 'gloss'][code - 3]] = view(9, Uint8ClampedArray, count * 4).slice();
+        if (code === 3 && compose) {
+          const composed = view(8, Uint8Array, count * 3);
+          pixels = { ...maps, layers, mask:composed.slice(0, count), gloss:composed.slice(count, count * 2),
+            heightMap:composed.slice(count * 2), foil:new Uint8Array(count) };
+        }
+      } else if (code !== 2) throw new Error('El núcleo de relieve rechazó los datos');
+    }
+  } finally { core.relief_render_free(job); }
+}
+
 // ---- jobs: palette analysis and pigment maps ------------------------------------------------------
 const JOB_LIMIT = 512 * 512;
 const rgbOf = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));

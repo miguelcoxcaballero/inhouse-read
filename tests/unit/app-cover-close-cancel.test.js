@@ -124,6 +124,10 @@ async function savedBook() {
     name:'original.pdf', format:'PDF', mimeType:'application/pdf', sourceType:'local',
     content:new NativeBlob(['%PDF-original'], { type:'application/pdf' }),
     cover:new NativeBlob(['small-existing-cover'], { type:'image/jpeg' }),
+    // A settled shelf book has a count tied to these exact source bytes.
+    // Omitting the revision made this close test race the background counter:
+    // an immediate return correctly skips geometry whose length is not ready.
+    contentRevision:'saved-source', wordCountContentRevision:'saved-source',
     wordCount:600, wordCountVersion:2, wordCountComplete:true });
 }
 const context = finish => ({ isActive:() => true, finish, close:vi.fn() });

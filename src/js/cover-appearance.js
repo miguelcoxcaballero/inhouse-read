@@ -3,6 +3,7 @@ import { rustCoverColor } from './cover-color-wasm.js';
 import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from './font-glyph-wasm.js';
 import { createRustFontScorer } from './font-score-wasm.js';
 export { scoreFontMask } from './font-score-core.js';
+import { createRustFontWrapCache, rustFontSearchPlan, rustFontFamilyMax, rustFontFamilySelect } from './font-policy-wasm.js';
 import { shelfWorkReady } from './idle-startup.js';
 /*
  * Appearance extracted from a book cover image. This stays local to the
@@ -77,32 +78,18 @@ export function coverColorFromPixels(data, width, height) {
   return style;
 }
 
-function titleLines(context, title, maxWidth) {
-  const words = String(title ?? '').trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-  const lines = [];
-  let line = '';
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (line && context.measureText(candidate).width > maxWidth) {
-      lines.push(line);
-      line = word;
-    } else line = candidate;
-  }
-  if (line) lines.push(line);
-  return lines.slice(0, 4);
-}
-
 export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
   const mask = rustGlyphMask(loadedRustCore(), raw, maxWidth, rows, stride);
   if (mask === undefined) throw new Error('Invalid glyph raster');
   return mask;
 }
 
-function fontMask(title, candidate, size, upper, align, maxWidth) {
+function fontMask(title, candidate, plan, maxWidth, wraps, key) {
+  const [upper, alignment, size, canvasHeight, x, lineHeight, lineWidth] = plan;
+  const align = ['center', 'left', 'right'][alignment];
   const linesCanvas = document.createElement('canvas');
   linesCanvas.width = maxWidth;
-  linesCanvas.height = Math.ceil(size * 5.5);
+  linesCanvas.height = canvasHeight;
   const linesContext = linesCanvas.getContext('2d', { willReadFrequently: true });
   if (!linesContext) return null;
   linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
@@ -110,12 +97,9 @@ function fontMask(title, candidate, size, upper, align, maxWidth) {
   linesContext.textAlign = align;
   linesContext.textBaseline = 'top';
   linesContext.fillStyle = '#fff';
-  const lineWidth = maxWidth - 2;
-  const lines = titleLines(linesContext, upper ? title.toLocaleUpperCase() : title, lineWidth);
+  const lines = wraps.lines(linesContext, upper ? title.toLocaleUpperCase() : title, lineWidth, key);
   if (!lines.length) return null;
-  const lineHeight = size * 1.08;
   lines.forEach((line, index) => {
-    const x = align === 'left' ? 1 : align === 'right' ? maxWidth - 1 : maxWidth / 2;
     linesContext.fillText(line, x, 3 + index * lineHeight, lineWidth);
   });
   return glyphMask(linesContext.getImageData(0, 0, maxWidth, linesCanvas.height).data, maxWidth, linesCanvas.height);
@@ -125,21 +109,17 @@ export function nearEdgeMap(edges, width) {
   return rustNearEdgeMap(loadedRustCore(), edges, width);
 }
 
-function* scoreFamily(candidate, gray, near, width, height, rows, title, scorer = remoteFontScore) {
-  let familyScore = 0;
-  // A title already in capitals renders the same text in both cases.
-  for (const upper of String(title).toLocaleUpperCase() === String(title) ? [false] : [false, true]) {
-    for (const align of ['center', 'left', 'right']) {
-      for (const size of [11, 16, 22, 29]) {
-        yield;
-        const mask = fontMask(String(title), candidate, size, upper, align, width);
-        if (!mask || mask.width > width - 2 || mask.height > rows - 8) continue;
-        const score = yield* scorer(gray, near, width, height, rows, mask);
-        if (score > familyScore) familyScore = score;
-      }
+function* scoreFamily(candidate, gray, near, width, height, rows, title, plans, scorer = remoteFontScore) {
+  const wraps = createRustFontWrapCache(loadedRustCore());
+  try {
+    for (let i=0; i<plans.length; i++) {
+      const plan=plans[i];
+      yield;
+      const mask = fontMask(String(title), candidate, plan, width, wraps, plan[7]);
+      if (!mask || !loadedRustCore().font_mask_fits(mask.width, mask.height, width, rows)) continue;
+      yield* scorer(gray, near, width, height, rows, mask);
     }
-  }
-  return familyScore;
+  } finally { wraps.dispose(); }
 }
 
 // The search is a few hundred million operations: run it in slices short
@@ -180,20 +160,23 @@ async function runRemoteFamily(task, scoreMasks) {
   // Build the identical family in short slices, then send its bounded batch.
   const masks = [];
   let sliceStart = performance.now(), step = task.next();
-  while (!step.done) {
-    if (step.value?.mask) masks.push(step.value.mask);
-    if (performance.now() - sliceStart >= SLICE_MS) {
-      await yieldToMain(); await shelfWorkReady(); sliceStart = performance.now();
+  try {
+    while (!step.done) {
+      if (step.value?.mask) masks.push(step.value.mask);
+      if (performance.now() - sliceStart >= SLICE_MS) {
+        await yieldToMain(); await shelfWorkReady(); sliceStart = performance.now();
+      }
+      step = task.next(0);
     }
-    step = task.next(0);
-  }
-  return Math.max(0, ...await scoreMasks(masks));
+    return rustFontFamilyMax(loadedRustCore(), await scoreMasks(masks));
+  } finally { task.return?.(); }
 }
 
 async function matchTitleFont(gray, width, height, title, preparedNear) {
   await shelfWorkReady();
   if (!title || String(title).trim().length < 3 || typeof document === 'undefined') return null;
   const scoreByFamily = [];
+  const plans = rustFontSearchPlan(loadedRustCore(), title, width);
   const work = document.createElement('canvas');
   work.width = width; work.height = Math.floor(height * 0.82);
   const context = work.getContext('2d');
@@ -219,19 +202,13 @@ async function matchTitleFont(gray, width, height, title, preparedNear) {
   try {
     for (const candidate of FONT_CANDIDATES) {
       await shelfWorkReady();
-      const task = scoreFamily(candidate, gray, near, width, height, work.height, title, remoteFontScore);
+      const task = scoreFamily(candidate, gray, near, width, height, work.height, title, plans, remoteFontScore);
       const score = await runRemoteFamily(task, scoreMasks);
-      scoreByFamily.push({ candidate, score });
+      scoreByFamily.push(score);
     }
   } finally { workerJob?.close(); localScorer?.dispose(); }
-  scoreByFamily.sort((a, b) => b.score - a.score);
-  const best = scoreByFamily[0];
-  const runnerUp = scoreByFamily[1];
-  // If the image has no readable title, leave the fallback to the visual
-  // classification below instead of treating random image edges as letters.
-  const margin = runnerUp ? (best.score - runnerUp.score) / Math.max(1, best.score) : 0;
-  if (!best || best.score < 18 || margin < .035) return null;
-  return best.candidate;
+  const best = rustFontFamilySelect(loadedRustCore(), scoreByFamily);
+  return best < 0 ? null : FONT_CANDIDATES[best];
 }
 
 function loadCandidateFonts(text) {

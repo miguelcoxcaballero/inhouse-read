@@ -15,8 +15,10 @@ function setup(native){
  const view=native?new ui.RustReaderView(screen,panel,mini,back):new LegacyReaderView(screen,panel,mini,back)
  return {view,screen,panel,mini,back,range:panel.querySelector('[data-progress]'),page:panel.querySelector('input[type="number"]')}
 }
-it('preserves document information, format controls, Unicode and in-progress edits exactly',()=>{
- for(let trial=0;trial<200;trial++){
+// Keep all 200 differential trials; independent batches avoid a single DOM
+// stress test timing out when the complete suite shares CPU with other jobs.
+it.each(Array.from({length:20},(_,batch)=>batch))('preserves document information, format controls, Unicode and in-progress edits exactly (batch %i)',batch=>{
+ for(let trial=batch*10;trial<(batch+1)*10;trial++){
   const output=[]
   for(const native of [false,true]){
    const {view,range,page}=setup(native),title=['Libro','<img onerror=x>','字 📖','العَرَبِيَّة','\ud800'][trial%5],label=`Page ${trial}`

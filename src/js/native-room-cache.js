@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { configureNativeRendererSize } from './native-renderer-size.js';
 import { prepareProgramUniforms } from './gpu-programs.js';
+import { createNativeFramePolicy } from './native-frame-policy.js';
 
 const MAX_LAYERS = 3;
 
@@ -56,6 +57,7 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   const geometry = new THREE.PlaneGeometry(2,2), mesh = new THREE.Mesh(geometry,material);
   mesh.frustumCulled = false;
   const scene = new THREE.Scene(), camera = new THREE.Camera(); scene.add(mesh);
+  const policy = createNativeFramePolicy();
   let disposed = false,prepared=false,generation=0;
   function invalidateFrames() {
     generation++;prepared=false;
@@ -66,45 +68,28 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   renderer.domElement.addEventListener?.('webglcontextlost',contextLost);
   renderer.domElement.addEventListener?.('webglcontextrestored',contextRestored);
 
-  function contextReady() {
-    try { const context=renderer.getContext();return Boolean(context) && !context.isContextLost?.(); }
-    catch { return false; }
+  function readyContext() {
+    try { const context=renderer.getContext(); return context && !context.isContextLost?.() ? context : null; }
+    catch { return null; }
   }
+  const contextReady = () => Boolean(readyContext());
 
+  function ownedDescriptor(frame) {
+    return !disposed && frame && (frame.generation === undefined || frame.generation === generation);
+  }
   function exactFrame(frame) {
-    const logical = !disposed && contextReady() && frame && [frame.width,frame.height,frame.ratio].every(value=>Number.isFinite(value)&&value>0)
-      && (frame.generation===undefined || frame.generation===generation)
-      && [frame.x??0,frame.y??0].every(Number.isFinite);
-    if (!logical) return false;
-    if (frame.physical === true) {
-      // A resolved room may have Three's original floor-sized framebuffer
-      // while occupying fractional CSS pixels. Keep those two sizes explicit;
-      // book crops and aligned callers retain the strict descriptor below.
-      let gl;try { gl=renderer.getContext(); } catch { return false; }
-      return [frame.pixelWidth,frame.pixelHeight,gl?.drawingBufferWidth,gl?.drawingBufferHeight]
-        .every(value=>Number.isInteger(value)&&value>0)
-        && frame.pixelWidth===Math.floor(frame.width*frame.ratio)
-        && frame.pixelHeight===Math.floor(frame.height*frame.ratio)
-        && (!Number.isFinite(renderer.capabilities?.maxTextureSize) ||
-          Math.max(frame.pixelWidth,frame.pixelHeight)<=renderer.capabilities.maxTextureSize);
-    }
-    return frame.physical===undefined &&
-      [frame.width*frame.ratio,frame.height*frame.ratio,(frame.x??0)*frame.ratio,(frame.y??0)*frame.ratio].every(Number.isInteger);
+    const context = readyContext();
+    return Boolean(ownedDescriptor(frame) && context && policy.exact(frame, context, renderer.capabilities?.maxTextureSize));
   }
   function validFrame(frame) { return liveTextures.has(frame?.texture) && frame.generation===generation && exactFrame(frame); }
 
   function capture(slot, descriptor) {
-    if (!exactFrame(descriptor) || renderer.getRenderTarget?.()) return null;
+    const context = readyContext();
+    if (!ownedDescriptor(descriptor) || !context || renderer.getRenderTarget?.()) return null;
+    const dimensions = policy.capture(descriptor, context, renderer.capabilities?.maxTextureSize, renderer.domElement);
+    if (!dimensions) return null;
     const {width,height,ratio,x=0,y=0,sourceX=0,sourceY=0} = descriptor;
-    const physical=descriptor.physical===true;
-    const pixelWidth=physical?descriptor.pixelWidth:width*ratio,pixelHeight=physical?descriptor.pixelHeight:height*ratio;
-    if (![sourceX,sourceY].every(Number.isInteger) || sourceX<0 || sourceY<0
-      || sourceX+pixelWidth>renderer.domElement.width || sourceY+pixelHeight>renderer.domElement.height) return null;
-    if (physical) {
-      let gl;try { gl=renderer.getContext(); } catch { return null; }
-      if (gl?.drawingBufferWidth!==renderer.domElement.width || gl?.drawingBufferHeight!==renderer.domElement.height ||
-        sourceX+pixelWidth>gl.drawingBufferWidth || sourceY+pixelHeight>gl.drawingBufferHeight) return null;
-    }
+    const physical=descriptor.physical===true, pixelWidth=dimensions[0], pixelHeight=dimensions[1];
     let texture=slots.get(slot);
     if (!texture || texture.image.width!==pixelWidth || texture.image.height!==pixelHeight) {
       if(texture) { texture.dispose();liveTextures.delete(texture); }
@@ -129,23 +114,22 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   }
 
   function compose(outputFrame, layers) {
-    if (!exactFrame(outputFrame) || !Array.isArray(layers) || layers.length>MAX_LAYERS
-      || layers.some(layer=>!validFrame(layer?.frame) || !Number.isFinite(layer.scale??1) || !((layer.scale??1)>0)
-        || ![layer.x??layer.frame.x,layer.y??layer.frame.y].every(Number.isFinite)
-        || layer.clip && ![layer.clip.left,layer.clip.top,layer.clip.right,layer.clip.bottom].every(Number.isFinite))) return false;
+    const context = readyContext();
+    if (!ownedDescriptor(outputFrame) || !context || !Array.isArray(layers)
+      || layers.some(layer => !liveTextures.has(layer?.frame?.texture) || layer.frame.generation !== generation)) return false;
+    const plan = policy.compose(outputFrame, layers, context, renderer.capabilities?.maxTextureSize);
+    if (!plan) return false;
     configure(outputFrame);
     uniforms.outputSize.value.set(outputFrame.width,outputFrame.height);
     uniforms.outputOrigin.value.set(outputFrame.x||0,outputFrame.y||0);
     for (let i=0;i<MAX_LAYERS;i++) {
-      const layer=layers[i], enabled=Boolean(layer),scale=layer?.scale??1;
+      const layer=layers[i], enabled=Boolean(layer);
       uniforms[`enabled${i}`].value=enabled?1:0;
       uniforms[`layer${i}`].value=enabled?layer.frame.texture:transparent;
       if (!enabled) continue;
-      const x=layer.x??layer.frame.x,y=layer.y??layer.frame.y;
-      const width=layer.frame.width*scale,height=layer.frame.height*scale;
-      uniforms[`rect${i}`].value.set(x,y,width,height);
-      const clip=layer.clip || {left:x,top:y,right:x+width,bottom:y+height};
-      uniforms[`clip${i}`].value.set(clip.left,clip.top,clip.right,clip.bottom);
+      const at = i * 8;
+      uniforms[`rect${i}`].value.set(plan[at],plan[at+1],plan[at+2],plan[at+3]);
+      uniforms[`clip${i}`].value.set(plan[at+4],plan[at+5],plan[at+6],plan[at+7]);
     }
     const autoClear=renderer.autoClear,scissorTest=renderer.getScissorTest();
     renderer.getScissor(scissor); renderer.getClearColor(clearColor);
@@ -190,6 +174,7 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
 
   function dispose() {
     if (disposed) return;disposed=true;
+    policy.dispose();
     renderer.domElement.removeEventListener?.('webglcontextlost',contextLost);
     renderer.domElement.removeEventListener?.('webglcontextrestored',contextRestored);
     for(const texture of slots.values())texture.dispose();slots.clear();liveTextures.clear();

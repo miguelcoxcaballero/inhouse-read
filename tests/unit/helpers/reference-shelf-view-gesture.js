@@ -1,3 +1,4 @@
+// Reference contract includes pen ownership and capture recovery from 1.7.299 (92234324).
 /** A short horizontal swipe turns the cabinet; holds, scrolling and pinches
  * retain their existing owners. No render loop is needed to recognise it. */
 export function createShelfViewGesture({ root, scroller, getMode, setMode, isEnabled, onGestureStart }) {
@@ -8,7 +9,9 @@ export function createShelfViewGesture({ root, scroller, getMode, setMode, isEna
   const threshold = () => Math.max(48, Math.min(96, (scroller.clientWidth || root.clientWidth || 390) * .16));
   const direction = (mode, dx) => mode === 'spine' ? dx < 0 : dx > 0;
   const start = event => {
-    if (!['touch','pen'].includes(event.pointerType) || (event.button !== undefined && event.button !== 0)) return;
+    if (!['touch','pen'].includes(event.pointerType)) return;
+    if (event.pointerType === 'pen' && event.target.closest('.ihr-spine,.ihr-plant,.ihr-lamp')) return;
+    if (event.button !== undefined && event.button !== 0) return;
     contacts.add(event.pointerId);
     if (contacts.size !== 1 || event.isPrimary === false) { candidate = null; return; }
     if (!isEnabled() || excluded(event.target)) return;
@@ -40,7 +43,7 @@ export function createShelfViewGesture({ root, scroller, getMode, setMode, isEna
     consume(event);
     try { scroller.releasePointerCapture?.(event.pointerId); } catch {}
     const dx = event.clientX - swipe.x, dy = event.clientY - swipe.y;
-    if (event.type !== 'pointercancel' && isEnabled() && getMode() === swipe.mode &&
+    if (event.type === 'pointerup' && isEnabled() && getMode() === swipe.mode &&
       Math.abs(dx) >= threshold() && Math.abs(dx) > Math.abs(dy) * 1.5 && direction(swipe.mode, dx)) {
       setMode(swipe.mode === 'spine' ? 'isometric' : 'spine');
     }
@@ -53,13 +56,16 @@ export function createShelfViewGesture({ root, scroller, getMode, setMode, isEna
     if (!mode) return;
     consume(event); setMode(mode);
   };
+  const lost = event => { if (!scroller.hasPointerCapture?.(event.pointerId)) end(event); };
+  const cancel = () => { candidate=null; contacts.clear(); suppressClick=false; clearTimeout(clickTimer); clickTimer=0; };
   scroller.addEventListener('pointerdown', start, true);
   scroller.addEventListener('pointermove', move, true);
   scroller.addEventListener('pointerup', end, true);
   scroller.addEventListener('pointercancel', end, true);
   scroller.addEventListener('click', click, true);
   root.addEventListener('keydown', key);
-  return { destroy() {
+  scroller.addEventListener('lostpointercapture', lost, true);
+  return { cancel, destroy() {
     candidate = null; contacts.clear(); clearTimeout(clickTimer);
     scroller.removeEventListener('pointerdown', start, true);
     scroller.removeEventListener('pointermove', move, true);
@@ -67,5 +73,6 @@ export function createShelfViewGesture({ root, scroller, getMode, setMode, isEna
     scroller.removeEventListener('pointercancel', end, true);
     scroller.removeEventListener('click', click, true);
     root.removeEventListener('keydown', key);
+    scroller.removeEventListener('lostpointercapture', lost, true);
   } };
 }

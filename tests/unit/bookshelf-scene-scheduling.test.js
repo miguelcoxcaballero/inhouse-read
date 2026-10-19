@@ -78,7 +78,7 @@ afterEach(() => {
 describe('shelf presentation and synchronous projection scheduling',() => {
   it('waits for complete book geometry before simulating or replacing saved poses',()=>{
     shelf.dispose();localStorage.setItem('inhouse-read-shelf-physics-v1','last complete scene');
-    const step=vi.spyOn(needRustShelf().RustBookGravity.prototype,'step');
+    const step=vi.spyOn(needRustShelf().RustGravityFrame.prototype,'advance');
     const options={stage,scroller,width:390,height:500,physicsReady:false,
       rows:[{top:20,bottom:220}],entries:[{node,book:{id:'one'},style:{width:28},x:75,y:130,width:100,height:180,thickness:28}]};
     shelf=createBookshelfScene(options);shelf.flush({force:true});drain();
@@ -241,8 +241,16 @@ describe('shelf presentation and synchronous projection scheduling',() => {
     expect(shelf.flush()).toBe(false);
   });
 
-  it('preserves every camera frame and its endpoint when presentation changes during a real turn',() => {
+  it('parks a camera turn behind the opaque reader and resumes its animated endpoint',() => {
     shelf.setMode('isometric'); shelf.setPresentationActive(false);
+    const progress = shelf.canvas.dataset.viewProgress;
+    expect(frames.size).toBe(0);
+    clock += 60_000;
+    expect(shelf.flush({force:true})).toBe(false);
+    expect(shelf.canvas.dataset.viewProgress).toBe(progress);
+    expect(renders()).toBe(0);
+    shelf.setPresentationActive(true);
+    expect(frames.size).toBe(1);
     const poses = [];
     for (let count = 0; frames.size && count < 100; count++) {
       clock += 16;
@@ -256,9 +264,13 @@ describe('shelf presentation and synchronous projection scheduling',() => {
     expect(frames.size).toBe(0);
   });
 
-  it('supports an explicit full paint while hidden without changing the model or quality',() => {
+  it('defers an explicit hidden paint until presentation returns without changing model quality',() => {
     const original = model(); shelf.setPresentationActive(false);
     node.classList.add('is-away');
+    expect(shelf.flush({ force:true })).toBe(false);
+    expect(original.visible).toBe(true);
+    expect(frames.size).toBe(0); expect(renders()).toBe(0);
+    shelf.setPresentationActive(true);
     expect(shelf.flush({ force:true })).toBe(true);
     expect(original.visible).toBe(false);
     expect(renders()).toBe(1);

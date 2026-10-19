@@ -1,0 +1,9 @@
+# Native cover font search policy
+
+Rust now owns title wrapping (including ECMAScript whitespace and original UTF-16 units), raster request order and dimensions, mask acceptance, maximum family scores and confidence selection. Canvas shaping, locale-aware case conversion, image decoding, workers and cooperative browser scheduling remain browser adapters.
+
+Each font family owns a bounded eight-entry native wrap cache for the two case variants and four sizes. Left/center/right alignment does not affect measureText widths, so it reuses completed wraps without changing glyph raster calls, draw coordinates, pixels or scoring. The native cache is freed with its generator, including cancellation/error paths. Source text crosses once; per-word measurements use exact UTF-16 spans into the browser string, avoiding repeated text-buffer copies. Calls outside the cache retain every original measurement for differential verification.
+
+Validation: 27 unit cases across four suites passed. Wrapping includes 260+ titles × seven width conditions, lone surrogates, all relevant ECMAScript whitespace, long UTF-16 lines, thrown Canvas values, native memory growth, exact request arithmetic, 4,000 randomized score selections and bounded memory over 1,000 cache lifetimes. Three Chromium cases passed: full stored production appearance and exact original appearance with a real module worker and with the worker unavailable.
+
+`scripts/benchmark-font-wrapping.mjs` measures real Chromium Canvas wrapping only. For 100 families × 24 requests, measurements fall from 26,400 to 8,800. Seven interleaved samples: previous median 22.8 ms, native cached median 17.2 ms (about 25% less time); one loaded sample was slower. This excludes glyph drawing/scoring, loading and full app performance. An uncached native wrap is slower than the preceding JavaScript helper in a synthetic no-Canvas benchmark; the production path uses the bounded family cache.

@@ -1,0 +1,14 @@
+# Native framebuffer and cover cache policies in Rust
+
+The framebuffer cache sends one reusable 118-double arena to `rust-core/src/native_frame.rs`. Rust validates aligned and physical frame descriptors, capture source bounds and the complete placement/clip plan for up to three retained layers. Physical pixel sizes remain separate from fractional CSS sizes. Numeric views are reused between calls and refreshed after WASM memory growth. No image readback, geometry rendering, resampling, DPR change, shader change or reduced texture quality is introduced.
+
+`RustCoverRasterCache` owns decoded-cover retention, strict key reuse, the existing 2,097,152-pixel budget, least-recently-used eviction, replacement failure behavior and clone/source-version preservation. Rust stores browser texture handles; decoded image pixels do not cross the WASM boundary. Borrowed cache state is released before browser callbacks, including texture disposal and cloning. The JavaScript module is an eight-line browser entry adapter.
+
+Three.js/WebGL calls, context-loss listeners, texture membership and current framebuffer generation remain in the browser adapter. This is a bounded migration, not a claim that all remaining application logic has moved to Rust.
+
+Validation:
+
+- Production Rust core and UI/shelf builds pass with isolated Cargo target directories; Vite build and offline-shell generation pass.
+- 46 unit tests in nine files pass against compiled WASM. They include 3,000 fractional-DPR comparisons, malformed browser-value types, all existing native framebuffer/dither/ownership tests, 1,000 differential LRU operations, real book-model raster reuse, reentrant texture disposal and browser-handle lifetime checks.
+- `scripts/benchmark-native-frame-cache.mjs` compares 20,000 three-layer composition operations against 1.7.306 with GPU calls stubbed. Repeated medians under concurrent build/browser load were noisy (roughly 14–20 ms baseline and 18–20 ms Rust). This does not establish an application or GPU speedup. The arena and output views remove per-frame numeric-array allocation; graphics work and image quality are unchanged.
+- The first two real Chromium/SwiftShader return tests reached completed returns but exceeded their unchanged eight-second timing threshold (9.83 s aligned and 8.23 s fractional). The final-source retry completed in 8.97 s aligned and 10.52 s fractional. The exact 1.7.306 baseline reproduced the same timing assertion failure at 12.59 s aligned. These timings were collected with variable shared-machine load and do not establish a speedup. Trace facts for final-source retries contained no browser errors, retained the same canvas/context and completed the return without residual insertion/flyout; later test assertions did not execute after the timing failure. These runs are not counted as passing E2E; integration must verify the unchanged contracts before publication.
