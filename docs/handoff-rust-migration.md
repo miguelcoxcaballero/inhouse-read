@@ -1,3 +1,9 @@
+# Entrega 1.7.311: etiquetas, URLs de voces y cierre EPUB en Rust
+
+Rama `ready/voice-tail-2` (encima de `ready/voice-tail-1`): `reader_labels.rs`, `voice_urls.rs`, `foliate_close`/`foliate_reset_cursor`. `voiceUrls` se exporta ahora desde `neural-voice/store.js`; `scripts/prepare-neural-fixtures.mjs` usa la copia congelada `tests/unit/helpers/reference-voice-urls.js` porque corre en CI antes de compilar WASM. 67,34 % (41742/20244). Quedan en JS por diseño: datos del catálogo leídos al arrancar, adaptadores de memoria/ORT/Cache Storage, y los respaldos en frío de `reading-preferences.js` (una prueba los exige).
+
+---
+
 # Entrega 1.7.310: geometría PDF y alineación Piper en Rust
 
 Unidad `voice-tail` (rama `ready/voice-tail-1`): `pdf_text_geometry.rs`, `onnx_durations.rs`, `voice_piper_scales`; ATAN2 añadido a host-math. 67,16 % (41559/20318). Los fallos E2E `rust-pdf-figures`/`rust-pdf-row-core` («Rust UI is not loaded» en sus páginas de prueba) y dos de `neural-voice-reading` existen ya en main 1.7.309. Sin pesos Supertonic en la máquina: `natural-voice-rate` sin verificar. Detalles en remaining-wip-verification.md.

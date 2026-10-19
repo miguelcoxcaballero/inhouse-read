@@ -1,3 +1,17 @@
+# 1.7.311 — etiquetas del lector, URLs de voces y cierre EPUB en Rust
+
+Changelog: «Etiquetas, URLs de voz y cierre EPUB en Rust».
+
+Pasan a rust-ui: la etiqueta de un lugar guardado («Página 3 de 120», «Capítulo · Página», «37 % del libro»), el tamaño del archivo («2,4 MB»/«37 KB», con `toFixed`/`Math.round` del motor), la descripción del panel (título, autor, formato y tamaño; el ciclo de vida ya no recibe un callback de JS) y el nombre y tipo del archivo compartido (`reader_labels.rs`); las URLs de modelo, configuración, catálogo y clave de caché de cada voz Piper, con el modelo serbio del autor y Nakdimon para hebreo (`voice_urls.rs`, con `split`/`join`/ToString/`new URL()` del motor para conservar UTF-16); y el cierre del lector EPUB/foliate y la regla de reinicio del cursor audible en saltos y deslizamientos (`foliate_close`, `foliate_reset_cursor`). Se eliminan de producción `findNeuralVoice` y `recommendedVoice`, que ya no usaba nada (el selector ordena en Rust); sus copias congeladas quedan para las pruebas. El script de fixtures neuronales, que corre en CI antes de compilar WASM, usa la copia congelada de las URLs, que la prueba diferencial compara con Rust.
+
+Pruebas diferenciales contra copias congeladas: 3000 etiquetas con localizadores, secciones y fracciones raras (−0, mitades, NaN, cadenas, símbolos), 12 000 tamaños incluidas mitades exactas, 2000 descripciones y archivos compartidos; todas las voces del catálogo con tres bases y 200 combinaciones de ids/bases raros (incluidos los TypeError de URL inválidas y el orden de los campos); 3000 estados del lector cerrados con el mismo orden de efectos y los mismos fallos, y 500 reinicios del cursor. Se conservan las 200 aperturas comparadas del ciclo de vida, ahora con la descripción en Rust.
+
+Batería unitaria en 4 bloques sobre 3812ed85: 7566 casos en 591 archivos; dos fallos. `neural-voice-index` señaló que `catalog.js` (cargado al arrancar) no debe importar el cargador de Rust UI: `voiceUrls` pasa a `store.js`, que ya lo usa, y los 188 casos de los diez archivos afectados pasan después (1f31eee3). `live-room-transport` falla de forma intermitente también en `main` (1 de 3 ejecuciones a solas en ambos). E2E con el build final (1f31eee3), una sola ejecución y sin reintentos: 68/68, incluidos lector (interfaz, carga, estabilidad de páginas EPUB al cerrar y reabrir, experiencia de lectura, chrome), vista de voces naturales, el motor Piper real con descargas y las dos pruebas PDF (`rust-pdf-figures`, `rust-pdf-row-core`) que fallaban en `main`: sus páginas de prueba ahora cargan Rust UI, sin cambiar las aserciones.
+
+Inventario 41742 líneas Rust / 20244 JavaScript = 67,34 % (1.7.310: 67,16 %). No representa funciones completadas. No verificado: teléfono físico, APK y CI. Sin cambios en Android, actualizador, vendor ni workflows.
+
+---
+
 # 1.7.310 — geometría del texto PDF y alineación Piper en Rust
 
 Changelog: «Geometría PDF y alineación de voz en Rust».

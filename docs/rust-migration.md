@@ -1,3 +1,9 @@
+# Entrega 1.7.311: etiquetas del lector, URLs de voces y cierre EPUB en Rust
+
+Etiquetas de lugares, tamaños, descripción del panel y archivo compartido, URLs de voces Piper (con el modelo serbio y Nakdimon) y el cierre del lector EPUB con su regla de cursor audible pasan a rust-ui; se retiran dos búsquedas de catálogo sin uso. Diferenciales contra copias congeladas con miles de casos; 7566 unitarias con los fallos explicados en el detalle; 68/68 E2E finales, incluidas dos pruebas PDF que fallaban en main por no cargar Rust UI en su página. Inventario 41742 líneas Rust / 20244 JavaScript = 67,34 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md).
+
+---
+
 # Entrega 1.7.310: geometría PDF y alineación Piper en Rust
 
 La geometría de los elementos de texto PDF (transformación, dirección dominante, rotaciones, cajas y RTL) pasa a rust-core con la Math del motor; el recorrido/reescritura ONNX de duraciones Piper, las marcas de página y las escalas de inferencia pasan al núcleo de voz, que lee el modelo por ventanas sin copiarlo. Se corrige el TypeError de la fachada de voz al liberar durante la precarga. Pasan diferenciales de 4000 páginas, 300 modelos sintéticos y 800 malformados, y los 13 modelos Piper reales de la máquina idénticos byte a byte; 7558 unitarias salvo tres fallos por carga que pasan a solas; E2E PDF 39/41 y voz 46 con los fallos ya presentes en main o por pesos ausentes documentados. Inventario 41559 líneas Rust / 20318 JavaScript = 67,16 %, no funciones completadas. Detalles en [remaining-wip-verification.md](remaining-wip-verification.md).
