@@ -1,5 +1,5 @@
 // Host side of rust-core/src/host_math.rs. A kernel that needs a sine, cosine, power or hypotenuse
-// writes (operation, a, b) triples; this fills one result per request from the engine's own
+// (or an arctangent) writes (operation, a, b) triples; this fills one result per request from the engine's own
 // Math, so the page gets the numbers its JavaScript always got. The views are made here, after
 // the kernel returned, because nothing may be held across a call that can grow the memory.
 export function resolveHostMath(core, requests, results, count) {
@@ -12,6 +12,7 @@ export function resolveHostMath(core, requests, results, count) {
       case 1: answered[i] = Math.cos(a); break;
       case 2: answered[i] = Math.pow(a, asked[i * 3 + 2]); break;
       case 3: answered[i] = Math.hypot(a, asked[i * 3 + 2]); break;
+      case 5: answered[i] = Math.atan2(a, asked[i * 3 + 2]); break;
       default: break; // not asked for this input
     }
   }

@@ -6,14 +6,13 @@ import { assemblePDFLines } from './pdf-stream-wasm.js'
 import { pdfOrderLines as orderLines } from './pdf-order-wasm.js'
 import { PDF_TEXT_ITEM_LIMIT, pdfRowLines } from './pdf-row-layout-wasm.js'
 import { readerUI } from './rust-ui-required.js'
+import { coreRequired } from './core-required.js'
+import { getRustCore } from '../rust-core.js'
+import { resolveHostMath } from '../host-math.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const finite = value => Number.isFinite(Number(value))
-const multiply = (a, b) => [
-  a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
-  a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
-  a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]
-]
+const ITEM = 11, ENTRY = 6, directions = { ttb:1, rtl:2 }
 
 function fallback(content) {
   return { geometric:false, items:content.items || [], lines:[], paragraphs:[], spans:[],
@@ -21,6 +20,44 @@ function fallback(content) {
       .map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('') }
 }
 
+// The geometry of the items (viewport transform, dominant direction, rotation and boxes) is
+// rust-core pdf_text_geometry.rs; the engine's own Math answers its three rounds of arctangents,
+// hypotenuses, sines and cosines. Strings, trimming and the item objects stay here. null keeps
+// the stream order (partial, vertical, mixed-rotation or overflowing geometry).
+function itemGeometry(raw, view) {
+  const core = getRustCore(), count = raw.length
+  if (typeof core?.pdf_text_geometry_a !== 'function') return coreRequired(undefined)
+  const firstCount = 3 * count + 1, at = { view:0, items:6, requests:6 + count * ITEM }
+  at.first = at.requests + Math.max(firstCount, count + 2) * 3; at.second = at.first + firstCount
+  at.entries = at.second + count + 2; at.rtl = at.entries + count * ENTRY
+  const length = at.rtl + 1, pointer = core.alloc_f64(length), cell = name => pointer + at[name] * 8
+  if (!pointer) throw new Error('PDF text geometry: no memory for the page')
+  const check = status => { if (status < 0) throw new Error('PDF text geometry: invalid call'); return status }
+  try {
+    let data = new Float64Array(core.memory.buffer, pointer, length)
+    data.set(view.map(Number), at.view)
+    raw.forEach(({ item }, index) => {
+      // Spread like the original check: a non-iterable transform still throws here.
+      const positioned = item.transform?.length === 6 && [...item.transform], base = at.items + index * ITEM
+      for (let k = 0; k < 6; k++) data[base + k] = positioned ? Number(item.transform[k]) : NaN
+      data[base + 6] = Number(item.width); data[base + 7] = Number(item.height)
+      data[base + 8] = item.str.trim().length; data[base + 9] = item.str.length; data[base + 10] = directions[item.dir] || 0
+    })
+    const asked = check(core.pdf_text_geometry_a(cell('view'), cell('items'), count, cell('requests')))
+    if (!asked) return null
+    resolveHostMath(core, cell('requests'), cell('first'), asked)
+    const again = check(core.pdf_text_geometry_b(cell('view'), cell('items'), count, cell('first'), cell('requests')))
+    if (!again) return null
+    resolveHostMath(core, cell('requests'), cell('second'), again)
+    if (!check(core.pdf_text_geometry_finish(cell('view'), cell('items'), count, cell('first'), cell('second'), cell('entries'), cell('rtl')))) return null
+    data = new Float64Array(core.memory.buffer, pointer, length)
+    const entries = raw.map(({ item, rawIndex }, index) => {
+      const base = at.entries + index * ENTRY
+      return { item, rawIndex, x0:data[base], x1:data[base + 1], y:data[base + 2], height:data[base + 3], top:data[base + 4], bottom:data[base + 5] }
+    })
+    return { entries, rtl:data[at.rtl] === 1 }
+  } finally { core.free_f64(pointer, length) }
+}
 
 /** Page-local reading layout. Text without usable geometry keeps the legacy stream order verbatim. */
 export function extractPDFText(content, viewport) {
@@ -32,30 +69,9 @@ export function extractPDFText(content, viewport) {
   if (raw.length > PDF_TEXT_ITEM_LIMIT) return fallback(content)
   const view = Array.isArray(viewport?.transform) && viewport.transform.length === 6 && viewport.transform.every(finite)
     ? viewport.transform : DEFAULT_VIEW
-  const positioned = raw.filter(({ item }) => item.transform?.length === 6 && [...item.transform].every(finite)
-    && Math.hypot(item.transform[0], item.transform[1]) > 0)
-  // Partial/corrupt geometry is not grounds to drop text or append it in a
-  // guessed place. Keep its original order until the PDF supplies all boxes.
-  if (positioned.length !== raw.length) return fallback(content)
-  const transforms = positioned.map(entry => ({ ...entry, transformed:multiply(view, entry.item.transform) }))
-  const dominant = [...transforms].sort((a, b) => b.item.str.trim().length - a.item.str.trim().length)[0]
-  const angle = Math.atan2(dominant.transformed[1], dominant.transformed[0])
-  const cos = Math.cos(angle), sin = Math.sin(angle), scale = Math.hypot(view[0], view[1]) || 1
-  // Mixed vertical/rotated writing requires a structural reading order that
-  // these horizontal boxes cannot safely infer. Preserve all original items.
-  if (transforms.some(({ transformed, item }) => item.dir === 'ttb'
-    || Math.abs(Math.sin(Math.atan2(transformed[1], transformed[0]) - angle)) > .2)) return fallback(content)
-  const entries = transforms.map(({ item, rawIndex, transformed:t }) => {
-    const x = t[4] * cos + t[5] * sin, y = -t[4] * sin + t[5] * cos
-    const height = Math.max(1, Math.hypot(t[2], t[3]) || Number(item.height) * scale || 12)
-    const width = Math.max(0, finite(item.width) ? Number(item.width) * scale : item.str.length * height * .5)
-    return { item, rawIndex, x0:x, x1:x + width, y, height, top:y - height, bottom:y }
-  })
-  // Coordinates that overflowed to infinity cannot be ordered: keep the stream.
-  if (!entries.every(entry => [entry.x0, entry.x1, entry.y, entry.height, entry.top, entry.bottom].every(Number.isFinite))) return fallback(content)
-  const rtlWeight = entries.filter(entry => entry.item.dir === 'rtl').reduce((sum, entry) => sum + entry.item.str.length, 0)
-  const rtl = rtlWeight > entries.reduce((sum, entry) => sum + entry.item.str.length, 0) / 2
-  const lines = orderLines(pdfRowLines(entries, rtl), rtl)
+  const geometry = itemGeometry(raw, view)
+  if (!geometry) return fallback(content)
+  const lines = orderLines(pdfRowLines(geometry.entries), geometry.rtl)
   // Fail closed to the complete stream if a future layout rule loses or
   // duplicates an item. Reordering is never permission to discard a phrase.
   const orderedIndices = lines.flatMap(line => line.entries.map(entry => entry.rawIndex))

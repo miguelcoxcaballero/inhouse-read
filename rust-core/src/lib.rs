@@ -69,6 +69,8 @@ mod pdf_layout;
 #[cfg(feature = "app")]
 mod pdf_rows;
 #[cfg(feature = "app")]
+mod pdf_text_geometry;
+#[cfg(feature = "app")]
 mod pdf_order;
 #[cfg(feature = "app")]
 mod book_surface;
