@@ -28,6 +28,10 @@ describe('neuralVoiceBase', () => {
   })
   it('ignores what is set after the module loaded (an EPUB script runs later)', async () => {
     const { neuralVoiceBase, voiceUrls } = await import(CATALOG)
+    // The URLs are rust-ui (voice_urls.rs): load this fresh module graph's UI like the reader does.
+    const wasm = await import('../../src/wasm/ui/inhouse_read_ui.js'), { readFileSync } = await import('node:fs')
+    wasm.initSync({ module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm') })
+    expect(await (await import('../../src/js/rust-ui.js')).loadRustUI()).toBeTruthy()
     globalThis.INHOUSE_NEURAL_VOICE_BASE = 'https://attacker.example/voices/'
     expect(neuralVoiceBase()).toBe(HF)
     expect(voiceUrls('es_MX-claude-high').model.startsWith(HF)).toBe(true)

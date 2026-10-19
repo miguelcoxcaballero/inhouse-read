@@ -1,4 +1,5 @@
 // @vitest-environment node
+import './helpers/rust-ui-ready.js'
 import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'

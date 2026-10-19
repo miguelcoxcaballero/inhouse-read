@@ -68,6 +68,7 @@ mod neural_view;
 mod neural_engine;
 mod neural_player;
 mod voice_store;
+mod voice_urls;
 mod supertonic_store;
 mod package_store;
 mod reader_lists;

@@ -2,7 +2,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
-import { neuralVoices, piperVoices, supertonicVoices, voiceUrls, piperPath, recommendedVoice, modelsOf, DEFAULT_VOICE_BASE } from '../../src/js/readers/neural-voice/catalog.js'
+import { neuralVoices, piperVoices, supertonicVoices, voiceUrls, modelsOf, DEFAULT_VOICE_BASE } from '../../src/js/readers/neural-voice/catalog.js'
+import { piperPath, recommendedVoice } from './helpers/reference-voice-urls.js'
 import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
 import { detectLanguage, normalizeNeuralVoice, resolveVoice, languageName, langBase, orderNeuralVoices, recommendedNeuralFor } from '../../src/js/readers/voice-catalog.js'
 
