@@ -4,7 +4,6 @@
 // stay tiny and free of the engine.
 
 import { isSupertonicVoiceId, supertonicVoicesFor } from './supertonic-catalog.js'
-import { readerUI } from '../rust-ui-required.js'
 
 /** Voice ids are namespaced so they never collide with Android/browser voice ids. */
 export const NEURAL_PREFIX = 'piper:'
@@ -27,9 +26,6 @@ export function neuralVoiceBase(env = globalThis) {
   const base = (env === globalThis ? OVERRIDE_AT_LOAD : overrideOf(env)) || DEFAULT_VOICE_BASE
   return base.endsWith('/') ? base : base + '/'
 }
-
-/** URLs of the two files of a voice and of the catalogue that lists their sizes (rust-ui voice_urls.rs). */
-export const voiceUrls = (piperId, base = neuralVoiceBase()) => readerUI().catalog_voice_urls(piperId, base, DEFAULT_VOICE_BASE)
 
 // One row per downloadable model. `sizeMB` is the .onnx download (63 MB for a 'medium' voice, 77 for sharvard and ukrainian_tts);
 // the name and the speakers come from each voice's .onnx.json (dataset, speaker_id_map).

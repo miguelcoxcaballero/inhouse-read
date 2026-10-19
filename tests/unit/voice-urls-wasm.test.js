@@ -1,7 +1,8 @@
 // @vitest-environment node
 import './helpers/rust-ui-ready.js'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_VOICE_BASE, piperVoices, voiceUrls } from '../../src/js/readers/neural-voice/catalog.js'
+import { DEFAULT_VOICE_BASE, piperVoices } from '../../src/js/readers/neural-voice/catalog.js'
+import { voiceUrls } from '../../src/js/readers/neural-voice/store.js'
 import * as frozen from './helpers/reference-voice-urls.js'
 
 // The Piper URL helpers moved to rust-ui voice_urls.rs; reference-voice-urls.js is the frozen original.

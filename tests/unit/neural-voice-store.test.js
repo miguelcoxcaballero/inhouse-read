@@ -1,8 +1,7 @@
 // @vitest-environment node
 import './helpers/rust-ui-ready.js'
 import { describe, it, expect, vi } from 'vitest'
-import { VoiceStore, CACHE_NAME } from '../../src/js/readers/neural-voice/store.js'
-import { voiceUrls } from '../../src/js/readers/neural-voice/catalog.js'
+import { VoiceStore, CACHE_NAME, voiceUrls } from '../../src/js/readers/neural-voice/store.js'
 import { fakeCaches } from './neural-fakes.js'
 
 const BASE = 'https://mirror.test/voices/'

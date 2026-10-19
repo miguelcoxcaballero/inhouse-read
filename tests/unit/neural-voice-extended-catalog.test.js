@@ -1,7 +1,8 @@
 // @vitest-environment node
 import './helpers/rust-ui-ready.js'
 import { describe, it, expect } from 'vitest'
-import { neuralVoices, voiceUrls } from '../../src/js/readers/neural-voice/catalog.js'
+import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
+import { voiceUrls } from '../../src/js/readers/neural-voice/store.js'
 import { recommendedVoice, NAKDIMON } from './helpers/reference-voice-urls.js'
 import { detectLanguage, normalizeLang, languageName } from '../../src/js/readers/voice-catalog.js'
 

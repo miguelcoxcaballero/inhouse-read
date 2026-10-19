@@ -9,11 +9,14 @@
 // when it can be reached, against the catalogue (voices.json) of the voice repository. A connection that goes silent without
 // closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
 // The download, the listing and the reads are rust-ui (voice_store.rs); this class keeps the injected browser services.
-import { neuralVoiceBase, piperVoices, voiceUrls } from './catalog.js'
+import { DEFAULT_VOICE_BASE, neuralVoiceBase, piperVoices } from './catalog.js'
 import { dictionaryNeeded, dictionaryUrl, fetchDictionary } from './dictionary-cache.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 
 export const CACHE_NAME = 'inhouse-neural-voices-v1'
+
+/** URLs of the two files of a voice and of the catalogue that lists their sizes (rust-ui voice_urls.rs). */
+export const voiceUrls = (piperId, base = neuralVoiceBase()) => ui().catalog_voice_urls(piperId, base, DEFAULT_VOICE_BASE)
 
 /** Error with a `code` the UI maps to Spanish copy: 'offline' | 'http' | 'storage' | 'aborted'. */
 export const storeError = (code, message, cause) => ui().store_error(code, message, cause)
