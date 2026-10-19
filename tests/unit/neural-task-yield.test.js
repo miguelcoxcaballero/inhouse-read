@@ -20,7 +20,7 @@ describe('finite message-task inference yield',()=>{
   it('uses message tasks in both runtimes and waits for actual drain completion without polling',()=>{
     const worker=readFileSync('src/js/readers/neural-voice/worker.js','utf8'),runtime=readFileSync('src/js/readers/neural-voice/supertonic-runtime.js','utf8'),pages=readFileSync('src/js/readers/speech-page-breaks.js','utf8')
     for(const source of [worker,runtime,pages]){expect(source).toContain('task-yield.js');expect(source).not.toContain('setTimeout(')}
-    expect(worker.match(/while \(draining\) await drainDone/g)).toHaveLength(2)
+    expect(worker.match(/while \(plan\.draining\) await drainDone/g)).toHaveLength(2)
     expect(worker).toContain('finishDrain()')
   })
 })
