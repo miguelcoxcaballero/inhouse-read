@@ -1,6 +1,8 @@
-# 1.7.312 — estudios del catálogo y entradas de las lámparas en Rust (unidad shelf-tail, bloque 2)
+# 1.7.312 — estudios del catálogo en Rust (unidad shelf-tail, bloque 2)
 
-Changelog: «Estudios del catálogo y luces de lámparas en Rust».
+Changelog: «Estudios del catálogo en Rust».
+
+Corrección posterior: la lectura de las entradas de las lámparas en Rust (`lamp_entries.rs`) se retiró antes de publicarse en `main`: una medida de `update` con 300 entradas (12 lámparas) dio 0,66 ms por fotograma frente a 0,05 ms del JavaScript, por los cruces Reflect por entrada, y ese camino corre en cada fotograma iluminado. `shelf-lamp-lighting.js` queda como en el bloque 1 y el módulo Rust se borra. Lo que sigue describe la verificación hecha con ella incluida; las pruebas de luces (`lamp-lighting-wasm`, `filament-lighting`, `lamp-scene`) vuelven a pasar sin ella.
 
 Qué se movió. `catalog_studio.rs`: el estado de cada estudio es un objeto JS cuyas funciones son exportaciones Rust enlazadas con `bind` (sin cierres ni ciclos): petición/cancelación de fotogramas, construcción en una tarea posterior al fotograma del toque y nunca con la página oculta, enlace en paralelo manteniendo la imagen anterior, sustitución de la planta enlazada, recoloreado de maceta sin reconstruir (claves `JSON.stringify` como el original), actividad del panel, visibilidad, `prepare`, liberación, transición de temperatura (`retint`/`tintSet`) y `prefers-reduced-motion`; el plan del estudio (exposición, sombras, entorno con paneles oscuros, cámara, hemisférica, clave y relleno) y el soporte de la lámpara (techo/suelo o base, cámara, factores del emisor), y las luces por tipo de armario. `catalog-studio.js` es el pegamento común de three.js. `lamp_entries.rs`: tipo de luz de cada entrada (también por catálogo), filtro de candidatas, identificadores estables de claves con su poda, filas de huecos y candidatas (con las coerciones `+`, `Number`, `| 0` y el orden de lecturas originales), plan de cada hueco (sombras de los dos primeros conos y sus parámetros) y los valores del emisor de luces y filamentos.
 
