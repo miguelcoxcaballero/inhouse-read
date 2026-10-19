@@ -30,3 +30,14 @@ export function rustPrepareCoverPixels(core,raw,width,height,includeEdges=true){
   return {gray:new Uint8Array(core.memory.buffer,pointer+grayOffset,n).slice(),near:includeEdges?new Float32Array(core.memory.buffer,pointer+nearOffset,n).slice():null,busy:status===2};
  }catch{return null;}finally{if(pointer)core.free_f64(pointer,length);}
 }
+
+export function rustNearEdgeMap(core, edges, width) {
+ if (!(edges instanceof Float32Array) || !Number.isSafeInteger(width) || width < 1) throw new Error('Invalid edge plane');
+ const length=Math.max(1,edges.length),pointer=core.alloc_f64(length);
+ if (!pointer) throw new Error('Edge plane allocation failed');
+ try {
+  new Float32Array(core.memory.buffer,pointer,edges.length).set(edges);
+  core.font_near_edges(pointer,edges.length,width,pointer+edges.byteLength);
+  return new Float32Array(core.memory.buffer,pointer+edges.byteLength,edges.length).slice();
+ } finally { core.free_f64(pointer,length); }
+}

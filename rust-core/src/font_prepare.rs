@@ -19,3 +19,17 @@ pub unsafe extern "C" fn font_prepare_pixels(raw:*const u8,width:usize,height:us
  let variance=if count>0.0{squared/count-(sum/count).powi(2)}else{0.0};
  if edge/count.max(1.0)>44.0||variance>5200.0{2}else{1}
 }
+
+/// Edge-neighbour map for callers which already have a grayscale edge plane.
+/// Preserves JavaScript NaN propagation and the original flat-array border.
+#[no_mangle]
+pub unsafe extern "C" fn font_near_edges(edges:*const f32, count:usize, width:usize, out:*mut f32) {
+ let edges=std::slice::from_raw_parts(edges,count);
+ let out=std::slice::from_raw_parts_mut(out,count);
+ out.fill(f32::NAN);
+ if width==0||count<width.saturating_mul(2){return;}
+ for at in width..count-width {
+  let values=[edges[at],edges[at-1],edges[at+1],edges[at-width],edges[at+width]];
+  out[at]=if values.iter().any(|v|v.is_nan()){f32::NAN}else{values.iter().fold(f32::NEG_INFINITY,|a,&b|a.max(b))};
+ }
+}

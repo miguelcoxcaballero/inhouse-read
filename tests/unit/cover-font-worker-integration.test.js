@@ -11,12 +11,12 @@ class MatchingWorker {
     if(data.type==='begin') {
       this.context=data
       Promise.resolve().then(()=>this.onmessage?.({data:{type:'begin',job:data.job,request:data.request,accepted:true}}))
-    } else if(data.type==='score') {
+    } else if(data.type==='scores') {
       this.scores++
       const {gray,near,width,height,rows}=this.context
-      const score=drain(scoreFontMask(gray,near,width,height,rows,data.mask))
+      const scores=data.masks.map(mask=>drain(scoreFontMask(gray,near,width,height,rows,mask)))
       Promise.resolve().then(()=>this.onmessage?.({data:this.scores===failAt?
-        {type:'error',job:data.job,request:data.request}:{type:'score',job:data.job,request:data.request,score}}))
+        {type:'error',job:data.job,request:data.request}:{type:'scores',job:data.job,request:data.request,scores}}))
     } else if(data.type==='end' && data.job===this.context?.job) this.context=null
   }
   terminate() { this.terminated++;this.context=null }
@@ -67,20 +67,20 @@ describe('main fonts and Worker scores preserve the original analyzer',()=>{
   it('keeps the 144 valid mixed-case masks, their raster order and final appearance identical',async()=>{
     await compare('Alpha beta')
     expect(rasters.original).toHaveLength(144);expect(workers).toHaveLength(1)
-    const begin=workers[0].sent.filter(message=>message.type==='begin'),scores=workers[0].sent.filter(message=>message.type==='score')
-    expect(begin).toHaveLength(1);expect(scores).toHaveLength(144)
+    const begin=workers[0].sent.filter(message=>message.type==='begin'),scores=workers[0].sent.filter(message=>message.type==='scores')
+    expect(begin).toHaveLength(1);expect(scores).toHaveLength(6)
     expect(begin[0].gray).toBeInstanceOf(Uint8Array);expect(begin[0].near).toBeInstanceOf(Float32Array)
-    expect(scores.every(message=>message.mask.perimeter instanceof Int32Array&&message.mask.mask instanceof Uint8Array)).toBe(true)
+    expect(scores.every(message=>message.masks.every(mask=>mask.perimeter instanceof Int32Array&&mask.mask instanceof Uint8Array))).toBe(true)
     expect(workers[0].sent.at(-1).type).toBe('end');expect(workers[0].context).toBeNull()
   })
   it('does not invent a second case for an already-uppercase title',async()=>{
     await compare('ALPHA BETA')
-    expect(rasters.original).toHaveLength(72);expect(workers[0].sent.filter(message=>message.type==='score')).toHaveLength(72)
+    expect(rasters.original).toHaveLength(72);expect(workers[0].sent.filter(message=>message.type==='scores')).toHaveLength(6)
   })
   it('falls back on the same current mask and remaining masks after a Worker score failure',async()=>{
-    failAt=7;await compare('Alpha beta')
+    failAt=2;await compare('Alpha beta')
     expect(rasters.original).toHaveLength(144);expect(workers).toHaveLength(1)
-    expect(workers[0].sent.filter(message=>message.type==='score')).toHaveLength(7)
+    expect(workers[0].sent.filter(message=>message.type==='scores')).toHaveLength(2)
     expect(workers[0].terminated).toBe(1);expect(workers[0].context).toBeNull()
   })
   it('retains the original single-flight title sequence while reusing one Worker for serial jobs',async()=>{
@@ -91,7 +91,7 @@ describe('main fonts and Worker scores preserve the original analyzer',()=>{
     expect(actual).toEqual(expected);expect(rasters.candidate).toEqual(rasters.original);expect(workers).toHaveLength(1)
     const starts=workers[0].sent.filter(message=>message.type==='begin'),ends=workers[0].sent.filter(message=>message.type==='end')
     expect(starts).toHaveLength(2);expect(ends).toHaveLength(2);expect(starts[0].job).not.toBe(starts[1].job)
-    const order=workers[0].sent.filter(message=>message.type==='score').map(message=>message.job)
+    const order=workers[0].sent.filter(message=>message.type==='scores').map(message=>message.job)
     expect(order.filter((job,index)=>job!==order[index-1])).toHaveLength(2)
   })
   it('keeps color-only analysis out of the Worker and font loader',async()=>{

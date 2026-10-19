@@ -1,6 +1,7 @@
 // A separate owner and memory for each independently versioned Rust module.
 export function createRustLoader(coreUrl, earlyKey, domain, onReady) {
   let core = null
+  let compiledModule = null
   let loading = null
   let retryAfter = 0
   const FAILED_RETRY_DELAY_MS = 30_000
@@ -10,7 +11,7 @@ export function createRustLoader(coreUrl, earlyKey, domain, onReady) {
   /** Load once per JS realm. A worker has its own memory; the hashed Vite URL
    * is cached with the offline shell. Never delay the first shelf or a gesture
    * on a network request. Existing kernels cover unavailable/older WebViews. */
-  function load({ bytes, fetcher = globalThis.fetch } = {}) {
+  function load({ bytes, module, fetcher = globalThis.fetch } = {}) {
     if (core) return Promise.resolve(core)
     if (loading) return loading
     // A transient offline request must not disable acceleration for the whole
@@ -19,12 +20,13 @@ export function createRustLoader(coreUrl, earlyKey, domain, onReady) {
     if (Date.now() < retryAfter) return Promise.resolve(null)
     // The page can compile in parallel with the large app modules. Consume its
     // promise once; workers and explicit byte callers retain their own instance.
-    const early = !bytes && fetcher === globalThis.fetch ? globalThis[earlyKey] : null
+    const early = !bytes && !module && fetcher === globalThis.fetch ? globalThis[earlyKey] : null
     if (early) delete globalThis[earlyKey]
     loading = (async () => {
       if (typeof WebAssembly !== 'object') return null
       let result
-      if (bytes) result = await WebAssembly.instantiate(bytes)
+      if (module) result = { module, instance:await WebAssembly.instantiate(module) }
+      else if (bytes) result = await WebAssembly.instantiate(bytes)
       else if (early) {
         result = await early
         if (!result) throw new Error('Early Rust core unavailable')
@@ -43,6 +45,7 @@ export function createRustLoader(coreUrl, earlyKey, domain, onReady) {
           || typeof exports.alloc_f64 !== 'function' || typeof exports.free_f64 !== 'function') {
         throw new Error('Incompatible Rust core')
       }
+      compiledModule = result.module || null
       core = exports
       // Optional owners adopt the same compiled instance synchronously. An
       // observer cannot invalidate compilation or introduce another Promise.
@@ -56,5 +59,5 @@ export function createRustLoader(coreUrl, earlyKey, domain, onReady) {
     return loading
   }
 
-  return {get, load}
+  return {get, load, module:() => compiledModule}
 }

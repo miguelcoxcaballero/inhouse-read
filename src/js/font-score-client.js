@@ -1,3 +1,4 @@
+import { getRustCoreModule } from './rust-core.js';
 // One lazily-created module Worker; matcherTurn serializes production callers.
 // Keep all input arrays in the caller so an unavailable/failed worker can use the original scorer.
 const STARTUP_TIMEOUT_MS = 3_000, SCORE_TIMEOUT_MS = 2_000, IDLE_RELEASE_MS = 30_000;
@@ -82,7 +83,7 @@ export async function openFontScoreJob(context, { factory = createWorker, events
   try {
     if (shared?.busy) return null;
     client = shared || (shared = createClient(factory, events));
-    return await client.begin(context, ++nextJob);
+    return await client.begin({ ...context, module:getRustCoreModule() }, ++nextJob);
   } catch {
     client?.dispose();
     return null;

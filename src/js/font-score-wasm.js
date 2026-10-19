@@ -28,7 +28,7 @@ export function createRustFontScorer(core, { gray, near, width, height, rows }) 
     throw error;
   }
   return {
-    score(mask) {
+    *steps(mask, budget = 1) {
       if (disposed) throw new Error('Inactive font score job');
       if (!mask || !dimension(mask.width) || !dimension(mask.height)
         || !(mask.mask instanceof Uint8Array) || mask.mask.length !== mask.width * mask.height
@@ -39,21 +39,38 @@ export function createRustFontScorer(core, { gray, near, width, height, rows }) 
       const perimeterOffset = align8(mask.mask.byteLength);
       const foregroundOffset = perimeterOffset + align8(mask.perimeter.byteLength);
       const backgroundOffset = foregroundOffset + align8(mask.foreground.byteLength);
-      const scratch = arena(core, backgroundOffset + mask.background.byteLength);
+      const stateOffset = backgroundOffset + align8(mask.background.byteLength);
+      const scratch = arena(core, stateOffset + 56);
       try {
         // A scratch allocation may grow memory: obtain every view afterwards.
         new Uint8Array(core.memory.buffer, scratch.pointer, mask.mask.length).set(mask.mask);
         for (const [key, offset] of [['perimeter', perimeterOffset], ['foreground', foregroundOffset], ['background', backgroundOffset]]) {
           new Int32Array(core.memory.buffer, scratch.pointer + offset, mask[key].length).set(mask[key]);
         }
-        const score = core.font_score(image.pointer, image.pointer + nearOffset, width, height, rows,
+        new Float64Array(core.memory.buffer, scratch.pointer + stateOffset, 7).fill(0);
+        const args = [image.pointer, image.pointer + nearOffset, width, height, rows,
           scratch.pointer, mask.width, mask.height, mask.area,
           scratch.pointer + perimeterOffset, mask.perimeter.length,
           scratch.pointer + foregroundOffset, mask.foreground.length,
-          scratch.pointer + backgroundOffset, mask.background.length);
+          scratch.pointer + backgroundOffset, mask.background.length];
+        let status;
+        if (budget === Infinity) return core.font_score(...args);
+        do {
+          if (disposed) throw new Error('Inactive font score job');
+          status = core.font_score_step(...args, scratch.pointer + stateOffset, budget);
+          if (status > 1) throw new Error('Invalid font score step');
+          if (!status) yield;
+        } while (!status);
+        const score = new Float64Array(core.memory.buffer, scratch.pointer + stateOffset, 7)[6];
         if (!Number.isFinite(score)) throw new Error('Invalid font score result');
         return score;
       } finally { core.free_f64(scratch.pointer, scratch.length); }
+    },
+    score(mask) {
+      const task = this.steps(mask, Infinity);
+      let result = task.next();
+      while (!result.done) result = task.next();
+      return result.value;
     },
     dispose() {
       if (disposed) return;

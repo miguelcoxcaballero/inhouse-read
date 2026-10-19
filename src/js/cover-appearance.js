@@ -1,3 +1,8 @@
+import { loadedRustCore, requireRustCore } from './rust-core.js';
+import { rustDominantCoverRgb } from './cover-color-wasm.js';
+import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from './font-glyph-wasm.js';
+import { createRustFontScorer } from './font-score-wasm.js';
+export { scoreFontMask } from './font-score-core.js';
 import { shelfWorkReady } from './idle-startup.js';
 /*
  * Appearance extracted from a book cover image. This stays local to the
@@ -24,18 +29,6 @@ let fontScoreClientTask;
 async function openFontScoreJob(context) {
   const client = await (fontScoreClientTask ??= import('./font-score-client.js').catch(() => null));
   return client ? client.openFontScoreJob(context) : null;
-}
-
-// Keep data-URL imports self-contained and first cover decoding independent of
-// module/network availability. Later calls reuse the loaded numeric core.
-let coverColorCoreTask, coverColorCore;
-function warmCoverColorCore() {
-  if (coverColorCore) { void coverColorCore.load(); return; }
-  coverColorCoreTask ??= Promise.all([import('./cover-color-wasm.js'), import('./rust-core.js'), import('./font-glyph-wasm.js')])
-    .then(([bridge, core, glyph]) => {
-      coverColorCore = { run:bridge.rustDominantCoverRgb, glyph:glyph.rustGlyphMask, prepare:glyph.rustPrepareCoverPixels, get:core.getRustCore, load:core.loadRustCore };
-      void core.loadRustCore();
-    }).catch(() => null);
 }
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
@@ -101,61 +94,9 @@ function darken(r, g, b, amount = 0.24) {
 }
 
 function dominantRgb(data, width, height) {
-  const accelerated = coverColorCore?.run(coverColorCore.get(), data, width, height);
-  if (accelerated) return accelerated;
-  const samples = [];
-  const stride = Math.max(1, Math.floor(Math.sqrt((width * height) / 1800)));
-  for (let y = 0; y < height; y += stride) {
-    for (let x = 0; x < width; x += stride) {
-      const offset = (y * width + x) * 4;
-      const alpha = data[offset + 3];
-      if (alpha < 48) continue;
-      samples.push([data[offset], data[offset + 1], data[offset + 2]]);
-    }
-  }
-  if (!samples.length) return [90, 65, 48];
-
-  // Three-centre k-means is small enough for a phone cover and avoids letting
-  // a handful of title pixels or fine photographic noise decide the binding.
-  const centers = [samples[0]];
-  while (centers.length < 3) {
-    let farthest = samples[0], farthestDistance = -1;
-    for (const sample of samples) {
-      const distance = Math.min(...centers.map(center =>
-        (sample[0] - center[0]) ** 2 + (sample[1] - center[1]) ** 2 + (sample[2] - center[2]) ** 2
-      ));
-      if (distance > farthestDistance) { farthest = sample; farthestDistance = distance; }
-    }
-    centers.push(farthest);
-  }
-
-  let assignments = new Uint8Array(samples.length);
-  let counts = [0, 0, 0];
-  for (let iteration = 0; iteration < 7; iteration += 1) {
-    const sums = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    counts = [0, 0, 0];
-    for (let index = 0; index < samples.length; index += 1) {
-      const sample = samples[index];
-      let best = 0, distance = Infinity;
-      for (let candidate = 0; candidate < centers.length; candidate += 1) {
-        const center = centers[candidate];
-        const next = (sample[0] - center[0]) ** 2 + (sample[1] - center[1]) ** 2 + (sample[2] - center[2]) ** 2;
-        if (next < distance) { best = candidate; distance = next; }
-      }
-      assignments[index] = best;
-      counts[best] += 1;
-      sums[best][0] += sample[0]; sums[best][1] += sample[1]; sums[best][2] += sample[2];
-    }
-    for (let candidate = 0; candidate < centers.length; candidate += 1) {
-      if (!counts[candidate]) continue;
-      centers[candidate] = sums[candidate].map(value => value / counts[candidate]);
-    }
-  }
-  let dominant = 0;
-  for (let candidate = 1; candidate < counts.length; candidate += 1) {
-    if (counts[candidate] > counts[dominant]) dominant = candidate;
-  }
-  return centers[dominant].map(value => Math.round(value));
+  const rgb = rustDominantCoverRgb(loadedRustCore(), data, width, height);
+  if (!rgb) throw new Error('Invalid cover pixels');
+  return rgb;
 }
 
 /** Pure pixel helper, exported so the colour and contrast rules stay testable. */
@@ -182,72 +123,10 @@ function titleLines(context, title, maxWidth) {
   return lines.slice(0, 4);
 }
 
-function edgeMap(gray, width, height) {
-  const edges = new Float32Array(gray.length);
-  for (let y = 1; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 1; x += 1) {
-      const at = y * width + x;
-      edges[at] = Math.min(255,
-        Math.abs(gray[at + 1] - gray[at - 1]) + Math.abs(gray[at + width] - gray[at - width]));
-    }
-  }
-  return edges;
-}
-
-/** Pure half of the glyph raster: crop the text's alpha to its bounding box and
- * keep the points the matcher scores. Points are stored as `y * stride + x`
- * offsets so a placement only adds one base index per sample. */
 export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
-  const accelerated = coverColorCore?.glyph(coverColorCore.get(), raw, maxWidth, rows, stride);
-  if (accelerated !== undefined) return accelerated;
-  let minX = maxWidth, minY = rows, maxX = -1, maxY = -1;
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < maxWidth; x += 1) {
-      if (raw[(y * maxWidth + x) * 4 + 3] < 100) continue;
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
-  if (maxX < minX || maxY < minY) return null;
-  const contentWidth = maxX - minX + 1, contentHeight = maxY - minY + 1;
-  const mask = new Uint8Array(contentWidth * contentHeight);
-  for (let y = 0; y < contentHeight; y += 1) {
-    for (let x = 0; x < contentWidth; x += 1) {
-      mask[y * contentWidth + x] = raw[((minY + y) * maxWidth + minX + x) * 4 + 3] >= 100 ? 1 : 0;
-    }
-  }
-  const room = Math.max(0, contentWidth - 2) * Math.max(0, contentHeight - 2);
-  const perimeter = new Int32Array(room), foreground = new Int32Array(room), background = new Int32Array(room);
-  let perimeterCount = 0, foregroundCount = 0, backgroundCount = 0, area = 0;
-  for (let y = 1; y < contentHeight - 1; y += 1) {
-    for (let x = 1; x < contentWidth - 1; x += 1) {
-      const at = y * contentWidth + x, offset = y * stride + x;
-      if (!mask[at]) { background[backgroundCount++] = offset; continue; }
-      foreground[foregroundCount++] = offset;
-      if (!mask[at - 1] || !mask[at + 1] || !mask[at - contentWidth] || !mask[at + contentWidth]) {
-        perimeter[perimeterCount++] = offset;
-      }
-    }
-  }
-  if (perimeterCount < 8) return null;
-  for (let index = 0; index < mask.length; index += 1) area += mask[index];
-  // Every n-th point, so at most ~280 edge and ~500 fill samples are scored.
-  const thin = (points, count, limit) => {
-    const every = Math.max(1, Math.ceil(count / limit)), kept = new Int32Array(Math.ceil(count / every));
-    for (let from = 0, to = 0; from < count; from += every) kept[to++] = points[from];
-    return kept;
-  };
-  return {
-    width: contentWidth,
-    height: contentHeight,
-    mask,
-    area,
-    perimeter: thin(perimeter, perimeterCount, 280),
-    foreground: thin(foreground, foregroundCount, 500),
-    background: thin(background, backgroundCount, 500)
-  };
+  const mask = rustGlyphMask(loadedRustCore(), raw, maxWidth, rows, stride);
+  if (mask === undefined) throw new Error('Invalid glyph raster');
+  return mask;
 }
 
 function fontMask(title, candidate, size, upper, align, maxWidth) {
@@ -272,92 +151,11 @@ function fontMask(title, candidate, size, upper, align, maxWidth) {
   return glyphMask(linesContext.getImageData(0, 0, maxWidth, linesCanvas.height).data, maxWidth, linesCanvas.height);
 }
 
-/** Each pixel's strongest edge among itself and its four neighbours, so the
- * one-pixel tolerance of the perimeter test costs one lookup instead of five.
- * Rows without a full neighbourhood stay NaN, exactly as the five-way max
- * reads past the array. */
 export function nearEdgeMap(edges, width) {
-  const near = new Float32Array(edges.length);
-  near.fill(NaN, 0, width);
-  near.fill(NaN, Math.max(width, edges.length - width));
-  for (let at = width; at < edges.length - width; at += 1) {
-    near[at] = Math.max(edges[at], edges[at - 1], edges[at + 1], edges[at - width], edges[at + width]);
-  }
-  return near;
+  return rustNearEdgeMap(loadedRustCore(), edges, width);
 }
 
-function meanAt(gray, base, points) {
-  if (!points.length) return 0;
-  let sum = 0;
-  for (let index = 0; index < points.length; index += 1) sum += gray[base + points[index]];
-  return sum / points.length;
-}
-
-// A one-pixel tolerance (the near-edge map) handles antialiasing and tiny
-// image resizes without making unrelated photographic texture win.
-function perimeterScore(gray, near, base, mask) {
-  let total = 0;
-  const { perimeter } = mask;
-  for (let index = 0; index < perimeter.length; index += 1) total += near[base + perimeter[index]];
-  const textContrast = Math.abs(meanAt(gray, base, mask.foreground) - meanAt(gray, base, mask.background));
-  return total / perimeter.length + textContrast * .8;
-}
-
-function shapeScore(gray, width, height, mask, x, y) {
-  let border = 0, borderCount = 0;
-  for (let offset = -2; offset < mask.width + 2; offset += 3) {
-    const column = clamp(x + offset, 0, width - 1), above = y - 2, below = y + mask.height + 1;
-    if (above >= 0 && above < height) { border += gray[above * width + column]; borderCount += 1; }
-    if (below >= 0 && below < height) { border += gray[below * width + column]; borderCount += 1; }
-  }
-  for (let offset = -2; offset < mask.height + 2; offset += 3) {
-    const row = clamp(y + offset, 0, height - 1) * width, left = x - 2, right = x + mask.width + 1;
-    if (left >= 0 && left < width) { border += gray[row + left]; borderCount += 1; }
-    if (right >= 0 && right < width) { border += gray[row + right]; borderCount += 1; }
-  }
-  const background = border / Math.max(1, borderCount);
-  const brightText = background < 128;
-  const threshold = brightText ? background + 46 : background - 46;
-  // union = predicted + observed - both, so one pass counts all three.
-  let observed = 0, both = 0;
-  for (let my = 0; my < mask.height; my += 1) {
-    const row = (y + my) * width + x, cells = my * mask.width;
-    for (let mx = 0; mx < mask.width; mx += 1) {
-      const value = gray[row + mx];
-      if (brightText ? value > threshold : value < threshold) { observed += 1; both += mask.mask[cells + mx]; }
-    }
-  }
-  const union = mask.area + observed - both;
-  return union ? both / union : 0;
-}
-
-/** Best match of one rendered title against the cover: a coarse scan, then a
- * finer one around the winner. A generator so the caller can pause between
- * rows (every `yield` is a safe point); its return value is the score. */
-export function* scoreFontMask(gray, near, width, height, rows, mask) {
-  let bestX = 1, bestY = 5, maskScore = 0;
-  for (let y = 5; y <= rows - mask.height - 2; y += 8) {
-    for (let x = 1; x <= width - mask.width - 1; x += 8) {
-      const score = perimeterScore(gray, near, y * width + x, mask);
-      if (score > maskScore) { maskScore = score; bestX = x; bestY = y; }
-    }
-    yield;
-  }
-  // Refine only around the strongest coarse match rather than scanning
-  // every pixel on every cover; this keeps large libraries responsive.
-  let matchedShapeScore = 0;
-  for (let y = Math.max(5, bestY - 8); y <= Math.min(rows - mask.height - 2, bestY + 8); y += 3) {
-    for (let x = Math.max(1, bestX - 8); x <= Math.min(width - mask.width - 1, bestX + 8); x += 3) {
-      const coarse = perimeterScore(gray, near, y * width + x, mask);
-      const combined = shapeScore(gray, width, height, mask, x, y) * 400 + coarse * .12;
-      if (combined > matchedShapeScore) matchedShapeScore = combined;
-      yield;
-    }
-  }
-  return matchedShapeScore;
-}
-
-function* scoreFamily(candidate, gray, near, width, height, rows, title, scorer = scoreFontMask) {
+function* scoreFamily(candidate, gray, near, width, height, rows, title, scorer = remoteFontScore) {
   let familyScore = 0;
   // A title already in capitals renders the same text in both cases.
   for (const upper of String(title).toLocaleUpperCase() === String(title) ? [false] : [false, true]) {
@@ -383,7 +181,7 @@ const SLICE_MS = 2;
 const yieldToMain = () => new Promise(resolve => {
   if (typeof MessageChannel === 'undefined') { setTimeout(resolve, 0); return; }
   const { port1, port2 } = new MessageChannel();
-  port1.onmessage = () => { port1.close(); resolve(); };
+  port1.onmessage = () => { port1.close(); port2.close(); resolve(); };
   port2.postMessage(0);
 });
 let matcherTurn = Promise.resolve();
@@ -430,27 +228,32 @@ async function matchTitleFont(gray, width, height, title, preparedNear) {
   work.width = width; work.height = Math.floor(height * 0.82);
   const context = work.getContext('2d');
   if (!context || width < 48 || work.height < 48) return null;
-  const near = preparedNear ?? nearEdgeMap(edgeMap(gray, width, height), width);
+  const near = preparedNear;
+  let localScorer = null;
   let workerJob = await openFontScoreJob({ gray, near, width, height, rows:work.height });
-  const remote = Boolean(workerJob);
+
   const scoreMasks = async masks => {
     if (workerJob) {
       try { return await workerJob.scoreMany(masks); }
       catch { workerJob.close(); workerJob = null; }
     }
     // Keep the original masks intact for a failed/unavailable Worker.
+    localScorer ??= createRustFontScorer(loadedRustCore(), { gray, near, width, height, rows:work.height });
     const scores = [];
-    for (const mask of masks) scores.push(await runInSlices(scoreFontMask(gray, near, width, height, work.height, mask)));
+    for (const mask of masks) {
+      await shelfWorkReady();
+      scores.push(await runInSlices(localScorer.steps(mask)));
+    }
     return scores;
   };
   try {
     for (const candidate of FONT_CANDIDATES) {
       await shelfWorkReady();
-      const task = scoreFamily(candidate, gray, near, width, height, work.height, title, remote ? remoteFontScore : scoreFontMask);
-      const score = remote ? await runRemoteFamily(task, scoreMasks) : await runInSlices(task);
+      const task = scoreFamily(candidate, gray, near, width, height, work.height, title, remoteFontScore);
+      const score = await runRemoteFamily(task, scoreMasks);
       scoreByFamily.push({ candidate, score });
     }
-  } finally { workerJob?.close(); }
+  } finally { workerJob?.close(); localScorer?.dispose(); }
   scoreByFamily.sort((a, b) => b.score - a.score);
   const best = scoreByFamily[0];
   const runnerUp = scoreByFamily[1];
@@ -459,22 +262,6 @@ async function matchTitleFont(gray, width, height, title, preparedNear) {
   const margin = runnerUp ? (best.score - runnerUp.score) / Math.max(1, best.score) : 0;
   if (!best || best.score < 18 || margin < .035) return null;
   return best.candidate;
-}
-
-function visualFallback(gray, width, height) {
-  let edge = 0, variance = 0, sum = 0, sumSquared = 0, count = 0;
-  for (let y = 1; y < height - 1; y += 2) {
-    for (let x = 1; x < width - 1; x += 2) {
-      const at = y * width + x;
-      edge += Math.abs(gray[at + 1] - gray[at - 1]) + Math.abs(gray[at + width] - gray[at - width]);
-      sum += gray[at]; sumSquared += gray[at] * gray[at]; count += 1;
-    }
-  }
-  if (count) variance = sumSquared / count - (sum / count) ** 2;
-  // Quiet, graphic covers tend to use an editorial serif; busy photographic
-  // covers favour the clean sans family that survives their visual texture.
-  const busy = edge / Math.max(1, count) > 44 || variance > 5200;
-  return FONT_CANDIDATES[busy ? 3 : 0];
 }
 
 function loadCandidateFonts(text) {
@@ -493,7 +280,9 @@ function loadCandidateFonts(text) {
 /** Analyze an already-decodable image URL. Returns null for missing/unsafe images. */
 export async function analyzeCoverAppearance(url, title = '', { matchFont = true, image:decodedImage } = {}) {
   if (!url || typeof Image === 'undefined' || typeof document === 'undefined') return null;
-  warmCoverColorCore();
+  const coreReady = requireRustCore();
+  // Start compilation alongside decode; observe failures even if decoding fails.
+  coreReady.catch(() => {});
   const image = decodedImage || new Image();
   image.decoding = 'async';
   if (!decodedImage) image.src = url;
@@ -532,21 +321,20 @@ export async function analyzeCoverAppearance(url, title = '', { matchFont = true
       // when browser security prevents sampling their pixels.
       return { aspectRatio, source: 'cover' };
     }
+    const core = await coreReady;
+    await shelfWorkReady();
     const color = coverColorFromPixels(pixels, width, height);
     if (!matchFont) return { ...color, aspectRatio, source: 'cover' };
     // Font loading is already required. Let the numeric module finish loading
     // during that wait, before choosing the native or compatibility path.
     await loadCandidateFonts(title);
     const includeEdges = Boolean(title) && String(title).trim().length >= 3 && width >= 48 && Math.floor(height * .82) >= 48;
-    const prepared = width * height >= 4096 && coverColorCore?.prepare(coverColorCore.get(), pixels, width, height, includeEdges);
-    const gray = prepared?.gray ?? new Uint8Array(width * height);
-    if (!prepared) for (let index = 0; index < gray.length; index += 1) {
-      const at = index * 4;
-      gray[index] = Math.round(pixels[at] * .299 + pixels[at + 1] * .587 + pixels[at + 2] * .114);
-    }
+    const prepared = rustPrepareCoverPixels(core, pixels, width, height, includeEdges);
+    if (!prepared) throw new Error('Invalid cover preparation');
+    const gray = prepared.gray;
     const turn = matcherTurn.then(() => matchTitleFont(gray, width, height, title, prepared?.near));
     matcherTurn = turn.catch(() => {});
-    const font = await turn || (prepared ? FONT_CANDIDATES[prepared.busy ? 3 : 0] : visualFallback(gray, width, height));
+    const font = await turn || FONT_CANDIDATES[prepared.busy ? 3 : 0];
     return {
       ...color,
       fontFamily: font.family,

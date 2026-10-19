@@ -83,3 +83,22 @@ describe('compiled Rust title-font scorer',()=>{
     } finally { scorer.dispose() }
   })
 })
+
+
+describe('interruptible Rust scoring',()=>{
+  it('preserves every score with different step budgets and memory growth between steps',()=>{
+    for(const budget of [1,2,7,31,0xffffffff])for(const seed of [0,13,255]) {
+      const input=fixture(192,288,seed),scorer=createRustFontScorer(core,input),task=scorer.steps(input.mask,budget)
+      let step=task.next(),count=0
+      while(!step.done){if(count++===2)core.memory.grow(1);step=task.next()}
+      expect(step.value).toBe(expected(input));scorer.dispose()
+    }
+  })
+  it('frees suspended mask and image exactly once when cancelled',()=>{
+    const input=fixture(192,288,9);let bytes=0
+    const tracked={...core,alloc_f64(n){bytes+=n*8;return core.alloc_f64(n)},free_f64(p,n){bytes-=n*8;core.free_f64(p,n)}}
+    const scorer=createRustFontScorer(tracked,input),task=scorer.steps(input.mask)
+    expect(task.next().done).toBe(false);expect(bytes).toBeGreaterThan(0)
+    task.return();scorer.dispose();scorer.dispose();expect(bytes).toBe(0)
+  })
+})

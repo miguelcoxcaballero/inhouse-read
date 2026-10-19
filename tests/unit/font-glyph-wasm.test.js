@@ -5,7 +5,7 @@ import {beforeAll,expect,it,vi,afterEach} from 'vitest';
 import {rustGlyphMask} from '../../src/js/font-glyph-wasm.js';
 import {glyphMask as reference} from './helpers/reference-cover-appearance.js';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,requireRustCore:async()=>state.core,loadedRustCore:()=>{if(!state.core)throw Error("Core unavailable");return state.core;}}));
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.font_glyph_mask).toBe('function');});
 afterEach(()=>vi.unstubAllGlobals());
@@ -29,11 +29,11 @@ it('rejects malformed dimensions without allocating or touching input',()=>{
  for(const [w,h,stride] of [[0,66,80],[80,0,80],[-1,66,80],[Infinity,66,80],[80.2,66,80],[80,66,0],[80,66,65536],[2048,2048,2048],[81,66,80]])expect(rustGlyphMask(engine,a,w,h,stride)).toBeUndefined();expect(alloc).not.toHaveBeenCalled();
 });
 
-it('routes the real analyzer through Rust after warm-up without changing its standalone fallback',async()=>{
+it('routes the real analyzer through Rust and reports unavailable core instead of running a JavaScript twin',async()=>{
  const call=vi.fn(core.font_glyph_mask);state.core={...core,font_glyph_mask:call};
  vi.stubGlobal('Image',class{decode(){return Promise.reject(Error('bad image'));}});vi.stubGlobal('document',{});
  const {analyzeCoverAppearance,glyphMask}=await import('../../src/js/cover-appearance.js');
  await analyzeCoverAppearance('invalid-test-image');const raw=raster(192,176);
  await vi.waitFor(()=>{assert.deepEqual(glyphMask(raw,192,176),reference(raw,192,176));expect(call).toHaveBeenCalled();});
- state.core=null;assert.deepEqual(glyphMask(raw,192,176),reference(raw,192,176));
+ state.core=null;expect(()=>glyphMask(raw,192,176)).toThrow("Core unavailable");
 });

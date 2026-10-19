@@ -115,3 +115,66 @@ pub unsafe extern "C" fn font_score(
     }
     matched_shape_score
 }
+
+// One step is a coarse scan row or one refined placement. The host can yield
+// between steps without moving the immutable image or losing floating-point order.
+fn advance(gray: &[u8], near: &[f32], width: i32, height: i32, rows: i32,
+    mask: &Mask<'_>, state: &mut [f64], budget: u32) -> u32 {
+    if state[0] == 0.0 { state.copy_from_slice(&[1.0, 1.0, 5.0, 1.0, 5.0, 0.0, 0.0]); }
+    for _ in 0..budget {
+        if state[0] == 1.0 {
+            let y = state[2] as i32;
+            if y <= rows - mask.height - 2 {
+                let mut x = 1;
+                while x <= width - mask.width - 1 {
+                    let score = perimeter_score(gray, near, i64::from(y) * i64::from(width) + i64::from(x), mask);
+                    if score > state[5] { state[5] = score; state[3] = x as f64; state[4] = y as f64; }
+                    x += 8;
+                }
+                state[2] += 8.0;
+                continue;
+            }
+            state[0] = 2.0;
+            state[1] = 1.max(state[3] as i32 - 8) as f64;
+            state[2] = 5.max(state[4] as i32 - 8) as f64;
+        }
+        if state[0] == 2.0 {
+            let max_x = (width - mask.width - 1).min(state[3] as i32 + 8);
+            let max_y = (rows - mask.height - 2).min(state[4] as i32 + 8);
+            if state[1] as i32 > max_x { state[1] = 1.max(state[3] as i32 - 8) as f64; state[2] += 3.0; }
+            if state[2] as i32 > max_y || state[1] as i32 > max_x { state[0] = 3.0; return 1; }
+            let (x, y) = (state[1] as i32, state[2] as i32);
+            let coarse = perimeter_score(gray, near, i64::from(y) * i64::from(width) + i64::from(x), mask);
+            let combined = shape_score(gray, width, height, mask, x, y) * 400.0 + coarse * 0.12;
+            if combined > state[6] { state[6] = combined; }
+            state[1] += 3.0;
+        }
+        if state[0] == 3.0 { return 1; }
+    }
+    0
+}
+
+/// Same validated buffers as font_score, plus seven initialized f64 state slots.
+/// Returns 1 on completion, 0 when more steps remain, 2 for invalid dimensions.
+#[no_mangle]
+pub unsafe extern "C" fn font_score_step(
+    gray_ptr: *const u8, near_ptr: *const f32, width: i32, height: i32, rows: i32,
+    mask_ptr: *const u8, mask_width: i32, mask_height: i32, area: f64,
+    perimeter_ptr: *const i32, perimeter_len: usize,
+    foreground_ptr: *const i32, foreground_len: usize,
+    background_ptr: *const i32, background_len: usize,
+    state_ptr: *mut f64, budget: u32,
+) -> u32 {
+    if width < 1 || height < 1 || rows < 1 || rows > height || mask_width < 1 || mask_height < 1 { return 2; }
+    let Some(count) = (width as usize).checked_mul(height as usize) else { return 2; };
+    let Some(mask_count) = (mask_width as usize).checked_mul(mask_height as usize) else { return 2; };
+    let mask = Mask {
+        width: mask_width, height: mask_height, area,
+        pixels: std::slice::from_raw_parts(mask_ptr, mask_count),
+        perimeter: std::slice::from_raw_parts(perimeter_ptr, perimeter_len),
+        foreground: std::slice::from_raw_parts(foreground_ptr, foreground_len),
+        background: std::slice::from_raw_parts(background_ptr, background_len),
+    };
+    advance(std::slice::from_raw_parts(gray_ptr, count), std::slice::from_raw_parts(near_ptr, count),
+        width, height, rows, &mask, std::slice::from_raw_parts_mut(state_ptr, 7), budget)
+}

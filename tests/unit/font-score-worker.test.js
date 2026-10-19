@@ -70,32 +70,35 @@ describe('real module Worker scorer protocol',()=>{
     ])
     expect(await send({type:'score',job:8,request:3,mask})).toEqual({type:'error',job:8,request:3})
   })
-  it('keeps the original scorer when the compiled module cannot be loaded',async()=>{
-    workerRealm();vi.stubGlobal('fetch',vi.fn(async()=>{throw new Error('Offline first visit')}))
+  it('uses the page compiled module in a fresh worker without fetching or recompiling',async()=>{
+    workerRealm();vi.stubGlobal('fetch',vi.fn(()=>{throw Error('No worker fetch allowed')}))
+    await import('../../src/js/font-score-worker.js')
+    const module=await WebAssembly.compile(readFileSync('src/wasm/inhouse_read_core.wasm'))
+    const {mask,...context}=inputs(15)
+    expect(await send({type:'begin',job:14,request:1,module,...context})).toEqual({type:'begin',job:14,request:1,accepted:true})
+    expect((await send({type:'score',job:14,request:2,mask})).score).toBe(drain(originalScore(context.gray,context.near,context.width,context.height,context.rows,mask)))
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it('reports a failed numeric module so the page can run its own Rust instance',async()=>{
+    workerRealm();vi.stubGlobal('fetch',vi.fn(async()=>{throw new Error('Offline worker')}))
     await import('../../src/js/font-score-worker.js')
     const {mask,...context}=inputs(7)
-    await send({type:'begin',job:9,request:1,...context})
-    const value=await send({type:'score',job:9,request:2,mask})
-    expect(value.score).toBe(drain(originalScore(context.gray,context.near,context.width,context.height,context.rows,mask)))
-    expect(fetch).toHaveBeenCalledOnce()
+    expect(await send({type:'begin',job:9,request:1,...context})).toEqual({type:'error',job:9,request:1})
+    expect(await send({type:'score',job:9,request:2,mask})).toEqual({type:'error',job:9,request:2})
   })
-  it('accepts, scores and closes a job without waiting for a pending wasm fetch',async()=>{
-    workerRealm()
-    let finishFetch
+  it('queues cold scores until Rust is ready and cannot resurrect a closed job',async()=>{
+    workerRealm();let finishFetch
     vi.stubGlobal('fetch',vi.fn(()=>new Promise(resolve=>{finishFetch=resolve})))
     await import('../../src/js/font-score-worker.js')
-    const {mask,...context}=inputs(13)
-    // The fetch remains pending through all three operations. Awaiting it in
-    // begin would hang this test and spend the real client's startup timeout.
-    expect(await send({type:'begin',job:11,request:1,...context})).toEqual({type:'begin',job:11,request:1,accepted:true})
-    expect((await send({type:'score',job:11,request:2,mask})).score).toBe(drain(originalScore(context.gray,context.near,context.width,context.height,context.rows,mask)))
-    await scope.onmessage({data:{type:'end',job:11}})
+    const {mask,...context}=inputs(13),before=scope.postMessage.mock.calls.length
+    const begin=scope.onmessage({data:{type:'begin',job:11,request:1,...context}})
+    const score=scope.onmessage({data:{type:'score',job:11,request:2,mask}})
+    const end=scope.onmessage({data:{type:'end',job:11}})
+    await vi.waitFor(()=>expect(finishFetch).toBeTypeOf('function'))
+    expect(scope.postMessage.mock.calls).toHaveLength(before)
     finishFetch(new Response(readFileSync(new URL('../../src/wasm/inhouse_read_core.wasm',import.meta.url)),{headers:{'content-type':'application/wasm'}}))
-    const {loadRustCore}=await import('../../src/js/rust-core.js')
-    expect(await loadRustCore()).not.toBeNull()
+    await Promise.all([begin,score,end])
+    expect(scope.postMessage.mock.calls.at(-1)[0].score).toBe(drain(originalScore(context.gray,context.near,context.width,context.height,context.rows,mask)))
     expect(await send({type:'score',job:11,request:3,mask})).toEqual({type:'error',job:11,request:3})
-    const second=inputs(77)
-    await send({type:'begin',job:12,request:4,...second})
-    expect((await send({type:'score',job:12,request:5,mask:second.mask})).score).toBe(drain(originalScore(second.gray,second.near,second.width,second.height,second.rows,second.mask)))
   })
 })

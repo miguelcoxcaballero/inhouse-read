@@ -1,11 +1,11 @@
 import {afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({ready:false,prepare:vi.fn((core,raw,w,h)=>core?{gray:new Uint8Array(w*h),near:null,busy:false}:null)}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.ready?{available:true}:null,loadRustCore:async()=>null}));
-vi.mock('../../src/js/cover-color-wasm.js',()=>({rustDominantCoverRgb:()=>null}));
+vi.mock('../../src/js/rust-core.js',()=>({loadedRustCore:()=>({available:true}),requireRustCore:async()=>({available:true})}));
+vi.mock('../../src/js/cover-color-wasm.js',()=>({rustDominantCoverRgb:()=>[90,65,48]}));
 vi.mock('../../src/js/font-glyph-wasm.js',()=>({rustPrepareCoverPixels:state.prepare,rustGlyphMask:()=>undefined}));
 const originalFonts=Object.getOwnPropertyDescriptor(document,'fonts');
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();if(originalFonts)Object.defineProperty(document,'fonts',originalFonts);else delete document.fonts;});
-it('chooses the core that became available during the existing font wait',async()=>{
+it('waits for fonts before native pixel preparation',async()=>{
  let release;const waiting=new Promise(r=>release=r),load=vi.fn(()=>waiting);
  Object.defineProperty(document,'fonts',{configurable:true,value:{load}});
  vi.stubGlobal('Image',class{naturalWidth=96;naturalHeight=144;decode(){return Promise.resolve()}});
