@@ -64,6 +64,30 @@ pub fn probe_geometry(kind: &str, p: &[f64]) -> Vec<u8> {
             }
             packet_of(&three_shape::extrude(&contour, &holes, depth), &["position", "uv", "normal"])
         }
+        // `capsule`: radius, height, capSegments, radialSegments, heightSegments.
+        "capsule" => packet_of(&three_geo::capsule(p[0], p[1], p[2], p[3], p[4]), &["position", "normal", "uv"]),
+        // `plane`: width, height, widthSegments, heightSegments.
+        "plane" => packet_of(&three_geo::plane(p[0], p[1], p[2], p[3]), &["position", "normal", "uv"]),
+        // `torus_arc`: radius, tube, radialSegments, tubularSegments, arc.
+        "torus_arc" => packet_of(&three_geo::torus_arc(p[0], p[1], p[2] as usize, p[3] as usize, p[4]), &["position", "normal", "uv"]),
+        // `extrude_bevel`: depth, bevelThickness, bevelSize, bevelSegments, curveSegments, then path commands:
+        // 0 x y (moveTo), 1 x y (lineTo), 2 cx cy x y (quadraticCurveTo), 3 c1x c1y c2x c2y x y (bezierCurveTo).
+        // `extrude_bevel_creased` then applies `toCreasedNormals(geometry, PI / 4)`.
+        "extrude_bevel" | "extrude_bevel_creased" => {
+            let mut path = three_shape::Path::new();
+            let mut at = 5;
+            while at < p.len() {
+                match p[at] as u32 {
+                    0 => { path.move_to([p[at + 1], p[at + 2]]); at += 3; }
+                    1 => { path.line_to([p[at + 1], p[at + 2]]); at += 3; }
+                    2 => { path.quadratic_to([p[at + 1], p[at + 2]], [p[at + 3], p[at + 4]]); at += 5; }
+                    _ => { path.bezier_to([p[at + 1], p[at + 2]], [p[at + 3], p[at + 4]], [p[at + 5], p[at + 6]]); at += 7; }
+                }
+            }
+            let (geo, _) = three_shape::extrude_beveled(&path.points(p[4] as usize), p[0], p[1], p[2], p[3] as usize);
+            if kind == "extrude_bevel" { packet_of(&geo, &["position", "uv", "normal"]) }
+            else { packet_of(&three_geo::creased_normals(&geo, std::f64::consts::PI / 4.0), &["position", "uv", "normal"]) }
+        }
         _ => Vec::new(),
     }
 }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // The packet the Rust shelf module returns for a finished model: [u32 header length][JSON header][padding][typed data].
 // The header says what each array is and where it lives; the arrays are copied out of it, so nothing the host keeps
 // aliases the module's memory.
-const TYPES = { f32: Float32Array, i16: Int16Array, u8: Uint8Array, u16: Uint16Array, u32: Uint32Array };
+const TYPES = { f32: Float32Array, i16: Int16Array, u8: Uint8Array, u16: Uint16Array, u32: Uint32Array, f64: Float64Array };
 
 /** The header of a packet, a function copying one array out of it and a function viewing one (valid until the
  * packet is dropped; the attribute classes of three copy what they are given). */
@@ -30,4 +30,22 @@ export function geometryOf(packet, { type, attributes, index, groups = [] }) {
   if (index) geometry.setIndex(new (index[0] === 'u32' ? THREE.Uint32BufferAttribute : THREE.Uint16BufferAttribute)(packet.view(index[0], index[1], index[2]), 1));
   for (const [start, count, materialIndex] of groups) geometry.addGroup(start, count, materialIndex);
   return geometry;
+}
+
+/** The scene graph of a prop packet (rust-ui/src/shelf_models.rs): a Mesh per node with geometry (its material is
+ * `materials[role]`), a Group per node without, each added to its parent (or `root`) in packet order with its
+ * position and, where the packet has them, its rotation and scale. Returns the objects in packet order. */
+export function buildNodes(packet, materials, root) {
+  const transforms = packet.copy(...packet.header.transforms);
+  return packet.header.nodes.reduce((objects, node, index) => {
+    const object = node.attributes ? new THREE.Mesh(geometryOf(packet, node), materials[node.material]) : new THREE.Group();
+    const at = index * 9;
+    object.name = node.name;
+    object.position.set(transforms[at], transforms[at + 1], transforms[at + 2]);
+    if (node.rotation) object.rotation.set(transforms[at + 3], transforms[at + 4], transforms[at + 5], node.rotation);
+    if (node.scaled) object.scale.set(transforms[at + 6], transforms[at + 7], transforms[at + 8]);
+    (node.parent < 0 ? root : objects[node.parent]).add(object);
+    objects.push(object);
+    return objects;
+  }, []);
 }

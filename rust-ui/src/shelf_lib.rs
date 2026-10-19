@@ -6,6 +6,8 @@ mod shelf_view_gesture;
 mod native_resize;
 mod native_presentation;
 mod shelf_trash;
+mod shelf_models;
+mod shelf_catalog;
 mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;

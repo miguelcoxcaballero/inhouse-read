@@ -391,8 +391,10 @@ pub fn lathe(points: &[[f64; 2]], segments: usize) -> Geo {
 }
 
 /// `TorusGeometry(radius, tube, radialSegments, tubularSegments)` for the full turn.
-pub fn torus(radius: f64, tube: f64, radial: usize, tubular: usize) -> Geo {
-    let arc = PI * 2.0;
+pub fn torus(radius: f64, tube: f64, radial: usize, tubular: usize) -> Geo { torus_arc(radius, tube, radial, tubular, PI * 2.0) }
+
+/// `TorusGeometry(radius, tube, radialSegments, tubularSegments, arc)`.
+pub fn torus_arc(radius: f64, tube: f64, radial: usize, tubular: usize, arc: f64) -> Geo {
     let (mut vertices, mut normals, mut uvs, mut indices): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<u32>) = (vec![], vec![], vec![], vec![]);
     for j in 0..=radial {
         for i in 0..=tubular {
@@ -479,4 +481,136 @@ pub fn icosahedron(radius: f64) -> Geo {
     let mut geo = Geo { position: f32s(&buffer), normal: Vec::new(), uv: Vec::new(), color: Vec::new(), index: None };
     geo.compute_vertex_normals();
     geo
+}
+
+/// `rotateX(angle)`: `Matrix4#makeRotationX` with the host's cos/sin.
+pub fn rotate_x(geo: &mut Geo, angle: f64) {
+    let (c, s) = (Math::cos(angle), Math::sin(angle));
+    geo.apply_matrix4(&Mat4([1.0, 0.0, 0.0, 0.0, 0.0, c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0]));
+}
+
+/// `CapsuleGeometry(radius, height, capSegments, radialSegments, heightSegments)` of three r180: a profile of
+/// two quarter circles and a straight wall swept around y, with arc-length v coordinates.
+pub fn capsule(radius: f64, height: f64, cap_segments: f64, radial_segments: f64, height_segments: f64) -> Geo {
+    let height = jsmath::jmax(0.0, height);
+    let cap_segments = jsmath::jmax(1.0, cap_segments.floor()) as usize;
+    let radial_segments = jsmath::jmax(3.0, radial_segments.floor()) as usize;
+    let height_segments = jsmath::jmax(1.0, height_segments.floor()) as usize;
+    let (mut vertices, mut normals, mut uvs, mut indices): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<u32>) = (vec![], vec![], vec![], vec![]);
+    let half_height = height / 2.0;
+    let cap_arc_length = (PI / 2.0) * radius;
+    let cylinder_part_length = height;
+    let total_arc_length = 2.0 * cap_arc_length + cylinder_part_length;
+    let vertical = cap_segments * 2 + height_segments;
+    let per_row = radial_segments + 1;
+    for iy in 0..=vertical {
+        let (profile_y, profile_radius, normal_y, arc_length);
+        if iy <= cap_segments {
+            // bottom cap
+            let progress = iy as f64 / cap_segments as f64;
+            let angle = (progress * PI) / 2.0;
+            profile_y = -half_height - radius * Math::cos(angle);
+            profile_radius = radius * Math::sin(angle);
+            normal_y = -radius * Math::cos(angle);
+            arc_length = progress * cap_arc_length;
+        } else if iy <= cap_segments + height_segments {
+            // middle section
+            let progress = (iy - cap_segments) as f64 / height_segments as f64;
+            profile_y = -half_height + progress * height;
+            profile_radius = radius;
+            normal_y = 0.0;
+            arc_length = cap_arc_length + progress * cylinder_part_length;
+        } else {
+            // top cap
+            let progress = (iy - cap_segments - height_segments) as f64 / cap_segments as f64;
+            let angle = (progress * PI) / 2.0;
+            profile_y = half_height + radius * Math::sin(angle);
+            profile_radius = radius * Math::cos(angle);
+            normal_y = radius * Math::sin(angle);
+            arc_length = cap_arc_length + cylinder_part_length + progress * cap_arc_length;
+        }
+        let v = jsmath::jmax(0.0, jsmath::jmin(1.0, arc_length / total_arc_length));
+        // the poles
+        let u_offset = if iy == 0 { 0.5 / radial_segments as f64 } else if iy == vertical { -0.5 / radial_segments as f64 } else { 0.0 };
+        for ix in 0..=radial_segments {
+            let u = ix as f64 / radial_segments as f64;
+            let theta = u * PI * 2.0;
+            let (sin, cos) = (Math::sin(theta), Math::cos(theta));
+            vertices.extend([-profile_radius * cos, profile_y, profile_radius * sin]);
+            normals.extend(jsmath::normalize([-profile_radius * cos, normal_y, profile_radius * sin]));
+            uvs.extend([u + u_offset, v]);
+        }
+        if iy > 0 {
+            let previous = (iy - 1) * per_row;
+            for ix in 0..radial_segments {
+                let (i1, i2, i3, i4) = (previous + ix, previous + ix + 1, iy * per_row + ix, iy * per_row + ix + 1);
+                indices.extend([i1 as u32, i2 as u32, i3 as u32, i2 as u32, i4 as u32, i3 as u32]);
+            }
+        }
+    }
+    Geo { position: f32s(&vertices), normal: f32s(&normals), uv: f32s(&uvs), color: Vec::new(), index: Some(indices) }
+}
+
+/// `PlaneGeometry(width, height, widthSegments, heightSegments)`.
+pub fn plane(width: f64, height: f64, width_segments: f64, height_segments: f64) -> Geo {
+    let (width_half, height_half) = (width / 2.0, height / 2.0);
+    let (grid_x, grid_y) = (width_segments.floor() as usize, height_segments.floor() as usize);
+    let (grid_x1, grid_y1) = (grid_x + 1, grid_y + 1);
+    let (segment_width, segment_height) = (width / grid_x as f64, height / grid_y as f64);
+    let (mut vertices, mut normals, mut uvs, mut indices): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<u32>) = (vec![], vec![], vec![], vec![]);
+    for iy in 0..grid_y1 {
+        let y = iy as f64 * segment_height - height_half;
+        for ix in 0..grid_x1 {
+            let x = ix as f64 * segment_width - width_half;
+            vertices.extend([x, -y, 0.0]);
+            normals.extend([0.0, 0.0, 1.0]);
+            uvs.extend([ix as f64 / grid_x as f64, 1.0 - (iy as f64 / grid_y as f64)]);
+        }
+    }
+    for iy in 0..grid_y {
+        for ix in 0..grid_x {
+            let a = (ix + grid_x1 * iy) as u32;
+            let b = (ix + grid_x1 * (iy + 1)) as u32;
+            let c = ((ix + 1) + grid_x1 * (iy + 1)) as u32;
+            let d = ((ix + 1) + grid_x1 * iy) as u32;
+            indices.extend([a, b, d, b, c, d]);
+        }
+    }
+    Geo { position: f32s(&vertices), normal: f32s(&normals), uv: f32s(&uvs), color: Vec::new(), index: Some(indices) }
+}
+
+/// `ToInt32` (`~~x`) of a finite or non-finite number.
+fn to_int32(value: f64) -> i32 { if value.is_finite() { value.trunc().rem_euclid(4294967296.0) as u64 as u32 as i32 } else { 0 } }
+
+/// `toCreasedNormals(geometry, creaseAngle)` of three's BufferGeometryUtils: the triangle soup (an indexed
+/// geometry is first made non-indexed) gets, at each corner, the sum of the face normals that share its
+/// hashed position and lie within the crease angle of its own face, normalised.
+pub fn creased_normals(geo: &Geo, crease_angle: f64) -> Geo {
+    let mut out = geo.to_non_indexed();
+    let crease_dot = Math::cos(crease_angle);
+    let multiplier = (1.0 + 1e-10) * 1e2;
+    let hash = |v: Vec3| (to_int32(v[0] * multiplier), to_int32(v[1] * multiplier), to_int32(v[2] * multiplier));
+    let faces = out.count() / 3;
+    let face = |p: &[f32], i: usize| -> (Vec3, Vec3, Vec3, Vec3) {
+        let (a, b, c) = (v3(p, i * 3), v3(p, i * 3 + 1), v3(p, i * 3 + 2));
+        (a, b, c, jsmath::normalize(jsmath::cross(jsmath::sub(c, b), jsmath::sub(a, b))))
+    };
+    let mut map: std::collections::HashMap<(i32, i32, i32), Vec<Vec3>> = std::collections::HashMap::new();
+    for i in 0..faces {
+        let (a, b, c, normal) = face(&out.position, i);
+        for vert in [a, b, c] { map.entry(hash(vert)).or_default().push(normal); }
+    }
+    let mut normals = vec![0.0f32; out.count() * 3];
+    for i in 0..faces {
+        let (a, b, c, own) = face(&out.position, i);
+        for (n, vert) in [a, b, c].into_iter().enumerate() {
+            let mut sum = [0.0f64; 3];
+            for other in &map[&hash(vert)] {
+                if own[0] * other[0] + own[1] * other[1] + own[2] * other[2] > crease_dot { sum = [sum[0] + other[0], sum[1] + other[1], sum[2] + other[2]]; }
+            }
+            put(&mut normals, i * 3 + n, jsmath::normalize(sum));
+        }
+    }
+    out.normal = normals;
+    out
 }

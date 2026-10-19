@@ -1,4 +1,4 @@
-//! three's `Path`/`Shape` curves, `ShapeUtils.triangulateShape` and `ExtrudeGeometry` without bevel,
+//! three's `Path`/`Shape` curves, `ShapeUtils.triangulateShape` and `ExtrudeGeometry` (flat, or bevelled without holes),
 //! in three's own order of operations (the host's `Math` for the ellipse's trigonometry).
 use crate::earcut;
 use crate::three_geo::Geo;
@@ -256,4 +256,126 @@ pub fn extrude(contour_points: &[P2], hole_points: &[Vec<P2>], depth: f64) -> Ge
     let mut geo = Geo { position: crate::three_geo::f32s(&out), uv: crate::three_geo::f32s(&uvs), ..Default::default() };
     geo.compute_vertex_normals();
     geo
+}
+
+/// `getBevelVec(inPt, inPrev, inNext)` of `ExtrudeGeometry`: the direction a contour point moves for the bevel.
+fn bevel_vec(pt: P2, prev: P2, next: P2) -> P2 {
+    let (v_prev_x, v_prev_y) = (pt[0] - prev[0], pt[1] - prev[1]);
+    let (v_next_x, v_next_y) = (next[0] - pt[0], next[1] - pt[1]);
+    let v_prev_lensq = v_prev_x * v_prev_x + v_prev_y * v_prev_y;
+    let collinear0 = v_prev_x * v_next_y - v_prev_y * v_next_x;
+    let (v_trans_x, v_trans_y, shrink_by);
+    if collinear0.abs() > f64::EPSILON {
+        // not collinear: the intersection of the two shifted edges
+        let v_prev_len = v_prev_lensq.sqrt();
+        let v_next_len = (v_next_x * v_next_x + v_next_y * v_next_y).sqrt();
+        let pt_prev_shift_x = prev[0] - v_prev_y / v_prev_len;
+        let pt_prev_shift_y = prev[1] + v_prev_x / v_prev_len;
+        let pt_next_shift_x = next[0] - v_next_y / v_next_len;
+        let pt_next_shift_y = next[1] + v_next_x / v_next_len;
+        let sf = ((pt_next_shift_x - pt_prev_shift_x) * v_next_y - (pt_next_shift_y - pt_prev_shift_y) * v_next_x)
+            / (v_prev_x * v_next_y - v_prev_y * v_next_x);
+        let (x, y) = (pt_prev_shift_x + v_prev_x * sf - pt[0], pt_prev_shift_y + v_prev_y * sf - pt[1]);
+        let v_trans_lensq = x * x + y * y;
+        if v_trans_lensq <= 2.0 { return [x, y]; }
+        v_trans_x = x; v_trans_y = y; shrink_by = (v_trans_lensq / 2.0).sqrt();
+    } else {
+        // collinear, in the same or the opposite direction
+        let direction_eq = if v_prev_x > f64::EPSILON { v_next_x > f64::EPSILON }
+            else if v_prev_x < -f64::EPSILON { v_next_x < -f64::EPSILON }
+            else { crate::three_geo::js_sign(v_prev_y) == crate::three_geo::js_sign(v_next_y) };
+        if direction_eq { v_trans_x = -v_prev_y; v_trans_y = v_prev_x; shrink_by = v_prev_lensq.sqrt(); }
+        else { v_trans_x = v_prev_x; v_trans_y = v_prev_y; shrink_by = (v_prev_lensq / 2.0).sqrt(); }
+    }
+    [v_trans_x / shrink_by, v_trans_y / shrink_by]
+}
+
+/// The two groups `ExtrudeGeometry` adds: `[start, count, materialIndex]` of the lids, then of the walls.
+pub type Groups = [[usize; 3]; 2];
+
+/// `ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness, bevelSize, bevelSegments, steps: 1 })`
+/// of an outline without holes (`bevelOffset` 0): the points come from `Path#points(curveSegments)`. Positions
+/// and world UVs in three's order, then `computeVertexNormals` of the soup; also its two groups.
+pub fn extrude_beveled(outline: &[P2], depth: f64, bevel_thickness: f64, bevel_size: f64, bevel_segments: usize) -> (Geo, Groups) {
+    let (steps, bevel_offset) = (1usize, 0.0f64);
+    let mut contour = outline.to_vec();
+    if !is_clockwise(&contour) { contour.reverse(); }
+    merge_overlapping(&mut contour);
+    let vlen = contour.len();
+    let n = vlen;
+    let movements: Vec<P2> = (0..n).map(|i| bevel_vec(contour[i], contour[if i == 0 { n - 1 } else { i - 1 }], contour[if i + 1 == n { 0 } else { i + 1 }])).collect();
+    let scale_pt = |p: P2, v: P2, size: f64| -> P2 { [p[0] + v[0] * size, p[1] + v[1] * size] };
+    let mut placeholder: Vec<f64> = Vec::new();
+    let mut contracted: Vec<P2> = Vec::new();
+    for b in 0..bevel_segments {
+        let t = b as f64 / bevel_segments as f64;
+        let z = bevel_thickness * Math::cos(t * PI / 2.0);
+        let bs = bevel_size * Math::sin(t * PI / 2.0) + bevel_offset;
+        for i in 0..n {
+            let vert = scale_pt(contour[i], movements[i], bs);
+            placeholder.extend([vert[0], vert[1], -z]);
+            if t == 0.0 { contracted.push(vert); }
+        }
+    }
+    // ShapeUtils.triangulateShape(contracted, []): a repeated end point is dropped first
+    {
+        let l = contracted.len();
+        if l > 2 && contracted[l - 1][0] == contracted[0][0] && contracted[l - 1][1] == contracted[0][1] { contracted.pop(); }
+    }
+    let flat: Vec<f64> = contracted.iter().flat_map(|p| *p).collect();
+    let faces = earcut::triangulate(&flat, &[]);
+    let bs = bevel_size + bevel_offset;
+    for i in 0..vlen { let vert = scale_pt(contour[i], movements[i], bs); placeholder.extend([vert[0], vert[1], 0.0]); }
+    for s in 1..=steps {
+        for i in 0..vlen { let vert = scale_pt(contour[i], movements[i], bs); placeholder.extend([vert[0], vert[1], depth / steps as f64 * s as f64]); }
+    }
+    for b in (0..bevel_segments).rev() {
+        let t = b as f64 / bevel_segments as f64;
+        let z = bevel_thickness * Math::cos(t * PI / 2.0);
+        let bs = bevel_size * Math::sin(t * PI / 2.0) + bevel_offset;
+        for i in 0..n { let vert = scale_pt(contour[i], movements[i], bs); placeholder.extend([vert[0], vert[1], depth + z]); }
+    }
+    let mut out: Vec<f64> = Vec::new();
+    let mut uvs: Vec<f64> = Vec::new();
+    let add = |out: &mut Vec<f64>, index: usize| out.extend_from_slice(&placeholder[index * 3..index * 3 + 3]);
+    let f3 = |out: &mut Vec<f64>, uvs: &mut Vec<f64>, a: usize, b: usize, c: usize| {
+        for v in [a, b, c] { add(out, v); }
+        let next = out.len() / 3;
+        for k in [next - 3, next - 2, next - 1] { uvs.extend([out[k * 3], out[k * 3 + 1]]); }
+    };
+    // lids: the first layer with reversed winding, then the last
+    let lid_start = 0;
+    for face in faces.chunks_exact(3) { f3(&mut out, &mut uvs, face[2], face[1], face[0]); }
+    let offset = vlen * (steps + bevel_segments * 2);
+    for face in faces.chunks_exact(3) { f3(&mut out, &mut uvs, face[0] + offset, face[1] + offset, face[2] + offset); }
+    let side_start = out.len() / 3;
+    let layers = steps + bevel_segments * 2;
+    let mut i = n;
+    while i > 0 {
+        i -= 1;
+        let j = i;
+        let k = if i == 0 { n - 1 } else { i - 1 };
+        for s in 0..layers {
+            let (slen1, slen2) = (vlen * s, vlen * (s + 1));
+            let (a, b, c, d) = (j + slen1, k + slen1, k + slen2, j + slen2);
+            for v in [a, b, d, b, c, d] { add(&mut out, v); }
+            let next = out.len() / 3;
+            let at = |m: usize, axis: usize| out[(next - m) * 3 + axis];
+            // generateSideWallUV(vertices, next - 6, next - 3, next - 2, next - 1)
+            let (a_x, a_y, a_z) = (at(6, 0), at(6, 1), at(6, 2));
+            let (b_x, b_y, b_z) = (at(3, 0), at(3, 1), at(3, 2));
+            let (c_x, c_y, c_z) = (at(2, 0), at(2, 1), at(2, 2));
+            let (d_x, d_y, d_z) = (at(1, 0), at(1, 1), at(1, 2));
+            let uv: [[f64; 2]; 4] = if (a_y - b_y).abs() < (a_x - b_x).abs() {
+                [[a_x, 1.0 - a_z], [b_x, 1.0 - b_z], [c_x, 1.0 - c_z], [d_x, 1.0 - d_z]]
+            } else {
+                [[a_y, 1.0 - a_z], [b_y, 1.0 - b_z], [c_y, 1.0 - c_z], [d_y, 1.0 - d_z]]
+            };
+            for m in [0, 1, 3, 1, 2, 3] { uvs.extend(uv[m]); }
+        }
+    }
+    let end = out.len() / 3;
+    let mut geo = Geo { position: crate::three_geo::f32s(&out), uv: crate::three_geo::f32s(&uvs), ..Default::default() };
+    geo.compute_vertex_normals();
+    (geo, [[lid_start, side_start - lid_start, 0], [side_start, end - side_start, 1]])
 }

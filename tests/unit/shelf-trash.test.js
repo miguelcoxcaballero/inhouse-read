@@ -10,7 +10,9 @@ describe('3D shelf wastebasket', () => {
     expect(bin.userData.height).toBe(140);
     const wall = bin.getObjectByName('Open metal body');
     expect(wall.geometry.type).toBe('LatheGeometry');
-    const points = wall.geometry.parameters.points;
+    // The lathe profile, read from the vertices (the geometry is built from a Rust packet, without three's parameters).
+    const position = wall.geometry.attributes.position, points = [];
+    for (let i = 0; i < position.count; i++) points.push({ x:Math.hypot(position.getX(i), position.getZ(i)), y:position.getY(i) });
     expect(points.filter(point => point.y >= bin.userData.height * .95 && point.x < bin.userData.radius * .97)).not.toHaveLength(0);
     expect(bin.getObjectByName('Dark interior base')).toBeTruthy();
     expect(bin.getObjectByName('Rolled metal lip')).toBeTruthy();

@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import * as production from '../../src/js/shelf-trash.js'
 import * as frozen from './helpers/reference-shelf-trash.js'
 import { rustShelf } from './helpers/rust-shelf-ready.js'
 import { prng } from './helpers/pointer-harness.js'
+import { describeScene, sameNumbers } from './helpers/scene-description.js'
 
 // The wastebasket's numbers run in Rust; three objects are still built in JavaScript. Every value
 // is compared bit for bit (signed zeros and NaN included) with the frozen original.
@@ -116,5 +117,60 @@ describe('compiled wastebasket geometry against the frozen JavaScript', () => {
     const before = rustShelf.shelf_live_handles()
     for (let index = 0; index < 200; index++) production.createShelfTrash({ radius: 20 + index % 30, height: 60 + index % 50 }).userData.dispose()
     expect(rustShelf.shelf_live_handles()).toBe(before)
+  })
+})
+
+// The whole bin (size coercion, every part's geometry, transform, draw groups and materials, the lid's
+// motion and the mouth) is built from Rust packets now; the frozen original remains the oracle.
+describe('compiled wastebasket model, lid and mouth against the frozen JavaScript', () => {
+  const values = [0, -0, .2, .5, .51, 1, 1.5, -1, NaN, Infinity, -Infinity, '0.3', 'x', '', null, undefined, true, false, [], [.4], { valueOf: () => .7 }]
+  const configs = [undefined, {}, { radius: 20, height: 90 }, { radius: '60', height: 31 }, { radius: NaN, height: 'x' }, { radius: -5 }, { radius: 0, height: 0 },
+    { radius: 1e3, height: 1e3 }, { radius: 12.0001, height: 30.5 }, { radius: { valueOf: () => 33 } }]
+
+  it('builds the same nodes, attributes, groups, transforms and materials', () => {
+    for (const config of configs) {
+      const expected = frozen.createShelfTrash(config), actual = production.createShelfTrash(config)
+      expect(describeScene(actual), JSON.stringify(config)).toEqual(describeScene(expected))
+      expect([actual.userData.radius, actual.userData.height]).toEqual([expected.userData.radius, expected.userData.height])
+      expected.userData.dispose(); actual.userData.dispose()
+    }
+  })
+
+  it('opens, wobbles and reports its mouth like the original for every coerced value', () => {
+    for (const config of configs.slice(0, 5)) {
+      const expected = frozen.createShelfTrash(config), actual = production.createShelfTrash(config)
+      const state = bin => [bin.userData.lid.rotation.x, bin.userData.lid.rotation.y, bin.userData.lid.rotation.z, bin.userData.lid.rotation.order, bin.userData.openness]
+      expect(state(actual)).toEqual(state(expected))
+      for (const openness of values) for (const bounce of values) {
+        expected.userData.setState({ openness, bounce }); actual.userData.setState({ openness, bounce })
+        const left = state(expected), right = state(actual)
+        if (!sameNumbers(left, right)) throw new Error(`${JSON.stringify({ config, openness, bounce })}: ${left} / ${right}`)
+      }
+      expected.userData.setState(); actual.userData.setState()
+      expect(sameNumbers(state(actual), state(expected))).toBe(true)
+      for (const bin of [expected, actual]) { bin.position.set(3, -4, 5); bin.rotation.y = .3; bin.updateMatrixWorld(true) }
+      expect(actual.userData.getMouth().toArray()).toEqual(expected.userData.getMouth().toArray())
+      expect(actual.userData.lid).toBe(actual.getObjectByName('Hinged wastebasket lid'))
+      expected.userData.dispose(); actual.userData.dispose()
+    }
+  })
+
+  it('reads a throwing bounce only after it has turned the lid, as the original did', () => {
+    const expected = frozen.createShelfTrash(), actual = production.createShelfTrash()
+    const bad = { valueOf() { throw new Error('bounce') } }
+    for (const bin of [expected, actual]) expect(() => bin.userData.setState({ openness: .5, bounce: bad })).toThrow('bounce')
+    expect(actual.userData.lid.rotation.x).toBe(expected.userData.lid.rotation.x)
+    expect(actual.userData.lid.rotation.z).toBe(expected.userData.lid.rotation.z)
+    expect(actual.userData.openness).toBe(expected.userData.openness)
+  })
+
+  it('disposes every geometry, material and the coat texture once', () => {
+    const bin = production.createShelfTrash(), spies = [], materials = new Set()
+    bin.traverse(node => { if (node.geometry) spies.push(vi.spyOn(node.geometry, 'dispose')); if (node.material) materials.add(node.material) })
+    for (const material of materials) spies.push(vi.spyOn(material, 'dispose'))
+    spies.push(vi.spyOn(bin.getObjectByName('Open metal body').material.roughnessMap, 'dispose'))
+    expect(materials.size).toBe(6)
+    bin.userData.dispose(); bin.userData.dispose()
+    for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1)
   })
 })

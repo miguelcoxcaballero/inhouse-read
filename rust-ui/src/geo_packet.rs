@@ -56,6 +56,14 @@ impl Packet {
             }
         }
     }
+    /// `"name":[type,byteOffset,length]` of exact f64 values (transforms, sizes), which JSON cannot carry when they
+    /// are not finite. The host copies them out with the packet's `copy`.
+    pub fn f64s(&mut self, name: &str, values: &[f64]) {
+        while self.blob.len() % 8 != 0 { self.blob.push(0); }
+        let at = self.blob.len();
+        for v in values { self.blob.extend(v.to_le_bytes()); }
+        self.json.push_str(&format!("\"{name}\":[\"f64\",{at},{}]", values.len()));
+    }
     pub fn seal(self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.json.len() + self.blob.len() + 8);
         out.extend((self.json.len() as u32).to_le_bytes());
