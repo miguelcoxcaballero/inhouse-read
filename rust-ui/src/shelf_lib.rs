@@ -37,6 +37,8 @@ mod three_curve;
 mod three_math;
 mod lamp_model;
 mod lamp_light;
+mod lamp_material;
+mod catalog_camera;
 mod plant_parts;
 mod plant_model;
 mod baggebo_model;

@@ -138,7 +138,7 @@ function-level note and inspect the final integrated source for extraction.
 | `bookshelf-return.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `bookshelf-scene.js` | M | updateEntries, draw/invalidation scheduling, object packing and material/resource orchestration; physics/interpolation Rust. Active parallel work. |
 | `bookshelf.js` | M | Rust controllers own most gestures and transitions; DOM exports, text callbacks, local coordination and host facade still need exact residual review. |
-| `canvas-font-readiness.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
+| `canvas-font-readiness.js` | M | FontFaceSet is host; refreshCanvasFontsAfterPaint still chooses whether the readiness callback is needed from loaded status. |
 | `catalog-camera.js` | M | bookletRect and catalogCameraFrames own rectangle validation, fitting and CSS transform rounding. |
 | `catalogue-core.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
 | `chunk-recovery.js` | M | reloadOnceAfterChunkFailure throttles retry and storage state in JavaScript before UI readiness. |
@@ -220,7 +220,7 @@ function-level note and inspect the final integrated source for extraction.
 | `profile-view-legacy.js` | L | Executable JavaScript fallback, not an automatic host exception. Retire or migrate with cold/offline compatibility tests. |
 | `profile-view.js` | L | Executable JavaScript fallback, not an automatic host exception. Retire or migrate with cold/offline compatibility tests. |
 | `reader-book-timing.js` | M | Declarative timings plus normal/reduced-motion selection; low CPU priority. |
-| `reader-return-canvas.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
+| `reader-return-canvas.js` | M | Canvas drawing/DOM ownership are host; readerReturnCanvas still chooses detached-canvas reuse versus an exact copied surface. |
 | `readers/core-required.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
 | `readers/cover-encode-worker.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
 | `readers/cover-encode.js` | M | Worker request, abort and fallback lifecycle around host JPEG encoding; no reason to copy image pixels through Rust merely for ownership. |
@@ -349,7 +349,7 @@ function-level note and inspect the final integrated source for extraction.
 | `shelf-refresh-queue-legacy.js` | L | Executable JavaScript fallback, not an automatic host exception. Retire or migrate with cold/offline compatibility tests. |
 | `shelf-refresh-queue.js` | L | Executable JavaScript fallback, not an automatic host exception. Retire or migrate with cold/offline compatibility tests. |
 | `shelf-renderer-size.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
-| `shelf-startup-resources.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
+| `shelf-startup-resources.js` | M | prepareShelfFonts still chooses the startup faces and merges lettering samples by font before host FontFaceSet.load calls. |
 | `shelf-trash.js` | M | Rust drop/noise/normal kernels; arcLengthUV, profile/material color recipes and setState remain JS. |
 | `shelf-types.js` | M | Rust specs/tables, local normalizeShelfType/getShelfType fallback choice. |
 | `shelf-view-gesture.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |

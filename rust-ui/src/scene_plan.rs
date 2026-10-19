@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 use crate::host::{jmax,jmin,js_round,number_string};
 use crate::jsmath::{Box3,Mat4};
 use crate::scene_view::{cl,or,RustScene};
+#[path="scene_foliage.rs"] mod foliage;
 
 fn put(out:&mut [f64],values:&[f64]){for (slot,value) in out.iter_mut().zip(values){*slot=*value;}}
 fn is_integer(value:f64)->bool{value.is_finite()&&value.floor()==value}
@@ -97,7 +98,10 @@ pub fn scene_foliage_clip(previous:&[f64],current:&[f64])->String{
  if current.len()<10{return String::new();}
  let unchanged=previous.len()==current.len()&&previous.iter().zip(current.iter()).all(|(a,b)|a==b);
  if unchanged{return String::new();}
- let (reference,rect)=(&current[..6],&current[6..10]);
+ foliage_clip(&current[..6],&current[6..10],&current[10..])
+}
+
+fn foliage_clip(reference:&[f64],rect:&[f64],exclusions:&[f64])->String{
  let stable=|value:f64|js_round(value*1000.0)/1000.0;
  let to_reference=|bounds:&[f64]|->[f64;4]{[
   stable(reference[0]+(bounds[0]-rect[0])*reference[4]/rect[2]),
@@ -105,7 +109,7 @@ pub fn scene_foliage_clip(previous:&[f64],current:&[f64])->String{
   stable(reference[2]+(bounds[2]-rect[1])*reference[5]/rect[3]),
   stable(reference[2]+(bounds[3]-rect[1])*reference[5]/rect[3])]};
  let path=|b:[f64;4]|{let (l,r,t,bo)=(number_string(b[0]),number_string(b[1]),number_string(b[2]),number_string(b[3]));format!("M{l},{t}H{r}V{bo}H{l}Z")};
- let mapped:Vec<f64>=current[10..].chunks_exact(4).flat_map(to_reference).collect();
+ let mapped:Vec<f64>=exclusions.chunks_exact(4).flat_map(to_reference).collect();
  let mut clip=path([reference[0],reference[1],reference[2],reference[3]]);
  for strip in crate::scene_view::scene_disjoint_rects(&mapped,&[reference[0],reference[1],reference[2],reference[3]]).chunks_exact(4){
   clip.push_str(&path([strip[0],strip[1],strip[2],strip[3]]));

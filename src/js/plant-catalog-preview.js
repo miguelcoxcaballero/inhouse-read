@@ -1,3 +1,4 @@
+import { createCatalogPreviewFrame } from './catalog-preview-frame.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfPlant } from './shelf-plants.js';
@@ -9,7 +10,8 @@ import { configureShaderDiagnostics } from './shader-diagnostics.js';
  * once its shaders are linked in parallel; the previous plant stays meanwhile. */
 export function createPlantCatalogPreview(host) {
   let renderer, environment, model, observer, frame = 0, disposed = false, active = true;
-  let modelSize = null, paintedWidth = NaN, paintedHeight = NaN;
+  let modelSize = null;
+  const framing = createCatalogPreviewFrame();
   let pending = null, building = 0, incoming = null, cancelLink = null, dirty = true;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-80,80,90,-90,1,1000);
@@ -27,15 +29,9 @@ export function createPlantCatalogPreview(host) {
     dirty = false;
     // Layout size: the page may be scaled mid-flight, its drawing buffer not.
     const rect = host.clientWidth ? { width:host.clientWidth,height:host.clientHeight } : host.getBoundingClientRect();
-    const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width/height;
     // Texture completion changes the surface, never this stationary geometry.
     const size = modelSize ||= new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
-    const half = Math.max(size.y/2,size.x/(2*aspect))*1.14;
-    camera.left = -half*aspect; camera.right = half*aspect; camera.top = half; camera.bottom = -half;
-    camera.updateProjectionMatrix();
-    if (width !== paintedWidth || height !== paintedHeight) {
-      renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
-    }
+    framing.apply(camera,renderer,rect,size,1.14);
     renderer.render(scene,camera);
     // Going back to an earlier plant reuses its linked shaders.
     if (renderer.info) retainPrograms(renderer);
@@ -117,7 +113,7 @@ export function createPlantCatalogPreview(host) {
     prepare() { if (building) clearTimeout(building); build(true); },
     dispose() {
       document.removeEventListener('visibilitychange', visibilityChanged);
-      if (disposed) return; disposed = true;
+      if (disposed) return; disposed = true; framing.dispose();
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);
       cancelLink?.(); incoming?.userData.dispose();

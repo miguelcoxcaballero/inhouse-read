@@ -21,8 +21,26 @@ export class LiveRoom {
   #onPeers
   #motion
   #disconnected
+  #transport
   constructor({receive,receiveMotion=()=>{},disconnected=()=>{},enabled=()=>!document.hidden}) {
     this.#receive=receive;this.#motion=receiveMotion;this.#disconnected=disconnected;this.#enabled=enabled
+    // Rust owns pending/in-flight queues, retry cadence and stale-owner checks.
+    // These functions only expose browser crypto, timers and Drive I/O.
+    this.#transport={
+      valid:s=>this.#valid(s),now:()=>Date.now(),randomId:()=>crypto.randomUUID(),encode:b64,
+      mailboxes:this.#mailboxes,stateFiles:this.#stateFiles,
+      writeMailbox:writeDriveLiveMailbox,writeState:writeDriveLiveState,readRevision:readDriveLibraryRevision,
+      getContext:getDriveLiveContext,readState:readDriveLiveState,
+      receive:(account,snapshot)=>this.#receive(account,snapshot),decode:data=>text.decode(data),
+      decrypt:(s,encrypted)=>this.#decrypt(s,encrypted),
+      importKey:context=>crypto.subtle.importKey('raw',un64(context.key.replaceAll('-','+').replaceAll('_','/')),'AES-GCM',false,['encrypt','decrypt']),
+      write:s=>this.#write(s),
+      armState:(s,delay)=>this.#timer(s,()=>this.#stateRelay(s),delay),
+      armRelay:(s,delay)=>this.#timer(s,()=>this.#relay(s),delay),
+      armDiscovery:(s,delay)=>this.#timer(s,()=>this.#discover(s),delay),
+      encrypt:async(s,plain)=>{const iv=crypto.getRandomValues(new Uint8Array(12));
+        const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:bytes.encode(s.account)},s.key,bytes.encode(plain));return{iv,data}}
+    }
     this.#onPeers=e=>{const s=this.#session;if(s?.native&&s.folder===e.detail?.folderId)this.#actions(s,s.native.observe(e.detail.peers,Date.now()))}
     globalThis.addEventListener('inhouse-drive-live-peers',this.#onPeers)
   }
@@ -42,31 +60,9 @@ export class LiveRoom {
     const encoded=bytes.encode(packet);for(const peer of s.peers.values())this.#send(peer,encoded)
     s.statePending=packet;this.#scheduleState(s)
   }
-  #scheduleState(s,delay=150){
-    if(!this.#valid(s)||!s.key||s.stateBusy||s.stateTimer||!s.statePending||s.native.peerCount<=s.native.connectedCount)return
-    s.stateTimer=this.#timer(s,()=>{s.stateTimer=null;this.#stateRelay(s)},delay)
-  }
-  async #stateRelay(s){
-    if(!this.#valid(s))return
-    const packet=s.statePending;if(!packet)return;s.stateBusy=true;s.statePending=null
-    try{
-      const iv=crypto.getRandomValues(new Uint8Array(12))
-      const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:bytes.encode(s.account)},s.key,bytes.encode(packet))
-      if(!this.#valid(s))return
-      const payload={v:1,peer:s.own,iv:b64(iv),data:b64(new Uint8Array(data))}
-      let file
-      try{file=await writeDriveLiveState(s.own,payload,s.stateFile)}
-      catch(error){if(!this.#valid(s)||!s.stateFile||error.status!==404)throw error;s.stateFile=null;file=await writeDriveLiveState(s.own,payload,null)}
-      if(!this.#valid(s))return
-      s.stateFile=file.id;this.#stateFiles.set(s.account,file.id);s.relayState={id:file.id,revision:crypto.randomUUID()};await this.#write(s)
-      s.stateFailures=0
-    }catch{if(this.#valid(s)){s.statePending ||= packet;s.stateFailures=(s.stateFailures||0)+1}}
-    finally{s.stateBusy=false;if(this.#valid(s))this.#scheduleState(s,s.stateFailures?Math.min(10000,1000*2**Math.min(s.stateFailures,3)):150)}
-  }
-  async #accept(s,packet){
-    if(!packet?.snapshot)return
-    try{await this.#receive(s.account,packet.snapshot)}catch(error){if(this.#valid(s))s.native.forgetSnapshot(packet.id);throw error}
-  }
+  #scheduleState(s,delay=150){return s.ui.live_transport_schedule_state(s,this.#transport,delay)}
+  #stateRelay(s){return s.ui.live_transport_state_relay(s,this.#transport)}
+  #accept(s,packet){return s.ui.live_transport_accept(s,packet,this.#transport)}
   publishMotion(account,frame) {
     const s=this.#session;if(!s?.native||s.account!==account||!this.#valid(s))return
     frame.sequence=++this.#motionClock
@@ -80,30 +76,11 @@ export class LiveRoom {
     for(const p of s.peers.values())this.#sendMotion(p,packet)
     if(s.native.peerCount>s.native.connectedCount){s.relayPending=packet;this.#scheduleRelay(s)}
   }
-  #scheduleRelay(s){if(s.relayBusy||s.relayTimer||!s.relayPending)return
-    s.relayTimer=this.#timer(s,()=>{s.relayTimer=null;this.#relay(s)},250)
-  }
-  async #relay(s){
-    const packet=s.relayPending;s.relayPending=null
-    if(!packet||!this.#valid(s)||!s.key||s.native.peerCount<=s.native.connectedCount)return
-    s.relayBusy=true
-    try{
-      const iv=crypto.getRandomValues(new Uint8Array(12))
-      const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:bytes.encode(s.account)},s.key,bytes.encode(JSON.stringify({at:Date.now(),packet})))
-      if(!this.#valid(s))return
-      s.relayMotion={iv:b64(iv),data:b64(new Uint8Array(data))};await this.#write(s)
-    }catch{}finally{s.relayBusy=false;if(this.#valid(s))this.#scheduleRelay(s)}
-  }
+  #scheduleRelay(s){return s.ui.live_transport_schedule_relay(s,this.#transport)}
+  #relay(s){return s.ui.live_transport_relay(s,this.#transport)}
   #valid(s){return this.#session===s&&s.epoch===this.#epoch&&this.#enabled()}
   #timer(s,fn,ms){const t=setTimeout(()=>{s.timers.delete(t);if(this.#valid(s))fn()},ms);s.timers.add(t);return t}
-  async #context(s) {
-    let context=await getDriveLiveContext();if(!this.#valid(s))return
-    // A concurrently created key must be read back before our first signal.
-    if(context.confirm)context=await getDriveLiveContext()
-    if(!this.#valid(s))return
-    const key=await crypto.subtle.importKey('raw',un64(context.key.replaceAll('-','+').replaceAll('_','/')),'AES-GCM',false,['encrypt','decrypt'])
-    if(this.#valid(s)){s.key=key;s.folder=context.folderId}
-  }
+  #context(s){return s.ui.live_transport_context(s,this.#transport)}
   async #start(s) {
     try{
       if(!s.native){
@@ -133,40 +110,9 @@ export class LiveRoom {
     }
   }
   #heartbeat(s){this.#timer(s,()=>{this.#write(s).catch(()=>{});this.#heartbeat(s)},20000)}
-  async #discover(s){
-    // Discovery must not wait behind a cover upload or the durable backup
-    // lock: the other device's first offer may arrive during that work.
-    try{await readDriveLibraryRevision();s.discoveryFailures=0}
-    catch{s.discoveryFailures=(s.discoveryFailures||0)+1}
-    if(this.#valid(s))this.#timer(s,()=>this.#discover(s),s.discoveryFailures?
-      Math.min(15000,1000*2**Math.min(s.discoveryFailures,4)):
-      [...s.peers.values()].some(p=>p.open)?2500:700)
-  }
-  #write(s) {
-    // At most one in-flight write and one latest-value follow-up. A slow
-    // heartbeat cannot queue unbounded requests or overwrite a newer answer.
-    s.writeAgain=true
-    if(s.writing)return s.writing
-    s.writing=(async()=>{
-      do{
-        s.writeAgain=false;if(!this.#valid(s))return
-        const payload={v:1,peer:s.own,at:Date.now(),signals:{...s.signals},motion:s.relayMotion,state:s.relayState}
-        let file
-        try{file=await writeDriveLiveMailbox(s.own,payload,s.file)}
-        catch(error){if(!this.#valid(s)||!s.file||error.status!==404)throw error;s.file=null;this.#mailboxes.delete(s.account);file=await writeDriveLiveMailbox(s.own,payload,null)}
-        if(this.#valid(s)){s.file=file.id;this.#mailboxes.set(s.account,file.id)}
-      }while(s.writeAgain&&this.#valid(s))
-    })().finally(()=>{s.writing=null})
-    return s.writing
-  }
-  async #signal(s,id,description,nonce) {
-    if(!this.#valid(s))return
-    const iv=crypto.getRandomValues(new Uint8Array(12)),payload=bytes.encode(JSON.stringify({account:s.account,from:s.own,to:id,nonce,at:Date.now(),type:description.type,sdp:description.sdp}))
-    const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:bytes.encode(s.account)},s.key,payload)
-    if(!this.#valid(s))return
-    s.signals[id]={iv:b64(iv),data:b64(new Uint8Array(cipher))}
-    await this.#write(s)
-  }
+  #discover(s){return s.ui.live_transport_discover(s,this.#transport)}
+  #write(s){return s.ui.live_transport_write(s,this.#transport)}
+  #signal(s,id,description,nonce){return s.ui.live_transport_signal(s,id,description,nonce,this.#transport)}
   #actions(s,actions){for(const [action,id,file] of actions){if(!this.#valid(s))break;if(action==='close'){this.#close(s,id)}else if(action==='read'){this.#read(s,id,file).catch(()=>{if(this.#valid(s))s.native.readFailed(id)})}else if(action==='offer'){this.#offer(s,id).catch(()=>this.#failed(s,id))}}this.#pending(s);this.#scheduleState(s)}
   #pending(s){if(s.pending||!this.#valid(s))return;if(![...s.peers.values()].some(p=>!p.open))return;s.pending=this.#timer(s,()=>{s.pending=null;this.#actions(s,s.native.pending(Date.now()))},350)}
   async #read(s,id,file) {
@@ -197,19 +143,7 @@ export class LiveRoom {
       }
     }finally{s.reading.delete(id)}
   }
-  async #readState(s,id,state){
-    s.stateSeen ||= new Map();s.stateReading ||= new Set()
-    if(typeof state?.id!=='string'||!/^[\w-]{1,128}$/.test(state.id)||typeof state.revision!=='string'||s.stateSeen.get(id)===state.revision||s.stateReading.has(id))return
-    s.stateReading.add(id)
-    try{
-      const encrypted=await readDriveLiveState(state.id);if(!this.#valid(s)||encrypted.peer!==id)return
-      let decoded
-      try{decoded=await this.#decrypt(s,encrypted)}catch{await this.#context(s);if(!this.#valid(s))return;decoded=await this.#decrypt(s,encrypted)}
-      if(!this.#valid(s))return
-      await this.#accept(s,s.native.receiveStateRelay(id,{packet:text.decode(decoded)}))
-      if(this.#valid(s))s.stateSeen.set(id,state.revision)
-    }finally{s.stateReading.delete(id)}
-  }
+  #readState(s,id,state){return s.ui.live_transport_read_state(s,id,state,this.#transport)}
   async #candidates(p,sdp) {
     const known=new Set((p.pc.remoteDescription?.sdp||'').split(/\r?\n/).filter(l=>l.startsWith('a=candidate:')))
     p.candidates ||= new Set();let mid='0',index=-1

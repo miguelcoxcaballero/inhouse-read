@@ -3,8 +3,8 @@
 // Views are reacquired after any native work that may grow linear memory.
 export function createGravityFrame(rust) {
   const native = new rust.RustGravityFrame(), memory = native.memory();
-  let entries = null, count = 0, buffer = null, states, geometry, nativeOutput;
-  let statesAt = 0, geometryAt = 0, outputAt = 0, disposed = false;
+  let entries = null, count = 0, buffer = null, states, geometry, nativeOutput, presentation;
+  let statesAt = 0, geometryAt = 0, outputAt = 0, presentationAt = 0, disposed = false;
   const frame = { output:new Float64Array(0), prepare, write, advance, copyState, free };
   function refresh() {
     if (disposed) throw new Error('Gravity frame has been disposed');
@@ -13,18 +13,20 @@ export function createGravityFrame(rust) {
     states = new Float64Array(buffer, statesAt, count * 37);
     geometry = new Float64Array(buffer, geometryAt, count * 9);
     nativeOutput = new Float64Array(buffer, outputAt, count * 4);
+    presentation = new Float64Array(buffer, presentationAt, count * 3);
   }
   function prepare(next) {
     if (disposed) throw new Error('Gravity frame has been disposed');
     // Shelf layouts replace their entry array, including same-length reorders.
     if (entries === next) return;
     native.register(next.map(entry => entry.key)); entries = next; count = next.length;
-    statesAt = native.states_ptr(); geometryAt = native.geometry_ptr(); outputAt = native.output_ptr();
+    statesAt = native.states_ptr(); geometryAt = native.geometry_ptr(); outputAt = native.output_ptr(); presentationAt = native.presentation_ptr();
     if (frame.output.length !== count * 4) frame.output = new Float64Array(count * 4);
     buffer = null; refresh();
   }
   function write(index, entry, kind, undershelf, row, pixelsPerMetre, shelfWidth) {
     refresh();
+    presentation[index * 3] = entry.collisionStamp ? 1 : 0;
     const at = index * 37, g = index * 9, lift = entry.lift, landing = entry.landing, preview = entry.preview;
     states[at] = kind; states[at+1] = undershelf ? 1 : 0; states[at+2] = entry.bits;
     states[at+3] = entry.dragNumberX; states[at+4] = entry.dragNumberY;
@@ -52,10 +54,13 @@ export function createGravityFrame(rust) {
   function copyState(index, target) {
     refresh(); const at = index * 37;
     for (let field = 0; field < 37; field++) target[field] = states[at + field];
+    if (target.length >= 40) {
+      const meta = index * 3; target[37] = presentation[meta]; target[38] = presentation[meta+1]; target[39] = presentation[meta+2];
+    }
   }
   function free() {
     if (disposed) return;
-    native.free(); disposed = true; entries = null; buffer = states = geometry = nativeOutput = null;
+    native.free(); disposed = true; entries = null; buffer = states = geometry = nativeOutput = presentation = null;
     frame.output = new Float64Array(0);
   }
   return frame;

@@ -1,3 +1,4 @@
+import { createCatalogPreviewFrame } from './catalog-preview-frame.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createBaggebo } from './baggebo-model.js';
@@ -12,7 +13,8 @@ const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.me
 /** The same cabinet geometry as the library, lit and rendered only on demand. */
 export function createShelfCatalogPreview(host) {
   let renderer, environment, model, observer, hemisphere, key, fill, frame = 0, disposed = false, active = true, selected;
-  let modelSize = null, paintedWidth = NaN, paintedHeight = NaN;
+  let modelSize = null;
+  const framing = createCatalogPreviewFrame();
   // Built after the tapped choice paints; shown once its shaders are linked.
   let pending = null, building = 0, cancelLink = null, shown = false, dirty = true;
   const scene = new THREE.Scene();
@@ -30,14 +32,8 @@ export function createShelfCatalogPreview(host) {
     dirty = false;
     // Layout size: the page may be scaled mid-flight, its drawing buffer not.
     const rect = host.clientWidth ? { width:host.clientWidth,height:host.clientHeight } : host.getBoundingClientRect();
-    const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width / height;
     const size = modelSize ||= new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
-    const half = Math.max(size.y / 2,size.x / (2 * aspect)) * 1.14;
-    camera.left = -half * aspect; camera.right = half * aspect;
-    camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
-    if (width !== paintedWidth || height !== paintedHeight) {
-      renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
-    }
+    framing.apply(camera,renderer,rect,size,1.14);
     renderer.render(scene,camera);
     if (renderer.info) retainPrograms(renderer);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
@@ -159,7 +155,7 @@ export function createShelfCatalogPreview(host) {
     },
     dispose() {
       document.removeEventListener('visibilitychange', visibilityChanged);
-      if (disposed) return; disposed = true;
+      if (disposed) return; disposed = true; framing.dispose();
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);
       cancelLink?.(); observer?.disconnect(); removeModel();

@@ -134,3 +134,9 @@ mod file_name;
 
 #[cfg(feature = "app")]
 mod native_frame;
+
+#[cfg(feature="app")]
+mod paper_tone;
+
+#[cfg(feature = "voice")]
+mod voice_client;

@@ -68,3 +68,33 @@ mod book_presentation;
 
 #[cfg(feature = "shelf")]
 mod plant_surface_policy;
+
+#[cfg(feature = "shelf")]
+mod plant_records;
+
+#[cfg(feature = "shelf")]
+mod gpu_program_policy;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod cover_relief_portable;
+
+#[cfg(feature = "shelf")]
+mod shelf_bake_cache;
+
+#[cfg(feature = "shelf")]
+mod shelf_furniture_policy;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod record_normalization;
+
+#[cfg(feature = "shelf")]
+mod shelf_metadata;
+
+#[cfg(feature = "ui")]
+mod live_transport;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_room_coordination;
+
+#[cfg(feature = "shelf")]
+mod book_image_resources;

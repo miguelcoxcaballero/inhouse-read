@@ -33,3 +33,12 @@ GC-owned callbacks remain browser bindings. Descriptor tests cover every pot
 palette and plant family at both resolutions. Additional tests cover partial
 preparation failures, changing colour while inspection is pending and stable
 Wasm handle counts after repeated cancellation and disposal.
+
+Saved plant record resolution/normalization is owned by
+`rust-ui/src/plant_records.rs`. It preserves catalog object identity, alias
+precedence, explicit versus legacy pots, seed/position/orientation fields and
+palette repair. Ordered data-property copying retains enumerable symbols and
+own `__proto__` fields without invoking prototype setters. Invalid getters and
+string conversions propagate through caught host calls so Rust releases every
+intermediate handle. No extra startup fetch is introduced: shelf callers
+already await the shelf module before constructing or normalizing shelf items.

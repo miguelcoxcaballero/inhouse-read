@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let retainPrograms;
-beforeEach(async () => { vi.resetModules(); ({ retainPrograms } = await import('../../src/js/gpu-programs.js')); });
+beforeEach(async () => {
+  vi.resetModules();
+  // Resetting the JS registry also resets the shelf loader. Recreate the real
+  // first-render preload before invoking its native retention policy.
+  await import('./helpers/rust-shelf-ready.js');
+  ({ retainPrograms } = await import('../../src/js/gpu-programs.js'));
+});
 const renderer = count => ({ info:{ programs:Array.from({ length:count }, () => ({ usedTimes:1 })) } });
 
 describe('shader retention cap belongs to its renderer', () => {

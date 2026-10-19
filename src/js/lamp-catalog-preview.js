@@ -1,3 +1,4 @@
+import { createCatalogPreviewFrame } from './catalog-preview-frame.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfLamp } from './shelf-lamps.js';
@@ -13,7 +14,7 @@ await ensureAreaLights().catch(() => {});
 /** The actual shelf lamp, with its own warm light and reflected studio lighting. */
 export function createLampCatalogPreview(host) {
   let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, active = true, selected;
-  let paintedWidth = NaN, paintedHeight = NaN;
+  const framing = createCatalogPreviewFrame();
   // The chosen lamp is built after its button has painted; until its shaders
   // are linked (in parallel) the canvas keeps showing the previous picture.
   // The light's colour temperature eases in ~300 ms; only colours change.
@@ -39,14 +40,8 @@ export function createLampCatalogPreview(host) {
     dirty = false;
     // Layout size: the page may be scaled mid-flight, its drawing buffer not.
     const rect = host.clientWidth ? { width:host.clientWidth,height:host.clientHeight } : host.getBoundingClientRect();
-    const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width / height;
-    const half = Math.max(size.y / 2,size.x / (2 * aspect)) * 1.13;
-    camera.left = -half * aspect; camera.right = half * aspect;
-    camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
+    framing.apply(camera,renderer,rect,size,1.13);
     filamentLighting?.update([{ kind:'lamp',key:'catalog-filaments',model,width:size.x }]);
-    if (width !== paintedWidth || height !== paintedHeight) {
-      renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
-    }
     renderer.render(scene,camera);
     // Going back to an earlier lamp reuses its linked shaders.
     if (renderer.info) retainPrograms(renderer);
@@ -204,7 +199,7 @@ export function createLampCatalogPreview(host) {
     },
     dispose() {
       document.removeEventListener('visibilitychange', visibilityChanged);
-      if (disposed) return; disposed = true;
+      if (disposed) return; disposed = true; framing.dispose();
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);
       cancelLink?.(); observer?.disconnect(); removeModel();

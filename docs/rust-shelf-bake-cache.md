@@ -1,0 +1,9 @@
+# Saved shelf bake cache in Rust
+
+The shelf Rust module now owns record version validation and filtering, deterministic model/surface signatures, single-use texture byte validation, merged-source collection, debouncing, source readiness, write deduplication and cancellation generations.
+
+The JavaScript bridge deliberately starts IndexedDB at module evaluation, before Rust is available. This preserves the existing parallel first-load path: library read, cache read and WASM compilation run together. Rust adopts the completed raw read synchronously when a renderer requests cached models or surface bytes. The bridge retains browser connection/request callbacks, promises, timer/idle callback adapters and early source registration.
+
+Keys and versions preserve raw UTF-16, including isolated surrogate code units. Concurrent reads and writes share one opening IndexedDB connection. Each read belongs to one session. Restarting closes its connection and invalidates old waits/idle work, including restarts with an identical build version. A superseded readiness callback cannot collect or write another session's records. Validated data releases the raw database result, and cancelled sessions release their cached byte references. Paint pixels, model data and IndexedDB schema remain unchanged.
+
+Validation includes the frozen pre-migration cache implementation, signatures with supplementary Unicode characters, typed-array handoff and invalid byte dimensions, startup before WASM is ready, stale reads, same-version restart, failed storage, accessor errors, native handle counts, rejected surface work and browser idle cancellation. The existing complete plant/lamp bake round-trip suite checks that restored geometry, materials and texture bytes are identical. This is a state-policy migration; it does not claim faster GPU rendering.

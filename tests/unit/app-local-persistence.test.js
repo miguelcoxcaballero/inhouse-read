@@ -57,6 +57,10 @@ vi.mock('../../src/js/drive-client.js', () => ({ isDriveConfigured:() => true,
   getDriveProfile:vi.fn(async () => ({ id:'account', name:'Reader', email:'reader@example.com' })),
   getRememberedDriveProfile:() => state.connected ? { id:'account' } : null,
   requestDriveAccess:vi.fn(async () => { state.connected = true }),
+  getDriveLiveContext:vi.fn(async () => null),
+  readDriveLiveMailbox:vi.fn(async () => []), writeDriveLiveMailbox:vi.fn(async () => {}),
+  readDriveLibraryRevision:vi.fn(async () => ''),
+  readDriveLiveState:vi.fn(async () => null), writeDriveLiveState:vi.fn(async () => {}),
   listAllDriveBooks:vi.fn(async () => []), signOutDrive:vi.fn(() => { state.connected = false }), cancelDriveConnection:vi.fn()
 }))
 vi.mock('../../src/js/cloud-sync.js', () => ({ CloudSync:class {

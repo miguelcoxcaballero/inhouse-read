@@ -1,12 +1,15 @@
-export function samplePaperTone(data) {
-  const n = 12, ring = [];
-  for (let i = 0; i < n - 1; i++) for (const [x, y] of [[i, 0], [n - 1, i], [n - 1 - i, n - 1], [0, n - 1 - i]]) {
-    const k = (y * n + x) * 4;
-    if (data[k + 3] > 200) ring.push(k);
-  }
-  const channels = [0, 1, 2].map(o => ring.map(k => data[k + o]).sort((a, b) => a - b));
-  const quartile = (values, q) => values[Math.floor((values.length - 1) * q)];
-  return ring.length >= 16 && channels.every(values => quartile(values, .75) - quartile(values, .25) <= 20)
-    ? channels.map(values => quartile(values, .5)) : null;
+import { loadedRustCore } from './rust-core.js';
+
+// The core owns the ring, alpha threshold, quartiles and full-bleed decision.
+// This fixed byte arena is released before returning an owned RGB triplet.
+export function samplePaperTone(data, core = loadedRustCore()) {
+  if (data?.length !== 576) return null;
+  const pointer = core.alloc_f64(72);
+  if (!pointer) return null;
+  try {
+    new Uint8Array(core.memory.buffer, pointer, 576).set(data);
+    const rgb = core.page_paper_tone(pointer, 576);
+    return rgb < 0 ? null : [rgb >>> 16, (rgb >>> 8) & 255, rgb & 255];
+  } finally { core.free_f64(pointer, 72); }
 }
 

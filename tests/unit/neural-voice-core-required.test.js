@@ -39,7 +39,7 @@ describe('the synthesis worker without its voice core', () => {
 describe('the Android client without its voice core', () => {
   it('rejects the preparation of a voice instead of continuing without the rules', async () => {
     vi.resetModules()
-    vi.doMock('../../src/js/rust-voice-core.js', () => ({ requireRustVoiceCore: () => Promise.reject(new Error('El módulo de voz no se pudo cargar. Recarga la página.')), loadedRustVoiceCore: () => { throw new Error('not loaded') } }))
+    vi.doMock('../../src/js/rust-voice-core.js', () => ({ getRustVoiceCore: () => null, requireRustVoiceCore: () => Promise.reject(new Error('El módulo de voz no se pudo cargar. Recarga la página.')), loadedRustVoiceCore: () => { throw new Error('not loaded') } }))
     const { NativeSynthClient } = await import('../../src/js/readers/neural-voice/native-client.js')
     const ort = { dispose() {}, InferenceSession: { create: async () => ({ inputNames: [], outputNames: [], release: async () => {} }) } }
     const client = new NativeSynthClient({

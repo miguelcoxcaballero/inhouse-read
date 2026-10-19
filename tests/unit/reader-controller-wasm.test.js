@@ -108,10 +108,11 @@ async function run(Controller, seed, shape) {
 
 afterEach(() => { world.gate = null; world.gate2 = null })
 
-it('behaves exactly like the original on two hundred scripted sessions', async () => {
-  const shapes = ['full', 'bare', 'throwing', 'broken', 'zero', 'meta', 'lang', 'nolang']
-  const seen = { opens:0, failures:0, relocations:0, snapshots:0, covers:0, rejected:0, raced:0 }
-  for (let seed = 1; seed <= 200; seed++) {
+const sessionShapes = ['full', 'bare', 'throwing', 'broken', 'zero', 'meta', 'lang', 'nolang']
+const sessionCoverage = { opens:0, failures:0, relocations:0, snapshots:0, covers:0, rejected:0, raced:0 }
+for(let batch=0;batch<20;batch++)it(`matches scripted reader sessions: batch ${batch+1}/20`,async()=>{
+  const seen=sessionCoverage,shapes=sessionShapes
+  for (let seed = 1+batch*10; seed <= (batch+1)*10; seed++) {
     const shape = shapes[seed % shapes.length]
     const reference = await run(ReferenceReaderController, seed, shape)
     const rust = await run(ReaderController, seed, shape)
@@ -132,6 +133,9 @@ it('behaves exactly like the original on two hundred scripted sessions', async (
       if (String(JSON.stringify(result)).includes('Formato no soportado')) seen.rejected++
     }
   }
+})
+it('covers all two hundred scripted reader sessions',()=>{
+  const seen=sessionCoverage
   if (process.env.DEBUG_SEEN) process.stderr.write(JSON.stringify(seen) + '\n')
   expect(seen.opens).toBeGreaterThan(40)
   expect(seen.failures).toBeGreaterThan(60)

@@ -72,9 +72,10 @@ async function scenario(impl, seed, mode) {
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
-it('builds, prepares and clears adaptable pages exactly like the original on three hundred scripted pages', async () => {
-  const seen = { populated:0, prepared:0, cancelled:0, failed:0, pictures:0, sliced:0 }
-  for (let seed = 1; seed <= 300; seed++) {
+const scriptedCoverage = { populated:0, prepared:0, cancelled:0, failed:0, pictures:0, sliced:0 }
+for(let batch=0;batch<10;batch++)it(`adapts scripted pages exactly: batch ${batch+1}/10`,async()=>{
+  const seen=scriptedCoverage
+  for (let seed = 1+batch*30; seed <= (batch+1)*30; seed++) {
     const mode = ['populate', 'prepare', 'prepare', 'clear'][seed % 4]
     const reference = await scenario(original, seed, mode), actual = await scenario(rust, seed, mode)
     expect(actual, `seed ${seed} ${mode} ${reference.kind}`).toEqual(reference)
@@ -85,6 +86,9 @@ it('builds, prepares and clears adaptable pages exactly like the original on thr
     seen.pictures += reference.scene.canvases.length
     if (reference.log.some(entry => entry[0] === 'post' || entry[0] === 'close')) seen.sliced++
   }
+})
+it('covers all three hundred scripted pages',()=>{
+  const seen=scriptedCoverage
   expect(seen.populated).toBeGreaterThan(30)
   expect(seen.prepared).toBeGreaterThan(40)
   expect(seen.cancelled).toBeGreaterThan(10)

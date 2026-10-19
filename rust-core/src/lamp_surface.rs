@@ -33,3 +33,25 @@ pub unsafe extern "C" fn lamp_surface_rows(width:usize,height:usize,row:usize,co
  }
  1
 }
+
+/// Absolute emission updates in the decor host's existing 16-f64 scratch arena.
+/// Each material occupies intensity/R/G/B. At most four; current lamps use <=3.
+/// # Safety
+/// `values` contains four writable f64 per material; no allocation or callback.
+#[no_mangle]
+pub unsafe extern "C" fn lamp_emission_power(values: *mut f64, count: usize, power: f64) -> f64 {
+    if count > 4 { return f64::NAN; }
+    let value = if !power.is_finite() || power <= 0.0 { 0.0 } else if power >= 1.0 { 1.0 } else { power };
+    let data = std::slice::from_raw_parts_mut(values, count * 4);
+    for at in (0..data.len()).step_by(4) { data[at] *= value; }
+    value
+}
+/// # Safety
+/// As `lamp_emission_power`. RGB multiplications use the original f64 order.
+#[no_mangle]
+pub unsafe extern "C" fn lamp_emission_tint(values: *mut f64, count: usize, r: f64, g: f64, b: f64) -> u32 {
+    if count > 4 { return 0; }
+    let data = std::slice::from_raw_parts_mut(values, count * 4);
+    for at in (0..data.len()).step_by(4) { data[at + 1] *= r; data[at + 2] *= g; data[at + 3] *= b; }
+    1
+}

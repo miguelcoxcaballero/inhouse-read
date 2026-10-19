@@ -108,16 +108,19 @@ describe.each(cases)('%s catalog studio suspension',(_name,create,selection) => 
     const draw = settle;
     draw();
     const renderer = resources.renderers[0];
+    const projection = vi.spyOn(renderer.render.mock.calls[0][1],'updateProjectionMatrix');
     const bounds = vi.spyOn(THREE.Box3.prototype,'setFromObject');
     for (let index = 0; index < 3; index++) { preview.setActive(false); preview.setActive(true); draw(); }
     expect(renderer.render).toHaveBeenCalledTimes(4);
     expect(renderer.setSize).toHaveBeenCalledTimes(1);
+    expect(projection).not.toHaveBeenCalled();
     expect(bounds).not.toHaveBeenCalled();
     preview.setActive(true);
     expect(frames.size).toBe(0);
     width = 240; observers.forEach(notify => notify()); draw();
     expect(renderer.setSize).toHaveBeenLastCalledWith(240,300,false);
     expect(renderer.setSize).toHaveBeenCalledTimes(2);
+    expect(projection).toHaveBeenCalledOnce();
     expect(renderer.render).toHaveBeenCalledTimes(5);
     expect(resources.models).toHaveLength(1);
   });

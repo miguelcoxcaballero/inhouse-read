@@ -1,4 +1,5 @@
 import { createGravityFrame } from './gravity-frame.js';
+import { createFoliageFrame } from './foliage-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -216,6 +217,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
   const semanticCovers = new Map();
   const semanticFoliage = new Map();
+  const foliageFrame = createFoliageFrame(rust);
   const releasedCandidates = new WeakSet();
   stage.classList.add('has-scene');
   stage.prepend(canvas);
@@ -926,7 +928,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
     if (entry.model) { entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
-    semanticFoliage.get(entry.node)?.svg.remove(); semanticFoliage.delete(entry.node);
+    const foliage = semanticFoliage.get(entry.node);
+    if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
     clearPlantDiagnostics(entry.node);
   }
 
@@ -1391,7 +1394,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'catalog3d', 'true'); setData(canvas, 'catalogVisible', String(visible));
   }
 
-  const lampIo = new Float64Array(8), stepIo = new Float64Array(37), projectIo = new Float64Array(44), hitIo = new Float64Array(49);
+  const lampIo = new Float64Array(8), stepIo = new Float64Array(40), projectIo = new Float64Array(44), hitIo = new Float64Array(49);
   const insertionIo = new Float64Array(4), surfaceBox = new Float64Array(6), inverseTurn = new Float64Array(4);
   function advanceLampPower(entry, now) {
     const target = entry.isOn === false ? 0 : 1;
@@ -1504,18 +1507,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.pose.position.set(stepIo[29], stepIo[30], stepIo[31]);
       const gravityAt = entryIndex * 4;
       if (usePhysics && !decorative && node) setData(node, 'sceneLean', gravityOutput[gravityAt].toFixed(6));
-      if (!decorative && usePhysics) {
-        entry.pose.position.x = entry.x - width / 2 + gravityOutput[gravityAt + 1]; entry.pose.position.y = -entry.y + gravityOutput[gravityAt + 2];
-        moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
-        entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34] + gravityOutput[gravityAt], gravityOutput[gravityAt] === 0 ? 'XYZ' : 'ZYX');
-      } else {
-        entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
-        if (usePhysics && decorative && !undershelf && entry.collisionStamp) {
-          entry.pose.position.x = entry.x - width / 2 + gravityOutput[gravityAt + 1];
-          entry.pose.position.y = -entry.y - (lamp ? entry.height / 2 : 0) + gravityOutput[gravityAt + 2];
-          moving ||= gravityOutput[gravityAt + 3] !== 0; shelfMoving ||= gravityOutput[gravityAt + 3] !== 0;
-        }
-      }
+      if (usePhysics && !decorative) entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34], stepIo[37] ? 'ZYX' : 'XYZ');
+      else entry.pose.rotation.set(stepIo[32], stepIo[33], stepIo[34]);
+      moving ||= usePhysics && Boolean(stepIo[38]);
+      shelfMoving ||= usePhysics && Boolean(stepIo[38]);
       entry.pose.scale.setScalar(stepIo[35]);
       const sharedKey = motionKey(entry), ppm = unitWidth / SHELF_SPECS[shelfType].width * 1000;
       const bay = rows[entry.shelf || 0] || rows[0];
@@ -1546,7 +1541,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
       const trashDrop = entry.trashDrop;
-      projectIo[0] = kind; projectIo[1] = entry.bits | (usePhysics && gravityOutput[entryIndex * 4 + 3] ? 16 : 0) | (usePhysics && Math.abs(gravityOutput[entryIndex * 4]) > .001 ? 32 : 0); projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
+      projectIo[0] = kind; projectIo[1] = usePhysics ? stepIo[39] : entry.bits; projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
       projectIo[4] = entry.model ? 1 : 0; projectIo[5] = entry.overview ? 1 : 0; projectIo[6] = trashDrop?.complete ? 1 : 0;
       projectIo[7] = insertion?.overlayCanvas ? 1 : 0;
       projectIo.set(entry.box, 8); projectIo.set(projectedMatrix.elements, 14);
@@ -1728,7 +1723,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       Object.assign(svg.style, { position:'absolute', pointerEvents:'none', touchAction:'none', overflow:'visible',
         maxWidth:'none', maxHeight:'none' });
       path.style.touchAction = 'none'; svg.append(definitions, path); node.append(svg);
-      native = { svg, path, exclusions, pose:[], model:null, clip:'', bounds:null, inputs:new Float64Array(0),
+      native = { svg, path, exclusions, clip:'', state:foliageFrame.createState(),
         display:'', left:NaN, top:NaN, width:NaN, height:NaN, events:'' };
       semanticFoliage.set(node, native);
     }
@@ -1745,18 +1740,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Inspection is a uniform scale and translation of the whole room. SVG's
     // viewBox applies exactly that transform to the cached leaf triangles,
     // preserving holes without projecting every leaf again on every finger move.
-    const { elements } = model.matrix, rotation = furniture.quaternion, pose = native.pose;
-    let moved = native.model !== model || rotation.x !== pose[16] || rotation.y !== pose[17] || rotation.z !== pose[18] || rotation.w !== pose[19];
-    for (let index = 0; index < 16 && !moved; index++) moved = elements[index] !== pose[index];
-    if (moved) {
+    if (native.state.pose(model, furniture.quaternion, rect)) {
       const projected = projectPlantFoliage(model);
       native.path.setAttribute('d', projected.path); native.svg.dataset.triangles = String(projected.triangles);
-      native.model = model; native.bounds = { ...rect };
-      for (let index = 0; index < 16; index++) pose[index] = elements[index];
-      pose[16] = rotation.x; pose[17] = rotation.y; pose[18] = rotation.z; pose[19] = rotation.w;
       native.svg.setAttribute('viewBox', `${rect.left} ${rect.top} ${rect.width} ${rect.height}`);
     }
-    const reference = native.bounds;
     // The clip is a pure function of the reference box, this rectangle and every
     // excluded book rectangle: rebuild it only when one of those numbers moved.
     if (!exclusionsReady) {
@@ -1764,21 +1752,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const area = sceneView.progress > .04 ? other.rect : other.hitRect;
         if (area) exclusionRects.push(area);
       }
+      foliageFrame.prepare(exclusionRects);
       exclusionsReady = true;
-    }
-    const inputs = new Float64Array(10 + exclusionRects.length * 4);
-    inputs.set([reference.left, reference.right, reference.top, reference.bottom, reference.width, reference.height,
-      rect.left, rect.top, rect.width, rect.height]);
-    let slot = 10;
-    for (const area of exclusionRects) {
-      inputs[slot++] = area.left; inputs[slot++] = area.right; inputs[slot++] = area.top; inputs[slot++] = area.bottom;
     }
     // Inside the books' rectangles the existing native book surface already has touch-action:none and
     // resolves true mesh occlusion in its drag handler; the clip (Rust) keeps book clicks native even if
     // foliage is behind a cover. It is rebuilt only when one of its inputs moved.
-    const clipping = rust.scene_foliage_clip(native.inputs, inputs);
+    const clipping = native.state.clip();
     if (!clipping) return;
-    native.inputs = inputs;
     if (native.clip !== clipping) {
       native.exclusions.setAttribute('d', clipping); native.clip = clipping;
     }
@@ -3277,7 +3258,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const node of semanticCovers.values()) node.remove();
       semanticCovers.clear();
       for (const native of semanticFoliage.values()) native.svg.remove();
-      semanticFoliage.clear();
+      semanticFoliage.clear(); foliageFrame.free();
       for (const node of trashOriginalStates.keys()) restoreTrashNode(node);
       for (const node of catalogOriginalStates.keys()) restoreCatalogNode(node);
     }

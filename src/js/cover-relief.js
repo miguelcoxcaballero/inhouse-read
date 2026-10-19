@@ -26,6 +26,7 @@
 import { runInSlices } from './cover-appearance.js';
 import { getRustCore, loadRustCore } from './rust-core.js';
 import { needRustShelf } from './rust-shelf.js';
+import { bookDataModule } from './book-data-native.js';
 import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes,
   wasmAnalyze, wasmMaps, wasmRenderRelief } from './cover-relief-wasm.js';
 
@@ -39,40 +40,11 @@ export const MAX_COLOR_TOLERANCE = 12;
 export const WORK_SIZE = 288;
 export const MAP_SIZE = 512;
 
-const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
-
 /** Validate portable color choices and old family records; discard map data. */
-export function normalizeCoverRelief(value) {
-  if (value && typeof value === 'object' && Array.isArray(value.layers)) {
-    const layers = [], colors = new Set();
-    for (const entry of value.layers.slice(0, 10)) {
-      // Nested selections, legacy families and decoded rasters never become
-      // layers. A portable layer names one actual supported printed colour.
-      const layer = entry && !Array.isArray(entry.layers) && normalizeCoverRelief(entry);
-      if (!layer || !COLOR_RELIEF_IDS.includes(layer.id) || colors.has(layer.color)) continue;
-      layers.push(layer); colors.add(layer.color);
-    }
-    return layers.length ? { layers } : null;
-  }
-  if (!value || typeof value !== 'object' || !RELIEF_IDS.includes(value.id)) return null;
-  const number = value.strength == null ? DEFAULT_RELIEF_STRENGTH : Number(value.strength);
-  const strength = Number.isFinite(number) ? Math.round(clamp(number, 0, 1) * 100) / 100 : DEFAULT_RELIEF_STRENGTH;
-  if (COLOR_RELIEF_IDS.includes(value.id)) {
-    if (typeof value.color !== 'string' || !/^#[\da-f]{6}$/i.test(value.color)) return null;
-    const tolerance = value.tolerance;
-    if (!Number.isFinite(tolerance) || tolerance < MIN_COLOR_TOLERANCE || tolerance > MAX_COLOR_TOLERANCE) return null;
-    return { id:value.id, color:value.color.toLowerCase(), tolerance:Math.round(tolerance * 100) / 100, strength };
-  }
-  return { id: value.id, strength };
-}
+export const normalizeCoverRelief = value => bookDataModule().normalize_cover_relief(value);
 
-/** Colour-only editor access. Legacy family choices remain readable and are
- * rendered through the first detected colour without being silently rewritten. */
-export function coverReliefLayers(value) {
-  const normalized = normalizeCoverRelief(value);
-  if (normalized?.layers) return normalized.layers;
-  return normalized && COLOR_RELIEF_IDS.includes(normalized.id) ? [normalized] : [];
-}
+/** Colour-only editor access; legacy records keep their original identity. */
+export const coverReliefLayers = value => bookDataModule().cover_relief_layers(value);
 
 // Each detected colour has its own stable printing/varnish depth and finish, from its printed HEX (slot ranks
 // can change after a cover is reanalysed). These profiles never generate colour, a mask or a metallic pigment.
@@ -130,32 +102,17 @@ async function runSliced(task, { signal, stats } = {}) {
   return value;
 }
 
-function quantile(values, fraction) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
-}
-
 // ---- rasters -----------------------------------------------------------------
 
-export function fitDimensions(width, height, long) {
-  const scale = Math.min(1, long / Math.max(width, height));
-  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
-}
+export const fitDimensions = (width, height, long) => needRustShelf().relief_fit_dimensions(width, height, long);
 
 // ---- actual printed colors --------------------------------------------------
 // The core converts to OKLab (Björn Ottosson's public-domain 2021 matrices,
 // https://bottosson.github.io/posts/oklab/), finds the palette, classifies every pixel against the ball of
 // each colour and builds the pigment maps (rust-core/src/cover_relief.rs). Distances are Euclidean OKLab * 100
 // (Delta-E OK), not CIEDE2000 or RGB channel units.
-const hexOf = rgb => '#' + rgb.map(byte => byte.toString(16).padStart(2, '0')).join('');
 const colorName = hex => needRustShelf().relief_color_name(hex);
-function validateRaster(image) {
-  if (!image || !Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height)
-    || image.width < 1 || image.height < 1 || !image.data || image.data.length !== image.width * image.height * 4) {
-    throw new TypeError('Portada sin píxeles RGBA válidos');
-  }
-}
+const validateRaster = image => needRustShelf().relief_validate_raster(image);
 
 /** Up to ten distinct supported colors, never fabricated family suggestions. Radii are less than half every
  * inter-center distance, so all generated choices remain disjoint even when recreated independently from
@@ -164,24 +121,18 @@ function validateRaster(image) {
 export function* analyzePixels(image) {
   validateRaster(image);
   const found = yield* native(wasmAnalyze(rust(), image));
-  const chosen = found.colours.map(({ rgb, tolerance, pixels, mask }, index) => {
-    const hex = hexOf(rgb);
-    return { id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
-      detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
-      facts:{ color:hex, coverage:pixels / Math.max(1, found.opaque), pixels } };
-  });
-  return { chosen, candidates:chosen, seed:found.seed, feats:{ photo:false, busy:0, strokeFraction:0 },
-    colorSpace:'oklab-100', opaquePixels:found.opaque };
+  return needRustShelf().relief_analysis_result(found);
 }
 
 export function* buildMapsFromPixels(work, hires, selection) {
   validateRaster(work); validateRaster(hires);
   let choice = normalizeCoverRelief(selection);
   if (!choice) throw new TypeError('Color de relieve no válido');
-  if (choice.layers) return yield* buildColorLayerMaps(hires, choice);
+  const mode = needRustShelf().relief_map_mode(choice);
+  if (mode === 2) return yield* buildColorLayerMaps(hires, choice);
   // Preserve the old record id until the user chooses a color. Its renderer
   // uses the stable first actual color, never its old geometric/noise fallback.
-  if (LEGACY_RELIEF_IDS.includes(choice.id)) choice = (yield* analyzePixels(work)).chosen[0];
+  if (mode === 0) choice = (yield* analyzePixels(work)).chosen[0];
   const { width, height } = hires, count = width * height;
   const out = { width, height, heightMap:new Uint8Array(count), foil:new Uint8Array(count),
     gloss:new Uint8Array(count), mask:new Uint8Array(count), preserveInk:true, foilColor:null };
@@ -195,12 +146,12 @@ function* buildColorLayerMaps(image, selection) {
   const { width, height } = image;
   // Canonical order makes overlapping externally supplied tolerances resolve
   // deterministically, independently of the order in which boxes were ticked.
-  const layers = coverReliefLayers(selection).sort((a,b) => a.color.localeCompare(b.color));
+  const layers = needRustShelf().relief_sorted_layers(selection);
   // A pixel belongs to exactly one selected pigment; contributions cannot add brightness/height or spill into
   // another pigment on overlap. The unscaled physical height keeps float precision: quantizing before the
   // per-colour strength would round two distinct coatings to one height.
-  const { owners, baseMask, baseHeight } = yield* native(wasmMaps(rust(), image, layers.map(layer =>
-    ({ color:layer.color, tolerance:layer.tolerance, heightMM:colorReliefProfile(layer).heightMM })), false));
+  const { owners, baseMask, baseHeight } = yield* native(wasmMaps(rust(), image,
+    needRustShelf().relief_classification_layers(layers), false));
   // Classification is complete; composition needs only owned maps.
   return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
     owners,baseMask,baseHeight,layers }, selection);
@@ -210,22 +161,16 @@ function* buildColorLayerMaps(image, selection) {
  * Only three bounded output planes are allocated; no image decode, clustering
  * or per-layer GPU textures are needed on slider updates. */
 export function* composeReliefLayerPixels(maps, selection) {
-  const layers=coverReliefLayers(selection).sort((a,b)=>a.color.localeCompare(b.color));
-  if (!maps.owners || layers.length!==maps.layers.length || layers.some((layer,index)=>
-    layer.color!==maps.layers[index].color || layer.tolerance!==maps.layers[index].tolerance)) {
-    throw new TypeError('Las zonas de relieve han cambiado');
-  }
+  const layers = needRustShelf().relief_selected_layers(maps, selection);
   return yield* native(wasmComposeReliefLayers(rust(), maps, layers));
 }
 
 // ---- shading: the preview card and the material maps ----------------------------------
 
-const MM_FULL_COVER = 200; // a cover is about 20 cm tall
-
 /** Tangent-space normals (RGBA bytes) from the height map; +x right, +y up the cover. */
 export function* heightToNormals(maps, { gain = 1, selectionAlpha = false } = {}) {
   const { width, height } = maps;
-  const mmPerPixel = MM_FULL_COVER / Math.max(width, height), unit = MAX_RELIEF_MM / 255 / (2 * mmPerPixel) * gain;
+  const unit = needRustShelf().relief_normal_unit(width, height, gain);
   return yield* native(wasmHeightToNormals(rust(), maps, unit, { selectionAlpha }));
 }
 
@@ -240,7 +185,7 @@ export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clear
 /** Shaded preview, lit from the top-left, as RGBA bytes (pure; the browser
  * wrapper only turns it into a data URL). Foil zones glint, gloss zones shine. */
 export function* shadePreview(image, maps, { slope = 7 } = {}) {
-  return yield* native(wasmShadePreview(rust(), image, maps, slope * MAX_RELIEF_MM / 255 * 14));
+  return yield* native(wasmShadePreview(rust(), image, maps, needRustShelf().relief_shade_scale(slope)));
 }
 
 // ---- browser wrapper ----------------------------------------------------------------------
@@ -304,15 +249,13 @@ function toCanvas(rgba, width, height) {
 
 async function thumbnailOf(work, maps, run) {
   const shaded = await run(shadePreview(work, maps, { slope: maps.soft ? 2.2 : 7 })), canvas = toCanvas(shaded, work.width, work.height);
-  const scale = Math.min(1, 132 / work.width), small = document.createElement('canvas');
-  small.width = Math.max(1, Math.round(work.width * scale)); small.height = Math.max(1, Math.round(work.height * scale));
+  const size = needRustShelf().relief_thumbnail_size(work.width, work.height), small = document.createElement('canvas');
+  small.width = size.width; small.height = size.height;
   const context = small.getContext('2d');
   context.imageSmoothingQuality = 'high';
   context.drawImage(canvas, 0, 0, small.width, small.height);
   return small.toDataURL('image/jpeg', .82);
 }
-
-const describe = candidate => needRustShelf().relief_describe(candidate);
 
 /** Find, rank and preview up to ten actual color proposals (URL or decoded
  * image). Returns fewer choices for covers with fewer supported colors. Heavy
@@ -330,15 +273,10 @@ export async function analyzeCoverRelief(coverUrl, { title = '', author = '', si
   const proposals = [];
   for (const choice of found.chosen) {
     const maps = preview ? await runSliced(buildMapsFromPixels(work, preview, choice), { signal, stats }) : null;
-    const { label, description } = describe(choice);
-    proposals.push({ id: choice.id, color:choice.color, tolerance:choice.tolerance, label, description, strength:DEFAULT_RELIEF_STRENGTH,
-      thumbnail: preview ? await thumbnailOf(preview, maps, task => runSliced(task, { signal, stats })) : '', confidence: Math.round(choice.confidence * 100) / 100, detected: choice.detected });
+    const thumbnail = preview ? await thumbnailOf(preview, maps, task => runSliced(task, { signal, stats })) : '';
+    proposals.push(needRustShelf().relief_proposal(choice, thumbnail));
   }
-  return { proposals, analysis: { width: work.width, height: work.height, seed: found.seed, colorSpace:found.colorSpace, photo: found.feats.photo,
-    busy: Math.round(found.feats.busy * 1000) / 1000, strokeFraction: Math.round(found.feats.strokeFraction * 1000) / 1000,
-    candidates: found.candidates.map(item => ({ id: item.id, confidence: Math.round(item.confidence * 100) / 100, facts: item.facts })),
-    ms: Math.round(stats.ms), slices: stats.slices, longestSliceMs: Math.round(stats.longestSliceMs * 10) / 10,
-    medianSliceMs: Math.round(quantile(stats.durations, .5) * 10) / 10, p95SliceMs: Math.round(quantile(stats.durations, .95) * 10) / 10 } };
+  return { proposals, analysis:needRustShelf().relief_analysis_report(found, work, stats) };
 }
 
 /** The maps of one relief choice for a cover: `height` (bytes, in
@@ -351,10 +289,10 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
   if (!choice) return null;
   const stats = { slices: 0, longestSliceMs: 0, ms: 0 };
   const [drawable] = await Promise.all([decode(coverUrl, signal), ready()]);
-  const hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
-  const work = choice.layers || COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
+  const hires = raster(drawable, needRustShelf().relief_map_resolution(maxSize));
+  const work = needRustShelf().relief_map_mode(choice) !== 0 ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
   const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
-  const unit = MAX_RELIEF_MM / 255 / (2 * (MM_FULL_COVER / Math.max(maps.width, maps.height)));
+  const unit = needRustShelf().relief_normal_unit(maps.width, maps.height, 1);
   const planes = await runSliced(native(wasmRenderRelief(rust(), maps, unit, { selectionAlpha, rgba:true })), { signal, stats });
   const { normal } = planes;
   return { height: new ImageData(planes.height, maps.width, maps.height),
@@ -369,12 +307,8 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
 export async function updateReliefMapStrengths(built, selection, { signal } = {}) {
   await ready();
   const maps = built.pixels;
-  const layers = coverReliefLayers(selection).sort((a,b)=>a.color.localeCompare(b.color));
-  if (!maps.owners || layers.length !== maps.layers.length || layers.some((layer,index)=>
-    layer.color !== maps.layers[index].color || layer.tolerance !== maps.layers[index].tolerance)) {
-    throw new TypeError('Las zonas de relieve han cambiado');
-  }
-  const unit = MAX_RELIEF_MM / 255 / (2 * (MM_FULL_COVER / Math.max(maps.width, maps.height)));
+  const layers = needRustShelf().relief_selected_layers(maps, selection);
+  const unit = needRustShelf().relief_normal_unit(maps.width, maps.height, 1);
   const { pixels, normal } = await runSliced(native(wasmRenderRelief(rust(), maps, unit,
     { layers, selectionAlpha:built.normalSelectionAlpha === true })), { signal });
   return { ...built,pixels,normal };

@@ -1,51 +1,41 @@
 import { samplePaperTone } from './page-paper-tone-sample.js';
-// Share only the measured RGB triplet, never another page bitmap. The token
-// belongs to one settled raster and is replaced by the reader on any change.
-const tones = new WeakMap();
-const pending = new WeakMap();
-const shared = new WeakMap();
-const objectKey = value => value && (typeof value === 'object' || typeof value === 'function');
-export const paperToneKey = (source, token) => objectKey(token) ? token : source;
-const samplingKey = (source, token) => {
-  const key = paperToneKey(source, token);
-  return shared.get(key) || key;
-};
+import { getRustCoreModule } from './rust-core.js';
+import { needRustShelf } from './rust-shelf.js';
 
-// The reader alone proves equal source/filter/resampling. Keep each copy's
-// public identity separate while sharing this one immutable measurement.
-export function sharePaperTone(target, source) {
-  if (!objectKey(target) || !objectKey(source)) return false;
-  const key = samplingKey(null, source);
-  if (target === key || tones.has(target) || pending.has(target)) return false;
-  if (shared.has(target)) return shared.get(target) === key;
-  shared.set(target, key);
-  return true;
+// Weak identity caches, queue ownership and result validation belong to Rust.
+// The browser bridge owns the actual canvas readback and transferable bitmaps.
+let bindings;
+function host() {
+  const rust=needRustShelf();
+  return bindings ||= {
+    sample(source) {
+      const canvas=Object.assign(document.createElement('canvas'),{width:12,height:12});
+      const context=canvas.getContext('2d',{willReadFrequently:true});
+      context.drawImage(source,0,0,12,12);
+      return samplePaperTone(context.getImageData(0,0,12,12).data);
+    },
+    measure:measureInWorker, measured:rust.paper_tone_measured,
+    afterPending:rust.paper_tone_after_pending, clearPending:rust.paper_tone_clear_pending,
+  };
 }
-
-
-export function readPaperTone(source, token) {
-  const key = samplingKey(source, token);
-  if (tones.has(key)) return tones.get(key);
-  let tone = null;
-  try {
-    const canvas = Object.assign(document.createElement('canvas'), { width:12, height:12 });
-    const context = canvas.getContext('2d', { willReadFrequently:true });
-    context.drawImage(source, 0, 0, 12, 12);
-    tone = samplePaperTone(context.getImageData(0, 0, 12, 12).data);
-  } catch { /* Unreadable or full-bleed pages retain the original stock. */ }
-  tones.set(key, tone);
-  return tone;
+export const paperToneKey=(source,token)=>needRustShelf().paper_tone_key(source,token);
+export const sharePaperTone=(target,source)=>needRustShelf().paper_tone_share(target,source);
+export const readPaperTone=(source,token)=>needRustShelf().paper_tone_read(host(),source,token);
+export async function prepareSnapshotPaperTones(snapshot,{signal}={}) {
+  return needRustShelf().paper_tone_prepare(host(),snapshot,signal);
 }
 
 async function measureInWorker(entries, signal) {
+  const module = getRustCoreModule();
+  if (!module) return null;
   const bitmaps = [];
   let worker;
   try {
     for (const entry of entries) {
-      if (signal?.aborted) return false;
+      if (signal?.aborted) return null;
       bitmaps.push(await createImageBitmap(entry.source));
     }
-    if (signal?.aborted) return false;
+    if (signal?.aborted) return null;
     worker = new Worker(new URL('./page-paper-tone-worker.js', import.meta.url), { type:'module' });
     const result = await new Promise(resolve => {
       let settled = false;
@@ -60,37 +50,9 @@ async function measureInWorker(entries, signal) {
       worker.onerror = worker.onmessageerror = event => { event?.preventDefault?.(); finish(null); };
       signal?.addEventListener('abort', abort, { once:true });
       if (signal?.aborted) { abort(); return; }
-      try { worker.postMessage({ bitmaps }, bitmaps); } catch { finish(null); }
+      try { worker.postMessage({ bitmaps, module }, bitmaps); } catch { finish(null); }
     });
-    const validTone = tone => tone === null || (Array.isArray(tone) && tone.length === 3
-      && tone.every(value => Number.isInteger(value) && value >= 0 && value <= 255));
-    if (signal?.aborted || !Array.isArray(result) || result.length !== entries.length || !result.every(validTone)) return false;
-    entries.forEach((entry, i) => tones.set(entry.toneKey, result[i] === null ? null : Object.freeze(result[i])));
-    return true;
-  } catch { return false; }
+    return result;
+  } catch { return null; }
   finally { worker?.terminate(); bitmaps.forEach(bitmap => bitmap.close()); }
-}
-
-// The asynchronous path uses exactly the same 12px sampling and quartile rule.
-// If a WebView cannot transfer a bitmap, the model keeps its original sampler.
-export async function prepareSnapshotPaperTones(snapshot, { signal } = {}) {
-  if (signal?.aborted || typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function'
-    || typeof createImageBitmap !== 'function') return false;
-  // A reader may prove that its white and themed copies are the same raster.
-  // Their shared opaque token needs one bitmap/measurement, not two GPU reads.
-  const entries = [...new Map([snapshot, snapshot?.paper]
-    .filter(entry => entry?.source && objectKey(entry.toneKey))
-    .map(entry => {
-      const key = samplingKey(entry.source, entry.toneKey);
-      return [key,{ ...entry, toneKey:key }];
-    })).values()];
-  const existing = entries.map(entry => pending.get(entry.toneKey)).filter(Boolean);
-  if (existing.length) await Promise.all(existing);
-  if (signal?.aborted) return false;
-  const missing = entries.filter(entry => !tones.has(entry.toneKey));
-  if (!missing.length) return entries.length > 0;
-  const job = measureInWorker(missing, signal);
-  missing.forEach(entry => pending.set(entry.toneKey, job));
-  try { return await job; }
-  finally { missing.forEach(entry => { if (pending.get(entry.toneKey) === job) pending.delete(entry.toneKey); }); }
 }

@@ -43,14 +43,17 @@ function fixedCorpus(){
  const view=new DataView(new ArrayBuffer(8));for(let i=0;i<30000;i++){view.setUint32(0,random()*4294967296>>>0);view.setUint32(4,random()*4294967296>>>0);values.push(view.getFloat64(0))}
  return values
 }
-it('writes every decimal exactly as Number#toFixed(2) does, and declines the exponent range',()=>{
- let compared=0
- for(const value of fixedCorpus()){
+const decimalCorpus=fixedCorpus()
+let comparedDecimals=0
+for(let start=0;start<decimalCorpus.length;start+=20_000)it(`writes exact decimal batch ${start/20_000+1}`,()=>{
+ for(const value of decimalCorpus.slice(start,start+20_000)){
   const expected=Number.isFinite(value)&&Math.abs(value)<1e21?value.toFixed(2):undefined
-  expect(ui.foliage_fixed(value)).toBe(expected);compared++
+  expect(ui.foliage_fixed(value)).toBe(expected);comparedDecimals++
  }
- expect(compared).toBeGreaterThan(300000);expect(ui.ui_live_handles()).toBe(0)
+ expect(ui.ui_live_handles()).toBe(0)
 })
+it('compares the entire original decimal corpus',()=>{expect(comparedDecimals).toBe(decimalCorpus.length);expect(comparedDecimals).toBeGreaterThan(300000)})
+
 function randomMesh(random,kind){
  const columns=2+Math.floor(random()*7),rows=2+Math.floor(random()*7),geometry=new THREE.PlaneGeometry(1+random()*80,1+random()*80,columns,rows)
  const position=geometry.attributes.position;for(let i=0;i<position.count;i++)position.setZ(i,(random()-.5)*40)

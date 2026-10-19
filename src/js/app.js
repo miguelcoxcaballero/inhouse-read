@@ -1,5 +1,5 @@
 import {bindShelfSoundPreference} from './cozy-sounds.js'
-import { bookDataModule } from './book-data-native.js'
+import { bookDataModule, withBookDataModule } from './book-data-native.js'
 import { library, takeFirstRawRecords } from './shelf-boot.js'
 import { version as APP_VERSION } from '../../package.json'
 import { libraryHost, recentFirst } from './library-store.js'
@@ -164,29 +164,32 @@ function applyCloudSettings(keys) {
     if (keys.includes('inhouse-read-reading-preferences')) readingExperience.reloadPreferences()
     refreshShelf()
 }
+const roomCoordinationHost = {
+  hasDriveSession, getRememberedDriveProfile, syncLibraryToDrive,
+  captureRoom: account => libraryBackup.captureRoom(account),
+  drainLive: account => libraryBackup.drainLive(account),
+  markBookChanged: (account,id,fields) => libraryBackup.markBookChanged(account,id,fields),
+  backupCallback: () => withBookDataModule(module => module.app_backup_run(roomCoordinationHost)),
+  captureCallback: () => withBookDataModule(module => module.app_room_capture_run(roomCoordinationHost)),
+  backupFailure: error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`),
+  warnRoom: error => console.warn('Colocación pendiente:', error.message),
+  state: {
+    get driveProfile(){return driveProfile},
+    get backupTimer(){return backupTimer},set backupTimer(value){backupTimer=value},
+    get roomCaptureTimer(){return roomCaptureTimer},set roomCaptureTimer(value){roomCaptureTimer=value},
+    get roomCaptureBusy(){return roomCaptureBusy},set roomCaptureBusy(value){roomCaptureBusy=value},
+    get roomCaptureAgain(){return roomCaptureAgain},set roomCaptureAgain(value){roomCaptureAgain=value},
+    get roomCaptureFailures(){return roomCaptureFailures},set roomCaptureFailures(value){roomCaptureFailures=value}
+  }
+}
 function scheduleLibraryBackup() {
-  clearTimeout(backupTimer)
-  if (!hasDriveSession() && !getRememberedDriveProfile()) return
-  backupTimer = setTimeout(() => {
-    backupTimer = null
-    syncLibraryToDrive({ silent:true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
-  }, 350)
+  return withBookDataModule(module => module.app_backup_schedule(roomCoordinationHost))
 }
 function scheduleRoomCapture(delay = 32) {
-  roomCaptureAgain = true
-  if (roomCaptureBusy || roomCaptureTimer != null || !driveProfile?.id) return
-  roomCaptureTimer = setTimeout(async () => {
-    roomCaptureTimer = null
-    const account = driveProfile?.id
-    if (!account) return
-    roomCaptureBusy = true; roomCaptureAgain = false
-    try { await libraryBackup.captureRoom(account); await libraryBackup.drainLive(account); roomCaptureFailures = 0 }
-    catch (error) { roomCaptureFailures++; roomCaptureAgain = true; console.warn('Colocación pendiente:', error.message) }
-    finally { roomCaptureBusy = false; if (roomCaptureAgain) scheduleRoomCapture(roomCaptureFailures ? Math.min(10000, 250 * 2 ** Math.min(roomCaptureFailures, 5)) : 32) }
-  }, delay)
+  return withBookDataModule(module => module.app_room_capture_schedule(roomCoordinationHost,delay))
 }
 function localRoomBookChanged(id,fields) {
-  if (driveProfile?.id && libraryBackup.markBookChanged(driveProfile.id,id,fields)) scheduleRoomCapture()
+  return withBookDataModule(module => module.app_room_book_changed(roomCoordinationHost,id,fields))
 }
 globalThis.addEventListener('inhouse-room-book-changed',e=>localRoomBookChanged(e.detail?.id,e.detail?.fields||[]))
 globalThis.addEventListener('inhouse-room-setting-changed', e => {

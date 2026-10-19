@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prepareSnapshotPaperTones, readPaperTone } from '../../src/js/page-paper-tone.js';
 import { samplePaperTone } from '../../src/js/page-paper-tone-sample.js';
+import { getRustCoreModule } from '../../src/js/rust-core.js';
 
 const pixels = (rgb, alpha = 255) => new Uint8ClampedArray(Array.from({ length:144 }, () => [...rgb, alpha]).flat());
 let worker, bitmaps, mode, reply;
@@ -51,7 +52,7 @@ describe('asynchronous paper sampling', () => {
     const page = snapshot(), create = vi.spyOn(document,'createElement');
     expect(await prepareSnapshotPaperTones(page)).toBe(true);
     expect(worker.url.pathname).toContain('/page-paper-tone-worker.js'); expect(worker.options).toEqual({type:'module'});
-    expect(worker.transfer).toEqual(bitmaps); expect(worker.data).toEqual({bitmaps});
+    expect(worker.transfer).toEqual(bitmaps); expect(worker.data).toEqual({bitmaps,module:getRustCoreModule()});
     expect(readPaperTone(page.source,page.toneKey)).toEqual(reply[0]);
     expect(readPaperTone(page.paper.source,page.paper.toneKey)).toEqual(reply[1]);
     expect(create).not.toHaveBeenCalled(); expect(worker.terminate).toHaveBeenCalledOnce();
@@ -115,11 +116,15 @@ describe('actual paper worker entry point', () => {
     const canvas={width:12,height:12,getContext:vi.fn(() => context)}, target={postMessage:vi.fn()};
     vi.stubGlobal('OffscreenCanvas',vi.fn(function(){return canvas;})); vi.stubGlobal('self',target);
     await import('../../src/js/page-paper-tone-worker.js');
-    const images=[{close:vi.fn()},{close:vi.fn()}]; target.onmessage({data:{bitmaps:images}});
+    const images=[{close:vi.fn()},{close:vi.fn()}]; await target.onmessage({data:{bitmaps:images,module:getRustCoreModule()}});
     expect(OffscreenCanvas).toHaveBeenCalledExactlyOnceWith(12,12);
     expect(canvas.getContext).toHaveBeenCalledExactlyOnceWith('2d',{willReadFrequently:true});
     images.forEach(image => { expect(context.drawImage).toHaveBeenCalledWith(image,0,0,12,12); expect(image.close).toHaveBeenCalledOnce(); });
     expect(target.postMessage).toHaveBeenCalledExactlyOnceWith({tones:[[236,221,199],[236,221,199]]});
     expect([canvas.width,canvas.height]).toEqual([0,0]);
+    const fetch=vi.fn();vi.stubGlobal('fetch',fetch);target.postMessage.mockClear();
+    const rejected={close:vi.fn()};await target.onmessage({data:{bitmaps:[rejected]}});
+    expect(target.postMessage).toHaveBeenCalledExactlyOnceWith({unavailable:true});
+    expect(rejected.close).toHaveBeenCalledOnce();expect(fetch).not.toHaveBeenCalled();
   });
 });

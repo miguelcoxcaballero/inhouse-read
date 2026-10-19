@@ -32,3 +32,28 @@ not whole-app performance or device battery claims. At 512×512 the normal/RGBA
 path's WASM capacity was 3,538,944 bytes versus 7,012,352 bytes before; both
 stayed stable over repeated bakes. Noise and structured coating fixtures retain
 identical final bytes.
+
+## Portable policy and rendering plans
+
+`cover_relief_portable.rs` owns validation/normalization of persisted choices,
+first-ten layer selection and colour deduplication. Both the reader/Drive and
+shelf modules compile this small shared policy; `bookDataModule()` uses whichever
+module is already loaded, so normalizing Drive metadata never fetches Shelf.
+
+`cover_relief.rs` owns canonical layer ordering and compatibility checks,
+classification profiles, raster validation, raster/thumbnail sizing, rendering
+coefficients, proposal metadata and timing percentiles. Pixel buffers retain
+identity while metadata is packaged. Normalization preserves coercion, getter
+order, errors, rounding and independently owned result objects. Ordinary timing
+arrays sort in Rust; unusual inputs use the engine's stable sort with a scoped
+Rust comparator to retain JavaScript's NaN/undefined behavior.
+
+Canvas/ImageData, image decoding, AbortSignal, cooperative generator yields and
+browser timers remain host operations. The existing pixel pipeline and cache
+interfaces are unchanged. Differential tests include thousands of portable
+records, malformed values, conversion errors, legacy records, size boundaries,
+metadata identity and repeated-call handle counts. Run:
+
+```
+npx vitest run tests/unit/relief-policy-native.test.js tests/unit/multicolor-cover-relief-persistence.test.js
+```

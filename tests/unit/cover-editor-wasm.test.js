@@ -20,10 +20,11 @@ describe('cover editor decisions in Rust', () => {
     }
   })
 
-  it('places the cover exactly like the original for 60000 random viewports', () => {
-    const next = random(11)
-    let wide = 0, measured = 0
-    for (let i = 0; i < 60_000; i++) {
+  const viewportRandom = random(11)
+  let wide = 0, measured = 0
+  for(let batch=0;batch<12;batch++) it(`places covers exactly: seeded viewport batch ${batch+1}/12`, () => {
+    const next=viewportRandom
+    for (let i = 0; i < 5_000; i++) {
       const options = {
         viewportWidth: pickOne(next, [320, 360, 390, 759, 760, 768, 1024, 1280, next() * 1600, NaN, undefined, '800', null]),
         viewportHeight: pickOne(next, [568, 640, 844, 1000, next() * 1200, NaN, undefined, 0]),
@@ -40,6 +41,8 @@ describe('cover editor decisions in Rust', () => {
       expect(bits(actual)).toBe(bits(expected))
       expect(Object.keys(actual)).toEqual(Object.keys(expected))
     }
+  })
+  it('covers the full viewport corpus and preserves argument/getter contracts',()=>{
     expect(wide).toBeGreaterThan(10_000); expect(measured).toBeGreaterThan(20_000)
     expect(() => production.coverEditorPose()).toThrow(TypeError)
     expect(() => production.coverEditorPose(null)).toThrow(TypeError)
