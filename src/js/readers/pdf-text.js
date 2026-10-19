@@ -7,6 +7,7 @@ import { pdfOrderLines as orderLines } from './pdf-order-wasm.js'
 import { PDF_TEXT_ITEM_LIMIT, pdfRowLines } from './pdf-row-layout-wasm.js'
 import { readerUI } from './rust-ui-required.js'
 import { coreRequired } from './core-required.js'
+import { withArena } from './neural-voice/core-call.js'
 import { getRustCore } from '../rust-core.js'
 import { resolveHostMath } from '../host-math.js'
 
@@ -25,38 +26,34 @@ function fallback(content) {
 // hypotenuses, sines and cosines. Strings, trimming and the item objects stay here. null keeps
 // the stream order (partial, vertical, mixed-rotation or overflowing geometry).
 function itemGeometry(raw, view) {
-  const core = getRustCore(), count = raw.length
+  const core = getRustCore(), n = raw.length
   if (typeof core?.pdf_text_geometry_a !== 'function') return coreRequired(undefined)
-  const firstCount = 3 * count + 1, at = { view:0, items:6, requests:6 + count * ITEM }
-  at.first = at.requests + Math.max(firstCount, count + 2) * 3; at.second = at.first + firstCount
-  at.entries = at.second + count + 2; at.rtl = at.entries + count * ENTRY
-  const length = at.rtl + 1, pointer = core.alloc_f64(length), cell = name => pointer + at[name] * 8
-  if (!pointer) throw new Error('PDF text geometry: no memory for the page')
-  const check = status => { if (status < 0) throw new Error('PDF text geometry: invalid call'); return status }
-  try {
-    let data = new Float64Array(core.memory.buffer, pointer, length)
-    data.set(view.map(Number), at.view)
-    raw.forEach(({ item }, index) => {
+  // Arena cells: view, items, requests, answers of rounds one and two, entries, rtl.
+  const items = 6, requests = items + n * ITEM, first = requests + Math.max(3 * n + 1, n + 2) * 3, second = first + 3 * n + 1
+  const entries = second + n + 2, rtl = entries + n * ENTRY
+  return withArena(core, rtl + 1, pointer => {
+    const at = cell => pointer + cell * 8, data = new Float64Array(core.memory.buffer, pointer, rtl + 1)
+    data.set(view.map(Number))
+    raw.forEach(({ item }, i) => {
       // Spread like the original check: a non-iterable transform still throws here.
-      const positioned = item.transform?.length === 6 && [...item.transform], base = at.items + index * ITEM
+      const base = items + i * ITEM, positioned = item.transform?.length === 6 && [...item.transform]
       for (let k = 0; k < 6; k++) data[base + k] = positioned ? Number(item.transform[k]) : NaN
-      data[base + 6] = Number(item.width); data[base + 7] = Number(item.height)
-      data[base + 8] = item.str.trim().length; data[base + 9] = item.str.length; data[base + 10] = directions[item.dir] || 0
+      data.set([Number(item.width), Number(item.height), item.str.trim().length, item.str.length, directions[item.dir] || 0], base + 6)
     })
-    const asked = check(core.pdf_text_geometry_a(cell('view'), cell('items'), count, cell('requests')))
-    if (!asked) return null
-    resolveHostMath(core, cell('requests'), cell('first'), asked)
-    const again = check(core.pdf_text_geometry_b(cell('view'), cell('items'), count, cell('first'), cell('requests')))
-    if (!again) return null
-    resolveHostMath(core, cell('requests'), cell('second'), again)
-    if (!check(core.pdf_text_geometry_finish(cell('view'), cell('items'), count, cell('first'), cell('second'), cell('entries'), cell('rtl')))) return null
-    data = new Float64Array(core.memory.buffer, pointer, length)
-    const entries = raw.map(({ item, rawIndex }, index) => {
-      const base = at.entries + index * ENTRY
-      return { item, rawIndex, x0:data[base], x1:data[base + 1], y:data[base + 2], height:data[base + 3], top:data[base + 4], bottom:data[base + 5] }
-    })
-    return { entries, rtl:data[at.rtl] === 1 }
-  } finally { core.free_f64(pointer, length) }
+    const round = (status, answers) => {
+      if (status < 0) throw new Error('PDF text geometry: invalid call')
+      if (status && answers) resolveHostMath(core, at(requests), at(answers), status)
+      return status
+    }
+    if (!round(core.pdf_text_geometry_a(at(0), at(items), n, at(requests)), first)
+      || !round(core.pdf_text_geometry_b(at(0), at(items), n, at(first), at(requests)), second)
+      || !round(core.pdf_text_geometry_finish(at(0), at(items), n, at(first), at(second), at(entries), at(rtl)))) return null
+    const out = new Float64Array(core.memory.buffer, pointer, rtl + 1)
+    return { rtl:out[rtl] === 1, entries:raw.map(({ item, rawIndex }, i) => {
+      const [x0, x1, y, height, top, bottom] = out.subarray(entries + i * ENTRY, entries + (i + 1) * ENTRY)
+      return { item, rawIndex, x0, x1, y, height, top, bottom }
+    }) }
+  })
 }
 
 /** Page-local reading layout. Text without usable geometry keeps the legacy stream order verbatim. */
