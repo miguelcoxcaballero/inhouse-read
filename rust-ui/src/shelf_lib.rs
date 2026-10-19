@@ -160,3 +160,5 @@ pub fn lamp_light(spot: bool, input: &[f64], out: &mut [f64]) -> bool { lamp_lig
 /// The aim of the strips of a filament fixture (see `lamp_light::filaments`).
 #[wasm_bindgen]
 pub fn lamp_filaments(input: &[f64], out: &mut [f64]) -> bool { lamp_light::filaments(input, out) }
+
+mod book_surface_policy;

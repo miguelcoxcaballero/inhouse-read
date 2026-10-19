@@ -17,7 +17,7 @@ import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from './studio-renderer.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
-import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, spineLayout, drawDevice, lattice } from './spine-surface.js';
+import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, spineLayout, drawDevice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
@@ -316,34 +316,21 @@ export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
 // as a collection rather than a row of identical red markers. Finished books
 // keep the old-gold silk; shelf copies are a shade quieter.
 // All dark enough to read on the paper of an open page.
-const RIBBON_SILKS = ['#7c1c26', '#7c1c26', '#7c1c26', '#1d4030', '#22305a', '#4c2244', '#823a1f', '#a8322b'];
+const ribbonColorHost = { hex:value => new THREE.Color(value).getHex() };
 export function ribbonSilk(seed, cloth, finished = false) {
-  if (finished) return '#c29a4c';
-  const hex = new THREE.Color(cloth ?? '#555').getHex(), rgb = [hex >> 16, hex >> 8 & 255, hex & 255];
-  // Weighted sRGB distance: green differences read strongest, then blue.
-  const apart = silk => {
-    const s = parseInt(silk.slice(1), 16), d = [s >> 16, s >> 8 & 255, s & 255].map((v, i) => (v - rgb[i]) / 255);
-    return Math.sqrt(2 * d[0] ** 2 + 4 * d[1] ** 2 + 3 * d[2] ** 2);
-  };
-  const clear = RIBBON_SILKS.filter(silk => apart(silk) > .55);
-  // A cloth close to every dye still gets the one that differs most.
-  if (!clear.length) return RIBBON_SILKS.reduce((best, silk) => apart(silk) > apart(best) ? silk : best);
-  return clear[Math.floor(lattice(seed % 65521, 9, 23) * clear.length)];
+  return needRustShelf().book_ribbon_silk(seed,cloth,Boolean(finished),ribbonColorHost);
 }
 // Satin's sheen is a brighter shade of its own dye, not a white veil: seen
 // edge-on a dark silk must not fade into a grey or pastel strip.
 function tintRibbon(material, silk, shelf) {
-  material.color.set(silk).multiplyScalar(shelf ? .88 : 1);
-  material.sheenColor.set(silk).multiplyScalar(2.2).lerp(new THREE.Color('#fff6ea'), .1);
+  needRustShelf().book_ribbon_tint(material,silk,Boolean(shelf),new THREE.Color('#fff6ea'));
 }
 function satinRibbon(finished, silk, shelf = false) {
   // On the shelf the ribbon is a few pixels wide: the sliding anisotropic
   // sheen cannot show there, so shelf copies skip both shading terms.
   const material = new THREE.MeshPhysicalMaterial({
-    roughness:shelf ? .42 : .46, metalness:finished ? .16 : 0,
-    sheen:shelf ? 0 : .7, sheenRoughness:.38,
-    anisotropy:shelf ? 0 : .55, specularIntensity:.5,
-    alphaMap:sharedTexture('ribbon-notch', ribbonNotch), alphaTest:.5,
+    ...needRustShelf().book_ribbon_material(Boolean(finished),Boolean(shelf)),
+    alphaMap:sharedTexture('ribbon-notch', ribbonNotch),
     side:THREE.DoubleSide
   });
   tintRibbon(material, silk, shelf);
@@ -352,14 +339,10 @@ function satinRibbon(finished, silk, shelf = false) {
 
 // The paper the reader shows: the median of the snapshot's outer ring, so the
 // leaves already read and the margin around the saved page are one stock.
-const paperTones = new WeakMap();
+const paperColorHost = { read:readPaperTone,
+  color:(r,g,b) => new THREE.Color().setRGB(r,g,b,THREE.SRGBColorSpace) };
 function paperTone(source, toneKey) {
-  const key = paperToneKey(source, toneKey);
-  if (paperTones.has(key)) return paperTones.get(key);
-  const rgb = readPaperTone(source, toneKey);
-  const tone = rgb ? new THREE.Color().setRGB(...rgb.map(value => value / 255), THREE.SRGBColorSpace) : null;
-  paperTones.set(key, tone);
-  return tone;
+  return needRustShelf().book_paper_color(paperToneKey(source,toneKey),source,toneKey,paperColorHost);
 }
 // The saved page is unlit; under lightBookScene the fully turned leaf shows
 // about 1.03/.96/.895 of its albedo (the warm key). Compensate so both pages
@@ -372,16 +355,18 @@ const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
  * under and beside the page fades in step with it. A side that has no paper
  * (a full-bleed picture) yields to the other; with neither, null.
  */
-const toneScratch = { a:{}, b:{} };
+const toneScratch = { a:{}, b:{}, rgb:new Float64Array(6) };
+const paperMixHost = {
+  read(stock,theme) {
+    const a = stock.getRGB(toneScratch.a,THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b,THREE.SRGBColorSpace);
+    const rgb = toneScratch.rgb;
+    rgb[0] = a.r; rgb[1] = a.g; rgb[2] = a.b; rgb[3] = b.r; rgb[4] = b.g; rgb[5] = b.b;
+    return rgb;
+  },
+  write:(target,r,g,b) => target.setRGB(r,g,b,THREE.SRGBColorSpace)
+};
 export function mixPaperTone(target, stock, theme, mix) {
-  const k = Math.max(0, Math.min(1, Number(mix)));
-  if (!stock && !theme) return null;
-  if (!stock) return target.copy(theme);
-  if (!theme) return target.copy(stock);
-  if (!(k > 0)) return target.copy(stock);
-  if (!(k < 1)) return target.copy(theme);
-  const a = stock.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
-  return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
+  return needRustShelf().book_paper_mix(target,stock,theme,mix,paperMixHost);
 }
 
 export const fitCoverImage = fitImage;
@@ -489,8 +474,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // 224 threads per board height: below ~3 device pixels a thread the weave
   // aliases into a screen-door grid, so it fades to a quiet tooth instead.
   // Even at full resolution real bookcloth is a fine grain, never burlap.
-  const threadPixels = height * Math.min(2, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) / 224;
-  const weaveStrength = THREE.MathUtils.clamp((threadPixels - 1.4) / 2.2, .2, .45);
+  const weaveStrength = needRustShelf().book_weave_strength(height,
+    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
   if (detail || inspectionResolution) {
     cloth.normalMap = sharedTexture('cloth', clothNormals);
     cloth.normalMap.repeat.set(14 * ratio, 14); cloth.normalScale.setScalar(.5 * weaveStrength);
@@ -500,9 +485,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (!cover.normalMap) return;
     // A laminate fills the paper/cloth tooth rather than polishing its dye.
     // Keep the same shared normal raster while changing only its strength.
-    const strength = coverGrain === 'cloth' ? .55 * weaveStrength : .16;
-    const tooth = { matte:1, satin:.5, glossy:.16 }[coverSurfaceFinish];
-    cover.normalScale.setScalar(strength * tooth);
+    cover.normalScale.setScalar(needRustShelf().book_grain_strength(coverGrain,weaveStrength,coverSurfaceFinish));
   };
   const setCoverGrain = kind => {
     if ((!detail && !inspectionResolution) || kind === coverGrain) return;
