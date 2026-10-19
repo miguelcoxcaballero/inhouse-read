@@ -20,6 +20,16 @@ export const lengthScaleFor = (base, rate) => loadedRustVoiceCore().voice_length
 /** The speed the model itself is asked for: never faster than its natural pace. */
 export const synthesisRate = rate => loadedRustVoiceCore().voice_synthesis_rate(Number(rate))
 
+/** The float32 `scales` of one Piper run at the speaking `rate`: the config's inference values, else the model defaults. */
+export function piperScales(inference, rate) {
+  const core = loadedRustVoiceCore()
+  return withArena(core, 2, pointer => {
+    check(core.voice_piper_scales(inference.noise_scale, inference.noise_scale == null, inference.length_scale, inference.length_scale == null,
+      inference.noise_w, inference.noise_w == null, Number(rate), pointer))
+    return new Float32Array(core.memory.buffer, pointer, 3).slice()
+  })
+}
+
 /** Drops the ids a voice trained with fewer symbols does not know, with their pads. */
 export function limitIds(ids, numSymbols) {
   const core = loadedRustVoiceCore(), count = ids.length

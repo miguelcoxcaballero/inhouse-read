@@ -24,7 +24,7 @@ import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
 import { VoiceClientPlan } from './client-plan.js'
-import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, lengthScaleFor, synthesisRate } from './synth-flow.js'
+import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, piperScales } from './synth-flow.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const plan = new VoiceClientPlan(() => new Error('voice runtime was released'))
@@ -103,8 +103,7 @@ async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }
 }
 
 async function runSegment(ids, { rate, speaker }) {
-  const inference = config.inference || {}
-  const scales = Float32Array.from([inference.noise_scale ?? 0.667, lengthScaleFor(inference.length_scale ?? 1, rate), inference.noise_w ?? 0.8])
+  const scales = piperScales(config.inference || {}, rate)
   const feeds = {
     input: new ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, ids.length]),
     input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(ids.length)]), [1]),
@@ -163,7 +162,7 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     if (!plan.workerActive(id)) return
     const t = performance.now()
     stage(3,3,id,index)
-    const {pcm:raw,durations} = await runSegment(segments[index], { rate:synthesisRate(rate), speaker })
+    const {pcm:raw,durations} = await runSegment(segments[index], { rate, speaker })
     stage(3,4,id,index)
     if (!plan.workerActive(id)) return
     const last = index === segments.length - 1

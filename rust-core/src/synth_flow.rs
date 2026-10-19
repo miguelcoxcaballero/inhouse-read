@@ -40,6 +40,22 @@ pub extern "C" fn voice_tempo_speed(rate: f64) -> f64 { clamp_rate(rate).max(1.0
 #[no_mangle]
 pub extern "C" fn voice_length_scale(base: f64, rate: f64) -> f64 { base / clamp_rate(rate) }
 
+/// The `scales` tensor of one Piper run: `[noise_scale ?? 0.667, length_scale ?? 1 stretched for
+/// the model's rate, noise_w ?? 0.8]` as float32. `missing_*` is 1 for a null/undefined field
+/// (its value is then ignored); a present one arrives as its ToNumber.
+/// # Safety: `output` holds three float32.
+#[no_mangle]
+pub unsafe extern "C" fn voice_piper_scales(noise: f64, missing_noise: u32, length: f64, missing_length: u32,
+    width: f64, missing_width: u32, rate: f64, output: *mut f32) -> i32 {
+    if output.is_null() { return -1; }
+    let pick = |value: f64, missing: u32, default: f64| if missing != 0 { default } else { value };
+    let scale = voice_length_scale(pick(length, missing_length, 1.0), voice_synthesis_rate(rate));
+    *output = pick(noise, missing_noise, 0.667) as f32;
+    *output.add(1) = scale as f32;
+    *output.add(2) = pick(width, missing_width, 0.8) as f32;
+    1
+}
+
 /// Piper numbers phonemes with its default table (154 symbols); some voices were trained with a few
 /// less or more. An id the voice does not know would make the model fail, so it is dropped together
 /// with its pad. `num_symbols` 0 or NaN keeps everything. Returns the number of ids written.

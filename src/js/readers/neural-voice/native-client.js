@@ -6,7 +6,7 @@ import {createPhonemizer} from './phonemizer.js'
 import {exposePiperDurations,phonemeMarks} from './piper-alignment.js'
 import {createHebrewPhonemizer} from './hebrew.js'
 import {createSupertonicRuntime} from './supertonic-runtime.js'
-import {silence,splitSegments,limitIds,lengthScaleFor,synthesisRate,finishPiper,finishSupertonic} from './synth-flow.js'
+import {silence,splitSegments,limitIds,piperScales,finishPiper,finishSupertonic} from './synth-flow.js'
 import {VoiceClientPlan} from './client-plan.js'
 const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
 export class NativeSynthClient {
@@ -126,8 +126,8 @@ export class NativeSynthClient {
     if(!segments.length){handlers.onChunk({index:0,last:true,pcm:silence(sampleRate,120),sampleRate,ms:0});return}
     for(let index=0;index<segments.length;index++) {
       if(!active())return
-      const part=segments[index],start=performance.now(),inference=config.inference||{}
-      const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',Float32Array.of(inference.noise_scale??.667,lengthScaleFor(inference.length_scale??1,synthesisRate(rate)),inference.noise_w??.8),[3])}
+      const part=segments[index],start=performance.now()
+      const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',piperScales(config.inference||{},rate),[3])}
       if(session.inputNames.includes('sid'))feeds.sid=new ort.Tensor('int64',BigInt64Array.of(BigInt(speaker||0)),[1])
       const out=await session.run(feeds)
       const tensor=out[session.outputNames[0]],raw=new Float32Array(tensor.data)
