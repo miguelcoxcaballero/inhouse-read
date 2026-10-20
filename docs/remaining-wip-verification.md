@@ -1,3 +1,11 @@
+# 1.7.314 — nuevo icono de Inhouse Read (Android 1.1.16)
+
+Changelog: «New Inhouse Read app icon.»
+
+Qué cambia. `android/inhouse-read-logo.png` y `public/icons/inhouse-read-logo.png` pasan al nuevo icono (marcapáginas verde #1E9E66 con el tejado blanco, 1024 px, fondo blanco opaco). El builder lo coloca al 66 % sobre el fondo blanco del icono adaptativo de Capacitor, así que el diseño coincide con la máscara del lanzador. La web gana `favicon-32.png`, `favicon-192.png` y `apple-touch-icon.png` en `public/icons/`, que el shell offline precachea por estar en `icons/`. El chevron de marca de la cabecera y del loader no cambia. Android 1.1.16 / 29 en `build_android_apk.py`, `verify_release_apk.py`, `build-android.yml` y `verify-published-android.yml`; la continuidad de firma sigue comprobándose contra 1.1.13.
+
+---
+
 # 1.7.313 — luz de la estantería, oclusores, reflejos y BAGGEBO en Rust (unidad shelf-tail, bloque 3)
 
 Changelog: «Montaje de luz, oclusores y BAGGEBO en Rust».

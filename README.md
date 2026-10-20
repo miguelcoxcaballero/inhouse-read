@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.314 / Android 1.1.16 — Nuevo icono
+
+Inhouse Read estrena el icono de la familia Inhouse: un marcapáginas verde con el
+tejado blanco sobre fondo blanco. Lo usan el lanzador de Android 1.1.16
+(versionCode 29), la página de descarga y, por primera vez, la pestaña del
+navegador y el acceso directo de iOS. La APK se publica solo en A, con el mismo
+paquete y certificado que 1.1.15; B no cambia.
+
 ## 1.7.140 / Android 1.1.15 — Resultado de instalación
 
 El actualizador distingue cancelar, reintentar e instalar: abrir el instalador
