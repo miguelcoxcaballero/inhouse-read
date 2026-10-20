@@ -1,8 +1,18 @@
+# 1.7.317 — instalación de actualizaciones (Android 1.1.19)
+
+Changelog: «Fix in-app update installation.»
+
+Causa. Android crea una sola instancia por clase de `ContentProvider`. Capacitor registra `androidx.core.content.FileProvider` para `.fileprovider` y `register_android.py` registraba `.update-provider` con la misma clase; la instancia de `.fileprovider` también atendía `.update-provider` y `ContentProvider.validateIncomingUri` rechazaba sus URI (la autoridad no coincide). Ningún instalador podía leer la APK: las sesiones de `PackageInstaller` daban «Android could not start the installation», `ACTION_INSTALL_PACKAGE` y `ACTION_VIEW` abrían el instalador y se cerraba solo. Photos solo registra esa clase una vez y funcionaba. El cambio web de 1.7.316 que enviaba 1.1.16 y anteriores por `installAppUpdate` no servía: `register_android.py` reescribe ese método para que llame a `installInhouseUpdate`, y se retira.
+
+Qué cambia. El actualizador común (acd1c37) añade `UpdateFileProvider`, subclase vacía de `FileProvider`, y la registra para `.update-provider`; `tests/test_register_android.py` lo comprueba con un manifiesto como el de Capacitor. La app de prueba del emulador registra antes `androidx.core.content.FileProvider` para `.fileprovider`, como Read, y el paso que revisa la APK firmada exige `UpdateFileProvider` en el dex y el manifiesto (la 1.1.18 publicada no lo cumple).
+
+No verificado en teléfono físico. Las apps 1.1.18 y anteriores llevan el fallo en la APK y necesitan instalar 1.1.19 a mano una vez.
+
+---
+
 # 1.7.316 — logo nuevo dentro de la app (Android 1.1.18)
 
 Changelog: «New Inhouse Read logo inside the app.»
-
-Actualizaciones desde 1.1.16 y anteriores. `src/js/android-update.js` pasa al actualizador común un `install` propio: con versionCode < 30 usa el puente original `installAppUpdate(url, sha256)` (descarga, SHA-256 y `ACTION_VIEW` con el `FileProvider` de Capacitor), presente en esas APK; desde 1.1.17 sigue `installInhouseUpdate`. Comprobado en `tests/unit/android-update.test.js` y en las APK publicadas 1.1.16 (el puente existe en el dex y el manifiesto declara `REQUEST_INSTALL_PACKAGES` y el `FileProvider`). No verificado en teléfono físico.
 
 Qué cambia. `index.html`, `download-android.html` y `.github/android/app-loader.html` sustituyen el tejado verde por el icono de la app: marcapáginas #1E9E66 con el tejado blanco de Inhouse (mismo trazo que el icono del launcher). `.logo-mark` pasa a 14×22 px (12×19 px en pantallas de 360 px) para mantener la proporción del marcapáginas. El tejado decorativo de las portadas sin imagen y de la estantería vacía no cambia.
 

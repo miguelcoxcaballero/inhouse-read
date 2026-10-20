@@ -13,6 +13,8 @@ Mismo patrón que **inhouse notes**: la app Android es un **WebView-shell** (Cap
 
 Read usa el [Inhouse services updater común](https://github.com/miguelcoxcaballero/inhouse-services-updater), sincronizado desde su repositorio canónico. El aviso es opcional, B es el canal predeterminado y A requiere aceptar su advertencia de desarrollo. «Later» aplaza el aviso 14 días y la comprobación manual sigue disponible en ajustes. El código compartido no se modifica en este repositorio.
 
+Android 1.1.19 (versionCode 32) sincroniza el actualizador común en acd1c37: `.update-provider` se registra con la clase propia `UpdateFileProvider` en lugar de `androidx.core.content.FileProvider`, que Capacitor ya usa para `.fileprovider`. Con la clase compartida, Android servía las dos autoridades desde una sola instancia que rechazaba los URI de actualización.
+
 Android 1.1.18 (versionCode 31) cambia la pantalla de arranque (`.github/android/app-loader.html`) al icono nuevo de Inhouse Read.
 
 Android 1.1.17 (versionCode 30) sincroniza el actualizador común en d313e8a: la APK verificada se entrega al instalador de Android con `ACTION_VIEW` y el `FileProvider` propio, se pide antes el permiso de instalar apps y solo la versión instalada confirma el éxito. Se publica en A con `build-android.yml`; B sigue en 1.1.15. Las instalaciones con 1.1.16 o anterior deben actualizar a mano una vez con «Download APK». La prueba del instalador en el emulador sigue ejercitando `InstallActivity` y ahora incluye su `InstallReceiver`.

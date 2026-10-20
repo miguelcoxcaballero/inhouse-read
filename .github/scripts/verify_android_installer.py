@@ -6,6 +6,8 @@ The locked PhotosUpdateInstaller hands the verified APK to Android's package
 installer with ACTION_VIEW and a FileProvider URI. The fixture performs exactly
 that handoff and the check drives the real installer: cancel, retry, update.
 The debug fixture uses its own package/key; production Read APKs are untouched.
+Like Read, it registers Capacitor's androidx FileProvider before the updater's
+UpdateFileProvider: a shared provider class would make the installer fail here.
 Run --build after build_android_apk.py, then --verify on the CI emulator.
 """
 import argparse
@@ -47,6 +49,9 @@ def build():
                    "Intent.FLAG_GRANT_READ_URI_PERMISSION", ".update-provider"):
         if marker not in installer:
             raise SystemExit(f"Locked installer no longer contains {marker!r}; update this fixture")
+    provider_class = "com.inhouse.services.updater.UpdateFileProvider"
+    if provider_class not in (ROOT / "vendor/inhouse-services-updater/register_android.py").read_text():
+        raise SystemExit("Locked registration no longer uses UpdateFileProvider; update this fixture")
     (fixture / "build.gradle").write_text("""apply plugin: 'com.android.application'
 android {
     namespace 'com.inhouse.services.updater.smoke'
@@ -68,7 +73,11 @@ dependencies { implementation 'androidx.core:core:1.15.0' }
     <activity android:name=".MainActivity" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
-    <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.update-provider" android:exported="false" android:grantUriPermissions="true">
+    <!-- Like Read: Capacitor registers androidx FileProvider first, then the updater its own class. -->
+    <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/host_paths"/>
+    </provider>
+    <provider android:name="com.inhouse.services.updater.UpdateFileProvider" android:authorities="${applicationId}.update-provider" android:exported="false" android:grantUriPermissions="true">
       <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
     </provider>
   </application>
@@ -76,6 +85,10 @@ dependencies { implementation 'androidx.core:core:1.15.0' }
     xml = main / "res/xml"
     xml.mkdir(parents=True)
     (xml / "update_paths.xml").write_text('<paths><cache-path name="updates" path="updates/"/></paths>')
+    (xml / "host_paths.xml").write_text('<paths><cache-path name="exports" path="exports/"/></paths>')
+    shared = main / "java/com/inhouse/services/updater"
+    shared.mkdir(parents=True)
+    shutil.copy2(ROOT / "vendor/inhouse-services-updater/android/UpdateFileProvider.java", shared)
     launcher = main / "java/com/inhouse/services/updater/smoke"
     launcher.mkdir(parents=True)
     (launcher / "MainActivity.java").write_text('''package com.inhouse.services.updater.smoke;

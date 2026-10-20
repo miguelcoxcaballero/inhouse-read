@@ -1,13 +1,19 @@
 # inhouse read
 
-## 1.7.316 / Android 1.1.18 — Logo nuevo dentro de la app
+## 1.7.317 / Android 1.1.19 — Instalación de actualizaciones desde la app
 
-Las apps Android 1.1.16 y anteriores vuelven a actualizarse desde la propia app
-sin instalar nada a mano: el actualizador web las manda por su puente original
-`installAppUpdate`, que descarga la APK, comprueba su SHA-256 y abre el
-instalador de Android (`ACTION_VIEW`), como Inhouse Photos. Su instalador
-posterior abría una pantalla que se cerraba sola. Desde 1.1.17 se usa el
-actualizador común.
+La actualización desde la app vuelve a instalar. Android crea una sola instancia
+por clase de proveedor de archivos, y Capacitor ya registra
+`androidx.core.content.FileProvider` para `.fileprovider`. El proveedor
+`.update-provider` del actualizador usaba la misma clase, así que esa instancia
+rechazaba sus URI y el instalador de Android no podía leer la APK: se cerraba
+solo tras elegirlo. Desde 1.1.19 el actualizador registra su propia clase
+`UpdateFileProvider`. Las apps 1.1.18 y anteriores llevan el fallo dentro de la
+APK: hay que instalar 1.1.19 a mano una vez con «Download APK»; después las
+actualizaciones funcionan desde la app. Android 1.1.19 (versionCode 32) se
+publica solo en A; B no cambia.
+
+## 1.7.316 / Android 1.1.18 — Logo nuevo dentro de la app
 
 La cabecera, la página de descarga y la pantalla de arranque de Android muestran
 el icono nuevo de Inhouse Read (marcapáginas verde con el tejado blanco de
