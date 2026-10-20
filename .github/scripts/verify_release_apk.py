@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 
 PACKAGE = "com.inhousesoftware.read"
-VERSION_NAME = "1.1.16"
-VERSION_CODE = 29
+VERSION_NAME = "1.1.17"
+VERSION_CODE = 30
 
 
 def certificate(apk, build_tools):

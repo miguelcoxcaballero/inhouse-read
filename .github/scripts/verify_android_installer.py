@@ -39,7 +39,7 @@ def build():
     source = main / "java/com/inhouse/services/updater"
     source.mkdir(parents=True)
     # Test the exact locked native implementation, never a copied reimplementation.
-    for name in ("InstallActivity.java", "InstallState.java", "InstallResultPolicy.java"):
+    for name in ("InstallActivity.java", "InstallReceiver.java", "InstallState.java", "InstallResultPolicy.java"):
         shutil.copy2(ROOT / "vendor/inhouse-services-updater/android" / name, source / name)
     (fixture / "build.gradle").write_text("""apply plugin: 'com.android.application'
 android {
@@ -63,6 +63,7 @@ dependencies { implementation 'androidx.core:core:1.15.0' }
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
     <activity android:name="com.inhouse.services.updater.InstallActivity" android:exported="false" />
+    <receiver android:name="com.inhouse.services.updater.InstallReceiver" android:exported="false" />
     <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.update-provider" android:exported="false" android:grantUriPermissions="true">
       <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
     </provider>

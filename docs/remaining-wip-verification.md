@@ -1,3 +1,13 @@
+# 1.7.315 — instalación de actualizaciones (Android 1.1.17)
+
+Changelog: «Fix in-app update installation.»
+
+Qué cambia. `tools/sync.py read` lleva el actualizador común de 6621ca1 a d313e8a (vendor/, src/vendor/ e `inhouse-updater.lock.json`, verificados con `verify.py`). `PhotosUpdateInstaller` vuelve a entregar la APK verificada al instalador de Android con `ACTION_VIEW` y un URI del `FileProvider`; si falta el permiso de instalar apps desconocidas abre su ajuste y devuelve `permission_required`, y abrir Android devuelve `ready`. Con 6621ca1 (`ACTION_INSTALL_PACKAGE` a través de `InstallActivity`) la pantalla del instalador se cerraba sin instalar en el teléfono del usuario. `register_android.py` registra además `InstallReceiver`, y `verify_android_installer.py` lo copia y lo declara en la app de prueba porque `InstallActivity` lo usa. Android 1.1.17 / 30; continuidad de firma contra 1.1.13; B sin cambios.
+
+No verificado. La prueba del emulador ejercita `InstallActivity` (sesiones de `PackageInstaller`), no el camino `ACTION_VIEW` que usa ahora la app. Sin teléfono físico. Las instalaciones con 1.1.16 o anterior conservan el actualizador roto y necesitan instalar 1.1.17 a mano una vez.
+
+---
+
 # 1.7.314 — nuevo icono de Inhouse Read (Android 1.1.16)
 
 Changelog: «New Inhouse Read app icon.»

@@ -16,7 +16,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.UUID
 
 // Inhouse services updater: canonical source in miguelcoxcaballero/inhouse-services-updater.
 // Change updater code there first, then sync ALL five apps at the same revision.
@@ -26,19 +25,20 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
   interface Listener { fun progress(downloadedBytes: Long, totalBytes: Long); fun stage(value: String) }
   interface Result { fun success(value: String); fun error(code: String, message: String?, details: Any?) }
   fun installUpdate(url: String, expectedSha256: String?, result: Result) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
-      activity.runOnUiThread {
-        try {
-          activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:${activity.packageName}")))
-          result.success("permission_required")
-        } catch (error: Exception) {
-          result.error("permission_unavailable", "Open Android settings to allow updates from this app, then try again.", null)
-        }
-      }
+    if (expectedSha256 == null || !expectedSha256.matches(Regex("[0-9a-fA-F]{64}"))) {
+      result.error("invalid_checksum", "The update is missing a trusted checksum. Check for updates again.", null)
       return
     }
-
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
+      activity.startActivity(
+        Intent(
+          Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+          Uri.parse("package:${activity.packageName}"),
+        ),
+      )
+      result.success("permission_required")
+      return
+    }
     if (!downloadRunning.compareAndSet(false, true)) {
       result.success("downloading")
       return
@@ -56,24 +56,25 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
           .take(16)
         val partialFile = File(updateDirectory, "inhouse-photos-$fileKey.apk.part")
         val apkFile = File(updateDirectory, "inhouse-photos-$fileKey.apk")
-        download(url, partialFile)
-        if (apkFile.exists() && !apkFile.delete()) {
-          throw IllegalStateException("Could not replace the previous update package.")
+        // Retry the already verified package instead of downloading it again.
+        var verifiedPackage: PackageInfo? = null
+        if (apkFile.isFile) {
+          try { verifiedPackage = verifyApk(apkFile, expectedSha256) }
+          catch (_: Exception) { apkFile.delete() }
         }
-        if (!partialFile.renameTo(apkFile)) {
-          partialFile.copyTo(apkFile, overwrite = true)
-          if (!partialFile.delete()) {
-            partialFile.deleteOnExit()
+        if (verifiedPackage == null) {
+          download(url, partialFile)
+          if (!partialFile.renameTo(apkFile)) {
+            partialFile.copyTo(apkFile, overwrite = true)
+            partialFile.delete()
+          }
+          publishStage("verifying")
+          try { verifiedPackage = verifyApk(apkFile, expectedSha256) }
+          catch (error: Exception) {
+            apkFile.delete(); partialFile.delete(); throw error
           }
         }
-        publishStage("verifying")
-        val verifiedPackage = try {
-          verifyApk(apkFile, expectedSha256)
-        } catch (error: Exception) {
-          apkFile.delete()
-          partialFile.delete()
-          throw error
-        }
+        if (verifiedPackage == null) throw SecurityException("Invalid update package.")
 
         val apkUri = FileProvider.getUriForFile(
           activity,
@@ -86,19 +87,17 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
             if (activity.isFinishing || activity.isDestroyed) {
               throw IllegalStateException("Open the app and try the update again.")
             }
-            // Use a foreground proxy to receive Android's result and preserve
-            // the expected version across self-update process termination.
-            val installIntent = Intent().apply {
-              setClassName(activity.packageName, "com.inhouse.services.updater.InstallActivity")
-              data = apkUri
+            // Hand the verified APK straight to Android's package installer, as
+            // the original Photos installer did. PackageInstaller sessions and
+            // ACTION_INSTALL_PACKAGE failed on real Samsung devices before
+            // showing consent; the installed version is checked on return.
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+              setDataAndType(apkUri, APK_MIME_TYPE)
               clipData = ClipData.newRawUri("Update APK", apkUri)
-              putExtra("installId", UUID.randomUUID().toString())
-              putExtra("versionCode", getVersionCode(verifiedPackage))
-              putExtra("versionName", verifiedPackage.versionName ?: "")
               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(installIntent)
-            result.success("installing")
+            result.success("ready")
           } catch (error: Exception) {
             result.error("installer_unavailable", error.message ?: "Android could not open the installer.", null)
           }

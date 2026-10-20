@@ -1,5 +1,15 @@
 # inhouse read
 
+## 1.7.315 / Android 1.1.17 — Instalación de actualizaciones
+
+La actualización desde la propia app vuelve a abrir el instalador de paquetes de
+Android con la APK verificada, como el instalador original de Inhouse Photos.
+En 1.1.16 y anteriores, al terminar la descarga se abría una pantalla que se
+cerraba sola sin instalar nada en algunos teléfonos. Android 1.1.17
+(versionCode 30) se publica solo en A, con el mismo paquete y certificado; B no
+cambia. Quien tenga 1.1.16 o anterior debe instalar 1.1.17 a mano una vez con
+«Download APK», porque su actualizador instalado es el que falla.
+
 ## 1.7.314 / Android 1.1.16 — Nuevo icono
 
 Inhouse Read estrena el icono de la familia Inhouse: un marcapáginas verde con el
