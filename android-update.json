@@ -1,9 +1,9 @@
 {
-  "version": "1.1.19",
-  "versionCode": 32,
+  "version": "1.1.20",
+  "versionCode": 33,
   "required": true,
-  "apkSizeBytes": 78561109,
-  "apkSha256": "39f541c3b8dec029790dd76fc090ceac31519fabd417ff180c90cebf94c1f7b5",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.19/inhouse-read-release-v1.1.19.apk",
-  "releaseNotes": "Fix in-app update installation."
+  "apkSizeBytes": 78561113,
+  "apkSha256": "0756655fc49b3cae281b913d7b086fe2fc5d4621964b486d33af1015961d0f8a",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.20/inhouse-read-release-v1.1.20.apk",
+  "releaseNotes": "Test the in-app updater."
 }
