@@ -1,5 +1,19 @@
 # inhouse read
 
+## 1.7.316 / Android 1.1.18 — Logo nuevo dentro de la app
+
+Las apps Android 1.1.16 y anteriores vuelven a actualizarse desde la propia app
+sin instalar nada a mano: el actualizador web las manda por su puente original
+`installAppUpdate`, que descarga la APK, comprueba su SHA-256 y abre el
+instalador de Android (`ACTION_VIEW`), como Inhouse Photos. Su instalador
+posterior abría una pantalla que se cerraba sola. Desde 1.1.17 se usa el
+actualizador común.
+
+La cabecera, la página de descarga y la pantalla de arranque de Android muestran
+el icono nuevo de Inhouse Read (marcapáginas verde con el tejado blanco de
+Inhouse) en lugar del tejado verde anterior. Android 1.1.18 (versionCode 31) se
+publica solo en A, con el mismo paquete y certificado; B no cambia.
+
 ## 1.7.315 / Android 1.1.17 — Instalación de actualizaciones
 
 La actualización desde la propia app vuelve a abrir el instalador de paquetes de

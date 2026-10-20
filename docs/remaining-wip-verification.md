@@ -1,10 +1,22 @@
+# 1.7.316 — logo nuevo dentro de la app (Android 1.1.18)
+
+Changelog: «New Inhouse Read logo inside the app.»
+
+Actualizaciones desde 1.1.16 y anteriores. `src/js/android-update.js` pasa al actualizador común un `install` propio: con versionCode < 30 usa el puente original `installAppUpdate(url, sha256)` (descarga, SHA-256 y `ACTION_VIEW` con el `FileProvider` de Capacitor), presente en esas APK; desde 1.1.17 sigue `installInhouseUpdate`. Comprobado en `tests/unit/android-update.test.js` y en las APK publicadas 1.1.16 (el puente existe en el dex y el manifiesto declara `REQUEST_INSTALL_PACKAGES` y el `FileProvider`). No verificado en teléfono físico.
+
+Qué cambia. `index.html`, `download-android.html` y `.github/android/app-loader.html` sustituyen el tejado verde por el icono de la app: marcapáginas #1E9E66 con el tejado blanco de Inhouse (mismo trazo que el icono del launcher). `.logo-mark` pasa a 14×22 px (12×19 px en pantallas de 360 px) para mantener la proporción del marcapáginas. El tejado decorativo de las portadas sin imagen y de la estantería vacía no cambia.
+
+Verificado. Capturas del encabezado (420 y 1000 px), de la página de descarga y de la pantalla de arranque.
+
+---
+
 # 1.7.315 — instalación de actualizaciones (Android 1.1.17)
 
 Changelog: «Fix in-app update installation.»
 
 Qué cambia. `tools/sync.py read` lleva el actualizador común de 6621ca1 a d313e8a (vendor/, src/vendor/ e `inhouse-updater.lock.json`, verificados con `verify.py`). `PhotosUpdateInstaller` vuelve a entregar la APK verificada al instalador de Android con `ACTION_VIEW` y un URI del `FileProvider`; si falta el permiso de instalar apps desconocidas abre su ajuste y devuelve `permission_required`, y abrir Android devuelve `ready`. Con 6621ca1 (`ACTION_INSTALL_PACKAGE` a través de `InstallActivity`) la pantalla del instalador se cerraba sin instalar en el teléfono del usuario. `register_android.py` registra además `InstallReceiver`, y `verify_android_installer.py` lo copia y lo declara en la app de prueba porque `InstallActivity` lo usa. Android 1.1.17 / 30; continuidad de firma contra 1.1.13; B sin cambios.
 
-No verificado. La prueba del emulador ejercita `InstallActivity` (sesiones de `PackageInstaller`), no el camino `ACTION_VIEW` que usa ahora la app. Sin teléfono físico. Las instalaciones con 1.1.16 o anterior conservan el actualizador roto y necesitan instalar 1.1.17 a mano una vez.
+Verificado en el emulador de Android 15 (run 39413888898): una app de prueba repite el mismo traspaso `ACTION_VIEW` + `FileProvider` que `PhotosUpdateInstaller`; se cancela en el instalador real, sigue en la versión 1, se reintenta y Android la sustituye por la versión 2. No verificado en teléfono físico. Las instalaciones con 1.1.16 o anterior conservan el actualizador roto y necesitan instalar 1.1.17 a mano una vez.
 
 ---
 

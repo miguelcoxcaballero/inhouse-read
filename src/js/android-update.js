@@ -17,9 +17,21 @@ export function getInstalledAndroidAppVersion() {
   return navigator.userAgent.match(/InhouseReadApp\/(\d+\.\d+\.\d+)/)?.[1] || '1.0.0'
 }
 export const compareSemanticVersions=(a,b)=>window.InhouseServicesUpdater.compareVersions(a,b)
+// Android 1.1.16 and older (versionCode < 30) carry an installer bridge that
+// fails on some phones: a screen opens after the download and closes without
+// installing. Their original installAppUpdate (download, SHA-256, ACTION_VIEW)
+// works, so those apps update through it. Newer apps use the shared updater.
+export function installAndroidUpdate(release) {
+  const native=window.InhouseNative
+  let installedCode=0
+  try { installedCode=Number(native?.getAppVersionCode?.()||0) } catch (_) {}
+  if(native?.installAppUpdate&&(installedCode<30||!native.installInhouseUpdate)) native.installAppUpdate(release.apkUrl,release.apkSha256)
+  else if(native?.installInhouseUpdate) native.installInhouseUpdate(release.apkUrl,release.apkSha256)
+  else throw Error('Open the Android app to install.')
+}
 let updater
 export function getUpdater() {
-  return updater ||= window.InhouseServicesUpdater.create({appId:'read',appName:'Inhouse Read',repository:'miguelcoxcaballero/inhouse-read',getVersion:getInstalledAndroidAppVersion,close:hideUpdateSettings})
+  return updater ||= window.InhouseServicesUpdater.create({appId:'read',appName:'Inhouse Read',repository:'miguelcoxcaballero/inhouse-read',getVersion:getInstalledAndroidAppVersion,install:installAndroidUpdate,close:hideUpdateSettings})
 }
 function hideUpdateSettings() {
   const panel = document.getElementById('drive-update-settings')

@@ -13,6 +13,8 @@ Mismo patrón que **inhouse notes**: la app Android es un **WebView-shell** (Cap
 
 Read usa el [Inhouse services updater común](https://github.com/miguelcoxcaballero/inhouse-services-updater), sincronizado desde su repositorio canónico. El aviso es opcional, B es el canal predeterminado y A requiere aceptar su advertencia de desarrollo. «Later» aplaza el aviso 14 días y la comprobación manual sigue disponible en ajustes. El código compartido no se modifica en este repositorio.
 
+Android 1.1.18 (versionCode 31) cambia la pantalla de arranque (`.github/android/app-loader.html`) al icono nuevo de Inhouse Read.
+
 Android 1.1.17 (versionCode 30) sincroniza el actualizador común en d313e8a: la APK verificada se entrega al instalador de Android con `ACTION_VIEW` y el `FileProvider` propio, se pide antes el permiso de instalar apps y solo la versión instalada confirma el éxito. Se publica en A con `build-android.yml`; B sigue en 1.1.15. Las instalaciones con 1.1.16 o anterior deben actualizar a mano una vez con «Download APK». La prueba del instalador en el emulador sigue ejercitando `InstallActivity` y ahora incluye su `InstallReceiver`.
 
 Android 1.1.16 (versionCode 29) cambia el icono del lanzador por el nuevo marcapáginas de Inhouse (`android/inhouse-read-logo.png`). Está [publicada en A](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.16): el [build](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/39348902958) firmó con la clave permanente, comprobó la continuidad frente a 1.1.13, pasó las pruebas de Android 15 y verificó que la APK pública coincide con la compilada antes de actualizar el catálogo A. B sigue en 1.1.15.
