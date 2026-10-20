@@ -1,9 +1,9 @@
 {
-  "version": "1.1.16",
-  "versionCode": 29,
+  "version": "1.1.17",
+  "versionCode": 30,
   "required": true,
-  "apkSizeBytes": 78544617,
-  "apkSha256": "3a4a07832a5cf8e0393ad896c8ae10af901d15214c222ca31a979b5924971280",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.16/inhouse-read-release-v1.1.16.apk",
-  "releaseNotes": "New Inhouse Read app icon."
+  "apkSizeBytes": 78561029,
+  "apkSha256": "46f7ff319145d5be7f4b29d7c37f820f11714bcf63406943d0835af769e4295c",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.17/inhouse-read-release-v1.1.17.apk",
+  "releaseNotes": "Fix in-app update installation."
 }
