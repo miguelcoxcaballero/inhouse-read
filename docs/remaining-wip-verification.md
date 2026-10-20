@@ -1,3 +1,11 @@
+# 1.7.318 — prueba del actualizador (Android 1.1.20)
+
+Changelog: «Test the in-app updater.»
+
+Qué cambia. Solo la versión: sirve para comprobar en un teléfono real que 1.1.19 instala una actualización desde la app. La APK pasa la misma build y pruebas de emulador.
+
+---
+
 # 1.7.317 — instalación de actualizaciones (Android 1.1.19)
 
 Changelog: «Fix in-app update installation.»

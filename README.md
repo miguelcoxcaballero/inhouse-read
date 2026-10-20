@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.7.318 / Android 1.1.20 — Prueba del actualizador
+
+Versión de prueba para comprobar que 1.1.19, la primera con `UpdateFileProvider`
+propio, instala actualizaciones desde la app. Android 1.1.20 (versionCode 33) se
+publica solo en A; B no cambia.
+
 ## 1.7.317 / Android 1.1.19 — Instalación de actualizaciones desde la app
 
 La actualización desde la app vuelve a instalar. Android crea una sola instancia
