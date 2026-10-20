@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Exercise the canonical installer in a disposable, self-updating Android app.
+"""Exercise the shared updater's Android installer handoff in a disposable,
+self-updating Android app.
 
+The locked PhotosUpdateInstaller hands the verified APK to Android's package
+installer with ACTION_VIEW and a FileProvider URI. The fixture performs exactly
+that handoff and the check drives the real installer: cancel, retry, update.
 The debug fixture uses its own package/key; production Read APKs are untouched.
 Run --build after build_android_apk.py, then --verify on the CI emulator.
 """
@@ -36,11 +40,12 @@ def build():
     if fixture.exists():
         shutil.rmtree(fixture)
     main = fixture / "src/main"
-    source = main / "java/com/inhouse/services/updater"
-    source.mkdir(parents=True)
-    # Test the exact locked native implementation, never a copied reimplementation.
-    for name in ("InstallActivity.java", "InstallReceiver.java", "InstallState.java", "InstallResultPolicy.java"):
-        shutil.copy2(ROOT / "vendor/inhouse-services-updater/android" / name, source / name)
+    # Fail if the locked installer stops using the handoff this fixture repeats.
+    installer = (ROOT / "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt").read_text()
+    for marker in ("Intent(Intent.ACTION_VIEW)", "setDataAndType(apkUri, APK_MIME_TYPE)",
+                   "Intent.FLAG_GRANT_READ_URI_PERMISSION", ".update-provider"):
+        if marker not in installer:
+            raise SystemExit(f"Locked installer no longer contains {marker!r}; update this fixture")
     (fixture / "build.gradle").write_text("""apply plugin: 'com.android.application'
 android {
     namespace 'com.inhouse.services.updater.smoke'
@@ -62,8 +67,6 @@ dependencies { implementation 'androidx.core:core:1.15.0' }
     <activity android:name=".MainActivity" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
-    <activity android:name="com.inhouse.services.updater.InstallActivity" android:exported="false" />
-    <receiver android:name="com.inhouse.services.updater.InstallReceiver" android:exported="false" />
     <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.update-provider" android:exported="false" android:grantUriPermissions="true">
       <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
     </provider>
@@ -84,10 +87,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.core.content.FileProvider;
-import com.inhouse.services.updater.InstallActivity;
-import com.inhouse.services.updater.InstallState;
 import java.io.*;
-import java.util.UUID;
 public final class MainActivity extends Activity {
     private TextView state;
     @Override public void onCreate(Bundle saved) {
@@ -101,9 +101,11 @@ public final class MainActivity extends Activity {
     }
     @Override public void onResume() {
         super.onResume();
-        String result = "fixtureVersion=" + InstallState.actualVersion(this)
-            + "; installPermission=" + getPackageManager().canRequestPackageInstalls()
-            + "; " + InstallState.read(this);
+        long version = 0;
+        try { version = getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode(); }
+        catch (Exception ignored) {}
+        String result = "fixtureVersion=" + version
+            + "; installPermission=" + getPackageManager().canRequestPackageInstalls();
         android.util.Log.i("UpdaterInstallFixture", "MainActivity resumed: " + result);
         if (state != null) state.setText(result);
     }
@@ -111,21 +113,15 @@ public final class MainActivity extends Activity {
         try {
             File folder = new File(getCacheDir(), "updates"); folder.mkdirs();
             File file = new File(folder, "next.apk");
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             try (InputStream input = getAssets().open("next.apk"); FileOutputStream output = new FileOutputStream(file)) {
                 byte[] buffer = new byte[32768]; int count;
-                while ((count = input.read(buffer)) >= 0) { output.write(buffer, 0, count); digest.update(buffer, 0, count); }
+                while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
                 output.getFD().sync();
             }
-            StringBuilder hash = new StringBuilder();
-            for (byte value : digest.digest()) hash.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
+            // Same handoff as the locked PhotosUpdateInstaller after verification.
             Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".update-provider", file);
-            Intent intent = new Intent(this, InstallActivity.class).setData(uri)
-                .putExtra("installId", UUID.randomUUID().toString())
-                .putExtra("versionCode", 2L).putExtra("versionName", "2")
-                // The locked InstallActivity streams the APK into its session and
-                // refuses to commit unless this matches the bytes it read.
-                .putExtra("sha256", hash.toString())
+            Intent intent = new Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.setClipData(ClipData.newRawUri("Test update", uri));
             startActivity(intent);
@@ -180,15 +176,6 @@ def tap(labels, package=None, timeout=30, click=True):
     raise AssertionError(f"Could not find Android button: {labels}")
 
 
-def read_attempt():
-    result = run("adb", "shell", "run-as", PACKAGE, "cat", "shared_prefs/inhouse-services-install.xml", check=False)
-    try:
-        text = ET.fromstring(result.stdout).find("string[@name='attempt']").text
-        return json.loads(text)
-    except (ET.ParseError, AttributeError, ValueError):
-        return {}
-
-
 def wait_for(predicate, description, timeout=30):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -232,7 +219,7 @@ def allow_test_source():
 def reopen_installed_app(report, timeout=45):
     # PackageManager exposes the new version before PackageInstaller finishes
     # closing the old task. That cleanup can swallow a single immediate start.
-    # Require a real version-2 onResume/UI before testing native reconciliation.
+    # Require a real version-2 onResume/UI.
     run("adb", "shell", "am", "force-stop", PACKAGE)
     attempts = report["reopenAttempts"] = []
     deadline = time.monotonic() + timeout
@@ -256,6 +243,11 @@ def reopen_installed_app(report, timeout=45):
     raise AssertionError("Updated fixture MainActivity did not become visible after package replacement")
 
 
+def fixture_version():
+    match = re.search(r"versionCode=(\d+)", run("adb", "shell", "dumpsys", "package", PACKAGE).stdout)
+    return int(match.group(1)) if match else 0
+
+
 def verify():
     report = {"package": PACKAGE, "cancelled": False, "installed": False}
     try:
@@ -272,39 +264,24 @@ def verify():
         # not an unknown-source permission warning that also has Cancel.
         tap({"update", "install"}, click=False)
         tap({"cancel"})
-        cancelled = wait_for(lambda: read_attempt().get("status") == "cancelled", "Installer cancellation was not retained")
-        assert cancelled
-        first = read_attempt()
+        # Android returns to the app without installing; the retry must work.
+        tap({"install test update"}, PACKAGE, click=False)
+        assert fixture_version() == 1, "Cancelling must keep version 1"
         report["cancelled"] = True
-        report["cancelledAttempt"] = first
         report["phase"] = "retry-installation"
         tap({"install test update"}, PACKAGE)
-        def new_attempt():
-            attempt = read_attempt()
-            return attempt if attempt.get("id") and attempt["id"] != first["id"] else None
-        retry = wait_for(new_attempt, "Retry did not create a new durable installation attempt")
-        report["retryAttempt"] = retry
         tap({"update", "install"})
         report["phase"] = "wait-for-replacement"
-        wait_for(lambda: re.search(r"versionCode=2(?:\s|$)", run("adb", "shell", "dumpsys", "package", PACKAGE).stdout),
-                 "Android did not replace the fixture with version 2", timeout=45)
-        # The replacement can terminate the caller. Reopening must confirm the
-        # package version from durable state even if no success callback survived.
+        wait_for(lambda: fixture_version() == 2, "Android did not replace the fixture with version 2", timeout=45)
+        # The replacement terminates the caller; reopening must show version 2.
         report["phase"] = "reopen-installed-app"
         reopen_installed_app(report)
-        report["phase"] = "reconcile-installation"
-        wait_for(lambda: read_attempt().get("status") == "installed", "Installed version was not reconciled on restart")
-        final = read_attempt()
-        assert final["id"] != first["id"], "Retry reused the cancelled attempt"
-        assert final["id"] == retry["id"], "Installed result did not retain the retry attempt"
-        assert final["expectedVersionCode"] == 2 and final["actualVersionCode"] == 2, final
         report["installed"] = True
-        report["installedAttempt"] = final
         report["phase"] = "passed"
         dump_ui()
         print("Real Android installer cancellation, retry and self-update passed.", flush=True)
     finally:
-        report["finalAttempt"] = read_attempt()
+        report["finalVersion"] = fixture_version()
         try:
             dump_ui()
         except (subprocess.SubprocessError, ET.ParseError) as error:
@@ -316,7 +293,6 @@ def verify():
             run("adb", "shell", "screencap", "-p", "/sdcard/updater-install.png", check=False)
             run("adb", "pull", "/sdcard/updater-install.png", str(ROOT / "android-updater-failure.png"), check=False)
         run("adb", "uninstall", PACKAGE, check=False)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
