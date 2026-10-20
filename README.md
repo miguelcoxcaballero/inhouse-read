@@ -5,8 +5,11 @@
 Inhouse Read estrena el icono de la familia Inhouse: un marcapáginas verde con el
 tejado blanco sobre fondo blanco. Lo usan el lanzador de Android 1.1.16
 (versionCode 29), la página de descarga y, por primera vez, la pestaña del
-navegador y el acceso directo de iOS. La APK se publica solo en A, con el mismo
-paquete y certificado que 1.1.15; B no cambia.
+navegador y el acceso directo de iOS. [APK 1.1.16 publicada en A](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.16),
+con el mismo paquete y certificado que 1.1.15; B sigue en 1.1.15. El
+[build](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/39348902958) pasó la continuidad de firma, las pruebas del loader,
+importación y audio en Android 15, y la APK pública coincide byte a byte con
+la compilada. No se ha probado en un teléfono físico.
 
 ## 1.7.140 / Android 1.1.15 — Resultado de instalación
 
