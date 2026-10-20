@@ -111,15 +111,21 @@ public final class MainActivity extends Activity {
         try {
             File folder = new File(getCacheDir(), "updates"); folder.mkdirs();
             File file = new File(folder, "next.apk");
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             try (InputStream input = getAssets().open("next.apk"); FileOutputStream output = new FileOutputStream(file)) {
                 byte[] buffer = new byte[32768]; int count;
-                while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+                while ((count = input.read(buffer)) >= 0) { output.write(buffer, 0, count); digest.update(buffer, 0, count); }
                 output.getFD().sync();
             }
+            StringBuilder hash = new StringBuilder();
+            for (byte value : digest.digest()) hash.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
             Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".update-provider", file);
             Intent intent = new Intent(this, InstallActivity.class).setData(uri)
                 .putExtra("installId", UUID.randomUUID().toString())
                 .putExtra("versionCode", 2L).putExtra("versionName", "2")
+                // The locked InstallActivity streams the APK into its session and
+                // refuses to commit unless this matches the bytes it read.
+                .putExtra("sha256", hash.toString())
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.setClipData(ClipData.newRawUri("Test update", uri));
             startActivity(intent);
