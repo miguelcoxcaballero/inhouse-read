@@ -40,6 +40,7 @@ def build():
     if fixture.exists():
         shutil.rmtree(fixture)
     main = fixture / "src/main"
+    main.mkdir(parents=True)
     # Fail if the locked installer stops using the handoff this fixture repeats.
     installer = (ROOT / "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt").read_text()
     for marker in ("Intent(Intent.ACTION_VIEW)", "setDataAndType(apkUri, APK_MIME_TYPE)",
