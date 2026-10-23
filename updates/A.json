@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.1.20",
-    "versionCode": 33,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.20/inhouse-read-release-v1.1.20.apk",
-    "apkSha256": "0756655fc49b3cae281b913d7b086fe2fc5d4621964b486d33af1015961d0f8a",
-    "apkSizeBytes": 78561113,
-    "changelog": "Test the in-app updater.",
-    "releasedAt": "2026-10-20T14:52:00+00:00"
+    "version": "1.1.21",
+    "versionCode": 34,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.21/inhouse-read-release-v1.1.21.apk",
+    "apkSha256": "964f7b3dec6bc8830b106786c8e3101c13bad0f6d6cd6e3f444d05af3251d88e",
+    "apkSizeBytes": 78570870,
+    "changelog": "Reading streak widget and vibration.",
+    "releasedAt": "2026-10-23T16:12:15+00:00"
   },
   "releases": [
+    {
+      "version": "1.1.21",
+      "versionCode": 34,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.21/inhouse-read-release-v1.1.21.apk",
+      "apkSha256": "964f7b3dec6bc8830b106786c8e3101c13bad0f6d6cd6e3f444d05af3251d88e",
+      "apkSizeBytes": 78570870,
+      "changelog": "Reading streak widget and vibration.",
+      "releasedAt": "2026-10-23T16:12:15+00:00"
+    },
     {
       "version": "1.1.20",
       "versionCode": 33,
