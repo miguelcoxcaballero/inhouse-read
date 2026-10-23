@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.1.22",
-    "versionCode": 35,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.22/inhouse-read-release-v1.1.22.apk",
-    "apkSha256": "dfc603b6db6d6d7e795a429473431aacc54a4818058266faf56490348ad01810",
-    "apkSizeBytes": 78579430,
-    "changelog": "Widget in every size, with your book.",
-    "releasedAt": "2026-10-23T17:32:15+00:00"
+    "version": "1.1.23",
+    "versionCode": 36,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.23/inhouse-read-release-v1.1.23.apk",
+    "apkSha256": "55c21814c53a42fcc952b746c83b402d0f5306e009b3d635e536fd0a8e645921",
+    "apkSizeBytes": 78579226,
+    "changelog": "Bigger cover, less text in the widget.",
+    "releasedAt": "2026-10-23T18:54:35+00:00"
   },
   "releases": [
+    {
+      "version": "1.1.23",
+      "versionCode": 36,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.23/inhouse-read-release-v1.1.23.apk",
+      "apkSha256": "55c21814c53a42fcc952b746c83b402d0f5306e009b3d635e536fd0a8e645921",
+      "apkSizeBytes": 78579226,
+      "changelog": "Bigger cover, less text in the widget.",
+      "releasedAt": "2026-10-23T18:54:35+00:00"
+    },
     {
       "version": "1.1.22",
       "versionCode": 35,

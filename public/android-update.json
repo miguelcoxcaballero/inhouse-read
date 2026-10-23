@@ -1,9 +1,9 @@
 {
-  "version": "1.1.22",
-  "versionCode": 35,
+  "version": "1.1.23",
+  "versionCode": 36,
   "required": true,
-  "apkSizeBytes": 78579430,
-  "apkSha256": "dfc603b6db6d6d7e795a429473431aacc54a4818058266faf56490348ad01810",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.22/inhouse-read-release-v1.1.22.apk",
-  "releaseNotes": "Widget in every size, with your book."
+  "apkSizeBytes": 78579226,
+  "apkSha256": "55c21814c53a42fcc952b746c83b402d0f5306e009b3d635e536fd0a8e645921",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.23/inhouse-read-release-v1.1.23.apk",
+  "releaseNotes": "Bigger cover, less text in the widget."
 }
