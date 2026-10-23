@@ -44,10 +44,14 @@ import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js
 import { persistablePosition, persistableRelocation } from './readers/persistable-position.js'
 import { readerReturnCanvas } from './reader-return-canvas.js'
 import { createProfileView } from './profile-view.js'
+import { createReadingStreak } from './reading-streak.js'
+import { STREAK_KEY } from './reading-streak-core.js'
 
 const reader = new ReaderController()
 const profileView = createProfileView(document)
 const releaseShelfSoundPreference=bindShelfSoundPreference(document)
+// Racha de lectura: cuenta el tiempo con un libro abierto (reading-streak.js).
+const readingStreak = createReadingStreak({ document, onChange: notifyCloudSettingsChanged })
 
 const els = {
   homeScreen: document.getElementById('home-screen'),
@@ -162,6 +166,7 @@ function applyCloudSettings(keys) {
     if (room.length) cloudRoomChanged = true
     if (keys.includes('inhouse-read-theme')) initTheme()
     if (keys.includes('inhouse-read-reading-preferences')) readingExperience.reloadPreferences()
+    if (keys.includes(STREAK_KEY)) readingStreak.reconcile()
     refreshShelf()
 }
 const roomCoordinationHost = {
@@ -303,6 +308,7 @@ addEventListener('pagehide', event => {
   appDisposed = true
   profileView.destroy()
   releaseShelfSoundPreference()
+  readingStreak.destroy()
   nativeImportShelfGate.destroy()
   shelfRefreshQueue.dispose()
   clearTimeout(lengthRefreshTimer)

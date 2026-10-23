@@ -1462,6 +1462,9 @@ class ApkBuilderApp(tk.Tk):
             "android.permission.WAKE_LOCK",
             "android.permission.FOREGROUND_SERVICE",
             "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+            # navigator.vibrate() de la racha de lectura: sin este permiso
+            # la WebView ignora la vibración en silencio.
+            "android.permission.VIBRATE",
         ])
         if self.permission_location.get():
             wanted.extend(

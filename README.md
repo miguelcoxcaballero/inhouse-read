@@ -1,5 +1,26 @@
 # inhouse read
 
+## 1.7.319 / Android 1.1.21 — Racha de lectura
+
+Arriba a la derecha, junto a la cuenta, aparece una llama con los días seguidos
+de lectura. En gris, hoy aún falta leer; en naranja, hoy ya cuenta. Dentro del
+lector, un aro alrededor de la llama muestra el progreso del día. Al tocarla se
+abre un panel con el tiempo leído hoy, la racha más larga, los días leídos y un
+calendario mensual.
+
+Cuentan los minutos con un libro abierto y la pantalla visible. Si pasan tres
+minutos sin tocar la pantalla ni cambiar de página (y sin audio en marcha), el
+tiempo deja de contar. Al llegar a 5 minutos en el día aparece una pantalla de
+celebración con la llama que se enciende, el número que sube, la semana marcada,
+sonidos sintetizados en la app y vibración; respeta «Sonidos de la estantería» y
+la preferencia de reducir movimiento. Solo se celebra una vez al día.
+
+La racha se sincroniza con el resto de ajustes en Drive. Solo se suben los días
+cumplidos (no el progreso de cada minuto), y dos dispositivos se combinan por
+día sin perder lecturas. Android 1.1.21 (versionCode 34) añade el permiso de
+vibración, que la WebView necesita para `navigator.vibrate`; se publica solo en
+A. Sin esa APK todo funciona igual, pero el teléfono no vibra.
+
 ## 1.7.318 / Android 1.1.20 — Prueba del actualizador
 
 Versión de prueba para comprobar que 1.1.19, la primera con `UpdateFileProvider`
