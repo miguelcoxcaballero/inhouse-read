@@ -51,7 +51,11 @@ const reader = new ReaderController()
 const profileView = createProfileView(document)
 const releaseShelfSoundPreference=bindShelfSoundPreference(document)
 // Racha de lectura: cuenta el tiempo con un libro abierto (reading-streak.js).
-const readingStreak = createReadingStreak({ document, onChange: notifyCloudSettingsChanged })
+const readingStreak = createReadingStreak({
+  document, onChange: notifyCloudSettingsChanged,
+  latestBook: () => library.listRecents(1).then(records => records[0] || null),
+  bookTitle: record => normalizeBookTitle(record.title)
+})
 
 const els = {
   homeScreen: document.getElementById('home-screen'),

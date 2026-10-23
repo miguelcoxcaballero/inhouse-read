@@ -5,10 +5,13 @@ import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
@@ -44,6 +47,42 @@ public final class StreakWidgetBridge {
                 .putString("secondsDay", day.matches("\\d{4}-\\d{2}-\\d{2}") ? day : "")
                 .putInt("seconds", seconds)
                 .apply();
+            StreakWidgetProvider.refresh(activity.getApplicationContext());
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * Último libro para el widget: {"title": "…", "minutes": 200, "cover": "<PNG en base64>"}.
+     * Una cadena vacía lo quita (ajuste «Libro en el widget» apagado).
+     */
+    @JavascriptInterface
+    public void updateBook(String json) {
+        if (json == null || json.length() > 400000 || !trustedPage()) return;
+        android.content.SharedPreferences.Editor editor =
+            activity.getSharedPreferences(StreakWidgetProvider.PREFERENCES, Activity.MODE_PRIVATE).edit();
+        File cover = new File(activity.getFilesDir(), StreakWidgetProvider.COVER_FILE);
+        try {
+            if (json.isEmpty()) {
+                editor.remove("bookTitle").remove("bookMinutes").apply();
+                cover.delete();
+            } else {
+                JSONObject input = new JSONObject(json);
+                String title = input.optString("title", "").trim();
+                if (title.isEmpty()) return;
+                if (title.length() > 120) title = title.substring(0, 120);
+                int minutes = input.has("minutes") ? Math.max(-1, Math.min(1000000, input.optInt("minutes", -1))) : -1;
+                String encoded = input.optString("cover", "");
+                if (!encoded.isEmpty()) {
+                    byte[] png = Base64.decode(encoded, Base64.DEFAULT);
+                    // Solo PNG pequeños, comprobados por su firma.
+                    if (png.length > 8 && png.length < 300000 && (png[0] & 0xFF) == 0x89 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G') {
+                        try (FileOutputStream out = new FileOutputStream(cover)) { out.write(png); }
+                    }
+                } else if (input.optBoolean("keepCover", false) == false) {
+                    cover.delete();
+                }
+                editor.putString("bookTitle", title).putInt("bookMinutes", minutes).apply();
+            }
             StreakWidgetProvider.refresh(activity.getApplicationContext());
         } catch (Exception ignored) { }
     }

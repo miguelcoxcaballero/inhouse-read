@@ -8,6 +8,7 @@ import {
   GOAL_SECONDS, STREAK_KEY, STREAK_LOCAL_KEY, addReading, dayKey, dayWord, formatClock, isComplete,
   mergeStreaks, monthGrid, parseStreak, pruneStreak, streakInfo, syncedStreak, weekDays
 } from './reading-streak-core.js'
+import { coverPng, minutesLeft, roundedMinutes } from './streak-widget-book.js'
 
 const IDLE_MS = 180_000
 const SAVE_EVERY_MS = 5_000
@@ -116,7 +117,7 @@ function createFeedback(storage) {
   }
 }
 
-export function createReadingStreak({ document, storage = localStorage, onChange = () => {}, now = () => Date.now() } = {}) {
+export function createReadingStreak({ document, storage = localStorage, onChange = () => {}, now = () => Date.now(), latestBook = async () => null, bookTitle = record => record?.title || '' } = {}) {
   const body = document.body
   const read = key => { try { return storage.getItem(key) } catch { return null } }
   const write = (key, value) => { try { storage.setItem(key, value); return true } catch { return false } }
@@ -186,6 +187,42 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   }
   const widgetCall = (name, fallback) => { try { return widgetBridge()?.[name]?.() ?? fallback } catch { return fallback } }
 
+  // ---- Último libro en el widget (ajuste «Libro en el widget») ----
+  const BOOK_KEY = 'inhouse-read-widget-book'
+  const bookEnabled = () => read(BOOK_KEY) !== 'off'
+  let bookSent = '', coverSent = '', bookTask = Promise.resolve()
+  function syncWidgetBook() {
+    const bridge = widgetBridge()
+    if (typeof bridge?.updateBook !== 'function') return
+    bookTask = bookTask.then(async () => {
+      const record = bookEnabled() ? await latestBook().catch(() => null) : null
+      if (!record) {
+        if (bookSent !== 'none') { bookSent = 'none'; coverSent = ''; try { bridge.updateBook('') } catch {} }
+        return
+      }
+      const title = String(bookTitle(record) || record.title || '').trim() || 'Libro'
+      const minutes = roundedMinutes(minutesLeft(record))
+      const key = `${record.id}|${title}|${minutes}`
+      const cover = `${record.id}|${record.cover?.size || 0}`
+      if (key === bookSent && cover === coverSent) return
+      const payload = { title, minutes }
+      if (cover !== coverSent) payload.cover = await coverPng(record, title)
+      else payload.keepCover = true
+      bookSent = key; coverSent = cover
+      try { bridge.updateBook(JSON.stringify(payload)) } catch {}
+    }).catch(() => {})
+  }
+  const bookToggle = document.getElementById('widget-book-toggle')
+  const bookRow = bookToggle?.closest('[data-widget-book-setting]')
+  if (bookToggle && typeof widgetBridge()?.updateBook === 'function') {
+    if (bookRow) bookRow.hidden = false
+    bookToggle.checked = bookEnabled()
+    bookToggle.addEventListener('change', () => {
+      write(BOOK_KEY, bookToggle.checked ? 'on' : 'off')
+      syncWidgetBook()
+    })
+  }
+
   for (const chip of chips) {
     chip.innerHTML = `<span class="streak-chip-icon">${flameSvg('is-base is-idle')}${flameSvg('is-fill')}</span><span class="streak-chip-count">0</span>`
     chip.addEventListener('click', () => { feedback.tap(); openPanel(chip) })
@@ -227,12 +264,12 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   function syncTimer() {
     const active = reading()
     if (active && !timer) { lastTick = now(); activity(); timer = setInterval(tick, 1000) }
-    else if (!active && timer) { tick(); clearInterval(timer); timer = 0; lastTick = 0; persist() }
+    else if (!active && timer) { tick(); clearInterval(timer); timer = 0; lastTick = 0; persist(); syncWidgetBook() }
   }
   const screenObserver = new MutationObserver(syncTimer)
   screenObserver.observe(body, { attributes: true, attributeFilter: ['class'] })
   if (readerScreen) screenObserver.observe(readerScreen, { attributes: true, attributeFilter: ['hidden'] })
-  const onVisibility = () => { syncTimer(); if (document.visibilityState === 'hidden') persist(); else refreshDay() }
+  const onVisibility = () => { syncTimer(); if (document.visibilityState === 'hidden') { persist(); syncWidgetBook() } else refreshDay() }
   document.addEventListener('visibilitychange', onVisibility)
   addEventListener('pagehide', () => persist())
   // Cambiar de día con la app abierta pone el contador en gris si toca.
@@ -439,6 +476,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
 
   renderChips()
   syncTimer()
+  const bookStart = setTimeout(syncWidgetBook, 4000)
 
   return {
     /** Otro dispositivo ha subido su racha: se combina con la de este. */
@@ -457,7 +495,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
       if (destroyed) return
       destroyed = true
       persist()
-      clearInterval(timer); clearInterval(clockTimer)
+      clearInterval(timer); clearInterval(clockTimer); clearTimeout(bookStart)
       pageObserver.disconnect(); screenObserver.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) removeEventListener(type, activity, { capture: true })

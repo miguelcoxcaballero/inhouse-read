@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ancho (260 dp o más): racha y libro en dos columnas, semana debajo. Los textos son la vista previa del selector; StreakWidgetProvider los reemplaza. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/streak_widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/streak_widget_bg_lit">
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center_vertical"
+    android:paddingStart="14dp" android:paddingEnd="14dp" android:paddingTop="14dp" android:paddingBottom="12dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:id="@+id/streak_flame" android:layout_width="34dp" android:layout_height="41dp"
+            android:src="@drawable/streak_flame_lit" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/streak_count_lit" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="7dp" android:text="12" android:textSize="32sp" android:textColor="@color/streak_widget_orange"
+            android:fontFamily="sans-serif-black" android:includeFontPadding="false" android:maxLines="1" />
+        <TextView android:id="@+id/streak_count_idle" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="7dp" android:text="12" android:textSize="32sp" android:textColor="@color/streak_widget_muted"
+            android:fontFamily="sans-serif-black" android:includeFontPadding="false" android:maxLines="1" android:visibility="gone" />
+            </LinearLayout>
+            <TextView android:id="@+id/streak_label" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="2dp" android:text="días de racha" android:textSize="11sp" android:textStyle="bold"
+            android:textColor="@color/streak_widget_text" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/streak_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:text="Hoy ya has leído" android:textSize="11sp"
+        android:textColor="@color/streak_widget_muted" android:maxLines="1" android:ellipsize="end" />
+            <ProgressBar android:id="@+id/streak_progress" style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="4dp"
+        android:max="300" android:progress="140" android:indeterminate="false"
+        android:progressDrawable="@drawable/streak_widget_progress" android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/streak_book_column" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:layout_marginStart="10dp" android:orientation="horizontal"
+            android:gravity="center_vertical" android:visibility="gone">
+            <ImageView android:id="@+id/streak_cover" android:layout_width="38dp" android:layout_height="57dp"
+                android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginStart="9dp" android:orientation="vertical">
+                <TextView android:id="@+id/streak_book_left" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="3 h 20 min" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/streak_widget_orange"
+                    android:maxLines="1" />
+                <TextView android:id="@+id/streak_book_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp" android:text="El nombre del viento" android:textSize="12sp" android:textStyle="bold"
+                    android:textColor="@color/streak_widget_text" android:maxLines="2" android:ellipsize="end" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp" android:orientation="horizontal">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_0" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="L" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_0" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_done"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_1" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="M" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_1" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_done"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_2" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="X" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_2" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_done"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_3" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="J" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_3" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_done"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_4" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="V" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_4" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_today"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_5" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="S" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_5" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_future"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="center_horizontal">
+            <TextView android:id="@+id/streak_day_label_6" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="D" android:textSize="10sp" android:textStyle="bold" android:textColor="@color/streak_widget_muted"
+                android:includeFontPadding="false" />
+            <ImageView android:id="@+id/streak_day_6" android:layout_width="18dp" android:layout_height="18dp"
+                android:layout_marginTop="4dp" android:src="@drawable/streak_dot_future"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
+    <ImageView android:id="@+id/streak_logo" android:layout_width="8dp" android:layout_height="13dp"
+        android:layout_gravity="top|end" android:layout_marginTop="8dp" android:layout_marginEnd="9dp"
+        android:src="@drawable/streak_widget_logo" android:contentDescription="Inhouse Read" />
+</FrameLayout>

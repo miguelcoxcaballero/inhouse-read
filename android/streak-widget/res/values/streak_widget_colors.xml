@@ -7,4 +7,5 @@
     <color name="streak_widget_orange">#FFFF9600</color>
     <color name="streak_widget_gold">#FFFFC800</color>
     <color name="streak_widget_core">#FFFFF3B0</color>
+    <color name="streak_widget_glow">#FFFFF3E0</color>
 </resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo con un brillo cálido arriba cuando hoy ya cuenta para la racha. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:type="linear"
+        android:startColor="@color/streak_widget_glow" android:centerColor="@color/streak_widget_bg"
+        android:centerY="0.7" android:endColor="@color/streak_widget_bg" />
+    <corners android:radius="24dp" />
+</shape>

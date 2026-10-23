@@ -1,5 +1,21 @@
 # inhouse read
 
+## 1.7.322 / Android 1.1.22 — Widget en todos los tamaños, con tu libro
+
+El widget de la racha se puede redimensionar desde 1×1 hasta el ancho completo y
+elige solo el diseño que cabe: 1×1 (llama y días), una fila (llama, días y lo
+que falta hoy o el tiempo del libro), 1×2, 2×2 con la portada, 3 columnas con la
+semana y, desde unos 260 dp, dos columnas con la portada grande, el tiempo que
+queda y el título. En Android 12+ lo decide el lanzador al redimensionar; antes,
+`onAppWidgetOptionsChanged`. El logo de Inhouse Read va muy pequeño en la
+esquina superior derecha, y el fondo brilla en cálido cuando hoy ya cuenta.
+
+Muestra la portada del último libro abierto y el tiempo que queda (palabras sin
+leer a 230 por minuto, redondeado para no reescribirlo en cada página). Si el
+libro no tiene portada se dibuja una con el título. «Libro en el widget», en
+Cuenta y ajustes (solo en la app de Android), lo quita. El widget también se
+añade desde la app, en el panel de la racha.
+
 ## 1.7.321 / Android 1.1.21 — Widget de la racha
 
 Android 1.1.21 trae un widget para la pantalla de inicio (3×2, redimensionable):

@@ -11,7 +11,8 @@ const seed = () => {
   days[key(now)] = 292
   localStorage.setItem('inhouse-read-streak-device', JSON.stringify({ v: 1, days, best: 3, celebrated: '' }))
   window.__widget = []
-  window.InhouseStreak = { update: json => window.__widget.push(JSON.parse(json)), canPin: () => true, isPlaced: () => false, requestPin: () => { window.__pinRequested = true } }
+  window.__books = []
+  window.InhouseStreak = { update: json => window.__widget.push(JSON.parse(json)), updateBook: json => window.__books.push(json ? JSON.parse(json) : null), canPin: () => true, isPlaced: () => false, requestPin: () => { window.__pinRequested = true } }
   window.__vibrations = []
   navigator.vibrate = pattern => { window.__vibrations.push(pattern); return true }
 }
@@ -78,3 +79,35 @@ test('la racha se amplía tras 5 minutos de lectura y muestra la celebración', 
   await expect(page.locator('.streak-celebration')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('el widget recibe el último libro y el ajuste lo quita', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 390, height: 844 })
+  // Sin racha a punto de cumplirse: la celebración no debe tapar el lector.
+  await page.addInitScript(() => {
+    window.__books = []
+    window.InhouseStreak = { update() {}, updateBook: json => window.__books.push(json ? JSON.parse(json) : null), canPin: () => false, isPlaced: () => false }
+  })
+  await page.goto('./')
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/lectura-es.epub')
+  await expect(page.locator('#reader-top-title')).not.toBeEmpty()
+  // Mientras el libro carga, la cabecera del lector no acepta toques.
+  await expect(async () => {
+    await page.locator('#reader-back').click()
+    await expect(page.locator('#reader-screen')).toBeHidden({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
+  await expect.poll(() => page.evaluate(() => window.__books.filter(Boolean).length), { timeout: 15_000 }).toBeGreaterThan(0)
+  const book = await page.evaluate(() => window.__books.filter(Boolean).at(-1))
+  expect(book.title).toBe('La Sala de Lectura')
+  expect(book.cover).toMatch(/^iVBORw0KGgo/)
+  expect(Number.isInteger(book.minutes)).toBe(true)
+
+  await page.locator('#drive-profile-btn').click()
+  const toggle = page.getByRole('checkbox', { name: /Mostrar en el widget la portada/ })
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toBeChecked()
+  await toggle.uncheck()
+  await expect.poll(() => page.evaluate(() => window.__books.at(-1))).toBe(null)
+  expect(await page.evaluate(() => localStorage.getItem('inhouse-read-widget-book'))).toBe('off')
+})
+

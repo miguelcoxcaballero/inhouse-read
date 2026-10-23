@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2×1 o más ancho y una fila: llama, días y una línea (lo que falta hoy o el libro). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/streak_widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/streak_widget_bg_lit">
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="horizontal" android:gravity="center_vertical"
+    android:paddingStart="12dp" android:paddingEnd="20dp">
+    <ImageView android:id="@+id/streak_flame" android:layout_width="28dp" android:layout_height="33dp"
+        android:src="@drawable/streak_flame_lit" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+    <TextView android:id="@+id/streak_count_lit" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="6dp" android:text="12" android:textSize="26sp" android:textColor="@color/streak_widget_orange"
+        android:fontFamily="sans-serif-black" android:includeFontPadding="false" android:maxLines="1" />
+    <TextView android:id="@+id/streak_count_idle" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="6dp" android:text="12" android:textSize="26sp" android:textColor="@color/streak_widget_muted"
+        android:fontFamily="sans-serif-black" android:includeFontPadding="false" android:maxLines="1" android:visibility="gone" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:layout_marginStart="8dp" android:orientation="vertical">
+        <TextView android:id="@+id/streak_label" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="días" android:textSize="11sp" android:textStyle="bold" android:textColor="@color/streak_widget_text"
+            android:maxLines="1" />
+        <TextView android:id="@+id/streak_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="3 h 20 min" android:textSize="11sp" android:textColor="@color/streak_widget_muted"
+            android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+</LinearLayout>
+    <ImageView android:id="@+id/streak_logo" android:layout_width="8dp" android:layout_height="13dp"
+        android:layout_gravity="top|end" android:layout_marginTop="8dp" android:layout_marginEnd="9dp"
+        android:src="@drawable/streak_widget_logo" android:contentDescription="Inhouse Read" />
+</FrameLayout>

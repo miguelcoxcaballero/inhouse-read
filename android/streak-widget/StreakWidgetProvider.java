@@ -8,12 +8,25 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.ArrayMap;
+import android.util.SizeF;
 import android.view.View;
 import android.widget.RemoteViews;
 import org.json.JSONArray;
+import java.io.File;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -24,6 +37,11 @@ import java.util.Set;
 public final class StreakWidgetProvider extends AppWidgetProvider {
     static final String PREFERENCES = "reading-streak-widget";
     static final int GOAL_SECONDS = 300;
+    private static final int MEDIUM_DP = 100;
+    private static final int TALL_DP = 100;
+    private static final int LARGE_DP = 180;
+    private static final int WIDE_DP = 260;
+    private static final int ORANGE = 0xFFFF9600;
     private static final String ACTION_MIDNIGHT = "__PACKAGE__.STREAK_WIDGET_MIDNIGHT";
     private static final String[] WEEKDAYS = {"L", "M", "X", "J", "V", "S", "D"};
     private static final int[] DAY_DOTS = {
@@ -69,7 +87,27 @@ public final class StreakWidgetProvider extends AppWidgetProvider {
             day.get(Calendar.YEAR), day.get(Calendar.MONTH) + 1, day.get(Calendar.DAY_OF_MONTH));
     }
 
-    private static void render(Context context, AppWidgetManager manager, int[] ids) {
+    @Override
+    public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager, int id, Bundle options) {
+        // Antes de Android 12 el diseño se elige aquí, con el ancho que da el lanzador.
+        render(context, manager, new int[] {id});
+    }
+
+    /** Lo que muestran los tres diseños, calculado una vez por actualización. */
+    private static final class Model {
+        boolean doneToday;
+        int streak;
+        int seconds;
+        String status;
+        final int[] dots = new int[7];
+        int today = -1;
+        String bookTitle;
+        String bookLeft;
+        int bookMinutes = -1;
+        Bitmap cover;
+    }
+
+    private static Model model(Context context) {
         SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         Set<String> done = new HashSet<>();
         try {
@@ -77,64 +115,181 @@ public final class StreakWidgetProvider extends AppWidgetProvider {
             for (int i = 0; i < days.length(); i++) done.add(days.getString(i));
         } catch (Exception ignored) { }
 
+        Model model = new Model();
         Calendar now = Calendar.getInstance();
         String today = dayKey(now);
-        boolean doneToday = done.contains(today);
-        int seconds = today.equals(preferences.getString("secondsDay", "")) ? preferences.getInt("seconds", 0) : 0;
-        if (doneToday) seconds = GOAL_SECONDS;
+        model.doneToday = done.contains(today);
+        model.seconds = today.equals(preferences.getString("secondsDay", "")) ? preferences.getInt("seconds", 0) : 0;
+        if (model.doneToday) model.seconds = GOAL_SECONDS;
 
         Calendar cursor = (Calendar) now.clone();
-        if (!doneToday) cursor.add(Calendar.DAY_OF_MONTH, -1);
-        int streak = 0;
-        while (done.contains(dayKey(cursor)) && streak < 5000) {
-            streak++;
+        if (!model.doneToday) cursor.add(Calendar.DAY_OF_MONTH, -1);
+        while (done.contains(dayKey(cursor)) && model.streak < 5000) {
+            model.streak++;
             cursor.add(Calendar.DAY_OF_MONTH, -1);
         }
 
-        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.streak_widget);
-        views.setImageViewResource(R.id.streak_flame, doneToday ? R.drawable.streak_flame_lit : R.drawable.streak_flame_idle);
-        views.setViewVisibility(R.id.streak_count_lit, doneToday ? View.VISIBLE : View.GONE);
-        views.setViewVisibility(R.id.streak_count_idle, doneToday ? View.GONE : View.VISIBLE);
-        views.setTextViewText(R.id.streak_count_lit, String.valueOf(streak));
-        views.setTextViewText(R.id.streak_count_idle, String.valueOf(streak));
-        views.setTextViewText(R.id.streak_label, streak == 1 ? "día de racha" : "días de racha");
-        int minutes = (int) Math.ceil(Math.max(0, GOAL_SECONDS - seconds) / 60.0);
-        String status;
-        if (doneToday) status = "Hoy ya has leído";
-        else if (seconds > 0) status = minutes == 1 ? "Te falta 1 minuto hoy" : "Te faltan " + minutes + " minutos hoy";
-        else if (streak > 0) status = "Lee 5 minutos para no perderla";
-        else status = "Lee 5 minutos para empezar";
-        views.setTextViewText(R.id.streak_status, status);
-        // Barra solo mientras el día está a medias: ni vacía ni ya cumplida.
-        boolean partial = !doneToday && seconds > 0;
-        views.setViewVisibility(R.id.streak_progress, partial ? View.VISIBLE : View.GONE);
-        if (partial) views.setProgressBar(R.id.streak_progress, GOAL_SECONDS, seconds, false);
+        int minutes = (int) Math.ceil(Math.max(0, GOAL_SECONDS - model.seconds) / 60.0);
+        if (model.doneToday) model.status = "Hoy ya has leído";
+        else if (model.seconds > 0) model.status = minutes == 1 ? "Falta 1 min hoy" : "Faltan " + minutes + " min hoy";
+        else if (model.streak > 0) model.status = "Lee 5 min hoy";
+        else model.status = "Empieza hoy: 5 min";
 
         // Semana de lunes a domingo, como en la app.
         Calendar day = (Calendar) now.clone();
-        int offset = (day.get(Calendar.DAY_OF_WEEK) + 5) % 7;
-        day.add(Calendar.DAY_OF_MONTH, -offset);
+        day.add(Calendar.DAY_OF_MONTH, -((day.get(Calendar.DAY_OF_WEEK) + 5) % 7));
         for (int i = 0; i < 7; i++) {
             String key = dayKey(day);
             int compare = key.compareTo(today);
-            int drawable;
-            if (done.contains(key)) drawable = R.drawable.streak_dot_done;
-            else if (compare == 0) drawable = R.drawable.streak_dot_today;
-            else if (compare > 0) drawable = R.drawable.streak_dot_future;
-            else drawable = R.drawable.streak_dot_missed;
-            views.setImageViewResource(DAY_DOTS[i], drawable);
-            views.setTextViewText(DAY_LABELS[i], WEEKDAYS[i]);
-            if (compare == 0) views.setTextColor(DAY_LABELS[i], 0xFFFF9600);
+            if (compare == 0) model.today = i;
+            if (done.contains(key)) model.dots[i] = R.drawable.streak_dot_done;
+            else if (compare == 0) model.dots[i] = R.drawable.streak_dot_today;
+            else if (compare > 0) model.dots[i] = R.drawable.streak_dot_future;
+            else model.dots[i] = R.drawable.streak_dot_missed;
             day.add(Calendar.DAY_OF_MONTH, 1);
         }
+        // Último libro abierto (StreakWidgetBridge.updateBook); vacío si el ajuste está apagado.
+        model.bookTitle = preferences.getString("bookTitle", null);
+        int left = preferences.getInt("bookMinutes", -1);
+        model.bookMinutes = left;
+        if (model.bookTitle != null && left >= 0) model.bookLeft = left < 1 ? "Casi terminado" : "Quedan " + duration(left);
+        File cover = new File(context.getFilesDir(), COVER_FILE);
+        if (model.bookTitle != null && cover.isFile()) model.cover = BitmapFactory.decodeFile(cover.getPath());
+        return model;
+    }
 
+    static final String COVER_FILE = "streak-widget-cover.png";
+
+    private static String duration(int minutes) {
+        if (minutes < 60) return minutes + " min";
+        int hours = minutes / 60, rest = minutes % 60;
+        return rest == 0 || hours >= 10 ? hours + " h" : hours + " h " + rest + " min";
+    }
+
+    private static String shortDuration(int minutes) {
+        return minutes < 60 ? Math.max(1, minutes) + " min" : Math.round(minutes / 60f) + " h";
+    }
+
+    /** Un diseño concreto. Solo toca vistas que existen en ese diseño. */
+    private static RemoteViews build(Context context, Model model, int layout) {
+        RemoteViews views = new RemoteViews(context.getPackageName(), layout);
+        boolean tiny = layout == R.layout.streak_widget_tiny;
+        boolean row = layout == R.layout.streak_widget_row;
+        boolean small = layout == R.layout.streak_widget_small;
+        boolean wide = layout == R.layout.streak_widget_wide;
+        boolean week = wide || layout == R.layout.streak_widget;
+        views.setInt(R.id.streak_widget_root, "setBackgroundResource",
+            model.doneToday ? R.drawable.streak_widget_bg_lit : R.drawable.streak_widget_bg);
+        views.setImageViewResource(R.id.streak_flame, model.doneToday ? R.drawable.streak_flame_lit : R.drawable.streak_flame_idle);
+        views.setViewVisibility(R.id.streak_count_lit, model.doneToday ? View.VISIBLE : View.GONE);
+        views.setViewVisibility(R.id.streak_count_idle, model.doneToday ? View.GONE : View.VISIBLE);
+        views.setTextViewText(R.id.streak_count_lit, String.valueOf(model.streak));
+        views.setTextViewText(R.id.streak_count_idle, String.valueOf(model.streak));
+        boolean book = model.bookTitle != null;
+
+        String summary = model.streak + (model.streak == 1 ? " día de racha. " : " días de racha. ") + model.status;
+        if (tiny) {
+            views.setContentDescription(R.id.streak_widget_root, summary);
+        } else if (row) {
+            views.setTextViewText(R.id.streak_label, model.streak == 1 ? "día" : "días");
+            int minutes = (int) Math.ceil(Math.max(0, GOAL_SECONDS - model.seconds) / 60.0);
+            CharSequence line;
+            if (!model.doneToday) line = model.seconds > 0 ? "Faltan " + minutes + " min" : "Lee 5 min";
+            else if (book && model.bookMinutes >= 1) line = orange(duration(model.bookMinutes));
+            else line = "¡Hecho!";
+            views.setTextViewText(R.id.streak_status, line);
+            views.setContentDescription(R.id.streak_widget_root, summary);
+        } else if (small) {
+            views.setTextViewText(R.id.streak_label, model.streak == 1 ? "día" : "días");
+            views.setViewVisibility(R.id.streak_book, book && model.bookMinutes >= 1 ? View.VISIBLE : View.GONE);
+            if (book && model.bookMinutes >= 1) views.setTextViewText(R.id.streak_book, shortDuration(model.bookMinutes));
+            views.setContentDescription(R.id.streak_widget_root, summary);
+        } else {
+            views.setTextViewText(R.id.streak_label, model.streak == 1 ? "día de racha" : "días de racha");
+            views.setTextViewText(R.id.streak_status, model.status);
+            // Barra solo mientras el día está a medias: ni vacía ni ya cumplida.
+            boolean partial = !model.doneToday && model.seconds > 0;
+            views.setViewVisibility(R.id.streak_progress, partial ? View.VISIBLE : View.GONE);
+            if (partial) views.setProgressBar(R.id.streak_progress, GOAL_SECONDS, model.seconds, false);
+            if (wide) {
+                views.setViewVisibility(R.id.streak_book_column, book ? View.VISIBLE : View.GONE);
+                if (book) {
+                    views.setViewVisibility(R.id.streak_book_left, model.bookLeft != null ? View.VISIBLE : View.GONE);
+                    if (model.bookLeft != null) views.setTextViewText(R.id.streak_book_left, model.bookLeft);
+                    views.setTextViewText(R.id.streak_book_title, model.bookTitle);
+                }
+            } else {
+                views.setViewVisibility(R.id.streak_book, book ? View.VISIBLE : View.GONE);
+                if (book) views.setTextViewText(R.id.streak_book, bookLine(model));
+            }
+            views.setViewVisibility(R.id.streak_cover, book && model.cover != null ? View.VISIBLE : View.GONE);
+            if (book && model.cover != null) {
+                views.setImageViewBitmap(R.id.streak_cover, model.cover);
+                views.setContentDescription(R.id.streak_cover, "Portada de " + model.bookTitle);
+            }
+        }
+        if (week) {
+            for (int i = 0; i < 7; i++) {
+                views.setImageViewResource(DAY_DOTS[i], model.dots[i]);
+                views.setTextViewText(DAY_LABELS[i], WEEKDAYS[i]);
+                if (i == model.today) views.setTextColor(DAY_LABELS[i], ORANGE);
+            }
+        }
         Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (open != null) {
             open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             views.setOnClickPendingIntent(R.id.streak_widget_root, PendingIntent.getActivity(context, 0, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         }
-        for (int id : ids) manager.updateAppWidget(id, views);
+        return views;
+    }
+
+    /** Texto en naranja y negrita, como las cifras de la racha. */
+    private static SpannableStringBuilder orange(String text) {
+        SpannableStringBuilder line = new SpannableStringBuilder(text);
+        line.setSpan(new ForegroundColorSpan(ORANGE), 0, line.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        line.setSpan(new StyleSpan(Typeface.BOLD), 0, line.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return line;
+    }
+
+    /** «3 h 20 min · Título», con el tiempo en naranja y negrita. */
+    private static CharSequence bookLine(Model model) {
+        if (model.bookLeft == null) return model.bookTitle;
+        return orange(model.bookLeft).append(" · ").append(model.bookTitle);
+    }
+
+    /** El diseño mayor que cabe en ese tamaño (dp). Con una sola fila de alto, los de una fila. */
+    private static int layoutFor(int widthDp, int heightDp) {
+        if (heightDp < TALL_DP) return widthDp >= MEDIUM_DP ? R.layout.streak_widget_row : R.layout.streak_widget_tiny;
+        if (widthDp >= WIDE_DP) return R.layout.streak_widget_wide;
+        if (widthDp >= LARGE_DP) return R.layout.streak_widget;
+        if (widthDp >= MEDIUM_DP) return R.layout.streak_widget_medium;
+        return R.layout.streak_widget_small;
+    }
+
+    private static void render(Context context, AppWidgetManager manager, int[] ids) {
+        Model model = model(context);
+        for (int id : ids) {
+            RemoteViews views;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+: el lanzador elige el diseño mayor que quepa al redimensionar.
+                Map<SizeF, RemoteViews> sizes = new ArrayMap<>();
+                sizes.put(new SizeF(40f, 40f), build(context, model, R.layout.streak_widget_tiny));
+                sizes.put(new SizeF(MEDIUM_DP, 40f), build(context, model, R.layout.streak_widget_row));
+                sizes.put(new SizeF(40f, TALL_DP), build(context, model, R.layout.streak_widget_small));
+                sizes.put(new SizeF(MEDIUM_DP, TALL_DP), build(context, model, R.layout.streak_widget_medium));
+                sizes.put(new SizeF(LARGE_DP, TALL_DP), build(context, model, R.layout.streak_widget));
+                sizes.put(new SizeF(WIDE_DP, TALL_DP), build(context, model, R.layout.streak_widget_wide));
+                views = new RemoteViews(sizes);
+            } else {
+                Bundle options = manager.getAppWidgetOptions(id);
+                // En vertical el widget mide el ancho mínimo por el alto máximo.
+                int width = options == null ? 0 : options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
+                int height = options == null ? 0 : options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
+                views = build(context, model, layoutFor(width == 0 ? WIDE_DP : width, height == 0 ? TALL_DP : height));
+            }
+            manager.updateAppWidget(id, views);
+        }
     }
 
     private static PendingIntent midnightIntent(Context context) {

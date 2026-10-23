@@ -198,7 +198,7 @@ class StreakWidgetTest(unittest.TestCase):
         import re
         java = "".join((self.ROOT / name).read_text(encoding="utf-8")
                        for name in ("StreakWidgetProvider.java", "StreakWidgetBridge.java"))
-        layout = (self.ROOT / "res/layout/streak_widget.xml").read_text(encoding="utf-8")
+        layout = "".join(path.read_text(encoding="utf-8") for path in (self.ROOT / "res/layout").glob("*.xml"))
         drawables = {path.stem for path in (self.ROOT / "res/drawable").glob("*.xml")}
         for kind, name in set(re.findall(r"R\.(id|drawable|layout)\.(\w+)", java)):
             with self.subTest(resource=f"{kind}.{name}"):
@@ -208,6 +208,20 @@ class StreakWidgetTest(unittest.TestCase):
                     self.assertIn(name, drawables)
                 else:
                     self.assertTrue((self.ROOT / f"res/layout/{name}.xml").exists())
+
+    def test_every_size_has_its_layout(self):
+        layouts = {path.stem for path in (self.ROOT / "res/layout").glob("*.xml")}
+        self.assertEqual(layouts, {"streak_widget_tiny", "streak_widget_row", "streak_widget_small",
+                                   "streak_widget_medium", "streak_widget", "streak_widget_wide"})
+        info = (self.ROOT / "res/xml/streak_widget_info.xml").read_text(encoding="utf-8")
+        # Hasta 1×1: 40 dp es una celda en la fórmula de Android (70 × n − 30).
+        self.assertIn('android:minResizeWidth="40dp"', info)
+        self.assertIn('android:minResizeHeight="40dp"', info)
+        for name in layouts:
+            with self.subTest(layout=name):
+                text = (self.ROOT / f"res/layout/{name}.xml").read_text(encoding="utf-8")
+                self.assertIn('@+id/streak_widget_root', text)
+                self.assertIn('@drawable/streak_widget_logo', text)
 
     def test_bridge_checks_the_page_before_writing(self):
         bridge = (self.ROOT / "StreakWidgetBridge.java").read_text(encoding="utf-8")
