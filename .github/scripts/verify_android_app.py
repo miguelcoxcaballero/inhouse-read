@@ -397,7 +397,8 @@ def wait_for_zen(label, active, timeout=15):
     deadline = time.time() + timeout
     while True:
         mode, output = zen_mode()
-        if (mode not in ("", "OFF")) == active:
+        # «OFF» or «ZEN_MODE_OFF» (Android 15) when nothing silences notifications.
+        if (bool(mode) and not mode.endswith("OFF")) == active:
             print(f"Reading focus {label}: {mode}", flush=True)
             return
         if time.time() > deadline:
