@@ -146,15 +146,24 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   const chips = [...document.querySelectorAll('[data-streak-chip]')]
   function renderChips() {
     const info = streakInfo(state, today)
+    // El texto accesible cambia por minutos, no cada segundo: cada cambio de
+    // atributo es un evento de accesibilidad que Android tiene que procesar.
+    const minutes = Math.ceil(info.remaining / 60)
+    const left = `${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`
     const label = info.doneToday
       ? `Racha de ${info.current} ${dayWord(info.current)}. Hoy ya has leído.`
-      : `Racha de ${info.current} ${dayWord(info.current)}. Te faltan ${formatClock(info.remaining)} de lectura hoy.`
+      : `Racha de ${info.current} ${dayWord(info.current)}. Te ${minutes === 1 ? 'falta' : 'faltan'} ${left} de lectura hoy.`
+    const look = info.doneToday ? 'lit' : 'idle'
     for (const chip of chips) {
-      chip.dataset.state = info.doneToday ? 'lit' : 'idle'
-      chip.style.setProperty('--streak-progress', String(info.seconds / GOAL_SECONDS))
-      chip.querySelector('.streak-chip-count').textContent = String(info.current)
-      chip.setAttribute('aria-label', label)
-      chip.title = info.doneToday ? 'Racha de lectura' : `Lee ${formatClock(info.remaining)} más hoy`
+      const progress = String(Math.floor(info.seconds / GOAL_SECONDS * 100) / 100)
+      if (chip.style.getPropertyValue('--streak-progress') !== progress) chip.style.setProperty('--streak-progress', progress)
+      if (chip.dataset.state !== look) chip.dataset.state = look
+      const count = chip.querySelector('.streak-chip-count')
+      if (count.textContent !== String(info.current)) count.textContent = String(info.current)
+      if (chip.getAttribute('aria-label') !== label) {
+        chip.setAttribute('aria-label', label)
+        chip.title = info.doneToday ? 'Racha de lectura' : `Lee ${left} más hoy`
+      }
     }
     if (panel && !panel.hidden) renderPanel()
   }

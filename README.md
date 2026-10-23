@@ -1,6 +1,6 @@
 # inhouse read
 
-## 1.7.319 / Android 1.1.21 — Racha de lectura
+## 1.7.320 / Android 1.1.21 — Racha de lectura
 
 Arriba a la derecha, junto a la cuenta, aparece una llama con los días seguidos
 de lectura. En gris, hoy aún falta leer; en naranja, hoy ya cuenta. Dentro del
@@ -20,6 +20,9 @@ cumplidos (no el progreso de cada minuto), y dos dispositivos se combinan por
 día sin perder lecturas. Android 1.1.21 (versionCode 34) añade el permiso de
 vibración, que la WebView necesita para `navigator.vibrate`; se publica solo en
 A. Sin esa APK todo funciona igual, pero el teléfono no vibra.
+
+En 1.7.320 el texto accesible del contador cambia por minutos y no cada
+segundo, para no generar un evento de accesibilidad por segundo mientras se lee.
 
 ## 1.7.318 / Android 1.1.20 — Prueba del actualizador
 

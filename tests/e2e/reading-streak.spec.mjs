@@ -22,7 +22,7 @@ test('la racha se amplía tras 5 minutos de lectura y muestra la celebración', 
   await page.goto('./')
   const homeChip = page.locator('.header-actions [data-streak-chip]')
   await expect(homeChip).toHaveAttribute('data-state', 'idle')
-  await expect(homeChip).toHaveAttribute('aria-label', /Racha de 3 días\. Te faltan 0:0\d/)
+  await expect(homeChip).toHaveAttribute('aria-label', 'Racha de 3 días. Te falta 1 minuto de lectura hoy.')
 
   await homeChip.click()
   const panel = page.getByRole('dialog', { name: /3 días de racha/ })
