@@ -196,8 +196,10 @@ public final class StreakWidgetProvider extends AppWidgetProvider {
             CharSequence line;
             if (!model.doneToday) line = model.seconds > 0 ? "Faltan " + minutes + " min" : "Lee 5 min";
             else if (book && model.bookMinutes >= 1) line = orange(duration(model.bookMinutes));
-            else line = "¡Hecho!";
-            views.setTextViewText(R.id.streak_status, line);
+            else line = null;
+            // Cumplido y sin libro: solo la llama y la cifra.
+            views.setViewVisibility(R.id.streak_status, line != null ? View.VISIBLE : View.GONE);
+            if (line != null) views.setTextViewText(R.id.streak_status, line);
             views.setContentDescription(R.id.streak_widget_root, summary);
         } else if (small) {
             views.setTextViewText(R.id.streak_label, model.streak == 1 ? "día" : "días");
@@ -206,6 +208,8 @@ public final class StreakWidgetProvider extends AppWidgetProvider {
             views.setContentDescription(R.id.streak_widget_root, summary);
         } else {
             views.setTextViewText(R.id.streak_label, model.streak == 1 ? "día de racha" : "días de racha");
+            // Con el día cumplido la llama encendida ya lo dice: sin texto de estado.
+            views.setViewVisibility(R.id.streak_status, model.doneToday ? View.GONE : View.VISIBLE);
             views.setTextViewText(R.id.streak_status, model.status);
             // Barra solo mientras el día está a medias: ni vacía ni ya cumplida.
             boolean partial = !model.doneToday && model.seconds > 0;
@@ -216,11 +220,12 @@ public final class StreakWidgetProvider extends AppWidgetProvider {
                 if (book) {
                     views.setViewVisibility(R.id.streak_book_left, model.bookLeft != null ? View.VISIBLE : View.GONE);
                     if (model.bookLeft != null) views.setTextViewText(R.id.streak_book_left, model.bookLeft);
-                    views.setTextViewText(R.id.streak_book_title, model.bookTitle);
                 }
             } else {
-                views.setViewVisibility(R.id.streak_book, book ? View.VISIBLE : View.GONE);
-                if (book) views.setTextViewText(R.id.streak_book, bookLine(model));
+                // Solo el tiempo que queda: la portada ya dice qué libro es.
+                boolean left = book && model.bookLeft != null;
+                views.setViewVisibility(R.id.streak_book, left ? View.VISIBLE : View.GONE);
+                if (left) views.setTextViewText(R.id.streak_book, model.bookLeft);
             }
             views.setViewVisibility(R.id.streak_cover, book && model.cover != null ? View.VISIBLE : View.GONE);
             if (book && model.cover != null) {
@@ -250,12 +255,6 @@ public final class StreakWidgetProvider extends AppWidgetProvider {
         line.setSpan(new ForegroundColorSpan(ORANGE), 0, line.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         line.setSpan(new StyleSpan(Typeface.BOLD), 0, line.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         return line;
-    }
-
-    /** «3 h 20 min · Título», con el tiempo en naranja y negrita. */
-    private static CharSequence bookLine(Model model) {
-        if (model.bookLeft == null) return model.bookTitle;
-        return orange(model.bookLeft).append(" · ").append(model.bookTitle);
     }
 
     /** El diseño mayor que cabe en ese tamaño (dp). Con una sola fila de alto, los de una fila. */

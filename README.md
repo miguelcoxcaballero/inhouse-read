@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.323 / Android 1.1.23 — Portada más grande y menos texto en el widget
+
+La portada del último libro crece (hasta 52×78 dp, enviada a 156×234 px) y el
+widget solo dice lo necesario: sin el título del libro, que ya se ve en la
+portada, y sin «Hoy ya has leído», porque la llama encendida ya lo indica. El
+tiempo que queda del libro va en naranja junto a la racha o bajo la portada; el
+estado y la barra solo aparecen mientras falta leer hoy.
+
 ## 1.7.322 / Android 1.1.22 — Widget en todos los tamaños, con tu libro
 
 El widget de la racha se puede redimensionar desde 1×1 hasta el ancho completo y

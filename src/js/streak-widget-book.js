@@ -2,9 +2,9 @@
 // miniatura PNG de la portada (la guardada, o una hecha con el título).
 
 const WORDS_PER_MINUTE = 230
-// 34×50 dp en el widget: 3× para que se vea nítida en pantallas densas.
-const COVER_WIDTH = 108
-const COVER_HEIGHT = 162
+// Hasta 52×78 dp en el widget: 3× para que se vea nítida en pantallas densas.
+const COVER_WIDTH = 156
+const COVER_HEIGHT = 234
 
 /** Minutos de lectura que quedan, o -1 si no se conoce la longitud del libro. */
 export function minutesLeft(record) {
@@ -45,21 +45,21 @@ function drawTitleCover(context, title) {
   context.fillStyle = gradient
   context.fillRect(0, 0, COVER_WIDTH, COVER_HEIGHT)
   context.fillStyle = 'rgba(255,255,255,.18)'
-  context.fillRect(8, 0, 3, COVER_HEIGHT)
+  context.fillRect(12, 0, 4, COVER_HEIGHT)
   context.fillStyle = '#fff'
   context.textAlign = 'center'
-  context.font = '600 15px Georgia, serif'
+  context.font = '600 22px Georgia, serif'
   const words = String(title).split(/\s+/)
   const lines = []
   let line = ''
   for (const word of words) {
     const next = line ? `${line} ${word}` : word
-    if (context.measureText(next).width > COVER_WIDTH - 22 && line) { lines.push(line); line = word } else line = next
+    if (context.measureText(next).width > COVER_WIDTH - 32 && line) { lines.push(line); line = word } else line = next
     if (lines.length === 4) break
   }
   if (line && lines.length < 4) lines.push(line)
-  const top = COVER_HEIGHT / 2 - (lines.length - 1) * 9
-  lines.forEach((text, index) => context.fillText(text, COVER_WIDTH / 2 + 3, top + index * 18, COVER_WIDTH - 20))
+  const top = COVER_HEIGHT / 2 - (lines.length - 1) * 13
+  lines.forEach((text, index) => context.fillText(text, COVER_WIDTH / 2 + 4, top + index * 26, COVER_WIDTH - 28))
 }
 
 /** PNG en base64 (sin prefijo) de la portada con esquinas redondeadas. */
@@ -68,7 +68,7 @@ export async function coverPng(record, title) {
   canvas.width = COVER_WIDTH
   canvas.height = COVER_HEIGHT
   const context = canvas.getContext('2d')
-  roundedRect(context, 0, 0, COVER_WIDTH, COVER_HEIGHT, 9)
+  roundedRect(context, 0, 0, COVER_WIDTH, COVER_HEIGHT, 12)
   context.clip()
   let drawn = false
   if (record?.cover instanceof Blob && typeof createImageBitmap === 'function') {
@@ -84,8 +84,8 @@ export async function coverPng(record, title) {
   }
   if (!drawn) drawTitleCover(context, title)
   context.strokeStyle = 'rgba(0,0,0,.14)'
-  context.lineWidth = 2
-  roundedRect(context, 1, 1, COVER_WIDTH - 2, COVER_HEIGHT - 2, 8)
+  context.lineWidth = 3
+  roundedRect(context, 1, 1, COVER_WIDTH - 2, COVER_HEIGHT - 2, 11)
   context.stroke()
   return canvas.toDataURL('image/png').split(',')[1] || ''
 }
