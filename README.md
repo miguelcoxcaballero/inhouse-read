@@ -1,5 +1,23 @@
 # inhouse read
 
+## 1.7.321 / Android 1.1.21 — Widget de la racha
+
+Android 1.1.21 trae un widget para la pantalla de inicio (3×2, redimensionable):
+la llama encendida o gris, los días de racha, cuánto falta hoy con una barra de
+progreso y la semana con los días leídos. Tocarlo abre la app. La web le pasa
+los días cumplidos por `window.InhouseStreak` (como mucho una vez por minuto
+mientras se lee, y solo desde la página de Inhouse Read); el widget calcula la
+racha con la fecha del teléfono y se actualiza poco después de medianoche, así
+que se pone en gris aunque no se abra la app. Si el lanzador lo permite, el
+panel de la racha ofrece «Añade la racha a tu pantalla de inicio», que abre el
+aviso de Android para colocarlo. Código en `android/streak-widget/`, registrado
+por `.github/scripts/register_streak_widget.py`.
+
+En el lector, el contador es ahora una pastilla con el color del tema de
+lectura: la llama se llena de naranja desde abajo según los minutos leídos hoy
+y la pastilla se vuelve naranja cuando el día ya cuenta. La llama del panel se
+llena igual.
+
 ## 1.7.320 / Android 1.1.21 — Racha de lectura
 
 Arriba a la derecha, junto a la cuenta, aparece una llama con los días seguidos

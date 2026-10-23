@@ -183,5 +183,37 @@ class MainActivityTest(unittest.TestCase):
                 self.assertEqual(source.count("("), source.count(")"))
 
 
+class StreakWidgetTest(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parents[2] / "android/streak-widget"
+
+    def test_resources_are_valid_xml(self):
+        from xml.etree import ElementTree
+        files = list((self.ROOT / "res").rglob("*.xml"))
+        self.assertGreater(len(files), 8)
+        for file in files:
+            with self.subTest(file=file.name):
+                ElementTree.parse(file)
+
+    def test_java_uses_only_existing_resources(self):
+        import re
+        java = "".join((self.ROOT / name).read_text(encoding="utf-8")
+                       for name in ("StreakWidgetProvider.java", "StreakWidgetBridge.java"))
+        layout = (self.ROOT / "res/layout/streak_widget.xml").read_text(encoding="utf-8")
+        drawables = {path.stem for path in (self.ROOT / "res/drawable").glob("*.xml")}
+        for kind, name in set(re.findall(r"R\.(id|drawable|layout)\.(\w+)", java)):
+            with self.subTest(resource=f"{kind}.{name}"):
+                if kind == "id":
+                    self.assertIn(f'@+id/{name}"', layout)
+                elif kind == "drawable":
+                    self.assertIn(name, drawables)
+                else:
+                    self.assertTrue((self.ROOT / f"res/layout/{name}.xml").exists())
+
+    def test_bridge_checks_the_page_before_writing(self):
+        bridge = (self.ROOT / "StreakWidgetBridge.java").read_text(encoding="utf-8")
+        self.assertIn("!trustedPage()", bridge.split("public void update")[1].split("try")[0])
+        self.assertIn('startsWith("/inhouse-read/")', bridge)
+
+
 if __name__ == "__main__":
     unittest.main()

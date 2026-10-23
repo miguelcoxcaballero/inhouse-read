@@ -165,7 +165,7 @@ jobs:
             gh release create android-v1.1.21 inhouse-read-release-v1.1.21.apk \
               --target "$GITHUB_SHA" \
               --title "Inhouse Read Android 1.1.21" \
-              --notes "Reading streak with vibration." \
+              --notes "Reading streak widget and vibration." \
               --prerelease --latest=false
           fi
           gh release edit android-v1.1.21 --prerelease --latest=false
@@ -191,10 +191,10 @@ jobs:
             1.1.21 \
             34 \
             android-v1.1.21 \
-            "Reading streak with vibration."
+            "Reading streak widget and vibration."
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python vendor/inhouse-services-updater/catalog.py --channel A --manifest public/android-update.json --changelog "Reading streak with vibration."
+          python vendor/inhouse-services-updater/catalog.py --channel A --manifest public/android-update.json --changelog "Reading streak widget and vibration."
           git add public/android-update.json updates/A.json updates/B.json
           if git diff --cached --quiet; then
             echo "android-update.json ya estaba al dia, nada que comitear"

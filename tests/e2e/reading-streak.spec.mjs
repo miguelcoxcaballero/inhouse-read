@@ -10,6 +10,8 @@ const seed = () => {
   for (let i = 1; i <= 3; i++) { const d = new Date(now); d.setDate(d.getDate() - i); days[key(d)] = 300 }
   days[key(now)] = 292
   localStorage.setItem('inhouse-read-streak-device', JSON.stringify({ v: 1, days, best: 3, celebrated: '' }))
+  window.__widget = []
+  window.InhouseStreak = { update: json => window.__widget.push(JSON.parse(json)), canPin: () => true, isPlaced: () => false, requestPin: () => { window.__pinRequested = true } }
   window.__vibrations = []
   navigator.vibrate = pattern => { window.__vibrations.push(pattern); return true }
 }
@@ -29,6 +31,10 @@ test('la racha se amplía tras 5 minutos de lectura y muestra la celebración', 
   await expect(panel).toBeVisible()
   await expect(panel.locator('.streak-day.is-done').first()).toBeVisible()
   await expect(panel.locator('.streak-day.is-today')).toHaveCount(1)
+  // Android ofrece anclar el widget desde el panel.
+  await panel.getByRole('button', { name: /Añade la racha a tu pantalla de inicio/ }).click()
+  expect(await page.evaluate(() => window.__pinRequested)).toBe(true)
+  await expect(panel).toContainText('Confírmalo en el aviso de Android')
   await page.keyboard.press('Escape')
   await expect(panel).toBeHidden()
   await expect(homeChip).toBeFocused()
@@ -57,6 +63,11 @@ test('la racha se amplía tras 5 minutos de lectura y muestra la celebración', 
   expect(Object.values(stored.synced.days).every(seconds => seconds === 300)).toBe(true)
   expect(Object.keys(stored.synced.days)).toHaveLength(4)
   expect(stored.synced.celebrated).toBe(stored.device.celebrated)
+  // El widget recibe los cuatro días cumplidos, hoy incluido.
+  const widget = await page.evaluate(() => window.__widget.at(-1))
+  expect(widget.days).toHaveLength(4)
+  expect(widget.days).toContain(widget.day)
+  expect(widget.seconds).toBe(300)
 
   // Al volver a abrir la app el mismo día no se repite la celebración.
   await page.reload()

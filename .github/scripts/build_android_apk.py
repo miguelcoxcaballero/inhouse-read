@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 from register_book_imports import register_book_imports
+from register_streak_widget import register_streak_widget
 from audiobook_fixture import write_audiobook, write_background_pdf
 from pathlib import Path
 
@@ -86,6 +87,7 @@ def main() -> None:
     builder.patch_manifest(project_dir, APP_NAME, PACKAGE_ID)
     builder.patch_webview_bridge(project_dir, PACKAGE_ID)
     register_book_imports(project_dir, PACKAGE_ID, REPO_ROOT)
+    register_streak_widget(project_dir, PACKAGE_ID, REPO_ROOT)
     builder.patch_startup_theme(project_dir)
     builder.patch_gradle_versions(project_dir)
     builder.patch_android_dependencies(project_dir)

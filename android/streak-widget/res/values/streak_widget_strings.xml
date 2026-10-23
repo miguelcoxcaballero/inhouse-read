@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="streak_widget_description">Tu racha de lectura y los días de esta semana</string>
+    <string name="streak_widget_label">Racha de lectura</string>
+</resources>

@@ -5,7 +5,7 @@
 // actividad (toques, teclas, cambio de página o audio en marcha) durante
 // IDLE_MS, el tiempo deja de contar hasta la siguiente actividad.
 import {
-  GOAL_SECONDS, STREAK_KEY, STREAK_LOCAL_KEY, addReading, dayKey, dayWord, formatClock,
+  GOAL_SECONDS, STREAK_KEY, STREAK_LOCAL_KEY, addReading, dayKey, dayWord, formatClock, isComplete,
   mergeStreaks, monthGrid, parseStreak, pruneStreak, streakInfo, syncedStreak, weekDays
 } from './reading-streak-core.js'
 
@@ -166,9 +166,28 @@ export function createReadingStreak({ document, storage = localStorage, onChange
       }
     }
     if (panel && !panel.hidden) renderPanel()
+    syncWidget()
   }
+
+  // ---- Widget de la pantalla de inicio (Android 1.1.21+, window.InhouseStreak) ----
+  // Recibe los días cumplidos y el progreso de hoy por minutos; el widget
+  // calcula la racha con la fecha del teléfono, así que se apaga a medianoche.
+  const widgetBridge = () => { try { return globalThis.InhouseStreak || null } catch { return null } }
+  let widgetSent = ''
+  function syncWidget() {
+    const bridge = widgetBridge()
+    if (typeof bridge?.update !== 'function') return
+    const days = Object.keys(state.days).filter(key => isComplete(state, key)).sort().slice(-120)
+    const seconds = Math.min(GOAL_SECONDS, Math.floor((state.days[today] || 0) / 60) * 60)
+    const payload = JSON.stringify({ days, day: today, seconds })
+    if (payload === widgetSent) return
+    widgetSent = payload
+    try { bridge.update(payload) } catch {}
+  }
+  const widgetCall = (name, fallback) => { try { return widgetBridge()?.[name]?.() ?? fallback } catch { return fallback } }
+
   for (const chip of chips) {
-    chip.innerHTML = `<span class="streak-chip-icon"><svg class="streak-chip-ring" viewBox="0 0 36 36" aria-hidden="true" focusable="false"><circle cx="18" cy="18" r="16"/><circle class="streak-chip-ring-fill" cx="18" cy="18" r="16" pathLength="1"/></svg>${flameSvg()}</span><span class="streak-chip-count">0</span>`
+    chip.innerHTML = `<span class="streak-chip-icon">${flameSvg('is-base is-idle')}${flameSvg('is-fill')}</span><span class="streak-chip-count">0</span>`
     chip.addEventListener('click', () => { feedback.tap(); openPanel(chip) })
   }
 
@@ -224,7 +243,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   clockTimer = setInterval(refreshDay, 60_000)
 
   // ---- Panel con el calendario ----
-  let shownMonth = null, panelReturn = null
+  let shownMonth = null, panelReturn = null, widgetOffer = false
   function ensurePanel() {
     if (panel) return panel
     panel = document.createElement('div')
@@ -234,7 +253,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
 <section class="streak-panel" role="dialog" aria-modal="true" aria-labelledby="streak-panel-title">
   <button class="streak-panel-close" type="button" data-streak-close aria-label="Cerrar racha">${CLOSE}</button>
   <header class="streak-panel-hero">
-    <div class="streak-panel-flame">${flameSvg()}</div>
+    <div class="streak-panel-flame">${flameSvg('is-base is-idle')}${flameSvg('is-fill')}</div>
     <div><h2 id="streak-panel-title"><span data-streak-count>0</span> <span data-streak-unit>días</span> de racha</h2><p data-streak-status></p></div>
   </header>
   <div class="streak-today" data-streak-today>
@@ -245,6 +264,10 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     <div><strong data-streak-best>0</strong><span>Racha más larga</span></div>
     <div><strong data-streak-total>0</strong><span>Días leídos</span></div>
   </div>
+  <button type="button" class="streak-widget-cta" data-streak-widget hidden>
+    <span class="streak-widget-art" aria-hidden="true"><span class="streak-widget-art-flame">${flameSvg()}</span><span class="streak-widget-art-lines"><i></i><i></i></span><span class="streak-widget-art-dots"><i></i><i></i><i></i><i></i><i class="is-today"></i></span></span>
+    <span class="streak-widget-copy"><strong data-streak-widget-title>Añade la racha a tu pantalla de inicio</strong><small data-streak-widget-text>Un widget con tu llama y los días de esta semana.</small></span>
+  </button>
   <div class="streak-calendar">
     <div class="streak-calendar-head">
       <button type="button" class="streak-month-nav" data-streak-month="-1" aria-label="Mes anterior">${CHEVRON('M15 5l-7 7 7 7')}</button>
@@ -258,6 +281,12 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     body.append(panel)
     panel.addEventListener('click', event => {
       if (event.target.closest('[data-streak-close]')) closePanel()
+      if (event.target.closest('[data-streak-widget]')) {
+        feedback.tap()
+        widgetCall('requestPin')
+        panel.querySelector('[data-streak-widget-title]').textContent = 'Confírmalo en el aviso de Android'
+        panel.querySelector('[data-streak-widget-text]').textContent = 'También puedes añadirlo desde los widgets del lanzador.'
+      }
       const nav = event.target.closest('[data-streak-month]')
       if (nav && !nav.disabled) {
         const step = Number(nav.dataset.streakMonth)
@@ -275,6 +304,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     const info = streakInfo(state, today)
     const q = selector => panel.querySelector(selector)
     q('.streak-panel').dataset.state = info.doneToday ? 'lit' : 'idle'
+    q('.streak-panel').style.setProperty('--streak-progress', String(Math.floor(info.seconds / GOAL_SECONDS * 100) / 100))
     q('[data-streak-count]').textContent = String(info.current)
     q('[data-streak-unit]').textContent = dayWord(info.current)
     q('[data-streak-status]').textContent = info.doneToday
@@ -287,6 +317,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     q('[data-streak-clock]').textContent = formatClock(info.seconds)
     q('[data-streak-best]').textContent = String(info.best)
     q('[data-streak-total]').textContent = String(info.total)
+    q('[data-streak-widget]').hidden = !widgetOffer
     const year = shownMonth.getFullYear(), month = shownMonth.getMonth()
     q('[data-streak-month-label]').textContent = `${MONTHS[month]} ${year}`
     const current = new Date(`${today}T12:00:00`)
@@ -308,6 +339,10 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     panelReturn = from || document.activeElement
     const date = new Date(`${today}T12:00:00`)
     shownMonth = new Date(date.getFullYear(), date.getMonth(), 1)
+    // Se pregunta una vez al abrir (son llamadas síncronas al sistema).
+    widgetOffer = widgetCall('canPin', false) === true && widgetCall('isPlaced', false) === false
+    panel.querySelector('[data-streak-widget-title]').textContent = 'Añade la racha a tu pantalla de inicio'
+    panel.querySelector('[data-streak-widget-text]').textContent = 'Un widget con tu llama y los días de esta semana.'
     renderPanel()
     panel.hidden = false
     requestAnimationFrame(() => panel.classList.add('is-open'))

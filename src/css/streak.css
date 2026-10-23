@@ -39,37 +39,42 @@
 .streak-flame { display:block; width:100%; height:100%; overflow:visible;
   --flame-top: var(--streak-gold); --flame-bottom: var(--streak-orange);
   --flame-core-top: #fff3b0; --flame-core-bottom: var(--streak-gold); }
-[data-state="idle"] .streak-flame, .streak-flame.is-idle {
+[data-state="idle"] .streak-flame:not(.is-fill), .streak-flame.is-idle {
   --flame-top: var(--streak-grey); --flame-bottom: var(--streak-grey);
   --flame-core-top: var(--flame-hole, var(--streak-surface)); --flame-core-bottom: var(--flame-hole, var(--streak-surface)); }
 .app-header .streak-chip { --flame-hole: var(--bg-secondary); }
-[data-state="idle"] .streak-flame-shine, .streak-flame.is-idle .streak-flame-shine { stroke-opacity:0; }
+[data-state="idle"] .streak-flame:not(.is-fill) .streak-flame-shine, .streak-flame.is-idle .streak-flame-shine { stroke-opacity:0; }
 
-/* ---- Contador de la cabecera ---- */
-.streak-chip { display:inline-flex; align-items:center; gap:5px; height:40px; min-width:52px; padding:0 10px 0 7px; border:0; border-radius:12px;
+/* ---- Contador (cabecera de la estantería y del lector) ----
+   La llama se llena de naranja desde abajo según los minutos leídos hoy;
+   llena del todo cuando el día ya cuenta para la racha. */
+.streak-chip { display:inline-flex; align-items:center; gap:6px; height:40px; min-width:52px; padding:0 10px 0 7px; border:0; border-radius:12px;
   background:transparent; color:var(--streak-orange); font:900 1.06rem/1 var(--streak-font); letter-spacing:.01em; cursor:pointer;
-  -webkit-tap-highlight-color:transparent; transition:background-color .15s var(--ease), transform .12s var(--ease); }
+  -webkit-tap-highlight-color:transparent; transition:background-color .2s var(--ease), color .2s var(--ease), transform .12s var(--ease); }
 .streak-chip:hover { background:var(--surface-hover); }
 .streak-chip:active { transform:scale(.94); }
 .streak-chip:focus-visible { outline:2px solid var(--streak-orange); outline-offset:2px; }
 .streak-chip[data-state="idle"] { color:var(--streak-grey-deep); }
 .streak-chip-icon { position:relative; display:block; width:22px; height:26px; flex:none; }
 .streak-chip-icon .streak-flame { position:absolute; inset:0; }
+.streak-flame.is-fill { clip-path:inset(calc((1 - var(--streak-progress, 0)) * 100%) 0 0 0); transition:clip-path .9s linear; }
+[data-state="lit"] .streak-flame.is-fill { clip-path:inset(0); }
+[data-state="lit"] .streak-flame.is-base { visibility:hidden; }
 .streak-chip-count { font-variant-numeric:tabular-nums; }
-/* Dentro del lector, un aro alrededor de la llama muestra el progreso de hoy. */
-.streak-chip-ring { display:none; position:absolute; left:50%; top:50%; width:34px; height:34px; translate:-50% -50%; rotate:-90deg; fill:none; stroke-width:2.6; }
-.streak-chip-ring circle { stroke:currentColor; opacity:.16; }
-.streak-chip-ring .streak-chip-ring-fill { opacity:1; stroke:var(--streak-orange); stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:calc(1 - var(--streak-progress, 0)); transition:stroke-dashoffset .9s linear; }
-.reader-heading .streak-chip { height:44px; padding:0 8px 0 6px; color:var(--streak-orange); }
-.reader-heading .streak-chip[data-state="idle"] { color:inherit; }
-.reader-heading .streak-chip[data-state="idle"] .streak-chip-count { opacity:.55; }
-.reader-heading .streak-chip[data-state="idle"] .streak-chip-ring { display:block; }
-.reader-heading .streak-chip[data-state="idle"] .streak-chip-icon { width:18px; height:21px; margin:0 3px; }
-.reader-heading .streak-chip:hover { background:transparent; }
-[data-reading-theme] .streak-chip[data-state="idle"] .streak-flame { --flame-top: currentColor; --flame-bottom: currentColor; }
-[data-reading-theme] .streak-chip[data-state="idle"] .streak-flame-outer { opacity:.22; }
+
+/* Dentro del lector: una pastilla discreta con el color del tema de lectura,
+   que se vuelve naranja suave cuando hoy ya cuenta. */
+.reader-heading .streak-chip { height:32px; min-width:0; margin:0 4px; padding:0 10px 0 7px; gap:5px; border-radius:999px;
+  color:inherit; background:color-mix(in srgb, currentColor 7%, transparent); font-size:.98rem; }
+.reader-heading .streak-chip:hover { background:color-mix(in srgb, currentColor 11%, transparent); }
+.reader-heading .streak-chip[data-state="lit"] { color:var(--streak-orange); background:rgba(255,150,0,.15); }
+.reader-heading .streak-chip[data-state="idle"] .streak-chip-count { opacity:.7; }
+.reader-heading .streak-chip-icon { width:17px; height:20px; }
+.reader-heading .streak-flame.is-base { --flame-top: currentColor; --flame-bottom: currentColor; --flame-core-top: transparent; --flame-core-bottom: transparent; }
+.reader-heading .streak-flame.is-base .streak-flame-outer { opacity:.28; }
+.reader-heading .streak-flame.is-base .streak-flame-shine { stroke-opacity:0; }
 @media (max-width:540px) { .header-actions .streak-chip { height:36px; padding:0 7px 0 5px; min-width:0; } }
-@media (max-width:360px) { .reader-heading .streak-chip { padding:0 4px; } .reader-heading .streak-chip-count { font-size:.95rem; } }
+@media (max-width:360px) { .reader-heading .streak-chip { margin:0 2px; padding:0 8px 0 6px; } .reader-heading .streak-chip-count { font-size:.92rem; } }
 
 /* ---- Panel con calendario ---- */
 .streak-panel-layer { position:fixed; inset:0; z-index:60; display:flex; align-items:flex-end; justify-content:center; font-family:var(--streak-font); }
@@ -89,7 +94,8 @@
 .streak-panel-close:hover { background:var(--streak-line); }
 .streak-panel button:focus-visible { outline:2px solid var(--streak-orange); outline-offset:2px; }
 .streak-panel-hero { display:flex; align-items:center; gap:16px; padding:2px 44px 16px 4px; }
-.streak-panel-flame { width:58px; height:69px; flex:none; }
+.streak-panel-flame { position:relative; width:58px; height:69px; flex:none; }
+.streak-panel-flame .streak-flame { position:absolute; inset:0; }
 .streak-panel h2 { margin:0; font:900 1.6rem/1.08 var(--streak-font); color:var(--streak-orange); letter-spacing:-.01em; }
 .streak-panel [data-state="idle"] h2, .streak-panel[data-state="idle"] h2 { color:var(--streak-text); }
 .streak-panel-hero p { margin:5px 0 0; font:700 .95rem/1.3 var(--streak-font); color:var(--streak-muted); }
@@ -196,4 +202,25 @@
   .streak-celebration *, .streak-celebration, .streak-panel, .streak-panel-scrim, .streak-chip * { animation:none !important; transition:none !important; }
   .streak-celebration-flame .streak-flame.is-lit { clip-path:none; }
 }
-.reader-heading .streak-chip { --flame-hole: transparent; }
+
+/* ---- Invitación al widget de Android (solo si el lanzador permite anclarlo) ---- */
+.streak-widget-cta { display:flex; align-items:center; gap:14px; width:100%; margin:0 0 12px; padding:12px 14px; border:2px solid var(--streak-line); border-radius:16px;
+  background:transparent; color:var(--streak-text); text-align:left; cursor:pointer; font-family:var(--streak-font);
+  box-shadow:0 3px 0 var(--streak-line); transition:transform .08s ease, box-shadow .08s ease, background-color .15s ease; }
+.streak-widget-cta[hidden] { display:none; }
+.streak-widget-cta:hover { background:color-mix(in srgb, var(--streak-orange) 6%, transparent); }
+.streak-widget-cta:active { transform:translateY(3px); box-shadow:0 0 0 var(--streak-line); }
+.streak-widget-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.streak-widget-copy strong { font:900 .95rem/1.2 var(--streak-font); }
+.streak-widget-copy small { font:700 .8rem/1.3 var(--streak-font); color:var(--streak-muted); }
+/* Miniatura del widget: tarjeta con llama, dos líneas y la semana. */
+.streak-widget-art { position:relative; display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto; align-items:center; gap:4px 6px;
+  flex:none; width:64px; height:48px; padding:6px 7px; border-radius:11px; background:var(--streak-surface);
+  box-shadow:0 1px 3px rgba(0,0,0,.12), 0 0 0 1px var(--streak-line); }
+.streak-widget-art-flame { width:15px; height:18px; }
+.streak-widget-art-lines { display:flex; flex-direction:column; gap:3px; }
+.streak-widget-art-lines i { display:block; height:4px; border-radius:2px; background:var(--streak-orange); }
+.streak-widget-art-lines i + i { width:70%; background:var(--streak-line); }
+.streak-widget-art-dots { grid-column:1 / -1; display:flex; justify-content:space-between; }
+.streak-widget-art-dots i { width:7px; height:7px; border-radius:50%; background:var(--streak-orange); }
+.streak-widget-art-dots i.is-today { background:transparent; box-shadow:inset 0 0 0 1.5px var(--streak-orange); }

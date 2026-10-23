@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="streak_widget_bg">#FFFFFFFF</color>
+    <color name="streak_widget_text">#FF3C3C3C</color>
+    <color name="streak_widget_muted">#FF8A8A8A</color>
+    <color name="streak_widget_idle">#FFE5E5E5</color>
+    <color name="streak_widget_orange">#FFFF9600</color>
+    <color name="streak_widget_gold">#FFFFC800</color>
+    <color name="streak_widget_core">#FFFFF3B0</color>
+</resources>

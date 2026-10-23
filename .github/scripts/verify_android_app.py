@@ -451,6 +451,16 @@ def verify_book_imports():
         verify_loaded_reader_display(mode, background=(mode == "cold"))
 
 
+def verify_streak_widget_provider():
+    # Android only lists a widget provider whose receiver and provider XML it
+    # could parse, so this proves the reading-streak widget is installable.
+    providers = run("adb", "shell", "dumpsys", "appwidget").stdout
+    if "com.inhousesoftware.read/.StreakWidgetProvider" not in providers \
+            and "com.inhousesoftware.read/com.inhousesoftware.read.StreakWidgetProvider" not in providers:
+        raise AssertionError("Android did not register the reading-streak widget provider")
+    print("Reading-streak widget provider registered", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("apk", help="The signed APK to install and verify")
@@ -462,6 +472,7 @@ def main():
     LAYOUT["contract"] = apk_layout_contract(args.apk)
     print(f"Android status bar layout contract: {LAYOUT['contract']}", flush=True)
     run("adb", "install", "-r", args.apk)
+    verify_streak_widget_provider()
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
     time.sleep(25)
     for attempt in range(15):
