@@ -1,9 +1,9 @@
 {
-  "version": "1.1.23",
-  "versionCode": 36,
+  "version": "1.1.24",
+  "versionCode": 37,
   "required": true,
-  "apkSizeBytes": 78579226,
-  "apkSha256": "55c21814c53a42fcc952b746c83b402d0f5306e009b3d635e536fd0a8e645921",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.23/inhouse-read-release-v1.1.23.apk",
-  "releaseNotes": "Bigger cover, less text in the widget."
+  "apkSizeBytes": 78579262,
+  "apkSha256": "b13f1c301420fd3dbae280a540d70bf4818e640265ad8e6524b5f4dfa5513103",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.24/inhouse-read-release-v1.1.24.apk",
+  "releaseNotes": "No notification popups while reading."
 }
