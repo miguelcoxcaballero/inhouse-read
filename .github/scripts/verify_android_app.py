@@ -454,11 +454,17 @@ def verify_book_imports():
 def verify_streak_widget_provider():
     # Android only lists a widget provider whose receiver and provider XML it
     # could parse, so this proves the reading-streak widget is installable.
-    providers = run("adb", "shell", "dumpsys", "appwidget").stdout
-    if "com.inhousesoftware.read/.StreakWidgetProvider" not in providers \
-            and "com.inhousesoftware.read/com.inhousesoftware.read.StreakWidgetProvider" not in providers:
-        raise AssertionError("Android did not register the reading-streak widget provider")
-    print("Reading-streak widget provider registered", flush=True)
+    # The service registers providers asynchronously after the install.
+    output = ""
+    for _ in range(15):
+        output = run("adb", "shell", "dumpsys", "appwidget").stdout
+        if "com.inhousesoftware.read/com.inhousesoftware.read.StreakWidgetProvider" in output \
+                or "com.inhousesoftware.read/.StreakWidgetProvider" in output:
+            print("Reading-streak widget provider registered", flush=True)
+            return
+        time.sleep(2)
+    Path("android-reading-widget-dumpsys.txt").write_text(output, encoding="utf-8")
+    raise AssertionError("Android did not register the reading-streak widget provider")
 
 
 def main():
