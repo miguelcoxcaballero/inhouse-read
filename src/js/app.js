@@ -46,10 +46,13 @@ import { readerReturnCanvas } from './reader-return-canvas.js'
 import { createProfileView } from './profile-view.js'
 import { createReadingStreak } from './reading-streak.js'
 import { STREAK_KEY } from './reading-streak-core.js'
+import { bindReadingFocus } from './reading-focus.js'
 
 const reader = new ReaderController()
 const profileView = createProfileView(document)
 const releaseShelfSoundPreference=bindShelfSoundPreference(document)
+// Android: sin notificaciones emergentes mientras el lector está abierto.
+bindReadingFocus(document)
 // Racha de lectura: cuenta el tiempo con un libro abierto (reading-streak.js).
 const readingStreak = createReadingStreak({
   document, onChange: notifyCloudSettingsChanged,

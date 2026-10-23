@@ -386,6 +386,26 @@ def open_fixture_document(mode):
     raise AssertionError(f"{mode} import failed: {text[:2000]}")
 
 
+def zen_mode():
+    output = run("adb", "shell", "dumpsys", "notification").stdout
+    match = re.search(r"mZenMode=(\w+)", output)
+    return (match.group(1) if match else ""), output
+
+
+def wait_for_zen(label, active, timeout=15):
+    """«Sin avisos al leer»: the app's Do Not Disturb rule follows the reader."""
+    deadline = time.time() + timeout
+    while True:
+        mode, output = zen_mode()
+        if (mode not in ("", "OFF")) == active:
+            print(f"Reading focus {label}: {mode}", flush=True)
+            return
+        if time.time() > deadline:
+            Path(f"android-reading-focus-{label}.txt").write_text(output, encoding="utf-8")
+            raise AssertionError(f"Reading focus {label}: expected {'on' if active else 'off'}, Android zen mode is {mode or 'unknown'}")
+        time.sleep(1)
+
+
 def verify_loaded_reader_display(mode, background=False):
     if mode == "reading":
         # The public-APK scenario imports directly, without the preceding
@@ -395,20 +415,25 @@ def verify_loaded_reader_display(mode, background=False):
         root = wait_for_reading_display(mode + "-reader", reading=True, initial_import_title="Intent reading")
     else:
         root = wait_for_reading_display(mode + "-reader", reading=True)
+    focus = mode == "cold"
+    if focus: wait_for_zen("reader", True)
     if background:
         # Home exercises Activity.onPause without destroying the document.
         # Returning must reapply the policy to the same open real PDF.
         run("adb", "shell", "input", "keyevent", "KEYCODE_HOME")
         wait_for_reading_display("background", reading=False, foreground=False)
+        if focus: wait_for_zen("background", False)
         run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
         root = wait_for_reading_display("resumed-reader", reading=True)
         assert re.search("Intent " + mode, node_text(root), re.I), "Returning from Home lost the loaded document"
+        if focus: wait_for_zen("resumed", True)
     return_to_bookshelf(root)
     # A newly imported book has no shelf origin: its first return prepares the
     # 3D model before the flight. Android15 SwiftShader reached the home UI but
     # was still closing at 45s. Only this endpoint gets the full return budget;
     # initial reader, Home release and resume retain their original 45s limit.
     wait_for_reading_display(mode + "-shelf-after", reading=False, timeout=120)
+    if focus: wait_for_zen("shelf", False)
 
 
 def verify_reading_display():
@@ -424,6 +449,9 @@ def verify_reading_display():
 def verify_book_imports():
     # Verify actual resolver registration for every supported extension/MIME.
     from register_book_imports import MIME_TYPES, EXTENSIONS
+    # What the user grants once in «Acceso a No molestar»; the shelf leaves it off.
+    run("adb", "shell", "cmd", "notification", "allow_dnd", "com.inhousesoftware.read")
+    wait_for_zen("granted", False)
     for mime in MIME_TYPES:
         for action in ("VIEW", "SEND", "SEND_MULTIPLE"):
             arguments = ["adb", "shell", "cmd", "package", "query-activities", "--brief", "-a",

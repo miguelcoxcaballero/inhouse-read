@@ -183,6 +183,27 @@ class MainActivityTest(unittest.TestCase):
                 self.assertEqual(source.count("("), source.count(")"))
 
 
+class ReadingFocusTest(unittest.TestCase):
+    REPO = Path(__file__).resolve().parents[2]
+
+    def test_the_rule_follows_the_reader_display(self):
+        from register_reading_focus import BRIDGE_JAVA, DISPLAY_JAVA
+        builder = (self.REPO / "android/html_to_apk_builder.py").read_text(encoding="utf-8")
+        # The anchors the registration patches exist once in the generated MainActivity.
+        self.assertEqual(builder.count(DISPLAY_JAVA), 1)
+        # The streak widget registration writes the bridge line this one follows.
+        streak = (self.REPO / ".github/scripts/register_streak_widget.py").read_text(encoding="utf-8")
+        self.assertIn(BRIDGE_JAVA.removeprefix("webView.addJavascriptInterface(").rstrip(");"), streak)
+
+    def test_reading_audio_alarms_and_calls_still_get_through(self):
+        java = (self.REPO / "android/reading-focus/ReadingFocus.java").read_text(encoding="utf-8")
+        for rule in (".allowMedia(true)", ".allowAlarms(true)", ".allowCalls(ZenPolicy.PEOPLE_TYPE_ANYONE)",
+                     ".showPeeking(false)", ".showInNotificationList(true)"):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, java)
+        self.assertIn("trustedPage()", java)
+
+
 class StreakWidgetTest(unittest.TestCase):
     ROOT = Path(__file__).resolve().parents[2] / "android/streak-widget"
 

@@ -81,6 +81,7 @@
 /* Same switch as the spine editor and reader panels: green when on. */
 .drive-theme-row input:checked { background:var(--accent-read); }
 .drive-theme-row input:checked::after { transform:translateX(16px); }
+.drive-setting-hint { margin:-4px 0 6px; color:var(--muted); font-size:.75rem; line-height:1.4; }
 .drive-app-version { text-align:center; color:var(--muted); font-size:11px; padding-top:4px; }
 /* Notice strip aligned with the library column, marked by a copper dot. */
 .drive-auth-notice { display:flex; align-items:center; gap:10px; flex:none; padding:8px max(16px, calc((100vw - 860px) / 2)); border-bottom:1px solid var(--border); background:var(--bg-secondary); font-size:.85rem; line-height:1.45; }

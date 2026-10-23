@@ -1,5 +1,16 @@
 # inhouse read
 
+## 1.7.324 / Android 1.1.24 — Sin avisos al leer
+
+Con un libro abierto y la app en primer plano, Android no muestra las
+notificaciones emergentes de otras apps: llegan en silencio al panel. Es un modo
+No molestar propio de la app (`android/reading-focus/ReadingFocus.java`, regla
+automática «Leyendo en Inhouse Read») que sigue a `applyReadingDisplay`: se
+enciende con el lector y se apaga al salir del libro o de la app. Deja pasar las
+alarmas, el audio de la lectura y las llamadas. Android pide una vez el permiso
+«Acceso a No molestar»; el interruptor «Sin avisos al leer» de Ajustes abre ese
+ajuste y permite apagarlo (Android 10 o posterior).
+
 ## 1.7.323 / Android 1.1.23 — Portada más grande y menos texto en el widget
 
 La portada del último libro crece (hasta 52×78 dp, enviada a 156×234 px) y el
