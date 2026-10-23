@@ -85,7 +85,7 @@
   </script>
   <!-- The live shelf's pointer controllers (swipe, pinch zoom): a small module compiled with the page
        head. The first shelf render awaits it; rust-shelf.js adopts the compiled module once. -->
-  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg--eMXbnSO.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-gwviWCnD.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -142,13 +142,13 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-ClOVAd8b.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-DKkT1Lbk.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-ngl1FyFA.js">
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-D9tHonde.js">
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-m_hHwqIY.js">
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-D9aX7oaI.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-DIqaOcRq.css">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-rnnuY6lU.css">
-  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-CHWdeqL6.js"></script>
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-Cz-2UEAu.css">
+  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-Dy53ZnUE.js"></script>
 </head>
 <body>
   <script>
@@ -182,6 +182,7 @@
         </button>
         <span class="reader-heading-copy"><span id="reader-top-title">Abriendo libro…</span><small id="reader-top-byline"></small></span>
         <div class="reader-heading-actions" aria-label="Herramientas del libro">
+          <button class="streak-chip" type="button" data-streak-chip data-state="idle" aria-label="Racha de lectura"></button>
           <button id="reader-search-shortcut" class="icon-btn" type="button" aria-label="Buscar en el libro" title="Buscar en el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></button>
           <button id="reader-focus" class="icon-btn" type="button" aria-label="Ocultar controles" title="Leer a pantalla completa" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button>
           <button id="reader-more-shortcut" class="icon-btn" type="button" aria-label="Más opciones del libro" title="Más opciones"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r=".8"/><circle cx="12" cy="12" r=".8"/><circle cx="19" cy="12" r=".8"/></svg></button>
@@ -198,6 +199,7 @@
             <path d="M9 3h6l7 12-3 5H5l-3-5L9 3Z"/><path d="m9 3 7 12H2m13-12L8 15l3 5"/>
           </svg>
         </button>
+        <button class="streak-chip" type="button" data-streak-chip data-state="idle" aria-label="Racha de lectura"></button>
         <div id="drive-profile" class="drive-profile">
           <button id="drive-profile-btn" class="drive-profile-btn" type="button" aria-label="Cuenta y ajustes" aria-controls="drive-profile-menu" aria-expanded="false">
             <span id="drive-profile-initial" class="drive-profile-initial" aria-hidden="true">I</span>
