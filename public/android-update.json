@@ -1,9 +1,9 @@
 {
-  "version": "1.1.21",
-  "versionCode": 34,
+  "version": "1.1.22",
+  "versionCode": 35,
   "required": true,
-  "apkSizeBytes": 78570870,
-  "apkSha256": "964f7b3dec6bc8830b106786c8e3101c13bad0f6d6cd6e3f444d05af3251d88e",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.21/inhouse-read-release-v1.1.21.apk",
-  "releaseNotes": "Reading streak widget and vibration."
+  "apkSizeBytes": 78579430,
+  "apkSha256": "dfc603b6db6d6d7e795a429473431aacc54a4818058266faf56490348ad01810",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.22/inhouse-read-release-v1.1.22.apk",
+  "releaseNotes": "Widget in every size, with your book."
 }
