@@ -112,3 +112,6 @@ mod app_cloud_actions;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod reading_preferences_policy;
+
+#[cfg(feature = "ui")]
+mod reader_experience_policy;
