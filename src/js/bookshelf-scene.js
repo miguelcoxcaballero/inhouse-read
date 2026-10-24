@@ -1497,7 +1497,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       sceneView.stepEntries(stepBatch);
     }
-    for (const [entryIndex,entry] of bookEntries.entries()) {
+    for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
+      const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
       const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
       // The DOM is read only for a node whose class or style changed.

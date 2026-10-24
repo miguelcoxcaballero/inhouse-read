@@ -13,6 +13,6 @@ export class ReaderActions{
  returnToReading(place,current){return readerUI().reader_return(this.host,place,current)}
  addBookmark(){return readerUI().reader_bookmark(this.host,this.place)}
  addQuote(){return readerUI().reader_quote(this.host,this.quote,cleanQuotes)}
- search(query){return readerUI().reader_search(this.host,query,result=>{this.host.keepSearchHits=true;this.host.jump({fraction:result.fraction??this.host.location.fraction,locator:result.locator})})}
+ search(query){return readerUI().reader_search(this.host,query,result=>readerUI().reader_search_activate(this.host,result))}
  endSearch(){return readerUI().reader_end_search(this.host)}
 }

@@ -2,7 +2,7 @@
 //! their original JavaScript identity; async continuations own only handles.
 use wasm_bindgen::{prelude::*,JsCast,intern};
 use wasm_bindgen_futures::JsFuture;
-use js_sys::{Array,Function,Promise,Reflect};
+use js_sys::{Array,Function,Object,Promise,Reflect};
 use crate::reading_places::{reading_history,reading_toggle};
 fn key(name:&str)->JsValue{JsValue::from_str(intern(name))}
 pub(crate) fn get(value:&JsValue,name:&str)->Result<JsValue,JsValue>{Reflect::get(value,&key(name))}
@@ -78,6 +78,14 @@ pub async fn reader_search(host:JsValue,query:JsValue,activate:Function)->Result
   two(&get(&host,"lists")?,"renderSearch",&results,&activate)?;Ok::<(),JsValue>(())
  }.await;
  if result.is_err(){let status=one(&get(&host,"panel")?,"querySelector",&"[data-search-status]".into())?;set(&status,"textContent",&"No se pudo buscar.".into())?;}Ok(())
+}
+#[wasm_bindgen]
+pub fn reader_search_activate(host:JsValue,result:JsValue)->Result<(),JsValue>{
+ set(&host,"keepSearchHits",&JsValue::TRUE)?;
+ let value=get(&result,"fraction")?;
+ let fraction=if value.is_null()||value.is_undefined(){get(&get(&host,"location")?,"fraction")?}else{value};
+ let target=Object::new();set(&target,"fraction",&fraction)?;set(&target,"locator",&get(&result,"locator")?)?;
+ one(&host,"jump",&target.into())?;Ok(())
 }
 #[wasm_bindgen]
 pub fn reader_end_search(host:JsValue)->Result<(),JsValue>{
