@@ -30,9 +30,7 @@ fn concat(prefix:&str,values:&[&JsValue])->R<JsValue>{method(&prefix.into(),"con
 fn resolved(value:&JsValue)->R<JsValue>{method(&read(&global(),"Promise")?,"resolve",&[value])}
 fn promise(value:JsValue)->R<Promise>{Ok(resolved(&value)?.unchecked_into())}
 fn preferences(normalize:&JsValue)->R<JsValue>{
- let saved=(||{let raw=method(&read(&global(),"localStorage")?,"getItem",&[&"inhouse-read-reading-preferences".into()])?;
-  let raw=if truthy(&raw){raw}else{"{}".into()};let value=method(&read(&global(),"JSON")?,"parse",&[&raw])?;call(normalize,"normalizeReadingPreferences",&[&value])})();
- saved.or_else(|_|call(normalize,"normalizeReadingPreferences",&[]))
+ crate::reading_preferences_policy::stored(normalize)
 }
 #[wasm_bindgen]
 pub fn reader_experience_init(host:&JsValue,normalize:&JsValue)->R<()>{

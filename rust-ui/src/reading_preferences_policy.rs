@@ -6,6 +6,15 @@ use crate::host::*;
 #[path = "../../rust-core/src/reader_preference_rules.rs"]
 mod rules;
 type R<T> = Result<T, JsValue>;
+pub fn stored(normalize:&JsValue)->R<JsValue>{
+ let saved=(||{
+  let raw=method(&read(&global(),"localStorage")?,"getItem",&[&"inhouse-read-reading-preferences".into()])?;
+  let raw=if truthy(&raw){raw}else{"{}".into()};
+  let value=method(&read(&global(),"JSON")?,"parse",&[&raw])?;
+  call(normalize,"normalizeReadingPreferences",&[&value])
+ })();
+ saved.or_else(|_|call(normalize,"normalizeReadingPreferences",&[]))
+}
 fn optional(value:&JsValue,key:&str)->R<JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{read(value,key)}}
 fn number(value:&JsValue)->R<f64>{Ok(match value.as_f64(){Some(n)=>n,None=>method(&global(),"Number",&[value])?.as_f64().unwrap_or(f64::NAN)})}
 fn string(value:&JsValue)->R<JsValue>{method(&global(),"String",&[value])}
