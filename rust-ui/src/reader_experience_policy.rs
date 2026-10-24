@@ -39,6 +39,40 @@ pub fn reader_experience_init(host:&JsValue,normalize:&JsValue)->R<()>{
  set(host,"preferences",&preferences(normalize)?)
 }
 #[wasm_bindgen]
+pub fn reader_action_place(host:&JsValue,clone:&JsValue)->R<JsValue>{
+ let location=read(host,"location")?;
+ let place=call(clone,"clonePlace",&[&location])?;
+ let label=method(host,"label",&[&location])?;
+ let created=method(&read(&global(),"Date")?,"now",&[])?;
+ let entries=Array::new();copy_data_entries(&entries,&place)?;
+ data_entry(&entries,&"label".into(),&label);
+ data_entry(&entries,&"createdAt".into(),&created);
+ Ok(Object::from_entries(entries.as_ref())?.into())
+}
+#[wasm_bindgen]
+pub fn reader_action_fields(host:&JsValue,clean_places:&JsValue,clean_quotes:&JsValue)->R<JsValue>{
+ let undef=JsValue::UNDEFINED;
+ let history=method(clean_places,"call",&[&undef,&read(host,"history")?])?;
+ let bookmarks=method(clean_places,"call",&[&undef,&read(host,"bookmarks")?,&100.into()])?;
+ let quotes=method(clean_quotes,"call",&[&undef,&read(host,"quotes")?])?;
+ object(&[("readingHistory",history),("bookmarks",bookmarks),("quotes",quotes)])
+}
+#[wasm_bindgen]
+pub fn reader_action_quote(host:&JsValue,text:&JsValue,locator:&JsValue)->R<JsValue>{
+ let crypto=read(&global(),"crypto")?;
+ let random=optional(&crypto,"randomUUID")?;
+ let id=if truthy(&random){method(&random,"call",&[&crypto])?}else{
+  let time=method(&read(&global(),"Date")?,"now",&[])?;
+  method(&read(&global(),"String")?,"call",&[&JsValue::UNDEFINED,&time])?
+ };
+ let location=read(host,"location")?;
+ let fraction=read(&location,"fraction")?;
+ let label=method(host,"label",&[&location])?;
+ let color=read(host,"quoteColor")?;
+ let created=method(&read(&global(),"Date")?,"now",&[])?;
+ object(&[("id",id),("text",text.clone()),("locator",locator.clone()),("fraction",fraction),("label",label),("color",color),("createdAt",created)])
+}
+#[wasm_bindgen]
 pub fn reader_experience_selection_init(host:&JsValue)->R<()>{set(host,"selectedQuoteSelection",&JsValue::NULL)?;set(host,"quoteColor",&"yellow".into())}
 #[wasm_bindgen]
 pub fn reader_experience_remember_selection(host:&JsValue,selection:&JsValue)->R<()>{

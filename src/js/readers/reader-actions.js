@@ -4,9 +4,9 @@ import {clonePlace,cleanPlaces,cleanQuotes} from './reading-state.js'
 export class ReaderActions{
  constructor(host){
   this.host=host
-  this.place=()=>({...clonePlace(host.location),label:host.label(host.location),createdAt:Date.now()})
-  this.fields=()=>({readingHistory:cleanPlaces(host.history),bookmarks:cleanPlaces(host.bookmarks,100),quotes:cleanQuotes(host.quotes)})
-  this.quote=(text,locator)=>({id:globalThis.crypto?.randomUUID?.()||`${Date.now()}`,text,locator,fraction:host.location.fraction,label:host.label(host.location),color:host.quoteColor,createdAt:Date.now()})
+  this.place=()=>readerUI().reader_action_place(host,clonePlace)
+  this.fields=()=>readerUI().reader_action_fields(host,cleanPlaces,cleanQuotes)
+  this.quote=(text,locator)=>readerUI().reader_action_quote(host,text,locator)
  }
  savePlaces(){return readerUI().reader_save_places(this.host,this.fields)}
  jump(place,target,current){return readerUI().reader_jump(this.host,place,target,current,this.place)}
