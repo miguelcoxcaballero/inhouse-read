@@ -1,26 +1,40 @@
 import { isNeuralVoiceId, neuralVoices } from './neural-voice/catalog.js'
 import { langBase } from './voice-catalog.js'
 import {rustNearestRate,rustReadingNumbers,rustReadingCSS} from './reading-preferences-wasm.js'
+import {getRustUI} from '../rust-ui.js'
+import {getRustShelf} from '../rust-shelf.js'
 
 import {READING_THEMES,PDF_PAGE_FILTERS,READING_FONTS} from './reading-palette.js'
 export {READING_THEMES,PDF_PAGE_FILTERS,READING_FONTS}
 
 /** Saved arbitrary speeds move to the nearest of the audiobook's five choices. */
 export const RATE_STEPS = Object.freeze([0.75, 1, 1.25, 1.5, 2])
+// Merely observe modules already owned by the app. Saved preferences can be
+// inspected before either module exists, without loading the reader or voice.
+const policy = () => getRustUI() || getRustShelf()
+const host = {themes:READING_THEMES,fonts:READING_FONTS,voices:neuralVoices,langBase,isVoice:isNeuralVoiceId,numbers:rustReadingNumbers}
+const nativeStyles = new WeakMap()
 export const nearestRate = value => {
+  const native = policy()
+  if (native?.reading_preferences_rate) return native.reading_preferences_rate(value)
   const rate = Number(value)
   if (!Number.isFinite(rate) || value === '' || value == null) return 1
   const normalized=rustNearestRate(rate)
   if(normalized!==undefined)return normalized
   return RATE_STEPS.reduce((best, step) => Math.abs(step - rate) < Math.abs(best - rate) ? step : best)
 }
-export const rateLabel = rate => `${String(rate).replace('.', ',')}×`
+export const rateLabel = rate => {
+  const native = policy()
+  return native?.reading_preferences_rate_label ? native.reading_preferences_rate_label(rate) : `${String(rate).replace('.', ',')}×`
+}
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   theme:'paper', font:'book', fontSize:20, lineHeight:1.6, margin:16,
   align:'start', flow:'paginated', pdfMode:'original', zoom:100, rate:1, voice:'', voiceLang:'',
   brightness:100, fontWeight:400, footnotes:false, multilingual:false, skipHeaders:false
 })
 export function normalizeReadingPreferences(input = {}) {
+  const native = policy()
+  if (native?.reading_preferences_normalize) return native.reading_preferences_normalize(input, host)
   if (!input || typeof input !== 'object') input = {}
   const voice = String(input.voice || ''), voiceLang = langBase(input.voiceLang)
   const numbers=rustReadingNumbers(input)
@@ -44,6 +58,12 @@ export function normalizeReadingPreferences(input = {}) {
   }
 }
 export function readingCSS(preferences) {
+  const native = policy()
+  if (native?.reading_preferences_css) {
+    let cache = nativeStyles.get(native)
+    if (!cache) { cache = new Map(); nativeStyles.set(native, cache) }
+    return native.reading_preferences_css(preferences, host, cache)
+  }
   const p = normalizeReadingPreferences(preferences)
   const css=rustReadingCSS(p)
   if(css!==null)return css

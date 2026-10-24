@@ -109,3 +109,6 @@ mod idle_startup_policy;
 mod book_view_motion;
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod app_cloud_actions;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod reading_preferences_policy;

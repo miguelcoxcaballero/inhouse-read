@@ -3,6 +3,10 @@ import {readFileSync} from 'node:fs'
 import {it,expect,beforeAll,afterEach,vi} from 'vitest'
 const state=vi.hoisted(()=>({core:null}))
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}))
+// This suite exercises the pre-reader app-core bridge, before the object-aware
+// UI/Shelf policy exists. Its native adoption has a separate parity suite.
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>null}))
+vi.mock('../../src/js/rust-shelf.js',async original=>({...await original(),getRustShelf:()=>null}))
 import {normalizeReadingPreferences,readingCSS,nearestRate} from '../../src/js/readers/reading-preferences.js'
 import * as reference from './helpers/reference-reading-preferences.js'
 import {rustReadingNumbers,rustReadingCSS} from '../../src/js/readers/reading-preferences-wasm.js'
