@@ -204,6 +204,15 @@ impl RustScene{
   io[36]=f64::from((preview_changed as u32)|((preview_active as u32)<<1)|((previewed as u32)<<2)|((changing as u32)<<3)|(((previous!=lift) as u32)<<4));
  }
 
+ /// Advance every entry through one contiguous packet. The former host loop crossed the WASM
+ /// boundary once per book even though all entries share the same frame clock and view state.
+ /// Each record keeps the existing 40-number layout, so the calculations and output values are
+ /// identical while the boundary cost is paid only once per frame.
+ #[wasm_bindgen(js_name=stepEntries)]
+ pub fn step_entries(&self,entries:&mut [f64]){
+  for entry in entries.chunks_exact_mut(40){self.step_entry(entry);}
+ }
+
  /// What the entry's projection says: its screen rectangle from the slot box and the matrix
  /// (`scene_corners`' layout), whether it is on screen, whether and how its quality is chosen, and
  /// whether its model shows. In: kind, flags, drop, insertion, model, overview, `drop complete`,
