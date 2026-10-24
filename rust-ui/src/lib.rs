@@ -110,7 +110,7 @@ mod book_view_motion;
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod app_cloud_actions;
 
-#[cfg(any(feature = "ui", feature = "shelf"))]
+#[cfg(feature = "ui")]
 mod reading_preferences_policy;
 
 #[cfg(feature = "ui")]
