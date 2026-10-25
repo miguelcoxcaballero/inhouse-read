@@ -10,7 +10,6 @@ const MAX_LAMP_SHADOWS = 2;
 // invalidation/transport state (lamp_light.rs). The host owns Three lights/scene graph,
 // marshals emitter/model data and applies the returned light values and shadow commands.
 const rootOut = new Float64Array(17);
-const lightIn = new Float64Array(103), lightOut = new Float64Array(38);
 let filamentIn = new Float64Array(24 + 10 * 4), filamentOut = new Float64Array(3 + 10 * 4);
 const refused = what => new Error(`Las luces de las lámparas no recibieron datos válidos (${what}).`);
 // The area-light lookup tables are ~250 KB of numbers that only the filament
@@ -73,6 +72,19 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   const kindOf = entry => lampKind(entry, filamentAreas);
   const slots = [];
   let pool = null;
+  let lightFrame = null, lightMemory = null, lightBuffer = null, lightIn = null, lightOut = null;
+  let lightInputAt = 0, lightOutputAt = 0;
+  function lightFrameViews() {
+    if (!lightFrame) {
+      lightFrame = new (needRustShelf().LampLightFrame)();
+      lightMemory = lightFrame.memory();
+      lightInputAt = lightFrame.input_ptr(); lightOutputAt = lightFrame.output_ptr();
+    }
+    if (lightBuffer === lightMemory.buffer) return;
+    lightBuffer = lightMemory.buffer;
+    lightIn = new Float64Array(lightBuffer, lightInputAt, 103);
+    lightOut = new Float64Array(lightBuffer, lightOutputAt, 38);
+  }
   const poolState = () => pool ||= new (needRustShelf().LampPoolState)();
   const kindCode = kind => kind === 'cone' ? 0 : kind === 'point' ? 1 : Number(kind.slice(10)) + 1;
   const kindName = code => code === 0 ? 'cone' : code === 1 ? 'point' : filamentKind(code - 1);
@@ -204,6 +216,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     const model = entry.model, emitter = model.userData.lightEmitter, light = slot.lights[0];
     const { spotlight, shadow:shadowed } = slot;
     model.updateWorldMatrix(true, false);
+    lightFrameViews();
     lightIn.set(model.matrixWorld.elements, 0);
     lightIn[16] = rootMatrix ? 1 : 0; lightIn[81] = 0;
     if (rootMatrix) {
@@ -225,8 +238,9 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     lightIn[102] = typeof emitter.distance !== 'number' ||
       typeof emitter.position[0] !== 'number' || typeof emitter.position[1] !== 'number' || typeof emitter.position[2] !== 'number' ||
       (spotlight && (typeof emitter.direction[0] !== 'number' || typeof emitter.direction[1] !== 'number' || typeof emitter.direction[2] !== 'number')) ? 1 : 0;
-    const flags = slot.state.light(spotlight, shadowed, slot.lit, wasLit, shadowDirty, lightIn, lightOut);
+    const flags = lightFrame.sample(slot.state, spotlight, shadowed, slot.lit, wasLit, shadowDirty);
     if (!(flags & 8)) throw refused('luz');
+    lightFrameViews();
     const out = lightOut;
     light.position.set(out[0], out[1], out[2]);
     light.color.r = out[3]; light.color.g = out[4]; light.color.b = out[5];
@@ -339,6 +353,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       disposed = true;
       for (const slot of slots) removeLights(slot);
       slots.length = 0; keyIds.clear(); pool?.free(); pool = null;
+      lightFrame?.free(); lightFrame = lightMemory = lightBuffer = lightIn = lightOut = null;
     }
   };
 }

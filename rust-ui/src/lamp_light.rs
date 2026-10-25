@@ -355,6 +355,27 @@ pub struct LampLightState {
     color_inputs: [f64; 5], color: [f64; 3], hex: f64, color_ready: bool,
 }
 
+/// Reusable transport for point/cone fixture frames. The browser packs Three
+/// handles directly into native memory; no bindgen input/output slices are
+/// allocated or copied on each animation frame. The numerical/state path is
+/// the same `LampLightState::light` used by the slice API.
+#[wasm_bindgen]
+pub struct LampLightFrame {
+    input: Box<[f64; LIGHT_IN + 1]>, output: Box<[f64; LIGHT_OUT]>,
+}
+#[wasm_bindgen]
+impl LampLightFrame {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self { Self { input:Box::new([0.0; LIGHT_IN + 1]), output:Box::new([0.0; LIGHT_OUT]) } }
+    pub fn memory(&self) -> JsValue { wasm_bindgen::memory() }
+    pub fn input_ptr(&self) -> usize { self.input.as_ptr() as usize }
+    pub fn output_ptr(&self) -> usize { self.output.as_ptr() as usize }
+    pub fn sample(&mut self, state: &mut LampLightState, spot: bool, shadowed: bool,
+        lit: bool, was_lit: bool, shadow_dirty: bool) -> u32 {
+        state.light(spot,shadowed,lit,was_lit,shadow_dirty,self.input.as_slice(),self.output.as_mut_slice())
+    }
+}
+
 #[wasm_bindgen]
 impl LampLightState {
     #[wasm_bindgen(constructor)]
