@@ -158,6 +158,7 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     return
   }
   post({ type: 'plan', id, counts: segments.map(ids => ids.length) })
+  let base = 0
   for (let index = 0; index < segments.length; index++) {
     if (!plan.workerActive(id)) return
     const t = performance.now()
@@ -169,7 +170,8 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     // Cleaned, its page boundaries placed, sped up, and with its rests: sentences of one fragment are separated by a rest at
     // their start; the rest after the fragment comes with its last one (both shorten with the speaking rate, like the speech).
     const done = finishPiper(raw, durations, points, text, { sampleRate, model:voice, rate, last, first:index === 0,
-      base:segments.slice(0,index).reduce((n,p)=>n+p.length,0), count:segments[index].length })
+      base, count:segments[index].length })
+    base += segments[index].length
     if (!plan.workerActive(id)) return
     post({ type: 'chunk', id, index, last, pcm:done.pcm, sampleRate, ms:performance.now()-t, marks:done.marks }, [done.pcm.buffer])
     stage(3,5,id,index)

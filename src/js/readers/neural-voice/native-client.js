@@ -124,6 +124,7 @@ export class NativeSynthClient {
     const segments=splitSegments(ids),sampleRate=config.audio.sample_rate
     handlers.onPlan?.(segments.length?segments.map(part=>part.length):[0])
     if(!segments.length){handlers.onChunk({index:0,last:true,pcm:silence(sampleRate,120),sampleRate,ms:0});return}
+    let base=0
     for(let index=0;index<segments.length;index++) {
       if(!active())return
       const part=segments[index],start=performance.now()
@@ -136,7 +137,8 @@ export class NativeSynthClient {
       for(const value of Object.values(feeds))value.dispose?.()
       if(!active())return
       const last=index===segments.length-1
-      const done=finishPiper(raw,durations,points,text,{sampleRate,model:key,rate,last,first:index===0,base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:part.length})
+      const done=finishPiper(raw,durations,points,text,{sampleRate,model:key,rate,last,first:index===0,base,count:part.length})
+      base+=part.length
       handlers.onChunk({index,last,pcm:done.pcm,sampleRate,ms:performance.now()-start,marks:done.marks})
     }
   }
