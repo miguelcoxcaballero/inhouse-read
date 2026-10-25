@@ -743,7 +743,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   rememberCatalogNode(catalogNode);
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
   const shadowBounds = new THREE.Box3(), shadowOut = new Float64Array(6), captureOut = new Float64Array(4), countOut = new Float64Array(8);
-  let casterIds = new Float64Array(entries.length);
+  let casterIds = new Float64Array(entries.length), casterListDirty = true, casterTrashVisible = null, casterSignature = 0;
   const projectedMatrix = new THREE.Matrix4();
   const rendererSize = new THREE.Vector2();
   const frameLayout = { canvas:null, stage:null, scroller:null };
@@ -944,7 +944,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelInsertion(entry);
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
-    if (entry.model) { entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+    if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
     const foliage = semanticFoliage.get(entry.node);
     if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
     clearPlantDiagnostics(entry.node);
@@ -958,7 +958,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (!drop.settled) { drop.settled = true; drop.resolve(false); }
     if (entry.model && restore) {
       furniture.attach(entry.model);
-      entry.model.visible = !entry.node?.classList.contains('is-away');
+      const visible = !entry.node?.classList.contains('is-away');
+      if (entry.model.visible !== visible) casterListDirty = true;
+      entry.model.visible = visible;
       entry.model.position.copy(entry.pose.position);
       entry.model.quaternion.copy(entry.pose.quaternion);
       entry.model.scale.copy(entry.pose.scale);
@@ -1035,7 +1037,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (t === 1 && !drop.complete) {
         drop.complete = true;
         sceneView.trashFinishDrop();
-        dropEntry.model.visible = false;
+        casterListDirty = true; dropEntry.model.visible = false;
         finishedDrops.push(() => { if (!drop.settled) { drop.settled = true; drop.resolve(true); } });
       }
     } else {
@@ -1143,7 +1145,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         // with a generated placeholder on the user's existing book.
         releaseCandidate(replacement); updateMaterials(entry); invalidate(); return;
       }
-      entry.model = replacement;
+      casterListDirty = true; entry.model = replacement;
       // The pending model may have survived newer records. Reconcile the
       // latest material keys before its first paint, including the ribbon.
       updateMaterials(entry);
@@ -1576,14 +1578,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       let created = null;
       if (visible && !entry.model) {
-        created = entry.model = makeModel(entry);
+        created = entry.model = makeModel(entry); casterListDirty = true;
         furniture.add(entry.model);
         if (entry.kind === 'plant' || entry.kind === 'lamp') programsStale = true;
       } else if (!visible && entry.model && !away) {
         releaseEntry(entry);
       }
       if (entry.model) {
-        entry.model.visible = projectIo[41] === 1;
+        const modelVisible = projectIo[41] === 1;
+        if (entry.model.visible !== modelVisible) casterListDirty = true;
+        entry.model.visible = modelVisible;
         if (trashDrop) {
           moving ||= !trashDrop.complete;
           shelfMoving ||= !trashDrop.complete;
@@ -2231,9 +2235,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       unpainted.push(...finishedInsertions, ...finishedDrops);
       return;
     }
-    let casterCount = 0;
-    for (const entry of bookEntries) if (entry.model?.visible) casterIds[casterCount++] = entry.model.id;
-    const casters = rust.scene_casters(Boolean(trash?.visible), casterIds, casterCount);
+    const trashVisible = Boolean(trash?.visible);
+    if (casterListDirty || trashVisible !== casterTrashVisible) {
+      let casterCount = 0;
+      for (const entry of bookEntries) if (entry.model?.visible) casterIds[casterCount++] = entry.model.id;
+      casterSignature = rust.scene_casters(trashVisible, casterIds, casterCount);
+      casterListDirty = false; casterTrashVisible = trashVisible;
+    }
+    const casters = casterSignature;
     const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
     const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight:sceneView.viewportHeight,
       shadowDirty:contentDirty, transform:furniture.matrixWorld });
@@ -2676,7 +2685,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       startQuaternion:entry.model.quaternion.clone(), endQuaternion:new THREE.Quaternion(),
       bookQuaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(-.22, .18, -.46)),
       initialOpenness:Number(trash.userData.openness) || 0 };
-    entry.trashDrop = drop; entry.model.visible = true; inspectionOverview = null;
+    entry.trashDrop = drop; if (!entry.model.visible) casterListDirty = true; entry.model.visible = true; inspectionOverview = null;
     shelfSnapshotDirty = shadowDirty = true;
     cancelAnimationFrame(raf); raf = 0; draw(now);
     drop.lastFrame = performance.now();
@@ -3187,7 +3196,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
       }
       for (const entry of oldEntries.values()) releaseEntry(entry);
-      bookEntries = retained; casterIds = new Float64Array(bookEntries.length); byNode.clear();
+      bookEntries = retained; casterIds = new Float64Array(bookEntries.length); casterListDirty = true; byNode.clear();
       // Lamp fixtures are structural scene data. Rebuild their cached list and
       // light pool only when a layout is committed, not once per rendered frame.
       lampLighting.prepare(bookEntries);
