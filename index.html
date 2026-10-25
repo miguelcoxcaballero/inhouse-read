@@ -116,18 +116,17 @@
     } catch (error) { /* unsupported host: the optional loader retries later */ }
   </script>
 
+  <!-- BAGGEBO never samples walnut. Keep the URL static so Vite fingerprints it,
+       but gate the preload before the parser reaches the rest of the page. -->
+  <link id="ihr-walnut-pbr" rel="preload" as="fetch" href="/src/assets/library/walnut-pbr.webp" crossorigin="anonymous" media="not all" />
+  <link id="ihr-walnut-surface" rel="preload" as="fetch" href="/src/assets/library/walnut-surface.webp" crossorigin="anonymous" media="not all" />
   <script>
-    // BAGGEBO uses painted metal and never samples the walnut maps. Avoid
-    // downloading and decoding two large textures on those shelves.
-    try {
-      if (localStorage.getItem('inhouse-read-shelf-type') !== 'baggebo') {
-        for (const href of ['/src/assets/library/walnut-pbr.webp', '/src/assets/library/walnut-surface.webp']) {
-          const link = document.createElement('link')
-          link.rel = 'preload'; link.as = 'fetch'; link.href = href; link.crossOrigin = 'anonymous'
-          document.head.appendChild(link)
-        }
-      }
-    } catch { /* storage unavailable: the scene fetches what its shelf needs */ }
+    let savedShelfType = null
+    try { savedShelfType = localStorage.getItem('inhouse-read-shelf-type') } catch { /* default to walnut */ }
+    if (savedShelfType !== 'baggebo') {
+      document.getElementById('ihr-walnut-pbr')?.removeAttribute('media')
+      document.getElementById('ihr-walnut-surface')?.removeAttribute('media')
+    }
   </script>
 
   <link rel="preload" as="font" type="font/woff2" href="./src/assets/fonts/playfair-display-latin-e0c764a8e9e1.woff2" crossorigin>
