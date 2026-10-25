@@ -75,20 +75,23 @@ async function readNetwork(response, descriptor, signal, onProgress) {
     onProgress({ received: bytes.byteLength, total: descriptor.bytes, fraction: 1 })
     return bytes
   }
-  const parts = []
   let received = 0, complete = false
   try {
+    // Descriptors pin the exact verified size. Write streamed chunks directly
+    // into their final buffer instead of retaining every chunk and duplicating
+    // the whole dictionary when the response finishes.
+    const bytes = new Uint8Array(descriptor.bytes)
     for (;;) {
       checkAbort(signal)
       const { done, value } = await abortable(reader.read(), signal, () => { reader.cancel().catch(() => {}) })
       if (done) break
-      parts.push(value); received += value.byteLength
+      const offset = received
+      received += value.byteLength
       if (received > descriptor.bytes) throw resourceError('http', `Dictionary ${descriptor.name}: response exceeds expected size`)
+      bytes.set(value, offset)
       onProgress({ received, total: descriptor.bytes, fraction: received / descriptor.bytes })
     }
-    const bytes = new Uint8Array(received)
-    let offset = 0
-    for (const part of parts) { bytes.set(part, offset); offset += part.byteLength }
+    if (received !== descriptor.bytes) throw resourceError('http', `Dictionary ${descriptor.name}: ${received} bytes instead of ${descriptor.bytes}`)
     await validate(bytes.buffer, descriptor, signal)
     complete = true
     return bytes.buffer
