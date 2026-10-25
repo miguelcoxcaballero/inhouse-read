@@ -58,7 +58,8 @@ impl RustSceneMotionFrame {
 impl RustSceneMotionFrame {
  fn row(&self,index:f64)->Option<[f64;2]>{
   if !index.is_finite()||index<0.0||index.fract()!=0.0{return None;}
-  let row=self.rows.chunks_exact(3).nth(index as usize)?;
+  let at=(index as usize).checked_mul(3)?;
+  let row=self.rows.get(at..at.checked_add(3)?)?;
   if row[0]==0.0{None}else{Some([row[1],row[2]])}
  }
 }
