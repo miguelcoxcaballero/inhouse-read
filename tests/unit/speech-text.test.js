@@ -7,7 +7,7 @@ const split = text => speechSentences(text).map(sentence => text.slice(sentence.
 
 const runtime=vi.hoisted(()=>({ui:null}));let boundaries=0,pipelines=0
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-const observedUI={...rustUI,speech_pipeline:(...args)=>{pipelines++;return rustUI.speech_pipeline(...args)},speech_sentences:(...args)=>{boundaries++;return rustUI.speech_sentences(...args)},speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
+const observedUI={...rustUI,speech_pipeline_native:(...args)=>{pipelines++;return rustUI.speech_pipeline_native(...args)},speech_sentences:(...args)=>{boundaries++;return rustUI.speech_sentences(...args)},speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 afterAll(()=>{expect(boundaries).toBeGreaterThan(0);expect(pipelines).toBeGreaterThan(0)})
 // One implementation (rust-ui): the sentence splitter, the normaliser and the plan are all Rust.
