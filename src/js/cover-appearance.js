@@ -84,13 +84,13 @@ export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
   return mask;
 }
 
-function fontMask(title, candidate, plan, maxWidth, wraps, key) {
+function fontMask(title, candidate, plan, maxWidth, wraps, key, surface) {
   const [upper, alignment, size, canvasHeight, x, lineHeight, lineWidth] = plan;
   const align = ['center', 'left', 'right'][alignment];
-  const linesCanvas = document.createElement('canvas');
-  linesCanvas.width = maxWidth;
-  linesCanvas.height = canvasHeight;
-  const linesContext = linesCanvas.getContext('2d', { willReadFrequently: true });
+  const linesCanvas = surface.canvas ||= document.createElement('canvas');
+  if (linesCanvas.width !== maxWidth) linesCanvas.width = maxWidth;
+  if (linesCanvas.height !== canvasHeight) linesCanvas.height = canvasHeight;
+  const linesContext = surface.context ||= linesCanvas.getContext('2d', { willReadFrequently: true });
   if (!linesContext) return null;
   linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
   linesContext.font = `${candidate.weight} ${size}px "${candidate.family}", ${candidate.fallback}`;
@@ -111,15 +111,22 @@ export function nearEdgeMap(edges, width) {
 
 function* scoreFamily(candidate, gray, near, width, height, rows, title, plans, scorer = remoteFontScore) {
   const wraps = createRustFontWrapCache(loadedRustCore());
+  // Each family owns one CPU-backed raster surface. Masks are copied before
+  // yielding, so later plans may reuse it without retaining old canvas pixels.
+  const surface = { canvas:null, context:null };
   try {
     for (let i=0; i<plans.length; i++) {
       const plan=plans[i];
       yield;
-      const mask = fontMask(String(title), candidate, plan, width, wraps, plan[7]);
+      const mask = fontMask(String(title), candidate, plan, width, wraps, plan[7], surface);
       if (!mask || !loadedRustCore().font_mask_fits(mask.width, mask.height, width, rows)) continue;
       yield* scorer(gray, near, width, height, rows, mask);
     }
-  } finally { wraps.dispose(); }
+  } finally {
+    wraps.dispose();
+    if (surface.canvas) { surface.canvas.width = 0; surface.canvas.height = 0; }
+    surface.canvas = surface.context = null;
+  }
 }
 
 // The search is a few hundred million operations: run it in slices short

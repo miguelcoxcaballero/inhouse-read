@@ -295,6 +295,7 @@ describe('cover analysis is single-flight', () => {
     // lettering search reads one canvas per font candidate and size, which froze
     // the page for seconds (software GL, e.g. just after removing a book).
     const requests = []
+    let drawn = 0
     globalThis.Image = class {
       constructor() { this.naturalWidth = 192; this.naturalHeight = 288 }
       decode() { return Promise.resolve() }
@@ -304,15 +305,19 @@ describe('cover analysis is single-flight', () => {
       if (tag !== 'canvas') return realCreate(tag)
       let reads = false
       const context = {
-        drawImage() {}, clearRect() {}, fillText() {},
+        drawImage() {}, clearRect() {}, fillText() { drawn++ },
         measureText: text => ({ width: text.length * 5 }),
         getImageData: (x, y, w, h) => { reads = true; return { data: new Uint8ClampedArray(w * h * 4).fill(120) } }
       }
       return { width: 0, height: 0, getContext: (type, options) => { requests.push({ options, read: () => reads }); return context } }
     }
-    await analyzeCoverAppearance('blob:cpu', 'Alpha beta gamma')
+    const appearance = await analyzeCoverAppearance('blob:cpu', 'Alpha beta gamma')
+    expect(appearance.fontFamily).toBeTruthy()
     const reading = requests.filter(request => request.read())
     expect(reading.length).toBeGreaterThan(0)
     expect(reading.every(request => request.options?.willReadFrequently === true)).toBe(true)
+    // One cover sample plus at most one scratch canvas for each of six families.
+    expect(reading.length).toBeLessThanOrEqual(7)
+    expect(drawn).toBeGreaterThan(reading.length)
   })
 })

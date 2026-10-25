@@ -12,6 +12,13 @@ import { requireRustCore, getRustCoreModule } from '/inhouse-read/src/js/rust-co
 await requireRustCore();
 window.checkCoverAppearance = async () => {
   const results = [];
+  const counted = async work => {
+    const create = document.createElement;
+    let canvases = 0;
+    document.createElement = function(tag,...args) { if (String(tag).toLowerCase() === 'canvas') canvases++; return create.call(this,tag,...args); };
+    try { return { value:await work(), canvases }; }
+    finally { document.createElement = create; }
+  };
   for (const sample of [
     { family:'Oswald', weight:600, title:'A Visual Match' },
     { family:'Playfair Display', weight:700, title:'The Quiet Garden' }
@@ -25,9 +32,9 @@ window.checkCoverAppearance = async () => {
     context.font = sample.weight+' 42px "'+sample.family+'", serif';
     context.fillText(sample.title,180,150);
     const image = canvas.toDataURL('image/png');
-    const expected = await reference(image,sample.title);
-    const actual = await analyzeCoverAppearance(image,sample.title);
-    results.push({sample,actual,expected});
+    const expected = await counted(() => reference(image,sample.title));
+    const actual = await counted(() => analyzeCoverAppearance(image,sample.title));
+    results.push({sample,actual:actual.value,expected:expected.value,canvases:{actual:actual.canvases,reference:expected.canvases}});
   }
   return { results, compiledRust:getRustCoreModule() instanceof WebAssembly.Module };
 };
@@ -56,12 +63,15 @@ test('portada rasterizada: detecta el color dominante y empareja la tipografía 
   expect(result.compiledRust).toBe(true)
   expect(result.results).toHaveLength(2)
   const supportedFamilies=['Playfair Display','Lora','Cormorant Garamond','DM Sans','Montserrat','Oswald']
-  for(const {actual,expected} of result.results){
+  for(const {actual,expected,canvases} of result.results){
     expect(actual).toEqual(expected)
     expect(actual).toMatchObject({color:'#2f6b4f',ink:'#fffaf0',source:'cover'})
     expect(supportedFamilies).toContain(actual.fontFamily)
     expect(actual.fontCanvasFamily).toBe(actual.fontFamily)
+    expect(canvases.actual).toBeLessThanOrEqual(8)
+    expect(canvases.actual).toBeLessThan(canvases.reference)
   }
+  console.log('COVER_RASTER_CANVASES',JSON.stringify(result.results.map(({sample,canvases})=>({title:sample.title,...canvases}))))
   expect(errors).toEqual([])
   await info.attach('cover-appearance-esm-parity',{body:JSON.stringify(result,null,2),contentType:'application/json'})
 })
