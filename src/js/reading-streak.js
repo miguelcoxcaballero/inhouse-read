@@ -126,13 +126,27 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   let state = mergeStreaks(parseStreak(read(STREAK_KEY)), parseStreak(read(STREAK_LOCAL_KEY)))
   let today = dayKey(new Date(now()))
   let dirty = false, lastSave = now(), lastTick = 0, lastActivity = 0, timer = 0, clockTimer = 0, readingSessionActive = false
-  let celebrating = null, panel = null, destroyed = false
+  let celebrating = null, panel = null, destroyed = false, infoCache = null, widgetRevision = 0
+  let lastPruneDay = '', widgetSentDay = '', widgetSentMinute = -1, widgetSentRevision = -1
   const feedback = createFeedback(storage)
   feedback.prepareWhen(() => reading() && !streakInfo(state, today).doneToday && streakInfo(state, today).remaining <= 120)
 
+  function currentInfo() {
+    const info = infoCache ||= streakInfo(state, today)
+    const seconds = Math.min(state.days[today] || 0, GOAL_SECONDS)
+    info.seconds = seconds
+    info.doneToday = seconds >= GOAL_SECONDS
+    info.remaining = GOAL_SECONDS - seconds
+    info.atRisk = !info.doneToday && info.current > 0
+    return info
+  }
+
   function persist(force = false) {
     if (!dirty && !force) return
-    state = pruneStreak(state, today)
+    if (lastPruneDay !== today) {
+      state = pruneStreak(state, today)
+      lastPruneDay = today; infoCache = null
+    }
     write(STREAK_LOCAL_KEY, JSON.stringify(state))
     publish()
     dirty = false; lastSave = now()
@@ -146,7 +160,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   // ---- Contador de la cabecera ----
   const chips = [...document.querySelectorAll('[data-streak-chip]')]
   function renderChips() {
-    const info = streakInfo(state, today)
+    const info = currentInfo()
     // El texto accesible cambia por minutos, no cada segundo: cada cambio de
     // atributo es un evento de accesibilidad que Android tiene que procesar.
     const minutes = Math.ceil(info.remaining / 60)
@@ -178,11 +192,14 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   function syncWidget() {
     const bridge = widgetBridge()
     if (typeof bridge?.update !== 'function') return
-    const days = Object.keys(state.days).filter(key => isComplete(state, key)).sort().slice(-120)
     const seconds = Math.min(GOAL_SECONDS, Math.floor((state.days[today] || 0) / 60) * 60)
+    const minute = Math.floor(seconds / 60)
+    if (widgetSentDay === today && widgetSentMinute === minute && widgetSentRevision === widgetRevision) return
+    const days = Object.keys(state.days).filter(key => isComplete(state, key)).sort().slice(-120)
     const payload = JSON.stringify({ days, day: today, seconds })
     if (payload === widgetSent) return
     widgetSent = payload
+    widgetSentDay = today; widgetSentMinute = minute; widgetSentRevision = widgetRevision
     try { bridge.update(payload) } catch {}
   }
   const widgetCall = (name, fallback) => { try { return widgetBridge()?.[name]?.() ?? fallback } catch { return fallback } }
@@ -248,7 +265,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     const elapsed = lastTick ? Math.min(at - lastTick, 2000) : 0
     lastTick = at
     const key = dayKey(new Date(at))
-    if (key !== today) { today = key; renderChips() }
+    if (key !== today) { today = key; infoCache = null; renderChips() }
     if (celebrating || !reading()) return
     if (at - lastActivity > IDLE_MS && !audioPlaying()) {
       clearInterval(timer); timer = 0; lastTick = 0
@@ -258,6 +275,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     const result = addReading(state, elapsed / 1000, today)
     state = result.state; dirty = true
     if (result.reached) {
+      infoCache = null; widgetRevision++
       persist(true)
       renderChips()
       if (state.celebrated !== today) celebrate()
@@ -289,7 +307,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   // Cambiar de día con la app abierta pone el contador en gris si toca.
   function refreshDay() {
     const key = dayKey(new Date(now()))
-    if (key !== today) { today = key; renderChips() }
+    if (key !== today) { today = key; infoCache = null; renderChips() }
   }
   // The date changes once per day. Avoid waking the app every minute just to
   // compare it; visibilitychange performs the same check after a suspended app.
@@ -365,7 +383,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     return panel
   }
   function renderPanel() {
-    const info = streakInfo(state, today)
+    const info = currentInfo()
     const q = selector => panel.querySelector(selector)
     q('.streak-panel').dataset.state = info.doneToday ? 'lit' : 'idle'
     q('.streak-panel').style.setProperty('--streak-progress', String(Math.floor(info.seconds / GOAL_SECONDS * 100) / 100))
@@ -511,6 +529,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
       const merged = mergeStreaks(state, parseStreak(read(STREAK_KEY)), parseStreak(read(STREAK_LOCAL_KEY)))
       const changed = JSON.stringify(merged) !== JSON.stringify(state)
       state = merged
+      if (changed) { infoCache = null; widgetRevision++ }
       write(STREAK_LOCAL_KEY, JSON.stringify(state))
       publish()
       if (changed) renderChips()
