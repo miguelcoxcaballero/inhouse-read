@@ -29,13 +29,15 @@ app speedup; this batch removes duplicated policy and temporary match arrays.
 `speech_first_complete` selects the first sentence beginning at or after the
 visible offset, including the previous physical page's prefix. It returns one
 native offset, so the host no longer constructs and then discards a complete
-JavaScript graph of fragments and sentence objects. Prefix string conversion,
+JavaScript graph of fragments and sentence objects. It reads sentence boundaries
+directly, without generating a fragment plan for this query. Normalization is
+shared with the existing plan and normalized-text APIs. Prefix string conversion,
 browser case folding and the fallback raw string length preserve host semantics.
 
-Thirty related tests pass, including 1,050 comparisons of the previous
+All 157 related tests pass, including 1,050 comparisons of the previous
 complete-plan selection with varied prefixes, offsets and footnote options.
 Rust and Vite production builds pass. A local seven-round alternating Node/WASM
 comparison (10 warmups, 100 measured calls per round) gave median microseconds:
-540 characters 19.86→18.69; 5,400 characters 142.05→138.78; 54,000 characters
-1,574.53→1,532.84. The text-analysis cost remains; these are function timings,
+540 characters 24.78→20.57; 5,400 characters 154.91→146.34; 54,000 characters
+1,524.30→1,415.23. The text-analysis cost remains; these are function timings,
 not total audiobook startup measurements.
