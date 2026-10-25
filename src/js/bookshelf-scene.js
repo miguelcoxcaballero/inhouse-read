@@ -1752,6 +1752,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // viewBox applies exactly that transform to the cached leaf triangles,
     // preserving holes without projecting every leaf again on every finger move.
     if (native.state.pose(model, furniture.quaternion, rect)) {
+      // Leaf paths consume each mesh's world matrix. Refresh descendants only
+      // when rebuilding the path, rather than on every room frame.
+      model.updateMatrixWorld(true);
       const projected = projectPlantFoliage(model);
       native.path.setAttribute('d', projected.path); native.svg.dataset.triangles = String(projected.triangles);
       native.svg.setAttribute('viewBox', `${rect.left} ${rect.top} ${rect.width} ${rect.height}`);
@@ -1806,6 +1809,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // casting a ray does not need to shade and read back the whole room.
     // A compositor inspection does need its native matrices restored first.
     if (inspectionSnapshotVisible) { cancelAnimationFrame(raf); raf = 0; draw(); }
+    // Cached room frames can skip rendering; ray tests still need the latest
+    // descendant matrices even when the renderer has not traversed them yet.
+    for (const entry of bookEntries) if (entry.model && entry.node) entry.model.updateMatrixWorld(true);
     camera.updateMatrixWorld();
     const bounds = canvas.getBoundingClientRect();
     rayPointer.set((clientX - bounds.left) / sceneWidth * 2 - 1, 1 - (clientY - bounds.top) / sceneView.viewportHeight * 2);
