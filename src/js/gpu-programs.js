@@ -16,8 +16,13 @@ function host() {
     unretained:(programs, retained) => programs.filter(program => !retained.has(program)),
     collect:rust.gpu_collect_drawable, ready:rust.gpu_programs_ready,
     uniformAfterIdle:rust.gpu_uniform_after_idle,
+    insertionAfterIdle:rust.gpu_insertion_after_idle, collectMaterial:rust.gpu_collect_material,
     check:rust.gpu_readiness_check, wake:rust.gpu_readiness_wake, cancel:rust.gpu_readiness_cancel,
   };
+}
+
+export async function prepareInsertionProgramState(renderer, scene, camera, roots, idle, current, onLinked) {
+  return needRustShelf().gpu_prepare_insertion(host(), renderer, scene, camera, roots, idle, current, onLinked);
 }
 
 export async function prepareProgramUniforms(renderer, materials, { idle, current = () => true } = {}) {

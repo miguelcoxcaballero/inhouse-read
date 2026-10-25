@@ -133,6 +133,42 @@ fn materials_of(node: &JsValue) -> R<Array> {
     let material = read(node,"material")?;
     Ok(if Array::is_array(&material) { material.unchecked_into() } else { Array::of1(&material) })
 }
+/// Prepare insertion programs in idle slices, without drawing hidden geometry.
+/// The promise owns its bound continuation; no Rust task roots scene handles.
+#[wasm_bindgen]
+pub fn gpu_prepare_insertion(host: JsValue, renderer: JsValue, scene: JsValue, camera: JsValue, roots: JsValue, idle: JsValue, current: JsValue, on_linked: JsValue) -> R<JsValue> {
+    if !idle.is_function() || !current.is_function() {
+        return Ok(Promise::resolve(&JsValue::FALSE).into());
+    }
+    let state = object(&[("host",host.clone()),("renderer",renderer),("scene",scene),
+        ("camera",camera),("roots",roots),("idle",idle.clone()),("current",current),("onLinked",on_linked)])?;
+    let pending = resolved(call(&idle,"idle",&[]));
+    method(&pending,"then",&[&bound(&host,"insertionAfterIdle",&state)?])
+}
+#[wasm_bindgen]
+pub fn gpu_insertion_after_idle(state: JsValue) -> R<JsValue> {
+    let current = read(&state,"current")?;
+    if !truthy(&call(&current,"current",&[])?) { return Ok(JsValue::FALSE); }
+    let host = read(&state,"host")?;
+    let renderer = read(&state,"renderer")?;
+    let roots = read(&state,"roots")?;
+    gpu_prelink(host.clone(),renderer.clone(),read(&state,"scene")?,read(&state,"camera")?,roots.clone())?;
+    call_opt(&read(&state,"onLinked")?,"onLinked",&[])?;
+    // Collect after onLinked: it may replace a material or remove a root.
+    let materials = Set::new(&JsValue::UNDEFINED);
+    let collect = bound(&host,"collectMaterial",materials.as_ref())?;
+    for root in entries(&roots)? { method(&root?,"traverseVisible",&[&collect])?; }
+    gpu_prepare_uniforms(host,renderer,materials.into(),read(&state,"idle")?,current)
+}
+#[wasm_bindgen]
+pub fn gpu_collect_material(materials: Set, node: JsValue) -> R<()> {
+    if truthy(&get(&node,"isMesh")) || truthy(&get(&node,"isPoints")) || truthy(&get(&node,"isLine")) {
+        for material in materials_of(&node)?.iter() {
+            if truthy(&material) { materials.add(&material); }
+        }
+    }
+    Ok(())
+}
 fn needs_transmission(objects: &Array) -> R<bool> {
     for object in objects.iter() { for material in materials_of(&object)?.iter() {
         if num(&read(&material,"transmission")?) > 0.0 { return Ok(true); }

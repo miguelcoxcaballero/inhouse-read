@@ -180,7 +180,7 @@ function-level note and inspect the final integrated source for extraction.
 | `gpu-programs.js` | M | retainPrograms LRU, prepareProgramUniforms deadline and prelink readiness policies remain; Three compiler calls stay host. |
 | `host-math.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
 | `idle-startup.js` | M | setShelfWorkActive/shelfWorkReady/shelfPresented/idleWork own startup and foreground work scheduling. |
-| `insertion-program-preparation.js` | M | Own idle/current sequencing and material collection before GPU preparation; traversal and compiler are host APIs. |
+| `insertion-program-preparation.js` | R | Rust owns idle/current sequencing, material eligibility, deduplication and uniform preparation. Three traversal and compilation remain host APIs. |
 | `lamp-catalog-data.js` | M | Rust data tables, but normalizeShelfLamp and ID/default/placement/kelvin validation are JS. |
 | `lamp-catalog-preview.js` | M | Preview animation, quality/lifetime and light placement orchestration mixed with Three host calls. |
 | `lamp-illustration.js` | M | ID selection and SVG presentation wrapper; artwork is declarative, ID fallback is own policy. |
