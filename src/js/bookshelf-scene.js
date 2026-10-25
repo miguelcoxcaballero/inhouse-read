@@ -782,21 +782,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (cached?.parent && cached.name === name) return cached;
     return model.userData.hitSurface = model.getObjectByName(name);
   }
-  // A semantic hit target needs the world matrix of one mesh, not a recursive
-  // refresh of every sibling mesh in a detailed book or plant model.
-  function updateHitSurfaceWorld(surface) {
-    const path = [];
-    for (let node = surface; node; node = node.parent) path.push(node);
-    for (let index = path.length - 1; index >= 0; index--) {
-      const node = path[index];
-      if (node.matrixAutoUpdate) node.updateMatrix();
-      if (node.matrixWorldAutoUpdate) {
-        if (node.parent) node.matrixWorld.multiplyMatrices(node.parent.matrixWorld, node.matrix);
-        else node.matrixWorld.copy(node.matrix);
-      }
-      node.matrixWorldNeedsUpdate = false;
-    }
-  }
   // The stand-in hit box of a culled model only changes with its slot box.
   const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
   const insertedIds = [], exclusionRects = [], countIo = [];
@@ -1629,7 +1614,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         let hitBox, hitMatrix;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
-          updateHitSurfaceWorld(surface);
+          surface.updateWorldMatrix(true, false);
           const { min, max } = surface.geometry.boundingBox;
           surfaceBox[0] = min.x; surfaceBox[1] = min.y; surfaceBox[2] = min.z; surfaceBox[3] = max.x; surfaceBox[4] = max.y; surfaceBox[5] = max.z;
           hitBox = surfaceBox; hitMatrix = surface.matrixWorld;
@@ -2241,7 +2226,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (casterListDirty || trashVisible !== casterTrashVisible) {
       let casterCount = 0;
       for (const entry of bookEntries) if (entry.model?.visible) casterIds[casterCount++] = entry.model.id;
-      casterSignature = rust.scene_casters(trashVisible, casterIds, casterCount);
+      casterSignature = rust.scene_casters(trashVisible, casterIds.subarray(0, casterCount));
       casterListDirty = false; casterTrashVisible = trashVisible;
     }
     const casters = casterSignature;
