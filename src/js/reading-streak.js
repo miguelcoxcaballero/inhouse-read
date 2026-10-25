@@ -197,9 +197,9 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     if (widgetSentDay === today && widgetSentMinute === minute && widgetSentRevision === widgetRevision) return
     const days = Object.keys(state.days).filter(key => isComplete(state, key)).sort().slice(-120)
     const payload = JSON.stringify({ days, day: today, seconds })
+    widgetSentDay = today; widgetSentMinute = minute; widgetSentRevision = widgetRevision
     if (payload === widgetSent) return
     widgetSent = payload
-    widgetSentDay = today; widgetSentMinute = minute; widgetSentRevision = widgetRevision
     try { bridge.update(payload) } catch {}
   }
   const widgetCall = (name, fallback) => { try { return widgetBridge()?.[name]?.() ?? fallback } catch { return fallback } }
