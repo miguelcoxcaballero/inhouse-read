@@ -244,6 +244,65 @@ it('checks room revisions with one metadata request after lookup and never downl
  drive.signOutDrive();await expect(drive.readDriveLibraryRevision()).rejects.toThrow(/Conectar|sesión/i)
 })
 
+it('shares in-flight revision metadata but requests fresh data after settlement',async()=>{
+ session();let release,blocked=true,version='first'
+ const pending=new Promise(resolve=>{release=resolve})
+ globalThis.fetch=vi.fn(async target=>{
+  const q=new URL(target).searchParams.get('q')||''
+  if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
+  if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
+  return blocked?pending:json({files:[{id:'device',name:'library-v1-device.json',modifiedTime:version}]})
+ })
+ const first=drive.readDriveLibraryRevision(),second=drive.readDriveLibraryRevision()
+ await vi.waitFor(()=>expect(fetch).toHaveBeenCalledTimes(3))
+ release(json({files:[{id:'device',name:'library-v1-device.json',modifiedTime:version}]}))
+ const values=await Promise.all([first,second])
+ expect(values[0]).toBe(values[1]);expect(JSON.parse(values[0])).toEqual([['device','first']])
+ expect(fetch).toHaveBeenCalledTimes(3)
+ blocked=false;version='changed'
+ expect(await drive.readDriveLibraryRevision()).not.toBe(values[0]);expect(fetch).toHaveBeenCalledTimes(4)
+})
+
+it('releases a shared failed revision request so the next poll can retry',async()=>{
+ session();let release,blocked=true
+ const pending=new Promise(resolve=>{release=resolve})
+ globalThis.fetch=vi.fn(async target=>{
+  const q=new URL(target).searchParams.get('q')||''
+  if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
+  if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
+  return blocked?pending:json({files:[]})
+ })
+ const outcomes=Promise.allSettled([drive.readDriveLibraryRevision(),drive.readDriveLibraryRevision()])
+ await vi.waitFor(()=>expect(fetch).toHaveBeenCalledTimes(3))
+ release(new Response(JSON.stringify({error:{message:'temporary'}}),{status:503}))
+ expect((await outcomes).map(result=>result.status)).toEqual(['rejected','rejected'])
+ blocked=false
+ await expect(drive.readDriveLibraryRevision()).resolves.toBe('[]');expect(fetch).toHaveBeenCalledTimes(4)
+})
+
+it('does not let an old account completion clear a new in-flight revision request',async()=>{
+ session();let releaseOld,releaseNew,metadata=0
+ const oldResponse=new Promise(resolve=>{releaseOld=resolve}),newResponse=new Promise(resolve=>{releaseNew=resolve})
+ globalThis.fetch=vi.fn(async target=>{
+  const q=new URL(target).searchParams.get('q')||''
+  if(q.includes("name = 'inhouse read'"))return json({files:[{id:'root'}]})
+  if(q.includes("name = '.inhouse-read-state'"))return json({files:[{id:'state'}]})
+  return ++metadata===1?oldResponse:newResponse
+ })
+ const old=drive.readDriveLibraryRevision();old.catch(()=>{})
+ await vi.waitFor(()=>expect(fetch).toHaveBeenCalledTimes(3))
+ drive.signOutDrive();session()
+ const current=drive.readDriveLibraryRevision()
+ await vi.waitFor(()=>expect(fetch).toHaveBeenCalledTimes(6))
+ releaseOld(json({files:[{id:'old',name:'library-v1-old.json',modifiedTime:'old'}]}))
+ await expect(old).rejects.toThrow()
+ const joined=drive.readDriveLibraryRevision()
+ releaseNew(json({files:[{id:'new',name:'library-v1-new.json',modifiedTime:'current'}]}))
+ const values=await Promise.all([current,joined])
+ expect(values[0]).toBe(values[1]);expect(JSON.parse(values[0])).toEqual([['new','current']])
+ expect(fetch).toHaveBeenCalledTimes(6)
+})
+
 it('confirms the shared live key after creation and returns no OAuth token',async()=>{
  session();let reads=0,patches=0;const winner='W'.repeat(43)
  globalThis.fetch=vi.fn(async(target,options={})=>{

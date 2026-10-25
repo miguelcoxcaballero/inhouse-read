@@ -39,6 +39,7 @@ struct NativeRequest{resolve:Function,reject:Function,generation:f64,timer:u32}
 struct Core{
  host:JsValue,generation:Cell<f64>,timers:Rc<Timers>,
  auth:RefCell<Option<Promise>>,folder:RefCell<Option<Promise>>,state_folder:RefCell<Option<Promise>>,
+ revision_task:RefCell<Option<(f64,Promise)>>,revision_sequence:Cell<u64>,
  native:RefCell<Option<Rc<NativeRequest>>>,exchange:RefCell<Option<Promise>>,web:RefCell<Vec<Rc<WebRequest>>>,
 }
 
@@ -323,6 +324,7 @@ impl Core{
  fn cancel(&self,message:&str){
   self.generation.set(self.generation.get()+1.0);
   *self.folder.borrow_mut()=None;*self.state_folder.borrow_mut()=None;
+  *self.revision_task.borrow_mut()=None;self.revision_sequence.set(self.revision_sequence.get().wrapping_add(1));
   let waiting:Vec<Rc<WebRequest>>=self.web.borrow().clone();
   for request in waiting{
    self.web.borrow_mut().retain(|known|!Rc::ptr_eq(known,&request));
@@ -473,6 +475,24 @@ impl Core{
 
  // Each installation owns one manifest. Devices never PATCH another device's snapshot, so
  // simultaneous saves cannot erase an entire library.
+ fn library_revision_promise(self:&Rc<Self>)->Promise{
+  let generation=self.generation.get();
+  if let Some((owner,task))=self.revision_task.borrow().as_ref(){if *owner==generation{return task.clone();}}
+  let sequence=self.revision_sequence.get().wrapping_add(1);self.revision_sequence.set(sequence);
+  // Install the shared promise before starting synchronous host callbacks, so
+  // a reentrant observer joins this request too. No settled result is cached.
+  let mut resolver=None;
+  let shared=Promise::new(&mut|resolve,_reject|{resolver=Some(resolve);});
+  *self.revision_task.borrow_mut()=Some((generation,shared.clone()));
+  let core=self.clone();
+  let task=start(async move{
+   let result=core.clone().library_revision().await;
+   if core.revision_sequence.get()==sequence{*core.revision_task.borrow_mut()=None;}
+   result
+  });
+  let _=resolver.expect("Promise executor is synchronous").call1(&JsValue::UNDEFINED,&task);
+  shared
+ }
  async fn library_revision(self:Rc<Self>)->Result<JsValue,JsValue>{
   let generation=self.generation.get();
   let cached=self.state_folder.borrow().clone();
@@ -663,7 +683,7 @@ impl RustDriveClient{
  #[wasm_bindgen(constructor)]
  pub fn new(host:JsValue)->RustDriveClient{
   RustDriveClient{core:Rc::new(Core{host,generation:Cell::new(0.0),timers:Rc::new(Timers::default()),auth:RefCell::new(None),folder:RefCell::new(None),
-   state_folder:RefCell::new(None),native:RefCell::new(None),exchange:RefCell::new(None),web:RefCell::new(Vec::new())})}
+   state_folder:RefCell::new(None),revision_task:RefCell::new(None),revision_sequence:Cell::new(0),native:RefCell::new(None),exchange:RefCell::new(None),web:RefCell::new(Vec::new())})}
  }
  #[wasm_bindgen(js_name=requestDriveAccess)]
  pub fn request_drive_access(&self,options:JsValue)->Promise{self.core.request_access(&options)}
@@ -678,7 +698,7 @@ impl RustDriveClient{
  #[wasm_bindgen(js_name=readDriveLibrarySnapshots)]
  pub fn read_drive_library_snapshots(&self)->Promise{let core=self.core.clone();start(async move{core.read_snapshots().await})}
  #[wasm_bindgen(js_name=readDriveLibraryRevision)]
- pub fn read_drive_library_revision(&self)->Promise{let core=self.core.clone();start(async move{core.library_revision().await})}
+ pub fn read_drive_library_revision(&self)->Promise{self.core.library_revision_promise()}
  #[wasm_bindgen(js_name=writeDriveLibrarySnapshot)]
  pub fn write_drive_library_snapshot(&self,snapshot:JsValue,state_file_id:JsValue)->Promise{let core=self.core.clone();start(async move{core.write_snapshot(snapshot,state_file_id).await})}
  #[wasm_bindgen(js_name=uploadDriveCover)]
