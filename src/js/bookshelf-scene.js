@@ -1246,6 +1246,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       for (const entry of oldEntries.values()) releaseEntry(entry);
       bookEntries = retained; byNode.clear();
+      // Lamp fixtures are structural scene data. Rebuild their cached list and
+      // light pool only when a layout is committed, not once per rendered frame.
+      lampLighting.prepare(bookEntries);
       acknowledgeRoom(roomCheckpoint);
       if(pendingCloudPhysics&&physicsReady){
         const incoming=new rust.RustBookGravity();

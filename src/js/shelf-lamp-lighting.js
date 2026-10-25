@@ -81,6 +81,10 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   let candidateIn = new Float64Array(0), slotIn = new Float64Array(0), planOut = new Float64Array(2);
   const keyIds = new Map(), identities = new Map();
   let nextKeyId = 0;
+  // The set and fixture kinds change only when the shelf layout changes.
+  // Keep that structural scan out of the render loop; only the much smaller
+  // lamp list needs dynamic visibility/drag checks per frame.
+  let lampEntries = [];
   // Rust invalidates ranks; locale-specific String collation is a browser primitive.
   let disposed = false, shadowRefresh = false, prepared = false;
   function removeLights(slot) {
@@ -133,10 +137,11 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   // Every kind of lamp the library owns gets one slot before any gets a
   // second, in a fixed order: the pool never depends on the entries' order.
   function reconcile(entries) {
-    if (kindsIn.length !== entries.length) kindsIn = new Float64Array(entries.length);
+    lampEntries = entries.filter(entry => entry.kind === 'lamp');
+    if (kindsIn.length !== lampEntries.length) kindsIn = new Float64Array(lampEntries.length);
     if (poolSlots.length !== slots.length) poolSlots = new Float64Array(slots.length);
-    for (let index = 0; index < entries.length; index++) {
-      const entry = entries[index], kind = entry.kind === 'lamp' ? kindOf(entry) : null;
+    for (let index = 0; index < lampEntries.length; index++) {
+      const entry = lampEntries[index], kind = kindOf(entry);
       kindsIn[index] = kind ? kindCode(kind) : -1;
     }
     for (let index = 0; index < slots.length; index++) poolSlots[index] = kindCode(slots[index].kind);
@@ -248,7 +253,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     /** Build the pool from the library's lamps alone, before their models
      * exist, so programs linked ahead of the first frame see its final lights. */
     prepare(entries) {
-      if (!disposed && reconcile(entries)) prepared = true;
+      if (!disposed) { reconcile(entries); prepared = true; }
     },
     update(entries, { scroll = 0, viewportHeight = Infinity, shadowDirty = false, transform = null } = {}) {
       if (disposed) return false;
@@ -260,10 +265,10 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       }
       const middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
       shadowRefresh = false;
-      let changed = reconcile(entries) || prepared;
+      let changed = prepared;
       prepared = false;
       candidates.length = 0;
-      for (const entry of entries) if (isCandidate(entry)) candidates.push(entry);
+      for (const entry of lampEntries) if (isCandidate(entry)) candidates.push(entry);
       // The lit lamps are the powered ones nearest the view (or picked up),
       // as many of each kind as it has slots. An unpowered lamp never takes
       // a slot, but keeps the one it already holds until another needs it.
