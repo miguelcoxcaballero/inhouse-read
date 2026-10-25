@@ -128,6 +128,14 @@ export function shelfOccluders(root) {
 
 // One small arena per core serves every render; it is allocated by the first one.
 let frame = null;
+function frameViews(wasm) {
+  const buffer = wasm.memory.buffer;
+  if (frame.buffer === buffer) return;
+  frame.buffer = buffer;
+  frame.input = new Float64Array(buffer, frame.pointer, FRAME_INPUT);
+  frame.cabinet = new Float64Array(buffer, frame.pointer + FRAME_INPUT * 8, cabinet.length);
+  frame.boards = new Float64Array(buffer, frame.pointer + (FRAME_INPUT + cabinet.length) * 8, boards.length);
+}
 /** Fills the uniforms for one render with `camera`: call from the scene's
  * onBeforeRender, and clear() from its onAfterRender. */
 export function applyShelfOccluders(root, description, camera) {
@@ -138,16 +146,20 @@ export function applyShelfOccluders(root, description, camera) {
     const pointer = wasm.alloc_f64(FRAME_INPUT + FRAME_OUTPUT);
     if (!pointer) throw new Error('El módulo numérico no pudo reservar memoria. Recarga la página.');
     if (frame) frame.core.free_f64(frame.pointer, FRAME_INPUT + FRAME_OUTPUT);
-    frame = { core:wasm, pointer };
+    frame = { core:wasm, pointer, buffer:null };
   }
-  const { centre, half, boards:heights } = description, input = new Float64Array(wasm.memory.buffer, frame.pointer, FRAME_INPUT);
+  frameViews(wasm);
+  const { centre, half, boards:heights } = description, input = frame.input;
   input.set(camera.matrixWorldInverse.elements); input.set(root.matrixWorld.elements, 16);
-  input.set([centre.x, centre.y, centre.z, half.x, half.y, half.z, description.inner, description.front, description.solidSides ? 1 : 0, description.through,
-    Math.min(MAX_SHELF_BOARDS, heights.length)], 32);
+  input[32] = centre.x; input[33] = centre.y; input[34] = centre.z;
+  input[35] = half.x; input[36] = half.y; input[37] = half.z;
+  input[38] = description.inner; input[39] = description.front;
+  input[40] = description.solidSides ? 1 : 0; input[41] = description.through;
+  input[42] = Math.min(MAX_SHELF_BOARDS, heights.length);
   for (let index = 0; index < MAX_SHELF_BOARDS && index < heights.length; index++) input[43 + index] = heights[index];
   wasm.shelf_occluders_apply(frame.pointer, frame.pointer + FRAME_INPUT * 8);
-  const output = new Float64Array(wasm.memory.buffer, frame.pointer + FRAME_INPUT * 8, FRAME_OUTPUT);
-  cabinet.set(output.subarray(0, 20)); boards.set(output.subarray(20));
+  frameViews(wasm);
+  cabinet.set(frame.cabinet); boards.set(frame.boards);
 }
 
 export function clearShelfOccluders() { cabinet[3] = 0; }

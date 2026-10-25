@@ -81,16 +81,23 @@ export function createShelfLighting(scene, renderer) {
     views();
     input[0] = width; input[1] = viewportHeight; input[2] = depth; input[3] = scroll;
     input[4] = bounds ? 1 : 0;
-    if (bounds) input.set([bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z], 5);
+    if (bounds) {
+      input[5] = bounds.min.x; input[6] = bounds.min.y; input[7] = bounds.min.z;
+      input[8] = bounds.max.x; input[9] = bounds.max.y; input[10] = bounds.max.z;
+    }
     input[11] = transform ? 1 : 0;
     if (transform) input.set(transform.elements, 12);
     input[28] = moving ? 1 : 0; input[29] = forceRefit ? 1 : 0; input[30] = dirtyValue ? 1 : 0;
-    input.set([toLight.x, toLight.y, toLight.z, key.position.x, key.position.y, key.position.z,
-      key.target.position.x, key.target.position.y, key.target.position.z, key.shadow.normalBias,
-      camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far], 31);
+    input[31] = toLight.x; input[32] = toLight.y; input[33] = toLight.z;
+    input[34] = key.position.x; input[35] = key.position.y; input[36] = key.position.z;
+    input[37] = key.target.position.x; input[38] = key.target.position.y; input[39] = key.target.position.z;
+    input[40] = key.shadow.normalBias;
+    input[41] = camera.left; input[42] = camera.right;
+    input[43] = camera.top; input[44] = camera.bottom;
+    input[45] = camera.near; input[46] = camera.far;
     if (core.shelf_light_update(rig, arena, arena + PARAMS * 8) !== 1) throw new Error('Rust shelf lighting rejected its frame');
     views();
-    const [dirty, assigned, refit, transported, settling] = output;
+    const dirty = output[0], assigned = output[1], refit = output[2], transported = output[3], settling = output[4];
     if (refit || transported) {
       key.position.set(output[5], output[6], output[7]);
       key.target.position.set(output[8], output[9], output[10]);
