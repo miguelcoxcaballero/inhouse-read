@@ -2,50 +2,19 @@
 //! The browser receives normalized text once and only the final small plan.
 use wasm_bindgen::prelude::*;
 use js_sys::{Function,Uint16Array,Uint32Array};
-use std::cell::RefCell;
-// Retain at most one MiB between narration preparations. Taking the buffers
-// out of the pool before host callbacks also permits synchronous reentry.
-const NORMALIZATION_CACHE_BYTES:usize=1024*1024;
-#[derive(Default)]
-struct NormalizationBuffers {text:Vec<u16>,map:Vec<u32>,breaks:Vec<u32>}
-impl NormalizationBuffers {
- fn bytes(&self)->usize{self.text.capacity()*2+self.map.capacity()*4+self.breaks.capacity()*4}
-}
-thread_local!{static NORMALIZATION_CACHE:RefCell<Option<NormalizationBuffers>>=RefCell::new(None);}
-struct Normalized {buffers:NormalizationBuffers,text_len:usize,break_len:usize}
-impl Normalized {
- fn text(&self)->&[u16]{&self.buffers.text[..self.text_len]}
- fn map(&self)->&[u32]{&self.buffers.map[..self.text_len]}
- fn breaks(&self)->&[u32]{&self.buffers.breaks[..self.break_len]}
-}
-impl Drop for Normalized {
- fn drop(&mut self){
-  let buffers=std::mem::take(&mut self.buffers);
-  if buffers.bytes()>NORMALIZATION_CACHE_BYTES{return;}
-  NORMALIZATION_CACHE.with(|cache|{
-   let mut cache=cache.borrow_mut();
-   if cache.as_ref().is_none_or(|previous|previous.bytes()<=buffers.bytes()){*cache=Some(buffers);}
-  });
- }
-}
+struct Normalized {text:Vec<u16>,map:Vec<u32>,breaks:Vec<u32>}
 fn normalize(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>,raw_lower:Function,letters:Function,expose:Function)->Result<Option<Normalized>,JsValue>{
  let n=raw.len();
  let Some(mask)=crate::speech_mask::removal_mask(raw,footnotes,skip_headers,headers,raw_lower,letters)?else{return Ok(None)};
- let mut buffers=NORMALIZATION_CACHE.with(|cache|cache.borrow_mut().take()).unwrap_or_default();
- // Keep initialized slabs at their high-water length. The native normalizer
- // writes every returned prefix; spare capacity never enters the result.
- if buffers.text.len()<n*2{buffers.text.resize(n*2,0);}
- if buffers.map.len()<n*2{buffers.map.resize(n*2,0);}
- if buffers.breaks.len()<n{buffers.breaks.resize(n,0);}
- let mut counts=[0u32;2];
- let status=unsafe{crate::speech_normalize::speech_normalize(raw.as_ptr(),mask.as_ptr(),n,buffers.text.as_mut_ptr(),buffers.map.as_mut_ptr(),buffers.breaks.as_mut_ptr(),counts.as_mut_ptr())};
+ let mut text=vec![0u16;n*2];let mut map=vec![0u32;n*2];let mut breaks=vec![0u32;n];let mut counts=[0u32;2];
+ let status=unsafe{crate::speech_normalize::speech_normalize(raw.as_ptr(),mask.as_ptr(),n,text.as_mut_ptr(),map.as_mut_ptr(),breaks.as_mut_ptr(),counts.as_mut_ptr())};
  if status!=1{return Ok(None)}
- let data=Normalized{buffers,text_len:counts[0]as usize,break_len:counts[1]as usize};
+ text.truncate(counts[0]as usize);map.truncate(counts[0]as usize);breaks.truncate(counts[1]as usize);
  // The host copies this borrowed UTF-16 view synchronously; it must neither
  // retain the view nor reenter WASM while handling it.
- let view=unsafe{Uint16Array::view(data.text())};
+ let view=unsafe{Uint16Array::view(&text)};
  expose.call1(&JsValue::UNDEFINED,&view)?;
- Ok(Some(data))
+ Ok(Some(Normalized{text,map,breaks}))
 }
 #[wasm_bindgen]
 pub fn speech_pipeline(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>,pages:&[f64],from:f64,opening:bool,raw_lower:Function,letters:Function,expose:Function,properties:Function,lower:Function,clause:Function)->Result<JsValue,JsValue>{
@@ -60,7 +29,7 @@ fn pipeline(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>
 }
 fn pipeline_records(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>,pages:&[f64],from:f64,opening:bool,raw_lower:Function,letters:Function,expose:Function,properties:Function,lower:Function,clause:Function,native_clause:bool)->Result<Option<Vec<u32>>,JsValue>{
  let Some(data)=normalize(raw,footnotes,skip_headers,headers,raw_lower,letters,expose)?else{return Ok(None)};
- crate::speech_plan::speech_plan_records(data.text(),data.map(),data.breaks(),pages,from,opening,properties,lower,clause,native_clause)
+ crate::speech_plan::speech_plan_records(&data.text,&data.map,&data.breaks,pages,from,opening,properties,lower,clause,native_clause)
 }
 
 /// Select in the retained native plan, avoiding construction of a complete
@@ -69,13 +38,13 @@ fn pipeline_records(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<V
 pub fn speech_first_complete(raw:&[u16],prefix:u32,from:f64,footnotes:bool,raw_lower:Function,letters:Function,expose:Function,properties:Function,lower:Function)->Result<JsValue,JsValue>{
  let minimum=f64::from(prefix)+if from.is_nan()||from==0.0{0.0}else{from.max(0.0)};
  let Some(data)=normalize(raw,footnotes,false,None,raw_lower,letters,expose)?else{return Ok(JsValue::NULL)};
- let ends=crate::sentence_ends::sentence_ends_native(data.text(),data.breaks(),properties,lower,0)?;
+ let ends=crate::sentence_ends::sentence_ends_native(&data.text,&data.breaks,properties,lower,0)?;
  let mut previous=0;
  for end in ends{
   let (mut start,mut stop)=(previous,end as usize);previous=stop;
-  while start<stop&&crate::speech_normalize::whitespace(data.text()[start]){start+=1;}
-  while stop>start&&crate::speech_normalize::whitespace(data.text()[stop-1]){stop-=1;}
-  if start<stop&&f64::from(data.map()[start])>=minimum{return Ok((f64::from(data.map()[start])-f64::from(prefix)).into());}
+  while start<stop&&crate::speech_normalize::whitespace(data.text[start]){start+=1;}
+  while stop>start&&crate::speech_normalize::whitespace(data.text[stop-1]){stop-=1;}
+  if start<stop&&f64::from(data.map[start])>=minimum{return Ok((f64::from(data.map[start])-f64::from(prefix)).into());}
  }
  Ok(JsValue::UNDEFINED)
 }
@@ -84,6 +53,6 @@ pub fn speech_first_complete(raw:&[u16],prefix:u32,from:f64,footnotes:bool,raw_l
 #[wasm_bindgen]
 pub fn speech_normalized(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>,raw_lower:Function,letters:Function,expose:Function)->Result<JsValue,JsValue>{
  let Some(data)=normalize(raw,footnotes,skip_headers,headers,raw_lower,letters,expose)?else{return Ok(JsValue::UNDEFINED)};
- let mut packed=Vec::with_capacity(1+data.map().len()+data.breaks().len());packed.push(data.map().len()as u32);packed.extend_from_slice(data.map());packed.extend_from_slice(data.breaks());
+ let mut packed=Vec::with_capacity(1+data.map.len()+data.breaks.len());packed.push(data.map.len()as u32);packed.extend_from_slice(&data.map);packed.extend_from_slice(&data.breaks);
  Ok(Uint32Array::from(packed.as_slice()).into())
 }

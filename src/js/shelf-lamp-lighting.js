@@ -68,7 +68,7 @@ const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
  * moves a light to another lamp), then the ones nearest the camera centre,
  * with a stable key resolving equal scores.
  */
-export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false } = {}) {
+export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false, preparedEntries = false } = {}) {
   const kindOf = entry => lampKind(entry, filamentAreas);
   const slots = [];
   let pool = null;
@@ -279,7 +279,8 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       }
       const middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
       shadowRefresh = false;
-      let changed = prepared;
+      // Standalone callers may provide a fresh entry set on each update.
+      let changed = (!preparedEntries && reconcile(entries)) || prepared;
       prepared = false;
       candidates.length = 0;
       for (const entry of lampEntries) if (isCandidate(entry)) candidates.push(entry);
