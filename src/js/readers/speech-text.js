@@ -61,8 +61,12 @@ export function planSpeech(raw,options={},from=0){
  * Previous physical-page text distinguishes a continuation from a new sentence. */
 export function firstCompleteSentenceOffset(raw, from = 0, previousText = '', options = {}) {
   const prefix = previousText ? String(previousText).trimEnd() + ' ' : '';
-  const start = prefix.length + Math.max(0, Number(from) || 0);
-  const item = planSpeech(prefix + raw, {footnotes:options.footnotes}, 0)
-    .find(item => item.sentence.start >= start);
-  return item ? item.sentence.start - prefix.length : String(raw).length;
+  const offset = Number(from), source = prefix + raw;
+  const {footnotes = true} = options;
+  let text;
+  const result = readerUI().speech_first_complete(units(source), prefix.length, offset, Boolean(footnotes),
+    (a,b) => units(source.slice(a,b).toLocaleLowerCase()), letters,
+    chars => { text = decodeUnits(chars); }, properties, (a,b) => text.slice(a,b).toLocaleLowerCase());
+  if (result === null) throw new TypeError('Unsupported speech text');
+  return result === undefined ? String(raw).length : result;
 }

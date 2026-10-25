@@ -302,7 +302,7 @@ function-level note and inspect the final integrated source for extraction.
 | `readers/speech-page-breaks.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `readers/speech-pipeline.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `readers/speech-plan.js` | R | Opening-clause scan, whitespace and offset limits live in `speech_plan.rs`; the production pipeline uses its existing normalized UTF-16 buffer. Unicode properties/script classification and UTF-16 packing are host/ABI helpers. |
-| `readers/speech-text.js` | M | Rust normalization/plan pipeline; speechChunks whitespace adaptation and input guards remain small own rules. |
+| `readers/speech-text.js` | M | Rust normalization/plan pipeline and native first-complete-sentence selection; speechChunks whitespace adaptation and input guards remain small own rules. |
 | `readers/voice-advance.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `readers/voice-ahead.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `readers/voice-catalog.js` | M | Rust voice ranking; normalizeLang, declaredLanguage, isNeuralId and tag aliases remain JS for early preferences; Intl names are host. |

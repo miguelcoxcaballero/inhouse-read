@@ -23,3 +23,19 @@ avoids that extra call. A local Node/WASM comparison of the complete pipeline
 microseconds of 5.40→4.89 for Latin, 6.11→6.46 for CJK, and 5.11→4.82 without an
 eligible cut. These short timings include noise and do not establish a general
 app speedup; this batch removes duplicated policy and temporary match arrays.
+
+## First complete visible sentence
+
+`speech_first_complete` selects the first sentence beginning at or after the
+visible offset, including the previous physical page's prefix. It returns one
+native offset, so the host no longer constructs and then discards a complete
+JavaScript graph of fragments and sentence objects. Prefix string conversion,
+browser case folding and the fallback raw string length preserve host semantics.
+
+Thirty related tests pass, including 1,050 comparisons of the previous
+complete-plan selection with varied prefixes, offsets and footnote options.
+Rust and Vite production builds pass. A local seven-round alternating Node/WASM
+comparison (10 warmups, 100 measured calls per round) gave median microseconds:
+540 characters 19.86→18.69; 5,400 characters 142.05→138.78; 54,000 characters
+1,574.53→1,532.84. The text-analysis cost remains; these are function timings,
+not total audiobook startup measurements.
