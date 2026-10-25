@@ -82,10 +82,10 @@ fn sample(p:&Pose,now:f64)->[f64;8]{
   self.seen.insert(source.clone(),sequence);
   self.actors.insert(source,Actor{gesture,sequence,base,commit:commit.clone(),ancestors,ended:phase!="frame",expires:if phase=="end"&&!commit.is_empty(){f64::INFINITY}else{now+if phase=="frame"{3500.0}else{5000.0}},poses});true
  }
- pub fn pose(&self,key:String,now:f64,out:&mut[f64])->bool{
+ pub fn pose(&self,key:&str,now:f64,out:&mut[f64])->bool{
   if out.len()<9{return false;}
   // Deterministic actor priority if two remote users manipulate the same book.
-  for actor in self.actors.values().rev(){if actor.expires<now{continue;}if let Some(p)=actor.poses.get(&key){out[0]=p.bay;out[1..9].copy_from_slice(&sample(p,now));return true;}}false
+  for actor in self.actors.values().rev(){if actor.expires<now{continue;}if let Some(p)=actor.poses.get(key){out[0]=p.bay;out[1..9].copy_from_slice(&sample(p,now));return true;}}false
  }
  #[wasm_bindgen(getter)]pub fn changed(&self)->bool{self.changed}
  pub fn moving(&self,now:f64)->bool{self.actors.values().any(|a|a.expires>=now&&a.poses.values().any(|p|now-p.at<65.0&&p.from.iter().zip(p.to).any(|(a,b)|(a-b).abs()>1e-8)))}
@@ -121,9 +121,9 @@ fn sample(p:&Pose,now:f64)->[f64;8]{
    self.poses.insert(key,Pose{bay:0.0,from,to:from,at:now,duration:240.0});
   }
  }
- pub fn pose(&mut self,key:String,target:&[f64],now:f64,out:&mut[f64])->bool{
+ pub fn pose(&mut self,key:&str,target:&[f64],now:f64,out:&mut[f64])->bool{
   if !self.moving(now)||target.len()!=8||out.len()<8||!target.iter().all(|v|v.is_finite()){return false;}
-  let Some(p)=self.poses.get_mut(&key)else{return false;};p.to.copy_from_slice(target);
+  let Some(p)=self.poses.get_mut(key)else{return false;};p.to.copy_from_slice(target);
   out[..8].copy_from_slice(&sample(p,now));true
  }
  pub fn moving(&self,now:f64)->bool{!self.poses.is_empty()&&now.is_finite()&&now-self.started<240.0&&now>=self.started}

@@ -37,7 +37,7 @@ impl RustSceneMotionFrame {
    self.output[2]=(pose[1]+bay[1])/ppm;self.output[3]=pose[2]/ppm;
    self.output[4..9].copy_from_slice(&pose[3..8]);flags|=1;
    let mut remote=[0.0;9];
-   if !arranging&&(now.is_nan()||motion.active(now))&&motion.pose(key.clone(),now,&mut remote){
+   if !arranging&&(now.is_nan()||motion.active(now))&&motion.pose(key,now,&mut remote){
     if let Some(bay)=self.row(remote[0]){
      pose[0]=bay[0]-width/2.0+remote[1]*ppm;
      pose[1]=-bay[1]+remote[2]*ppm;pose[2]=remote[3]*ppm;
@@ -48,7 +48,7 @@ impl RustSceneMotionFrame {
   }
   let target=[(pose[0]+width/2.0)/ppm,pose[1]/ppm,pose[2]/ppm,pose[3],pose[4],pose[5],pose[6],pose[7]];
   let mut bridge=[0.0;8];
-  if transition.moving(now)&&transition.pose(key.clone(),&target,now,&mut bridge){
+  if transition.moving(now)&&transition.pose(key,&target,now,&mut bridge){
    self.output[17]=bridge[0]*ppm-width/2.0;self.output[18]=bridge[1]*ppm;self.output[19]=bridge[2]*ppm;
    self.output[20..25].copy_from_slice(&bridge[3..8]);flags|=4;
   }
