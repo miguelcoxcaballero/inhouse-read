@@ -1,4 +1,5 @@
 import { createGravityFrame } from './gravity-frame.js';
+import { createSceneCountFrame } from './scene-count-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
@@ -204,6 +205,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
   const rust = needRustShelf();
+  const countFrame = createSceneCountFrame(rust);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (!context) return null;
@@ -784,7 +786,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   // The stand-in hit box of a culled model only changes with its slot box.
   const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
-  const insertedIds = [], exclusionRects = [], countIo = [];
+  const insertedIds = [], exclusionRects = [];
   let exclusionsReady = false;
 
   function materialKeys(entry) {
@@ -2441,13 +2443,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     setData(canvas, 'renderCount', String(++renderCount));
     // One pass over the entries serves every count below, taken in Rust.
-    countIo.length = 0;
-    for (const entry of bookEntries) {
-      const model = entry.model;
-      countIo.push(entry.kind === 'plant' ? 1 : entry.kind === 'lamp' ? 2 : 0, model?.visible ? 1 : 0, entry.qualityReplacement || entry.plantQuality ? 1 : 0,
-        model?.userData.overview ? 1 : 0, model?.userData.inspectionResolution);
-    }
-    const resolutionText = rust.scene_counts(Float64Array.from(countIo), countOut);
+    const resolutionText = countFrame.sample(bookEntries, countOut);
     const [plants, highPlants, lamps, overview, detailed, highBooks, pending] = countOut;
     setData(canvas, 'activePlants', String(plants));
     setData(canvas, 'highResolutionPlants', String(highPlants));
@@ -3243,7 +3239,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { projectionFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { countFrame.free(); projectionFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();

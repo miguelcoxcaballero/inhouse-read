@@ -13,6 +13,29 @@ use crate::scene_view::{cl,or,RustScene};
 fn put(out:&mut [f64],values:&[f64]){for (slot,value) in out.iter_mut().zip(values){*slot=*value;}}
 fn is_integer(value:f64)->bool{value.is_finite()&&value.floor()==value}
 
+/// Retained diagnostic input: moving objects does not change their counts or
+/// texture resolutions. Compare exact bits before rebuilding strings or totals.
+#[wasm_bindgen]
+pub struct RustSceneCounts {
+ input:Vec<f64>, previous:Vec<u64>, output:Box<[f64;8]>, text:String, dirty:bool,
+}
+#[wasm_bindgen]
+impl RustSceneCounts {
+ #[wasm_bindgen(constructor)]
+ pub fn new()->Self{Self{input:Vec::new(),previous:Vec::new(),output:Box::new([0.0;8]),text:String::new(),dirty:true}}
+ pub fn resize(&mut self,count:usize){self.input.resize(count*5,0.0);self.previous.resize(count*5,0);self.dirty=true;}
+ pub fn memory(&self)->JsValue{wasm_bindgen::memory()}
+ pub fn input_ptr(&self)->usize{self.input.as_ptr() as usize}
+ pub fn output_ptr(&self)->usize{self.output.as_ptr() as usize}
+ pub fn sample(&mut self)->bool{
+  if !self.dirty&&self.input.iter().zip(&self.previous).all(|(value,bits)|value.to_bits()==*bits){return false;}
+  self.text=scene_counts(&self.input,&mut self.output[..]);
+  for (bits,value) in self.previous.iter_mut().zip(&self.input){*bits=value.to_bits();}
+  self.dirty=false;true
+ }
+ pub fn resolutions(&self)->String{self.text.clone()}
+}
+
 /// `Math.imul(casters, 31) + id | 0` over the ids of the models that cast shadows, starting from
 /// whether the bin is visible: changes whenever a shadow caster appears, goes or is replaced.
 #[wasm_bindgen]
