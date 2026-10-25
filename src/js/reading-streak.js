@@ -125,7 +125,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   // El estado combina la copia sincronizada y la de este dispositivo.
   let state = mergeStreaks(parseStreak(read(STREAK_KEY)), parseStreak(read(STREAK_LOCAL_KEY)))
   let today = dayKey(new Date(now()))
-  let dirty = false, lastSave = now(), lastTick = 0, lastActivity = 0, timer = 0, clockTimer = 0
+  let dirty = false, lastSave = now(), lastTick = 0, lastActivity = 0, timer = 0, clockTimer = 0, readingSessionActive = false
   let celebrating = null, panel = null, destroyed = false
   const feedback = createFeedback(storage)
   feedback.prepareWhen(() => reading() && !streakInfo(state, today).doneToday && streakInfo(state, today).remaining <= 120)
@@ -232,7 +232,10 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   const readerScreen = document.getElementById('reader-screen')
   const reading = () => body.classList.contains('is-reading') && !readerScreen?.hidden && document.visibilityState === 'visible'
   const audioPlaying = () => !!document.querySelector('.reading-mini-player [data-mini-play][aria-label="Pausar lectura"]')
-  const activity = () => { lastActivity = now() }
+  function startReadingTimer() {
+    if (!timer && reading()) { lastTick = now(); timer = setInterval(tick, 1000) }
+  }
+  const activity = () => { lastActivity = now(); startReadingTimer() }
   for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart'])
     addEventListener(type, activity, { capture: true, passive: true })
   // Pasar página dentro del libro (iframes incluidos) cambia la barra de progreso.
@@ -247,7 +250,10 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     const key = dayKey(new Date(at))
     if (key !== today) { today = key; renderChips() }
     if (celebrating || !reading()) return
-    if (at - lastActivity > IDLE_MS && !audioPlaying()) return
+    if (at - lastActivity > IDLE_MS && !audioPlaying()) {
+      clearInterval(timer); timer = 0; lastTick = 0
+      return
+    }
     if (elapsed <= 0) return
     const result = addReading(state, elapsed / 1000, today)
     state = result.state; dirty = true
@@ -263,8 +269,12 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   // El intervalo solo existe mientras hay un libro abierto.
   function syncTimer() {
     const active = reading()
-    if (active && !timer) { lastTick = now(); activity(); timer = setInterval(tick, 1000) }
-    else if (!active && timer) { tick(); clearInterval(timer); timer = 0; lastTick = 0; persist(); syncWidgetBook() }
+    if (active && !readingSessionActive) {
+      readingSessionActive = true; lastTick = now(); lastActivity = lastTick; timer = setInterval(tick, 1000)
+    } else if (!active && readingSessionActive) {
+      if (timer) tick()
+      clearInterval(timer); timer = 0; lastTick = 0; readingSessionActive = false; persist(); syncWidgetBook()
+    }
   }
   const screenObserver = new MutationObserver(syncTimer)
   screenObserver.observe(body, { attributes: true, attributeFilter: ['class'] })
