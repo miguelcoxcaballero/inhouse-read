@@ -104,7 +104,8 @@ export class SynthClient {
     this.ready ||= this.#call({ type: 'init', ortBase: this.ortBase, phonBase: this.phonBase, ...(this.onStage ? {diagnostics:true} : {}), ...(this.plan.model(4, piperId) ? { runtime:'supertonic3' } : {}) })
     // Reading the model out of Cache Storage does not need the worker: do it while the worker starts.
     const reading = this.plan.model(0, piperId) ? null : this.readConfig(piperId).then(async config => {
-      if (config.runtime === 'supertonic3') return { config, buffers:await this.readRuntimeAssets(piperId) }
+      if (this.worker !== worker || !this.plan.current(generation)) throw clientError('init-failed', 'worker was released')
+      if (this.plan.classifyRuntime(config) === 2) return { config, buffers:await this.readRuntimeAssets(piperId) }
       const [model, phonemizerModel] = await Promise.all([this.readModel(piperId), this.readPhonemizerModel(piperId)])
       return { config, model, phonemizerModel }
     })

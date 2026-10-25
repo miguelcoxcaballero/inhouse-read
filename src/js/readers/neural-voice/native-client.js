@@ -38,14 +38,15 @@ export class NativeSynthClient {
     this.ort ||= this.createOrt({env:this.env})
     const ort=this.ort
     const config=await this.store.readConfig(key);check()
-    if(config.runtime==='supertonic3') {
+    const runtimeKind=this.plan.classifyRuntime(config)
+    if(runtimeKind===2) {
       const buffers=await this.store.readRuntimeAssets(key);check()
       // Inference itself yields to the native executor. A microtask between
       // lightweight recipe steps adds no frozen MessageChannel dependency.
       const runtime=await createSupertonicRuntime({ort,buffers,config:config.config,indexer:config.indexer,styles:config.styles,yieldToMessages:()=>Promise.resolve()})
       if(!this.plan.current(generation)){await runtime.dispose();check()}
       this.supertonic=runtime
-    } else if(config.phoneme_type==='hebrew') {
+    } else if(runtimeKind===1) {
       // Both Hebrew graphs share the single native upload slot.
       const phonModel=await this.store.readPhonemizerModel(key);check()
       const hebrew=await createHebrewPhonemizer({ort,model:phonModel,config})
@@ -104,7 +105,7 @@ export class NativeSynthClient {
     return {id,cancel:()=>{this.plan.cancel(id);this.jobs.delete(id)}}
   }
   async #synth({text,rate,speaker,lang,style,marks=[]},handlers,active) {
-    const config=this.config,ort=this.ort,key=this.loaded,session=this.session,phon=this.phon,hebrew=this.hebrew,durationOutput=this.durationOutput
+    const config=this.config,ort=this.ort,key=this.loaded,session=this.session,phon=this.phon,hebrew=this.hebrew,durationOutput=this.durationOutput,runtimeKind=this.plan.runtimeKind
     if(!config||!ort)throw failure('No voice loaded')
     if(this.supertonic) {
       handlers.onPlan?.([Math.max(1,[...text].length)])
@@ -117,7 +118,7 @@ export class NativeSynthClient {
       const pcm=raw.length?done.pcm:silence(sampleRate,120)
       handlers.onChunk({index:0,last:true,pcm,sampleRate,ms:performance.now()-start,marks:done.marks});return
     }
-    const phonemize=async value=>limitIds(config.phoneme_type==='hebrew'?await hebrew.phonemize(value):await phon.phonemize(value,config.espeak.voice),config.num_symbols)
+    const phonemize=async value=>limitIds(runtimeKind===1?await hebrew.phonemize(value):await phon.phonemize(value,config.espeak.voice),config.num_symbols)
     const ids=await phonemize(text)
     const points=durationOutput?await phonemeMarks(text,marks,ids,phonemize):[]
     if(!active())return

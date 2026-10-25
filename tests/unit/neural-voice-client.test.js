@@ -27,6 +27,25 @@ function setup(overrides = {}) {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 describe('SynthClient', () => {
+  it.each([{}, { runtime: 'supertonic3' }])('does not read model buffers when configuration arrives after disposal: %j', async config => {
+    let resolveConfig
+    const configReady = new Promise(resolve => { resolveConfig = resolve })
+    const readRuntimeAssets = vi.fn(async () => ({})), readPhonemizerModel = vi.fn(async () => new ArrayBuffer(8))
+    const { client, worker } = setup({ readConfig: () => configReady, readRuntimeAssets, readPhonemizerModel })
+    const pending = client.prepare('voice')
+    pending.catch(() => {})
+    await settle()
+    expect(worker.last('init')).toBeDefined()
+    client.dispose()
+    resolveConfig(config)
+    await expect(pending).rejects.toThrow('released')
+    await settle()
+    expect(client.readModel).not.toHaveBeenCalled()
+    expect(readRuntimeAssets).not.toHaveBeenCalled()
+    expect(readPhonemizerModel).not.toHaveBeenCalled()
+    expect(worker.last('load')).toBeUndefined()
+  })
+
   it('keeps numeric stage receipts separate from init and load answers', async () => {
     const onStage=vi.fn(),{client,worker}=setup({onStage})
     const ready=client.prepare('test');await settle()
