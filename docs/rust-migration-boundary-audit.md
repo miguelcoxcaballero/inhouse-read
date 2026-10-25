@@ -118,7 +118,7 @@ function-level note and inspect the final integrated source for extraction.
 | `android-file-import.js` | M | Import queue and Android bridge lifetime still have own policy around native callbacks. |
 | `android-update.js` | X | Shared updater host integration. AGENTS.md requires canonical updater changes and synchronized revision. |
 | `animation-frame-fence.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
-| `app.js` | M | Rust owns backup/capture retries, account/auth/Drive sync and cover offline/upload lifecycle, plus reader preparation/open/close/persistence. Remaining own blocks: loading generation, picker/native import selection, Drive modal selection/import, length-refresh timers, screen/disposal and viewport-cache invalidation. |
+| `app.js` | M | Rust owns backup/capture retries, account/auth/Drive sync, conditional Drive poll scheduling/generations, cover offline/upload lifecycle, and reader preparation/open/close/persistence. Remaining own blocks: loading generation, picker/native import selection, Drive modal selection/import, length-refresh timers, screen/disposal and viewport-cache invalidation. |
 | `baggebo-model.js` | M | Geometry/material construction and resource assembly; numeric kernels are Rust, Three handles stay host. Active geometry branch must be reconciled. |
 | `binding-wasm.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `book-colors.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |

@@ -134,6 +134,7 @@ let lengthStatusVersion = 0
 let shelfLengthStatusVersion = -1
 let lengthRefreshTimer = null
 let appDisposed = false
+let drivePollTimer = null, drivePollGeneration = 0
 let deployCheck = null
 const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
 const nativeImportShelfGate = createNativeImportShelfGate({
@@ -322,7 +323,7 @@ addEventListener('pagehide', event => {
   lengthRefreshTimer = null
   wordCountQueue.dispose()
   clearTimeout(backupTimer)
-  clearInterval(backupPoll)
+  if (drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
   clearTimeout(roomCaptureTimer)
   savedReaderPositionGuard?.free(); savedReaderPositionGuard = null
   clearTimeout(roomRefreshRetry)
@@ -686,13 +687,19 @@ const driveActionsHost = {
   isAndroidShell, restoreLegacyBookBytes, offerAvailableAndroidUpdate,
   showAuthNotice, closeProfileMenu, setDriveSyncStatus, signOutDrive, cancelDriveConnection, refreshShelf,
   online: () => navigator.onLine,
+  armDrivePoll: (generation, delay) => setTimeout(() => bookDataModule().app_drive_poll_tick(driveActionsHost, generation), delay),
+  cancelDrivePoll: timer => clearTimeout(timer),
+  pollDrive: () => bookDataModule().app_drive_resume(driveActionsHost, { poll:true }),
   uploadProgressFailure: error => bookDataModule().app_drive_upload_progress_failure(driveActionsHost,error),
   authFailure: reportDriveConnectionError,
   resumeReady: () => bookDataModule().app_drive_resume_ready(driveActionsHost),
   resumeFailure: error => bookDataModule().app_drive_resume_failure(driveActionsHost,error),
   savedCheckMarkup:'<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>',
   state: {
-    get driveProfile(){return driveProfile}, set driveProfile(value){driveProfile=value},
+    get driveProfile(){return driveProfile}, set driveProfile(value){driveProfile=value; syncDrivePoll()},
+    get appDisposed(){return appDisposed},
+    get drivePollTimer(){return drivePollTimer}, set drivePollTimer(value){drivePollTimer=value},
+    get drivePollGeneration(){return drivePollGeneration}, set drivePollGeneration(value){drivePollGeneration=value},
     get cloudRoomChanged(){return cloudRoomChanged},
     get driveUploadsInFlight(){return driveUploadsInFlight}, set driveUploadsInFlight(value){driveUploadsInFlight=value}
   }
@@ -915,14 +922,23 @@ if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
 function resumeDriveSync(options = {}) {
-  return withBookDataModule(module => module.app_drive_resume(driveActionsHost,options))
+  return withBookDataModule(module => {
+    module.app_drive_poll_update(driveActionsHost)
+    return module.app_drive_resume(driveActionsHost,options)
+  })
+}
+function syncDrivePoll() {
+  const pending = withBookDataModule(module => module.app_drive_poll_update(driveActionsHost))
+  // Polling is optional while the already-started shelf module is loading.
+  // A failed bootstrap is reported by the foreground shelf path.
+  pending?.catch?.(() => {})
+  return pending
 }
 globalThis.addEventListener('online', resumeDriveSync)
-const backupPoll = setInterval(() => {
-  if (!document.hidden && !libraryBackup.task) resumeDriveSync({ poll:true })
-}, 5000)
+globalThis.addEventListener('offline', syncDrivePoll)
+syncDrivePoll()
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') resumeDriveSync()
-  else liveRoom.suspend()
+  else { liveRoom.suspend(); syncDrivePoll() }
 })
 globalThis.addEventListener('pageshow', () => { if (!document.hidden) resumeDriveSync() })
