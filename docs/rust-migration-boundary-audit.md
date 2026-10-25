@@ -363,7 +363,7 @@ function-level note and inspect the final integrated source for extraction.
 | `spine-styles.js` | R | Rust owns decisions; JavaScript exports, callbacks or argument/result marshalling remain. |
 | `spine-surface.js` | L | Rust preferred surface kernels; retained procedural weave/lattice JS fallback and canvas ownership remain. |
 | `studio-environment-cache.js` | M | Persistent environment bake validation/cache ownership around browser storage/Three textures. |
-| `studio-renderer.js` | M | Renderer/environment quality and lifetime recipe; Three/WebGL handles necessary, policies not inherently host-only. |
+| `studio-renderer.js` | M | Studio-shell color interpolation is Rust and writes final Float32 attributes; renderer/environment quality and lifetime recipe remain own JS around necessary Three/WebGL handles. |
 | `studio-scan-state.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |
 | `studio-scan-wasm.js` | L | Executable JavaScript fallback, not an automatic host exception. Retire or migrate with cold/offline compatibility tests. |
 | `word-segments-host.js` | H | Host API/ABI: browser primitives or third-party handles; preserve synchronous ownership and errors. |

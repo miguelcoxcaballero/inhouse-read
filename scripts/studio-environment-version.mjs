@@ -7,7 +7,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 export const STUDIO_INPUTS = ['scripts/studio-environment-version.mjs',
   'src/js/studio-renderer.js', 'src/js/studio-environment-cache.js',
-  'rust-core/src/studio_scan.rs']
+  'rust-core/src/studio_scan.rs', 'rust-ui/src/studio_environment.rs']
 export const THREE_INPUTS = ['node_modules/three/package.json',
   'node_modules/three/build/three.core.js', 'node_modules/three/build/three.module.js']
 

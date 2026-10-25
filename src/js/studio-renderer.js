@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { cachedStudioEnvironment, prepareStudioEnvironmentCache } from './studio-environment-cache.js';
 import { configureShaderDiagnostics } from './shader-diagnostics.js';
 import { keepProgramsAlive } from './gpu-programs.js';
+import { needRustShelf } from './rust-shelf.js';
 
 // Immutable room generation lives independently of book appearance and motion.
 // Its build revision includes this module, its dependencies and the Three engine.
@@ -39,16 +40,10 @@ export function createStudioRenderer(preserveDrawingBuffer = false) {
     // warm lamp on the right. Satin wood and laminates reflect real shapes.
     studioEnvironment = cachedStudioEnvironment();
     if (!studioEnvironment) {
-      const room = new THREE.Scene(), shell = new THREE.SphereGeometry(10, 48, 24), tint = [];
+      const room = new THREE.Scene(), shell = new THREE.SphereGeometry(10, 48, 24);
       // Near-neutral surfaces: the warmth belongs to the key and the lamp, so
       // shadows stay natural instead of turning every material orange.
-      const floor = new THREE.Color(.068, .05, .037), wall = new THREE.Color(.34, .315, .288), ceiling = new THREE.Color(.5, .485, .46);
-      for (let i = 0, p = shell.attributes.position, c = new THREE.Color(); i < p.count; i++) {
-        const y = p.getY(i) / 10;
-        c.copy(floor).lerp(wall, THREE.MathUtils.smoothstep(y, -.32, -.02)).lerp(ceiling, THREE.MathUtils.smoothstep(y, .3, .85));
-        tint.push(c.r, c.g, c.b);
-      }
-      shell.setAttribute('color', new THREE.Float32BufferAttribute(tint, 3));
+      shell.setAttribute('color', new THREE.BufferAttribute(needRustShelf().studio_shell_colors(shell.attributes.position.array), 3));
       room.add(new THREE.Mesh(shell, new THREE.MeshBasicMaterial({ vertexColors:true, side:THREE.BackSide })));
       const glow = (geometry, rgb, strength, position) => {
         const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color:new THREE.Color(...rgb).multiplyScalar(strength), side:THREE.DoubleSide }));
