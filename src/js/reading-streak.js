@@ -269,7 +269,11 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   const screenObserver = new MutationObserver(syncTimer)
   screenObserver.observe(body, { attributes: true, attributeFilter: ['class'] })
   if (readerScreen) screenObserver.observe(readerScreen, { attributes: true, attributeFilter: ['hidden'] })
-  const onVisibility = () => { syncTimer(); if (document.visibilityState === 'hidden') { persist(); syncWidgetBook() } else refreshDay() }
+  const onVisibility = () => {
+    syncTimer()
+    if (document.visibilityState === 'hidden') { persist(); syncWidgetBook() }
+    else { refreshDay(); scheduleDayRefresh() }
+  }
   document.addEventListener('visibilitychange', onVisibility)
   addEventListener('pagehide', () => persist())
   // Cambiar de día con la app abierta pone el contador en gris si toca.
@@ -277,7 +281,20 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     const key = dayKey(new Date(now()))
     if (key !== today) { today = key; renderChips() }
   }
-  clockTimer = setInterval(refreshDay, 60_000)
+  // The date changes once per day. Avoid waking the app every minute just to
+  // compare it; visibilitychange performs the same check after a suspended app.
+  function scheduleDayRefresh() {
+    clearTimeout(clockTimer)
+    if (destroyed) return
+    const current = new Date(now()), next = new Date(current)
+    next.setHours(24, 0, 0, 0)
+    clockTimer = setTimeout(() => {
+      clockTimer = 0
+      refreshDay()
+      scheduleDayRefresh()
+    }, Math.max(1_000, next.getTime() - current.getTime()))
+  }
+  scheduleDayRefresh()
 
   // ---- Panel con el calendario ----
   let shownMonth = null, panelReturn = null, widgetOffer = false
@@ -495,7 +512,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
       if (destroyed) return
       destroyed = true
       persist()
-      clearInterval(timer); clearInterval(clockTimer); clearTimeout(bookStart)
+      clearInterval(timer); clearTimeout(clockTimer); clearTimeout(bookStart)
       pageObserver.disconnect(); screenObserver.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) removeEventListener(type, activity, { capture: true })
