@@ -1463,9 +1463,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
         const kind = plant ? 1 : lamp ? 2 : 0;
         if ((plant || lamp) && !undershelf) {
-          const stamp = [entry.height,entry.width,entry.catalogId,entry.variant,entry.potId,entry.lampId,pixelsPerMetre].join('|');
-          if (entry.collisionStamp !== stamp) {
-            entry.collisionStamp = stamp;
+          const stamp = entry.collisionStamp;
+          if (!stamp || stamp.height !== entry.height || stamp.width !== entry.width || stamp.catalogId !== entry.catalogId ||
+              stamp.variant !== entry.variant || stamp.potId !== entry.potId || stamp.lampId !== entry.lampId || stamp.pixelsPerMetre !== pixelsPerMetre) {
+            entry.collisionStamp = { height:entry.height, width:entry.width, catalogId:entry.catalogId, variant:entry.variant,
+              potId:entry.potId, lampId:entry.lampId, pixelsPerMetre };
             if (plant) {
               const spec = plantGeometrySpec(entry);
               bookGravity.decoration(entry.key,1,spec.potId || '',spec.potModelId || '',
