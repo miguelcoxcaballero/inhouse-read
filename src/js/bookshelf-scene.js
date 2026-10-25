@@ -1798,7 +1798,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   // Callers use the ray at once and never keep it.
-  const rayPointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
+  const rayPointer = new THREE.Vector2(), raycaster = new THREE.Raycaster(), pickableScratch = [];
   function pointerRay(clientX, clientY) {
     // During a drag, pending style/mutation frames must remain coalesced:
     // casting a ray does not need to shade and read back the whole room.
@@ -1817,18 +1817,25 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // each other's taps. A lamp's finger-sized square takes part too, so wood that
   // covers a light (a MITTLED under its board) does not block its switch.
   // Rectangles are in the stage's frame, as the buttons are.
-  const tapNodes = [], tapPacked = [];
+  const tapNodes = new Array(entries.length).fill(null);
+  let tapPacked = new Float64Array(entries.length * 4);
   function tapTargetNear(clientX, clientY) {
-    const origin = stage.getBoundingClientRect();
-    tapNodes.length = 0; tapPacked.length = 0;
-    for (const entry of bookEntries) {
-      const tap = entry.tapRect;
-      if (!tap || !entry.node || !entry.model?.visible || entry.flags?.away || entry.flags?.dragging || entry.trashDrop) continue;
-      if (entry.kind === 'plant' || entry.node.classList.contains('is-away')) continue;
-      tapNodes.push(entry.node);
-      tapPacked.push(tap.left + origin.left, tap.top + origin.top, tap.width, tap.height);
+    const origin = stage.getBoundingClientRect(), count = bookEntries.length;
+    if (tapPacked.length !== count * 4) tapPacked = new Float64Array(count * 4);
+    tapNodes.length = count; tapNodes.fill(null);
+    for (let index = 0; index < count; index++) {
+      const entry = bookEntries[index], tap = entry.tapRect, at = index * 4;
+      if (!tap || !entry.node || !entry.model?.visible || entry.flags?.away || entry.flags?.dragging || entry.trashDrop ||
+          entry.kind === 'plant' || entry.node.classList.contains('is-away')) {
+        // Keep stable indices without allocating a compact array for each hit.
+        tapPacked[at] = Infinity; tapPacked[at + 1] = tapPacked[at + 2] = tapPacked[at + 3] = 0;
+        continue;
+      }
+      tapNodes[index] = entry.node;
+      tapPacked[at] = tap.left + origin.left; tapPacked[at + 1] = tap.top + origin.top;
+      tapPacked[at + 2] = tap.width; tapPacked[at + 3] = tap.height;
     }
-    return tapNodes[rust.scene_nearest_tap(Float64Array.from(tapPacked), clientX, clientY)] ?? null;
+    return tapNodes[rust.scene_nearest_tap(tapPacked, clientX, clientY)] ?? null;
   }
 
   // A press is validated by the semantic button, drag controller and grip.
@@ -1842,9 +1849,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function objectAtPoint(clientX, clientY) {
     if (pointerHit?.clientX === clientX && pointerHit.clientY === clientY) return pointerHit.node;
     const ray = pointerRay(clientX, clientY);
-    const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
-      !object.userData.entry?.node?.classList.contains('is-away'));
-    for (const hit of ray.intersectObjects(pickable, true)) {
+    pickableScratch.length = 0;
+    for (const object of furniture.children) if (object.visible && !object.userData.dropMarker &&
+        !object.userData.entry?.node?.classList.contains('is-away')) pickableScratch.push(object);
+    for (const hit of ray.intersectObjects(pickableScratch, true)) {
       let object = hit.object;
       while (object && !object.userData.entry) object = object.parent;
       if (object?.userData.entry?.node && object.visible) return rememberPointerHit(clientX, clientY, object.userData.entry.node, hit.point.clone());
