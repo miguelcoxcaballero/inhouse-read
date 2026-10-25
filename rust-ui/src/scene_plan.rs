@@ -16,9 +16,9 @@ fn is_integer(value:f64)->bool{value.is_finite()&&value.floor()==value}
 /// `Math.imul(casters, 31) + id | 0` over the ids of the models that cast shadows, starting from
 /// whether the bin is visible: changes whenever a shadow caster appears, goes or is replaced.
 #[wasm_bindgen]
-pub fn scene_casters(trash_visible:bool,ids:&[f64])->i32{
+pub fn scene_casters(trash_visible:bool,ids:&[f64],count:usize)->i32{
  let mut casters:i32=if trash_visible{1}else{0};
- for id in ids{
+ for id in ids.iter().take(count){
   let product=casters.wrapping_mul(31);
   // The sum is made in doubles; `| 0` keeps its low 32 bits.
   let sum=f64::from(product)+id;
