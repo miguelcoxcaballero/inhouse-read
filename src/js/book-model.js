@@ -1176,6 +1176,8 @@ export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight
   return {left,top,width:right-left,height:bottom-top};
 }
 
+const SAMPLED_MAPS = ['map', 'roughnessMap', 'metalnessMap', 'bumpMap'];
+
 // Shelf snapshots share one context. One additional persistent context presents
 // the active flyout; both use the same meshes, textures and studio lighting.
 let presentationOwner = null;
@@ -1427,13 +1429,19 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const previousOwner=present ? null : presentationOwner;
     if (!present && presentationOwner === owner) { owner.suspend(); gpu.domElement.remove(); presentationOwner=null; }
     configureFrame(frame);
-    model.traverse(object => {
-      for (const material of [].concat(object.material || [])) {
-        for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) {
-          const map = material[key];
-          if (map) map.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy());
-        }
+    // Every frame re-applies the renderer's sampling quality to whatever maps the materials hold now,
+    // without allocating a list per object (the limit is read once, when a first map needs it).
+    let anisotropy;
+    const sample = material => {
+      for (const key of SAMPLED_MAPS) {
+        const map = material[key];
+        if (map) map.anisotropy = anisotropy ??= Math.min(16, gpu.capabilities.getMaxAnisotropy());
       }
+    };
+    model.traverse(object => {
+      const material = object.material;
+      if (Array.isArray(material)) for (const item of material) sample(item);
+      else if (material) sample(material);
     });
     withRendererPresentation(gpu,null,() => {
       gpu.render(scene, frame.camera);

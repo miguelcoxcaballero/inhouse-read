@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const args = process.argv.slice(2);
 const port = Number(args[0] || 4471);
 const flag = (name, fallback) => { const at = args.indexOf(`--${name}`); return at < 0 ? fallback : Number(args[at + 1]); };
-const cpu = flag('cpu', 1), books = flag('books', 60), rounds = flag('rounds', 5);
+const cpu = flag('cpu', 1), books = flag('books', 60), rounds = flag('rounds', 5), lifted = args.includes('--lifted');
 const profile = args.includes('--profile'), motion = args.includes('--motion'), creation = !args.includes('--no-creation');
 const browser = await chromium.launch({
   executablePath: process.env.BENCH_CHROME || '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell',
@@ -16,6 +16,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
 page.on('pageerror', error => console.error('pageerror', error.message));
 await page.goto(`http://127.0.0.1:${port}/inhouse-read/tools/bench/book-model.html`);
+await page.waitForFunction(() => window.benchReady, null, { timeout: 60000 });
 await page.evaluate(() => window.benchReady.then(() => true));
 const cdp = await page.context().newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
@@ -23,24 +24,24 @@ await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
 const median = values => { const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
 async function createRound(count) {
-  return page.evaluate(async count => {
+  return page.evaluate(async ([count, lifted]) => {
     const { model } = await window.benchReady;
     const list = window.benchBooks(count), made = [];
     const start = performance.now();
     for (const entry of list) made.push(model.createBookModel(entry.book, entry.style, entry.width, entry.height,
-      entry.thickness, null, { shelf: true }));
+      entry.thickness, null, lifted ? { eagerRelief: false } : { shelf: true }));
     const elapsed = performance.now() - start;
     for (const group of made) group.userData.dispose();
     await new Promise(resolve => setTimeout(resolve, 50));
     return elapsed;
-  }, count);
+  }, [count, lifted]);
 }
 
 if (creation) {
   await createRound(4); // warm module code paths, shared textures and the JIT
   const times = [];
   for (let r = 0; r < rounds; r++) times.push(await createRound(books));
-  console.log(JSON.stringify({ bench: 'createBookModel(shelf)', cpu, books, roundsMs: times.map(t => +t.toFixed(1)),
+  console.log(JSON.stringify({ bench: lifted ? 'createBookModel(lifted)' : 'createBookModel(shelf)', cpu, books, roundsMs: times.map(t => +t.toFixed(1)),
     medianMs: +median(times).toFixed(1), perBookMs: +(median(times) / books).toFixed(3) }));
 }
 
@@ -69,7 +70,19 @@ if (args.includes('--parts')) {
   console.log(JSON.stringify({ bench: 'parts', cpu, books, ...parts }));
 }
 
-const motionProfile = args.includes('--motion-profile');
+const motionProfile = args.includes('--motion-profile'), spineProfile = args.includes('--spine-profile');
+async function spineRun(count) {
+  return page.evaluate(async count => {
+    const { spine, needRustShelf } = await window.benchReady;
+    const list = window.benchBooks(count), surfaces = [];
+    const start = performance.now();
+    for (const e of list) surfaces.push(spine.spineSurface(e.book, e.style, e.height, e.thickness,
+      needRustShelf().book_spine_options(e.height, true, false, 0, 1)));
+    const elapsed = performance.now() - start;
+    for (const s of surfaces) spine.releaseSurface(s);
+    return elapsed;
+  }, count);
+}
 async function motionRun(frames) {
   return page.evaluate(async frames => {
     const { model } = await window.benchReady;
@@ -115,12 +128,20 @@ if (args.includes('--case')) {
   console.log(JSON.stringify({ bench:`case geometry of ${books} books`, cpu, ...result }));
 }
 
-if (profile || motionProfile) {
+if (args.includes('--spine')) {
+  await spineRun(10);
+  const times = [];
+  for (let r = 0; r < rounds; r++) times.push(await spineRun(books));
+  console.log(JSON.stringify({ bench:'spineSurface(shelf)', cpu, books, roundsMs:times.map(t => +t.toFixed(1)), medianMs:+median(times).toFixed(1), minMs:+Math.min(...times).toFixed(1) }));
+}
+if (profile || motionProfile || spineProfile) {
   if (motionProfile) await motionRun(200);
+  if (spineProfile) await spineRun(10);
   await cdp.send('Profiler.enable');
   await cdp.send('Profiler.setSamplingInterval', { interval: 100 });
   await cdp.send('Profiler.start');
   if (motionProfile) console.log('motion ms/frame', await motionRun(3000));
+  else if (spineProfile) for (let r = 0; r < 4; r++) await spineRun(books);
   else for (let r = 0; r < 3; r++) await createRound(books);
   const { profile: result } = await cdp.send('Profiler.stop');
   const self = new Map(), byId = new Map(result.nodes.map(node => [node.id, node]));

@@ -41,14 +41,21 @@ extern "C" {
     #[wasm_bindgen(method, setter, js_name = textBaseline)] fn set_text_baseline(this: &Canvas2d, value: &str);
 }
 
-fn fill_with(c: &Canvas2d, style: &str) { c.set_fill_style(&JsValue::from_str(style)); }
-fn stroke_with(c: &Canvas2d, style: &str) { c.set_stroke_style(&JsValue::from_str(style)); }
+/// A literal sent with every book (the board finish and the case use the same few colours and names):
+/// interned, so the page keeps one string for it instead of decoding it again each time.
+fn lit(text: &'static str) -> &'static str { wasm_bindgen::intern(text) }
+fn fill_with(c: &Canvas2d, style: &'static str) { c.set_fill_style(&JsValue::from_str(lit(style))); }
+fn stroke_with(c: &Canvas2d, style: &'static str) { c.set_stroke_style(&JsValue::from_str(lit(style))); }
+/// A colour built for one stroke: sent as it is.
+fn fill_built(c: &Canvas2d, style: &str) { c.set_fill_style(&JsValue::from_str(style)); }
+fn stroke_built(c: &Canvas2d, style: &str) { c.set_stroke_style(&JsValue::from_str(style)); }
+fn literal_text(text: &'static str) -> JsString { JsValue::from_str(lit(text)).unchecked_into() }
 
 /// `withStops(gradient, stops)`: tolerant of partial canvas implementations.
-fn with_stops(gradient: JsValue, stops: &[(f64, &str)]) -> JsValue {
+fn with_stops(gradient: JsValue, stops: &[(f64, &'static str)]) -> JsValue {
     if !absent(&gradient) {
         for (at, color) in stops {
-            let _ = method_opt(&gradient, "addColorStop", &[&JsValue::from_f64(*at), &JsValue::from_str(color)]);
+            let _ = method_opt(&gradient, lit("addColorStop"), &[&JsValue::from_f64(*at), &JsValue::from_str(lit(color))]);
         }
     }
     gradient
@@ -80,7 +87,7 @@ pub fn book_page_edges(c: &Canvas2d, size: f64) {
     let leaf = |random: &mut Random, x: f64, style: &str, weight: f64| {
         let phase = random.next() * PI * 2.0;
         let amplitude = (0.25 + random.next() * 0.55) * unit;
-        stroke_with(c, style);
+        stroke_built(c, style);
         c.set_line_width(weight);
         for offset in [0.0, -size] {
             c.begin_path();
@@ -151,12 +158,12 @@ pub fn book_endpaper(c: &Canvas2d) {
     c.fill_rect(0.0, 0.0, size, size);
     for _ in 0..2400 {
         let style = if random.next() > 0.55 { shade(86, 86, 86, 0.035 + random.next() * 0.05) } else { shade(255, 255, 255, 0.3 + random.next() * 0.4) };
-        fill_with(c, &style);
+        fill_built(c, &style);
         let x = Math::floor(random.next() * size);
         let y = Math::floor(random.next() * size);
         c.fill_rect(x, y, 1.0, 1.0);
     }
-    c.set_line_cap("round");
+    c.set_line_cap(lit("round"));
     for _ in 0..70 {
         let x = random.next() * size;
         let y = random.next() * size;
@@ -165,7 +172,7 @@ pub fn book_endpaper(c: &Canvas2d) {
         let bend = (random.next() - 0.5) * length * 0.5;
         let dx = Math::cos(a) * length;
         let dy = Math::sin(a) * length;
-        stroke_with(c, &shade(112, 112, 112, 0.05 + random.next() * 0.07));
+        stroke_built(c, &shade(112, 112, 112, 0.05 + random.next() * 0.07));
         c.set_line_width(0.5 + random.next() * 0.5);
         for ox in [-size, 0.0, size] {
             for oy in [-size, 0.0, size] {
@@ -263,20 +270,20 @@ pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author
     // `c.fillStyle = c.strokeStyle = ink` assigns the stroke first.
     c.set_stroke_style(ink);
     c.set_fill_style(ink);
-    c.set_text_align("center");
-    c.set_text_baseline("middle");
+    c.set_text_align(lit("center"));
+    c.set_text_baseline(lit("middle"));
     let weight = if font_weight.is_truthy() { crate::host::text_of(font_weight) } else { "700".to_string() };
     c.set_font(&JsString::from(format!("{weight} {}px ", number_string(title_size)).as_str()).concat(family));
-    let space = JsString::from(" ");
-    let words = title.split(" ");
-    let mut line = JsString::from("");
+    let space = literal_text(" ");
+    let words = title.split(lit(" "));
+    let mut line = literal_text("");
     let lines = Array::new();
     for word in words.iter() {
         let word: JsString = word.unchecked_into();
-        let width = num(&get(&c.measure_text(&line.concat(&word)), "width"));
+        let width = num(&get(&c.measure_text(&line.concat(&word)), lit("width")));
         if width > title_width && line.length() > 0 {
             lines.push(&line.trim());
-            line = JsString::from("");
+            line = literal_text("");
         }
         line = line.concat(&word).concat(&space);
     }
@@ -286,7 +293,7 @@ pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author
     let top = 400.0 - (visible as f64 - 1.0) * spacing / 2.0;
     for i in 0..visible {
         let mut text: JsString = lines.get(i).unchecked_into();
-        if i == 5 && lines.length() > 6 { text = text.concat(&JsString::from("\u{2026}")); }
+        if i == 5 && lines.length() > 6 { text = text.concat(&literal_text("\u{2026}")); }
         c.fill_text(&text, center, top + i as f64 * spacing, title_width);
     }
     // A small fleuron rule, then the author in the text face's italic.
