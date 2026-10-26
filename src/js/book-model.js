@@ -114,21 +114,47 @@ export function leafStackGeometry(width, height, depth, { board = height * .007,
   return geometry;
 }
 
-/** Half-ellipse end of the case. Close-up copies leave the hollow open so the
- * headband is visible inside a thin rim of cloth and board. */
-function capGeometry(width, thickness, segments, rim = 0) {
-  const shape = new THREE.Shape(), bulge = thickness * .38;
-  shape.moveTo(-width / 2, -thickness / 2);
-  for (let i = 1; i <= segments; i++) {
-    const a = i / segments * Math.PI;
-    shape.lineTo(-width / 2 - bulge * Math.sin(a), -thickness / 2 * Math.cos(a));
-  }
-  if (rim) for (let i = segments; i >= 0; i--) {
-    const a = i / segments * Math.PI;
-    shape.lineTo(-width / 2 - (bulge - rim) * Math.sin(a), -(thickness / 2 - rim) * Math.cos(a));
-  }
-  shape.closePath();
-  return new THREE.ShapeGeometry(shape);
+// The case: both boards (rounded edges, cover UVs on the faces, the bevel inside the book's dimensions)
+// and both half-ellipse ends of the binding (close-up copies leave the hollow open so the headband shows
+// inside a thin rim). One call to the shelf module (rust-ui/src/book_case.rs) builds each array once;
+// three only installs them. The front board's faces come split into outside (0) and inside (2) groups.
+function bookCase(width, height, depth, shelf, overview, thickness = 0, segments = 0, rim = 0) {
+  if (![width, height, depth].every(value => Number.isFinite(value) && value > 0)
+    || segments && !(Number.isFinite(thickness) && thickness > 0)) throw new RangeError('Medidas de tapas no válidas.');
+  const data = needRustShelf().book_case_geometry(width, height, depth, Boolean(shelf), Boolean(overview), thickness, segments, rim);
+  const [vertices, lidStart, lidCount, wallStart, wallCount, fronts, capVertices, capIndices] = data;
+  let at = 8;
+  const take = length => data.subarray(at, at += length);
+  const front = take(fronts * 3), board = { position:take(vertices * 3), uv:take(vertices * 2), normal:take(vertices * 3) };
+  const cap = capVertices ? { position:take(capVertices * 3), normal:take(capVertices * 3), uv:take(capVertices * 2),
+    index:take(capIndices) } : null;
+  return { groups:[lidStart, lidCount, 0, wallStart, wallCount, 1], front, board, cap };
+}
+// An ExtrudeGeometry's own attributes and groups (its order: position, uv, normal).
+function boardFrom(parts, front = false) {
+  const geometry = new THREE.BufferGeometry(), groups = front ? parts.front : parts.groups;
+  geometry.type = 'ExtrudeGeometry';
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(parts.board.position, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(parts.board.uv, 2));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(parts.board.normal, 3));
+  for (let i = 0; i < groups.length; i += 3) geometry.addGroup(groups[i], groups[i + 1], groups[i + 2]);
+  return geometry;
+}
+// A ShapeGeometry's: the index as setIndex(array) makes it, then position, normal, uv.
+function capFrom({ position, normal, uv, index }) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.type = 'ShapeGeometry';
+  geometry.setIndex(new (index.some(value => value >= 65535) ? THREE.Uint32BufferAttribute : THREE.Uint16BufferAttribute)(index, 1));
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return geometry;
+}
+/** The case of a model on its own (createBookModel installs the same four): the front board with its
+ * outside/inside groups, the back board, and the tail and head ends of the binding. */
+export function bookCaseGeometries(width, height, board, thickness, { shelf = false, overview = false, segments, rim = 0 }) {
+  const parts = bookCase(width, height, board, shelf, overview, thickness, segments, rim);
+  return { front:boardFrom(parts, true), back:boardFrom(parts), caps:[capFrom(parts.cap), capFrom(parts.cap)] };
 }
 
 // Paper edges are fibrous: even "brillante" is a burnished edge, not lacquer.
@@ -256,28 +282,7 @@ export function bindingGeometry(width, height, thickness, segments = 96, relief 
 // Rounded board edges, with front/back UVs in the same coordinates as a cover.
 // The bevel stays inside the book dimensions so the shelf and flyout match.
 export function boardGeometry(width, height, depth, { shelf = false, overview = false } = {}) {
-  // A visibly rounded, slightly softened board edge, as covered board has.
-  const bevel = Math.min(depth * .4, height * .0035);
-  const x = -width / 2 + bevel, y = -height / 2 + bevel;
-  const w = width - bevel * 2, h = height - bevel * 2, r = height * .006;
-  const shape = new THREE.Shape();
-  shape.moveTo(x + r, y); shape.lineTo(x + w - r, y);
-  shape.quadraticCurveTo(x + w, y, x + w, y + r);
-  shape.lineTo(x + w, y + h - r); shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  shape.lineTo(x + r, y + h); shape.quadraticCurveTo(x, y + h, x, y + h - r);
-  shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y);
-  const g = new THREE.ExtrudeGeometry(shape, {
-    depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel,
-    bevelSize: bevel, bevelSegments: shelf || overview ? 1 : 3, steps: 1, curveSegments: overview ? 1 : shelf ? 2 : 5
-  });
-  g.translate(0, 0, -depth / 2 + bevel);
-  const positions = g.getAttribute('position'), uv = g.getAttribute('uv');
-  for (const face of g.groups.filter(item => item.materialIndex === 0)) {
-    for (let i = face.start; i < face.start + face.count; i++) {
-      uv.setXY(i, positions.getX(i) / width + .5, positions.getY(i) / height + .5);
-    }
-  }
-  return g;
+  return boardFrom(bookCase(width, height, depth, shelf, overview));
 }
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
@@ -506,25 +511,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // page block made the board cut through the pages instead of opening out.
   frontCover.position.set(-width / 2, 0, thickness / 2 - board / 2);
   group.add(frontCover);
-  const frontGeometry = boardGeometry(width, height, board, { shelf, overview });
+  // Both boards and both ends of the binding, each array built once.
+  const parts = bookCase(width, height, board, shelf, overview, thickness, bindingSegments, overview ? 0 : board * 1.1);
   // Inside of the board: the cloth turns in over its edges (this material)
   // and the endpaper is pasted down over the rest (the 'endpaper' mesh).
   const insideCover = new THREE.MeshStandardMaterial({ color:style.color, roughness:.9 });
   insideCover.visible = false;
-  const frontGroups = [...frontGeometry.groups];
-  frontGeometry.clearGroups();
-  for (const face of frontGroups) {
-    if (face.materialIndex !== 0) { frontGeometry.addGroup(face.start, face.count, face.materialIndex); continue; }
-    const normal = frontGeometry.getAttribute('normal');
-    let start = face.start, material = normal.getZ(start) < 0 ? 2 : 0;
-    for (let index = face.start + 3; index < face.start + face.count; index += 3) {
-      const nextMaterial = normal.getZ(index) < 0 ? 2 : 0;
-      if (nextMaterial !== material) {
-        frontGeometry.addGroup(start, index - start, material); start = index; material = nextMaterial;
-      }
-    }
-    frontGeometry.addGroup(start, face.start + face.count - start, material);
-  }
+  const frontGeometry = boardFrom(parts, true);
   const frontMaterials = [cover, cloth, insideCover];
   const frontBoard = new THREE.Mesh(frontGeometry, overview ? cover : frontMaterials);
   frontBoard.name = 'front-cover';
@@ -546,7 +539,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   pastedown.position.set(-width / 2 + joint + pasteWidth / 2, 0, -board * .54);
   frontBoard.add(pastedown);
   // One material for face and edges: a single draw call per back board.
-  const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf, overview }), cloth);
+  const backBoard = new THREE.Mesh(boardFrom(parts), cloth);
   backBoard.name = 'back-cover';
   backBoard.position.z = -thickness / 2 + board / 2;
   group.add(backBoard);
@@ -728,7 +721,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     applySpineCapFinish(material, book);
     applyBookReflectionSurface(material, { seed:`${surfaceSeed}|${y < 0 ? 'tail' : 'head'}`, strength:.01,
       uvScale:[1 / width, 1 / thickness] });
-    const mesh = new THREE.Mesh(capGeometry(width, thickness, bindingSegments, overview ? 0 : board * 1.1), material);
+    const mesh = new THREE.Mesh(capFrom(parts.cap), material);
     mesh.name = y < 0 ? 'binding-tail-cap' : 'binding-head-cap';
     capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);

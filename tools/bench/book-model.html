@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book model bench</title>
+<style>body{margin:0;background:#222;color:#eee;font:12px monospace}#host{position:relative;width:390px;height:844px}</style>
+</head>
+<body>
+<div id="host"><div id="inner"></div></div>
+<pre id="out"></pre>
+<script type="module">
+// Development-only microbenchmark (served by `vite`): creation cost of shelf book models and the
+// CPU bookkeeping of one open/close flight, with the real Rust modules and three.js. Not shipped.
+import { requireRustCore } from '/inhouse-read/src/js/rust-core.js';
+import { requireRustShelf, needRustShelf } from '/inhouse-read/src/js/rust-shelf.js';
+import * as THREE from 'three';
+import * as spine from '/inhouse-read/src/js/spine-surface.js';
+import * as reference from '/inhouse-read/tests/unit/helpers/reference-book-case.js';
+window.benchReady = (async () => {
+  await requireRustCore(); await requireRustShelf();
+  const model = await import('/inhouse-read/src/js/book-model.js');
+  return { THREE, model, spine, reference, needRustShelf };
+})();
+const palette = ['#18364b','#713b42','#375a46','#5a4a2e','#2f2f4f','#6b2d5c','#1f4d4d','#8a5a2b'];
+window.benchBooks = count => Array.from({ length:count }, (_, i) => {
+  const height = 180 + (i * 37) % 70, width = Math.round(height * (.6 + (i % 5) * .02)), thickness = 18 + (i * 13) % 34;
+  return { book:{ id:`bench:${i}`, title:`Libro número ${i + 1} de la colección`, author:`Autora ${i % 7}`, format:'EPUB',
+      coverFinish:['matte','satin','glossy'][i % 3], spineSurfaceFinish:['matte','satin','glossy'][(i + 1) % 3],
+      progressFraction:i % 4 ? (i % 9) / 10 : 0, lastPage:i % 4 ? 12 : undefined },
+    style:{ color:palette[i % palette.length], shade:'#222', ink:'#f3ead7', coverRatio:.66, width:thickness },
+    width, height, thickness };
+});
+</script>
+</body>
+</html>
