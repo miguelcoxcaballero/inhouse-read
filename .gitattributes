@@ -2,3 +2,18 @@
 # sync tool, including on Windows checkouts with core.autocrlf enabled.
 vendor/inhouse-services-updater/** text eol=lf
 src/vendor/inhouse-services-updater/** text eol=lf
+
+# GitHub's language bar should describe the code that ships in the app. Tests, the frozen JavaScript
+# copies they compare against, build and CI tooling, licence pages and third-party files are kept in the
+# repository but not counted (nothing is hidden: they are plain files, only the statistics skip them).
+tests/** linguist-detectable=false
+tools/** linguist-detectable=false
+scripts/** linguist-detectable=false
+.github/** linguist-detectable=false
+demo/** linguist-detectable=false
+docs/** linguist-documentation
+public/licenses/** linguist-documentation
+public/neural-voice/** linguist-vendored
+src/vendor/** linguist-vendored
+src/wasm/** linguist-generated
+*.py linguist-detectable=false
