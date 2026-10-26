@@ -128,6 +128,28 @@ if (args.includes('--case')) {
   console.log(JSON.stringify({ bench:`case geometry of ${books} books`, cpu, ...result }));
 }
 
+if (args.includes('--shaders')) {
+  // The reflection hook of a shelf's materials (as three calls it once per material on its first draw):
+  // the frozen original against the remembered Rust patch, interleaved.
+  const result = await page.evaluate(async count => {
+    const { THREE } = await window.benchReady;
+    const production = await import('/inhouse-read/src/js/book-reflection-surface.js');
+    const reference = await import('/inhouse-read/tests/unit/helpers/reference-book-reflection-surface.js');
+    const { vertexShader, fragmentShader } = THREE.ShaderLib.physical;
+    const run = module => {
+      const materials = Array.from({ length:count }, (_, i) => module.applyBookReflectionSurface(new THREE.MeshPhysicalMaterial(), { seed:`b${i}` }));
+      const start = performance.now();
+      for (const material of materials) material.onBeforeCompile({ vertexShader:` ${vertexShader}`.slice(1), fragmentShader:` ${fragmentShader}`.slice(1), uniforms:{} }, null);
+      return performance.now() - start;
+    };
+    const times = { js:[], rust:[] };
+    for (let round = 0; round < 12; round++) { times.js.push(run(reference)); times.rust.push(run(production)); }
+    for (const key of ['js', 'rust']) times[key] = times[key].slice(2).sort((a, b) => a - b);
+    return { jsMedianMs:+times.js[5].toFixed(2), rustMedianMs:+times.rust[5].toFixed(2), jsMinMs:+times.js[0].toFixed(2), rustMinMs:+times.rust[0].toFixed(2) };
+  }, books * 5);
+  console.log(JSON.stringify({ bench:`reflection hooks of ${books * 5} materials`, cpu, ...result }));
+}
+
 if (args.includes('--spine')) {
   await spineRun(10);
   const times = [];

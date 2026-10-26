@@ -22,7 +22,7 @@ import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './bo
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
-import { applyBookReflectionSurface } from './book-reflection-surface.js';
+import { applyBookReflectionSurface, rememberedPatch } from './book-reflection-surface.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from './gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
@@ -170,23 +170,17 @@ function applySurfaceFinish(material, value, fallback = 'satin') {
 // into bright slivers along the rolled edge. Only while the spine as a whole
 // faces away, the surface that turns from the viewer shows plain cloth; the
 // rules near the joint, which still face the viewer, keep their ink.
+// The shader text of this fade, the cover relief below and the reflection layer is the shelf module's
+// (rust-ui/src/book_shaders.rs), patched once per program variant.
+const spineFadePatches = new Map(), reliefPatches = new Map();
 function spineGrazingFade(material) {
   const uniforms = { spineCloth:{ value:new THREE.Color() }, spineClothMetal:{ value:0 }, spineClothRough:{ value:.88 } };
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader.replace('void main() {', 'varying float vSpineFacing;\nvoid main() {')
-      .replace('#include <project_vertex>',
-        '#include <project_vertex>\n\tvSpineFacing = abs(normalize((modelViewMatrix * vec4(-1., 0., 0., 0.)).xyz).z);');
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {',
-      'varying float vSpineFacing;\nuniform vec3 spineCloth;\nuniform float spineClothMetal, spineClothRough;\nvoid main() {')
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-	float spineEdge = .62 * (1. - smoothstep(.35, .6, vSpineFacing));
-	float spineKeep = smoothstep(spineEdge - .16, spineEdge,
-		abs(dot(nonPerturbedNormal, isOrthographic ? vec3(0., 0., 1.) : normalize(vViewPosition))));
-	diffuseColor.rgb = mix(spineCloth, diffuseColor.rgb, spineKeep);
-	metalnessFactor = mix(spineClothMetal, metalnessFactor, spineKeep);
-	roughnessFactor = mix(spineClothRough, roughnessFactor, spineKeep);
-	normal = normalize(mix(nonPerturbedNormal, normal, spineKeep));`);
+    const { vertexShader, fragmentShader } = shader;
+    const [vertex, fragment] = rememberedPatch(spineFadePatches, [vertexShader, fragmentShader],
+      () => needRustShelf().book_spine_fade_shaders(vertexShader, fragmentShader));
+    shader.vertexShader = vertex; shader.fragmentShader = fragment;
   };
   material.customProgramCacheKey = () => 'spine-grazing-fade';
   return (book, style) => {
@@ -220,35 +214,15 @@ function installCoverRelief(material) {
     bookReliefBaseFinish:{ value:new THREE.Vector3() },
     bookReliefStrength:{ value:0 }
   };
-  const physical = THREE.ShaderChunk.lights_physical_fragment
-    .replace('material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).y;',
-      'material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).a;')
-    .replace('PhysicalMaterial material;', `roughnessFactor = mix( bookReliefBaseFinish.y, roughnessFactor, bookReliefAmount );
-PhysicalMaterial material;`)
-    .replace('material.clearcoat = saturate( material.clearcoat );', `material.clearcoat = mix( bookReliefBaseFinish.x, material.clearcoat, bookReliefAmount );
-  material.clearcoatRoughness = mix( bookReliefBaseFinish.z, material.clearcoatRoughness, bookReliefAmount );
-  material.clearcoat = saturate( material.clearcoat );`);
+  // The physical chunk as it is when the relief is installed, patched once per chunk text.
+  const chunk = THREE.ShaderChunk.lights_physical_fragment;
+  const physical = rememberedPatch(reliefPatches, ['physical', chunk], () => needRustShelf().book_relief_physical(chunk));
   material.onBeforeCompile = function(shader, renderer) {
     previousHook.call(this, shader, renderer);
     Object.assign(shader.uniforms, uniforms);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', `uniform vec3 bookReliefBaseFinish;
-uniform float bookReliefStrength;
-float bookReliefAmount = 0.0;
-void main() {`)
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-	#ifdef USE_CLEARCOAT_NORMALMAP
-		vec4 reliefSample = texture2D( clearcoatNormalMap, vClearcoatNormalMapUv );
-		bookReliefAmount = step( 0.5 / 255.0, reliefSample.a ) * bookReliefStrength;
-		vec3 reliefN = vec3( ( reliefSample.xy * 255.0 - 128.0 ) / 127.0, reliefSample.z * 2.0 - 1.0 );
-		reliefN.xy *= clearcoatNormalScale;
-		reliefN.z = mix( 1.0, reliefN.z, bookReliefStrength );
-		normal = normalize( normal + tbn2 * reliefN - tbn2[ 2 ] );
-	#endif`)
-      .replace('#include <clearcoat_normal_fragment_maps>', THREE.ShaderChunk.clearcoat_normal_fragment_maps
-        .replace('texture2D( clearcoatNormalMap, vClearcoatNormalMapUv ).xyz * 2.0 - 1.0',
-          'vec3( ( reliefSample.xy * 255.0 - 128.0 ) / 127.0, reliefSample.z * 2.0 - 1.0 )'))
-      .replace('#include <lights_physical_fragment>', physical);
+    const { fragmentShader } = shader, maps = THREE.ShaderChunk.clearcoat_normal_fragment_maps;
+    shader.fragmentShader = rememberedPatch(reliefPatches, ['fragment', fragmentShader, physical, maps],
+      () => needRustShelf().book_cover_relief_fragment(fragmentShader, physical, maps));
   };
   material.customProgramCacheKey = () => `${previousKey}|cover-relief-color-v2`;
   return uniforms;

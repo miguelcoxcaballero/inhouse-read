@@ -57,6 +57,7 @@ mod cloud_host;
 mod bookshelf;
 mod book_paint;
 mod book_case;
+mod book_shaders;
 // Home projections must use the already-ready shelf runtime; UI is deferred until
 // a reader/catalog is opened. Share the kernels rather than wake that module.
 mod book_projection;
