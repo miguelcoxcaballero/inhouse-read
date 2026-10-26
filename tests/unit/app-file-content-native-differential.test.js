@@ -3,8 +3,9 @@ import {readFileSync} from 'node:fs';
 import * as reference from './helpers/reference-app-file-open.js';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
 const source=readFileSync('src/js/app.js','utf8');
-const actualContent=source.slice(source.indexOf('async function openFileContent('),source.indexOf('\nconst fileContentHost ='));
-const actualOpen=source.slice(source.indexOf('async function openFile('),source.indexOf('\nasync function openFileContent('));
+// app.js hands the whole opening (loading state, reader readiness, options) to rust-ui/src/app_shell.rs;
+// only the module call of the file's content stays in its shell host.
+const actualContent=source.slice(source.indexOf('  openFileContent: (file, options) =>'),source.indexOf('\n}',source.indexOf('  openFileContent: (file, options) =>')));
 const scope=(env,fn)=>new Function('env',`with(env){return (${typeof fn==='string'?fn:fn.toString()})}`)(env);
 const flush=async()=>{for(let n=0;n<40;n++)await Promise.resolve()};
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}};
@@ -49,8 +50,10 @@ function fixture(native,options={},module=rustShelf){
  const host={...env,state,isUnsupportedFormatError:error=>error instanceof UnsupportedFormatError,alert:env.alert,ignoreFileOpenError:()=>{},warnFileGeometry:error=>env.console.warn('No se pudo medir el libro:',error),
   fileReaderCallbacks:()=>({onUserNavigation:()=>module.app_reader_user_navigation(host),onFollowLink:href=>module.app_reader_follow_link(host,href),onToggleChrome:()=>module.app_reader_toggle_chrome(host)})};
  env.bookDataModule=()=>{events.push(['native-module']);return module};env.fileContentHost=host;
- env.openFileContent=scope(env,native?actualContent:reference.openFileContent);
- const open=scope(env,native?actualOpen:reference.openFile);
+ const shell={els,document,state,get readingExperience(){return env.readingExperience},
+  openFileContent:scope(env,actualContent.slice(actualContent.indexOf('(file, options) =>')))};
+ env.openFileContent=native?null:scope(env,reference.openFileContent);
+ const open=native?(file,settings)=>rustShelf.app_open_file(shell,file,settings):scope(env,reference.openFile);
  return{env,host,state,file,settings,readyWait,openWait,queueWait,moduleRequests:()=>events.filter(e=>e[0]==='native-module').length,open:()=>open(file,settings),
   summary:()=>({events:events.filter(e=>e[0]!=='native-module'),state:{...state,readerPreparationQueue:true},prepared:[...env.preparedBooks.keys()],screen:{hidden:els.readerScreen.hidden,className:els.readerScreen.className,busy:els.readerScreen.getAttribute('aria-busy')},toolbar:els.readerToolbar.hidden,badge:els.readerFormatBadge.textContent,viewport:els.readerViewport.innerHTML,focus:{pressed:els.readerFocus.getAttribute('aria-pressed'),label:els.readerFocus.getAttribute('aria-label')},reads:[...reads],bodyClass:document.body.className,loading:document.getElementById('reader-loading').hidden,inert:!!document.querySelector('.reader-heading-actions').inert})};
 }

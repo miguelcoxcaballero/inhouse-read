@@ -169,3 +169,4 @@ pub fn lamp_filaments(input: &[f64], out: &mut [f64]) -> bool { lamp_light::fila
 mod book_surface_policy;
 
 mod reading_display;
+mod app_shell;
