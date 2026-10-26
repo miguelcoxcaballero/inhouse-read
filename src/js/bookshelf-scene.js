@@ -748,7 +748,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let casterIds = new Float64Array(entries.length), casterListDirty = true, casterTrashVisible = null, casterSignature = 0;
   const projectedMatrix = new THREE.Matrix4();
   const rendererSize = new THREE.Vector2();
-  const frameLayout = { canvas:null, stage:null, scroller:null };
+  const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN };
   const framedScratch = new THREE.Box3(), framedTrash = new THREE.Box3(), transformRects = { unscaled:{}, framed:{}, bounds:{}, world:{} };
   const canvasWritten = { width:NaN, height:NaN };
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -932,6 +932,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
     if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+    entry.lampHull?.free(); entry.lampHull = null;
     const foliage = semanticFoliage.get(entry.node);
     if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
     clearPlantDiagnostics(entry.node);
@@ -975,8 +976,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       return false;
     }
     const scrollerBounds = frameLayout.scroller;
-    const visualBottom = window.visualViewport
-      ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight;
+    // Read with the frame's other geometry (viewport()): reading the visual viewport after the
+    // entries restyled their buttons would force a second layout of the page in every frame.
+    const visualBottom = frameLayout.visualBottom;
     const viewHidden = sceneView.trashViewHidden();
     if (viewHidden) {
       sceneView.trashReset();
@@ -1290,6 +1292,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // layout of the whole stage. Their absolutely positioned children cannot move them.
     frameLayout.canvas = canvas.getBoundingClientRect(); frameLayout.stage = settledStageBounds || stage.getBoundingClientRect();
     frameLayout.scroller = scroller.getBoundingClientRect();
+    if (trash && trashNode) frameLayout.visualBottom = window.visualViewport
+      ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight;
     // Read the actual sticky position: near the last shelf its bottom is
     // constrained by the stage, so scroller.scrollTop alone would double-shift
     // the drawing and leave it out of alignment with the real DOM hit targets.
@@ -1428,6 +1432,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return Boolean(lampIo[5]) || tinting;
   }
 
+  // A book's lean is formatted and compared with its button's data only when the number moved.
+  const leanEuler = new THREE.Euler();
+  function writeLean(entry, node, value) {
+    if (entry.leanNode === node && Object.is(entry.leanValue, value)) return;
+    entry.leanNode = node; entry.leanValue = value;
+    setData(node, 'sceneLean', value.toFixed(6));
+  }
   function updateEntries(scroll, zoom, now, finishedInsertions) {
     let activeBooks = 0, moving = false, shelfMoving = false, previewing = false, previewed = 0, overlaying = false;
     insertedIds.length = 0; exclusionRects.length = 0; exclusionsReady = false;
@@ -1534,7 +1545,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfMoving ||= !away && Boolean(motion & 24);
       entry.pose.position.set(io[29], io[30], io[31]);
       const gravityAt = entryIndex * 4;
-      if (usePhysics && !decorative && node) setData(node, 'sceneLean', gravityOutput[gravityAt].toFixed(6));
+      if (usePhysics && !decorative && node) writeLean(entry, node, gravityOutput[gravityAt]);
       if (usePhysics && !decorative) entry.pose.rotation.set(io[32], io[33], io[34], io[37] ? 'ZYX' : 'XYZ');
       else entry.pose.rotation.set(io[32], io[33], io[34]);
       moving ||= usePhysics && Boolean(io[38]);
@@ -1546,12 +1557,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (liveFlags & 2) {
         entry.pose.position.set(live[9],live[10],live[11]);
         entry.pose.quaternion.set(live[12],live[13],live[14],live[15]);entry.pose.scale.setScalar(live[16]);
-        if (!decorative && node) setData(node,'sceneLean',new THREE.Euler().setFromQuaternion(entry.pose.quaternion,'ZYX').z.toFixed(6));
+        if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(entry.pose.quaternion,'ZYX').z);
       }
       if (liveFlags & 4) {
         entry.pose.position.set(live[17],live[18],live[19]);
         entry.pose.quaternion.set(live[20],live[21],live[22],live[23]);entry.pose.scale.setScalar(live[24]);
-        if (!decorative && node) setData(node,'sceneLean',new THREE.Euler().setFromQuaternion(entry.pose.quaternion,'ZYX').z.toFixed(6));
+        if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(entry.pose.quaternion,'ZYX').z);
       }
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
@@ -1644,8 +1655,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const style = node.style;
         if (usePhysics && lamp && !undershelf && entry.model) {
           entry.model.updateMatrixWorld(true);
-          const clip = rust.scene_lamp_hit_hull(entry.model,tapLeft,tapTop);
-          if (clip !== written.clip) style.clipPath = written.clip = clip;
+          // Rebuilt in Rust only when a mesh, its matrix or the tap corner moved; undefined is "as before".
+          const clip = (entry.lampHull ||= new rust.RustLampHull()).outline(entry.model, tapLeft, tapTop, written.clip === undefined);
+          if (clip !== undefined && clip !== written.clip) style.clipPath = written.clip = clip;
         }
         if (dirtyStyle & 1) style.position = 'absolute';
         if (dirtyStyle & 2) style.left = `${tapLeft}px`;
@@ -3187,7 +3199,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         entry.landing = null;
         // The outgoing DOM was just restored and the new one may be a fresh tree:
         // write every inline value of the projected nodes again and reread its state.
-        entry.written = null; entry.domDirty = true;
+        entry.written = null; entry.leanNode = null; entry.domDirty = true;
         entry.key = key;
         retained.push(entry);
         if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
