@@ -2,6 +2,8 @@ import {beforeEach,expect,it,vi} from 'vitest'
 const factories=vi.hoisted(()=>({supertonic:vi.fn(),hebrew:vi.fn()}))
 vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:factories.supertonic}))
 vi.mock('../../src/js/readers/neural-voice/hebrew.js',()=>({createHebrewPhonemizer:factories.hebrew}))
+// The client's preparation, job chain and synthesis loop are rust-ui: the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import {NativeSynthClient} from '../../src/js/readers/neural-voice/native-client.js'
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done});return{promise,resolve}}
 const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve()}
