@@ -5,7 +5,6 @@ import { needRustShelf } from './rust-shelf.js';
 // Every lamp a library holds gets its own light up to this many: a lamp
 // that glows lights the room, whatever the camera or the other lamps do.
 export const MAX_SHELF_LAMP_LIGHTS = 8;
-const MAX_LAMP_SHADOWS = 2;
 // Rust owns fixture quotas, assignment/rank caches, light math, colour caches and shadow
 // invalidation/transport state (lamp_light.rs). The host owns Three lights/scene graph,
 // marshals emitter/model data and applies the returned light values and shadow commands.
@@ -99,43 +98,16 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   let lampEntries = [];
   // Rust invalidates ranks; locale-specific String collation is a browser primitive.
   let disposed = false, shadowRefresh = false, prepared = false;
-  function removeLights(slot) {
-    slot.state.free();
-    for (const light of slot.lights) {
-      light.removeFromParent(); light.target?.removeFromParent();
-      light.shadow?.map?.dispose(); light.shadow?.mapPass?.dispose();
-    }
-  }
+  const removeLights = slot => needRustShelf().lamp_slot_remove(slot);
+  // The slot and its idle three lights are made by rust-ui/src/decor_build.rs.
   function createSlot(kind, index) {
-    const filaments = kind.startsWith('filaments:') ? Number(kind.slice(10)) : 0, spotlight = kind === 'cone';
     // Not loaded yet (a lamp added in a way the saved list did not announce):
     // the slot is created on the update after the tables arrive.
-    if (filaments && !areaLights) {
+    if (kind.startsWith('filaments:') && Number(kind.slice(10)) && !areaLights) {
       ensureAreaLights().then(() => { if (!disposed) onAreaLightsReady?.(); }).catch(error => console.warn('No se pudo cargar la luz de filamentos:', error));
       return false;
     }
-    const slot = { kind, filaments, spotlight, shadow:spotlight && index < MAX_LAMP_SHADOWS, key:null,
-      power:0, lit:false, state:new (needRustShelf().LampLightState)(filaments) };
-    if (filaments) {
-      slot.lights = Array.from({ length:filaments }, (_, strip) => {
-        const light = new THREE.RectAreaLight(0xffffff, 0);
-        light.userData.filamentIndex = strip;
-        return light;
-      });
-    } else {
-      const light = spotlight ? new THREE.SpotLight() : new THREE.PointLight();
-      light.intensity = 0;
-      if (spotlight) {
-        light.castShadow = slot.shadow;
-        light.shadow.mapSize.set(512, 512); light.shadow.autoUpdate = false;
-        light.shadow.radius = 2; light.shadow.blurSamples = 4;
-        light.shadow.bias = -.0002; light.shadow.intensity = .8;
-        scene.add(light.target);
-      }
-      slot.lights = [light];
-    }
-    for (const light of slot.lights) { light.userData.shelfLamp = true; light.name = 'Shelf lamp light: idle'; scene.add(light); }
-    slots.push(slot);
+    slots.push(needRustShelf().lamp_slot_create(THREE, scene, kind, index));
   }
   // Giving a slot to another lamp invalidates everything it remembers.
   function assign(slot, key) {

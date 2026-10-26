@@ -3,7 +3,6 @@ import {lampGeometrySpec} from './decor-geometry-spec.js';
 import {rustLampSurface} from './lamp-surface-wasm.js';
 import { needRustShelf } from './rust-shelf.js';
 import { core, scratch, scratchPointer } from './decor-catalogue.js';
-import { geometryOf, openPacket } from './geo-packet.js';
 import { lampTint, normalizeLampKelvin } from './lamp-kelvin.js';
 import { addShelfBakeSource, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
@@ -42,17 +41,9 @@ function surface({ kind, key, width, height }) {
 }
 
 /** The geometry of a lamp. The Rust shelf module draws every part, bakes the parts of one material into one geometry
- * (the tripod's feet and cord trimmed to the shelf) and fits the lamp by `scale`, so the vertices arrive fitted
- * (rust-ui/src/lamp_model.rs); the emitter arrives fitted too. The host adds the materials. */
-function lampGeometry(kind,segments,scale) {
-  const packet = openPacket(needRustShelf().lamp_geometry(kind,segments,scale));
-  const geometries = new Map(packet.header.batches.map(batch => {
-    const geometry = geometryOf(packet,batch);
-    if (batch.bounds) geometry.computeBoundingBox();
-    return [batch.name,geometry];
-  }));
-  return { geometries,emitter:packet.header.emitter };
-}
+ * (the tripod's feet and cord trimmed to the shelf), fits the lamp by `scale` and makes three's geometries
+ * (rust-ui/src/lamp_model.rs, decor_build.rs); the emitter arrives fitted too. The host adds the materials. */
+const lampGeometry = (kind,segments,scale) => needRustShelf().lamp_geometry_build(THREE,kind,segments,scale);
 
 /** Resource binding for Rust's immutable appearance descriptors. */
 function installMaterials(group, kind, plan, lamp) {
