@@ -70,7 +70,22 @@ if (args.includes('--parts')) {
   console.log(JSON.stringify({ bench: 'parts', cpu, books, ...parts }));
 }
 
-const motionProfile = args.includes('--motion-profile'), spineProfile = args.includes('--spine-profile');
+const motionProfile = args.includes('--motion-profile'), spineProfile = args.includes('--spine-profile'), viewProfile = args.includes('--view-profile');
+// The lifted book of an opening: bookView (model, studio scene, first draw) created and disposed `count` times.
+async function viewRun(count) {
+  return page.evaluate(async count => {
+    const { model } = await window.benchReady;
+    const list = window.benchBooks(count), times = [];
+    for (const entry of list) {
+      const start = performance.now();
+      const view = model.bookView(document.getElementById('inner'), entry.book, entry.style, { width: entry.width, height: entry.height,
+        thickness: entry.thickness, viewportWidth: 390, viewportHeight: 844, centerX: 195, centerY: 422, coverUrl: null });
+      times.push(performance.now() - start);
+      view.dispose();
+    }
+    return times;
+  }, count);
+}
 async function spineRun(count) {
   return page.evaluate(async count => {
     const { spine, needRustShelf } = await window.benchReady;
@@ -156,14 +171,21 @@ if (args.includes('--spine')) {
   for (let r = 0; r < rounds; r++) times.push(await spineRun(books));
   console.log(JSON.stringify({ bench:'spineSurface(shelf)', cpu, books, roundsMs:times.map(t => +t.toFixed(1)), medianMs:+median(times).toFixed(1), minMs:+Math.min(...times).toFixed(1) }));
 }
-if (profile || motionProfile || spineProfile) {
+if (args.includes('--view')) {
+  await viewRun(3);
+  const times = (await viewRun(books)).sort((a, b) => a - b);
+  console.log(JSON.stringify({ bench:'bookView (lifted book, first draw)', cpu, books, medianMs:+times[Math.floor(times.length / 2)].toFixed(1), minMs:+times[0].toFixed(1) }));
+}
+if (profile || motionProfile || spineProfile || viewProfile) {
   if (motionProfile) await motionRun(200);
   if (spineProfile) await spineRun(10);
+  if (viewProfile) await viewRun(3);
   await cdp.send('Profiler.enable');
   await cdp.send('Profiler.setSamplingInterval', { interval: 100 });
   await cdp.send('Profiler.start');
   if (motionProfile) console.log('motion ms/frame', await motionRun(3000));
   else if (spineProfile) for (let r = 0; r < 4; r++) await spineRun(books);
+  else if (viewProfile) await viewRun(books);
   else for (let r = 0; r < 3; r++) await createRound(books);
   const { profile: result } = await cdp.send('Profiler.stop');
   const self = new Map(), byId = new Map(result.nodes.map(node => [node.id, node]));
