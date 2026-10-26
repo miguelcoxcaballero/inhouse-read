@@ -10,7 +10,8 @@ const root = fileURLToPath(new URL('../..', import.meta.url))
 
 export default defineConfig({
   testDir: '.',
-  testMatch: /scene-frame\.spec\.mjs$/,
+  // PERF_SPEC=startup profiles a warm reload instead of the frame scenarios.
+  testMatch: process.env.PERF_SPEC === 'startup' ? /scene-startup\.spec\.mjs$/ : /scene-frame\.spec\.mjs$/,
   timeout: 600_000,
   expect: { timeout: 60_000 },
   workers: 1,

@@ -748,7 +748,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let casterIds = new Float64Array(entries.length), casterListDirty = true, casterTrashVisible = null, casterSignature = 0;
   const projectedMatrix = new THREE.Matrix4();
   const rendererSize = new THREE.Vector2();
-  const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN };
+  const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
   const framedScratch = new THREE.Box3(), framedTrash = new THREE.Box3(), transformRects = { unscaled:{}, framed:{}, bounds:{}, world:{} };
   const canvasWritten = { width:NaN, height:NaN };
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -1038,7 +1038,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     trashPacked[4] = trashRect.width; trashPacked[5] = trashRect.height;
     const stageBounds = frameLayout.stage;
     scrollerClip[0] = scrollerBounds.left; scrollerClip[1] = scrollerBounds.top; scrollerClip[2] = scrollerBounds.right; scrollerClip[3] = scrollerBounds.bottom;
-    sceneView.trashFrame(trashPacked, scroll, stageBounds.left, stageBounds.top, scrollerClip, window.innerWidth, window.innerHeight, visualBottom, trashOut);
+    sceneView.trashFrame(trashPacked, scroll, stageBounds.left, stageBounds.top, scrollerClip, frameLayout.innerWidth, frameLayout.innerHeight, visualBottom, trashOut);
     const visible = trashOut[0] === 1, inFrame = trashOut[1] === 1;
     if (trashNode.hidden !== !visible) trashNode.hidden = !visible;
     if (trashNode.inert !== !visible) trashNode.inert = !visible;
@@ -1294,6 +1294,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     frameLayout.scroller = scroller.getBoundingClientRect();
     if (trash && trashNode) frameLayout.visualBottom = window.visualViewport
       ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight;
+    // The window's size and the scroller's metrics, read while the layout is still clean: the window
+    // and the scroller do not depend on the clipped stage's buttons restyled below, and reading them
+    // after those writes (the bin, the next frame's bookkeeping) forced the page's layout every frame.
+    frameLayout.innerWidth = window.innerWidth; frameLayout.innerHeight = window.innerHeight;
+    frameLayout.ratio = window.devicePixelRatio; frameLayout.clientHeight = scroller.clientHeight; frameLayout.scrollTop = scroller.scrollTop;
     // Read the actual sticky position: near the last shelf its bottom is
     // constrained by the stage, so scroller.scrollTop alone would double-shift
     // the drawing and leave it out of alignment with the real DOM hit targets.
@@ -1375,7 +1380,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     catalogCover[0] = coverWidth; catalogCover[1] = coverHeight; catalogCover[2] = thickness;
     catalogStage[0] = stageBounds.left; catalogStage[1] = stageBounds.top;
     scrollerClip[0] = clip.left; scrollerClip[1] = clip.top; scrollerClip[2] = clip.right; scrollerClip[3] = clip.bottom;
-    catalogInner[0] = window.innerWidth; catalogInner[1] = window.innerHeight;
+    catalogInner[0] = frameLayout.innerWidth; catalogInner[1] = frameLayout.innerHeight;
     const face = sceneView.catalogFrame(catalogBox, catalog.matrixWorld.elements, catalogCover, scroll, catalogStage, scrollerClip, catalogInner, catalogOut);
     const visible = catalogOut[0] === 1, viewHidden = catalogOut[1] === 1;
     const targetWidth = catalogOut[2], targetHeight = catalogOut[3], left = catalogOut[4], top = catalogOut[5];
@@ -1446,7 +1451,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // a class or drag-variable write) are examined here, as the frame's own read.
     for (const record of mutations.takeRecords()) { const entry = byNode.get(record.target); if (entry) entry.domDirty = true; }
     inverseTurn[0] = inverseRotation.x; inverseTurn[1] = inverseRotation.y; inverseTurn[2] = inverseRotation.z; inverseTurn[3] = inverseRotation.w;
-    sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, window.devicePixelRatio, window.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
+    sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, window.devicePixelRatio, frameLayout.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
     const usePhysics = settleBooks && (physicsReady || physicsStarted);
     projectionFrame.prepare(bookEntries);
     sceneMotionFrame.prepare(bookEntries, rows, width, unitWidth / SHELF_SPECS[shelfType].width * 1000);
@@ -1652,21 +1657,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         }
         // A frame that moves nothing restyles nothing: only numbers that differ
         // from the last written ones reach the DOM, in the same order as a first write.
-        const style = node.style;
+        // The style objects are fetched only when something is written to them.
         if (usePhysics && lamp && !undershelf && entry.model) {
           entry.model.updateMatrixWorld(true);
           // Rebuilt in Rust only when a mesh, its matrix or the tap corner moved; undefined is "as before".
           const clip = (entry.lampHull ||= new rust.RustLampHull()).outline(entry.model, tapLeft, tapTop, written.clip === undefined);
-          if (clip !== undefined && clip !== written.clip) style.clipPath = written.clip = clip;
+          if (clip !== undefined && clip !== written.clip) node.style.clipPath = written.clip = clip;
         }
-        if (dirtyStyle & 1) style.position = 'absolute';
-        if (dirtyStyle & 2) style.left = `${tapLeft}px`;
-        if (dirtyStyle & 4) style.top = `${tapTop}px`;
-        if (dirtyStyle & 8) style.width = `${tapWidth}px`;
-        if (dirtyStyle & 16) style.height = `${tapHeight}px`;
-        if (dirtyStyle & 1) style.margin = '0';
-        const zIndex = hitIo[44];
-        if (dirtyStyle & 32) style.zIndex = String(zIndex);
+        if (dirtyStyle & 63) {
+          const style = node.style;
+          if (dirtyStyle & 1) style.position = 'absolute';
+          if (dirtyStyle & 2) style.left = `${tapLeft}px`;
+          if (dirtyStyle & 4) style.top = `${tapTop}px`;
+          if (dirtyStyle & 8) style.width = `${tapWidth}px`;
+          if (dirtyStyle & 16) style.height = `${tapHeight}px`;
+          if (dirtyStyle & 1) style.margin = '0';
+          if (dirtyStyle & 32) style.zIndex = String(hitIo[44]);
+        }
         if (dirtyStyle & 1) {
           node.dataset.sceneProjected = 'true';
           node.dataset.sceneHitSurface = plant ? 'pot' : lamp ? undershelf ? 'ceiling-lamp' : 'lamp' : 'spine';
@@ -1684,17 +1691,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           // Keep tapping the exposed cover available without moving the
           // button's own focus/click centre away from its neighboring spine.
           // The existing handlers still raycast the true visible geometry.
-          const coverStyle = coverHit.style, coverLeft = hitIo[45], coverTop = hitIo[46];
-          if (dirtyStyle & 64) coverStyle.position = 'absolute';
-          if (dirtyStyle & 128) coverStyle.left = `${coverLeft}px`;
-          if (dirtyStyle & 256) coverStyle.top = `${coverTop}px`;
-          if (dirtyStyle & 512) coverStyle.width = `${rect.width}px`;
-          if (dirtyStyle & 1024) coverStyle.height = `${rect.height}px`;
-          const display = hitIo[47] ? 'block' : 'none';
-          if (dirtyStyle & 2048) coverStyle.display = display;
-          if (dirtyStyle & 64) coverStyle.background = 'transparent';
-          const events = hitIo[48] ? 'inherit' : 'none';
-          if (dirtyStyle & 4096) coverStyle.pointerEvents = events;
+          if (dirtyStyle & 8128) {
+            const coverStyle = coverHit.style;
+            if (dirtyStyle & 64) coverStyle.position = 'absolute';
+            if (dirtyStyle & 128) coverStyle.left = `${hitIo[45]}px`;
+            if (dirtyStyle & 256) coverStyle.top = `${hitIo[46]}px`;
+            if (dirtyStyle & 512) coverStyle.width = `${rect.width}px`;
+            if (dirtyStyle & 1024) coverStyle.height = `${rect.height}px`;
+            if (dirtyStyle & 2048) coverStyle.display = hitIo[47] ? 'block' : 'none';
+            if (dirtyStyle & 64) coverStyle.background = 'transparent';
+            if (dirtyStyle & 4096) coverStyle.pointerEvents = hitIo[48] ? 'inherit' : 'none';
+          }
         }
       }
       if (entry.insertion) {
@@ -2509,8 +2516,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     if (settleBooks) publishRoomMotion(now, !lastSceneMoving && !sceneView.moving &&
       !bookEntries.some(e => e.insertion || e.trashDrop || e.landing || e.preview.active));
-    paintedViewport = { width:window.innerWidth, height:window.innerHeight,
-      ratio:window.devicePixelRatio || 1, clientHeight:scroller.clientHeight, scrollTop:scroller.scrollTop };
+    paintedViewport = { width:frameLayout.innerWidth, height:frameLayout.innerHeight,
+      ratio:frameLayout.ratio || 1, clientHeight:frameLayout.clientHeight, scrollTop:frameLayout.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();

@@ -124,17 +124,24 @@ function summarize(profile) {
 async function measured(page, session, run, rate) {
   await session.send('Emulation.setCPUThrottlingRate', { rate });
   await session.send('Profiler.setSamplingInterval', { interval:200 });
+  await session.send('Performance.enable');
+  const metrics = async () => Object.fromEntries((await session.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
+  const before = await metrics();
   await session.send('Profiler.start');
   await page.evaluate(() => { const p = window.__frameProbe; p.frames = []; p.current = 0; p.on = true; });
   await run();
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 50)));
   const frames = await page.evaluate(() => { const p = window.__frameProbe; p.on = false; return p.frames; });
   const { profile } = await session.send('Profiler.stop');
+  const after = await metrics();
+  // Layout and style passes are counted by the engine: unlike durations they do not depend on the load.
+  const work = Object.fromEntries(['LayoutCount', 'RecalcStyleCount', 'LayoutDuration', 'RecalcStyleDuration', 'ScriptDuration', 'TaskDuration']
+    .map(name => [name, Number(((after[name] ?? 0) - (before[name] ?? 0)).toFixed(4))]));
   if (process.env.PERF_OUT) await writeFile(`${process.env.PERF_OUT}.${Date.now()}.cpuprofile`, JSON.stringify(profile));
   await session.send('Emulation.setCPUThrottlingRate', { rate:1 });
   const sorted = frames.filter(value => value > 0).sort((a, b) => a - b);
   const pick = q => sorted.length ? Number(sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))].toFixed(3)) : null;
-  return { frames:sorted.length, medianMs:pick(.5), p90Ms:pick(.9), maxMs:pick(1), totalMs:Number(sorted.reduce((a, b) => a + b, 0).toFixed(2)), profile:summarize(profile) };
+  return { work, frames:sorted.length, medianMs:pick(.5), p90Ms:pick(.9), maxMs:pick(1), totalMs:Number(sorted.reduce((a, b) => a + b, 0).toFixed(2)), profile:summarize(profile) };
 }
 
 const scenarios = {
