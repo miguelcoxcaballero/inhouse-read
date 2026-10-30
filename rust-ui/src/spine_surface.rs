@@ -153,6 +153,8 @@ fn layout_of(book:&JsValue)->R<Layout>{
  })
 }
 
+/// `spineLayout(book).device`: the mark at the tail of a plain spine, without building the layout's object.
+pub(crate) fn spine_device(book:&JsValue)->R<Option<f64>>{Ok(layout_of(book)?.device)}
 /// The layout as the plain object the callers read, keys in the original order.
 #[wasm_bindgen]
 pub fn spine_layout(book:&JsValue)->R<JsValue>{
@@ -530,30 +532,6 @@ pub fn paint_cloth_callback(c:&JsValue,width:f64,random:&JsValue,metal:bool)->R<
  Ok(())
 }
 
-/// Replay a cloth plan of the numeric core (`rustBookClothPlan`: `fieldWidth`, `pixels`, `commands` in sixes)
-/// after it has been copied out: the dye field upscaled in one soft-light pass, then each slub. No view or
-/// arena of the core is held while the canvas paints.
-#[wasm_bindgen]
-pub fn spine_cloth_plan(c:&JsValue,design_width:f64,plan:&JsValue)->R<()>{
- let field_width=rd(plan,"fieldWidth")?;
- let field=document().unchecked_into::<Doc>().create_element(&lit("canvas"))?;
- let raster:&Raster=field.unchecked_ref();raster.set_width(&field_width)?;raster.set_height(&val(30.0))?;
- let f=context_2d(&field)?;
- let image=optional(&f,"createImageData",&[&field_width,&val(30.0)])?.unwrap_or(JsValue::UNDEFINED);
- if absent(&f){return Err(js_sys::TypeError::new("Cannot read properties of null (reading 'createImageData')").into());}
- let data=get(&image,"data");
- if truthy(&data){method(&data,"set",&[&rd(plan,"pixels")?])?;ctx(&f).put_image_data(&image,0.0,0.0)?;}
- let context=ctx(c);
- context.save()?;context.set_composite(&lit("soft-light"))?;context.set_smoothing(&JsValue::TRUE)?;
- context.set_smoothing_quality(&lit("high"))?;context.draw_image_sized(&field,&val(0.0),&val(0.0),&val(design_width),&val(1024.0))?;context.restore()?;
- let commands=js_sys::Float64Array::new(&rd(plan,"commands")?).to_vec();
- for command in commands.chunks_exact(6){
-  let light=command[5]!=0.0&&!command[5].is_nan();
-  let color=cat(&[if light{"rgba(255,248,235,"}else{"rgba(0,0,0,"},&show(command[4]),")"]);
-  context.set_fill_style(&txt(&color))?;context.fill_rect(command[0],command[1],command[2],command[3])?;
- }
- Ok(())
-}
 /// Plain weave, 16 × 16 threads per 128 px tile with uneven yarn, at 4.4 design units a thread (1024 = board
 /// height), so cover and lifted spine are one cloth: laid over a canvas drawn in design units, in colour or
 /// multiplied into the packed height/roughness/metal raster. Both tiles are made on first use from the core's

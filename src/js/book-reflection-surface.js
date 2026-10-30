@@ -47,7 +47,7 @@ export function applyBookReflectionSurface(material, { seed = '', strength = .01
     return material;
   }
   const rust = host.rust, n = host.numbers;
-  rust.reflection_setup(n, seed, strength, environmentReflection, uvScale);
+  rust.reflection_setup(n, seed, strength, environmentReflection, uvScale?.[0] ?? uvScale?.x, uvScale?.[1] ?? uvScale?.y);
   const uniforms = { bookReflectionPhase:{ value:new Vector3(n[0], n[1], n[2]) }, bookReflectionStrength:{ value:n[4] * n[3] },
     bookReflectionUvScale:{ value:new Vector2(n[6], n[7]) }, bookEnvironmentReflection:{ value:n[5] } };
   const r = { uniforms, amplitude:n[3], slope:n[4], three:host.three };

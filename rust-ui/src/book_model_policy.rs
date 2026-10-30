@@ -53,12 +53,15 @@ pub fn book_spine_options(height: f64, shelf: bool, overview: bool, inspection: 
 
 #[wasm_bindgen]
 pub fn book_cover_raster_size(ratio: JsValue, height: f64, max_dimension: f64) -> Result<JsValue, JsValue> {
-    let ratio = num(&ratio);
+    let (width, height) = cover_raster_dims(num(&ratio), height, max_dimension);
+    object(&[("width", width.into()), ("height", height.into())])
+}
+/// The same size as two numbers, for the shelf module's own cover rasters.
+pub(crate) fn cover_raster_dims(ratio: f64, height: f64, max_dimension: f64) -> (f64, f64) {
     let ratio = if ratio == 0.0 || ratio.is_nan() { 0.66 } else { ratio };
     let width = jmax(1.0, js_round(height * ratio));
     let scale = jmin(1.0, max_dimension / jmax(width, height));
-    object(&[("width", jmax(1.0, js_round(width * scale)).into()),
-        ("height", jmax(1.0, js_round(height * scale)).into())])
+    (jmax(1.0, js_round(width * scale)), jmax(1.0, js_round(height * scale)))
 }
 
 /// Apply one finish as a transaction in the model owner. Three setters retain

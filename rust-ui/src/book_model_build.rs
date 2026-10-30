@@ -30,11 +30,14 @@ fn with_key<T>(name:&'static str,f:impl FnOnce(&JsValue)->T)->T{
  })
 }
 fn k(name:&'static str)->&'static str{wasm_bindgen::intern(name)}
-// Three objects and the model's state are objects: read and written directly.
-fn get(v:&JsValue,name:&'static str)->JsValue{if absent(v){return JsValue::UNDEFINED;}with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
+// Three objects and the model's state are objects: read and written directly, one crossing each (Reflect.get
+// refuses null, undefined and primitives: `get` answers undefined for them, `read` fails as before).
+fn get(v:&JsValue,name:&'static str)->JsValue{with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
 fn read(v:&JsValue,name:&'static str)->R<JsValue>{
- if absent(v){return crate::host::read(v,name);}
- with_key(name,|key|Reflect::get(v,key))
+ match with_key(name,|key|Reflect::get(v,key)){
+  Ok(value)=>Ok(value),
+  Err(error)=>if absent(v){crate::host::read(v,name)}else{Err(error)},
+ }
 }
 fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{with_key(name,|key|Reflect::set(v,key,x))?;Ok(())}
 // Numbers go straight to the engine, without a boxed JS number for each.
@@ -45,6 +48,10 @@ extern "C"{
  /// A Vector3 or Euler (anything with `set(x, y, z)`).
  type Triple;
  #[wasm_bindgen(method,structural,catch,js_name=set)] fn set_triple(this:&Triple,x:f64,y:f64,z:f64)->Result<JsValue,JsValue>;
+ /// The generated case's context: the calls made with plain numbers.
+ type Board2d;
+ #[wasm_bindgen(method,structural,catch)] fn scale(this:&Board2d,x:f64,y:f64)->Result<(),JsValue>;
+ #[wasm_bindgen(method,structural,catch,js_name=fillRect)] fn fill_rect(this:&Board2d,x:f64,y:f64,width:f64,height:f64)->Result<(),JsValue>;
 }
 fn apply(function:&JsValue,name:&'static str,this:&JsValue,args:&[&JsValue])->R<JsValue>{
  let function=function.dyn_ref::<Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new(&format!("{name} is not a function"))))?;
@@ -58,9 +65,10 @@ fn call_opt(v:&JsValue,name:&'static str,args:&[&JsValue])->R<()>{
  let function=read(v,name)?;if absent(&function){return Ok(());}
  apply(&function,name,v,args)?;Ok(())
 }
-// The book, its style and the caller's options may be anything: read them as the engine would.
-fn bread(v:&JsValue,name:&'static str)->R<JsValue>{crate::host::read(v,k(name))}
-fn bget(v:&JsValue,name:&'static str)->JsValue{crate::host::get(v,k(name))}
+// The book, its style and the caller's options may be anything: read them as the engine would (an object
+// directly, anything else through the host's boxing and its errors).
+fn bread(v:&JsValue,name:&'static str)->R<JsValue>{if v.is_object(){with_key(name,|key|Reflect::get(v,key))}else{crate::host::read(v,k(name))}}
+fn bget(v:&JsValue,name:&'static str)->JsValue{if v.is_object(){get(v,name)}else{crate::host::get(v,k(name))}}
 fn word(t:&'static str)->JsValue{JsValue::from_str(k(t))}
 fn n(x:f64)->JsValue{JsValue::from_f64(x)}
 fn b(x:bool)->JsValue{JsValue::from_bool(x)}
@@ -92,7 +100,22 @@ fn make(three:&JsValue,class:&'static str,args:&[&JsValue])->R<JsValue>{
 }
 fn object(fields:&[(&'static str,JsValue)])->R<JsValue>{let o:JsValue=Object::new().into();for(key,value)in fields{put(&o,key,value)?;}Ok(o)}
 fn set3(target:&JsValue,name:&'static str,x:f64,y:f64,z:f64)->R<()>{read(target,name)?.unchecked_into::<Triple>().set_triple(x,y,z)?;Ok(())}
-fn text_seed(text:&str)->f64{f64::from(crate::spine_surface::spine_text_seed(JsString::from(text)))}
+/// `textSeed` of a template literal made of `parts`: literal text and values printed with `String(value)`,
+/// hashed unit by unit as the engine holds them (each value crosses once; see book_reflection.rs, utf16_fnv).
+enum Part<'a>{Text(&'a str),Value(&'a JsValue)}
+fn template_seed(parts:&[Part])->f64{
+ let mut state=2166136261u32;
+ for part in parts{
+  state=match part{
+   Part::Text(text)=>{let mut h=state;for unit in text.encode_utf16(){h=(h^u32::from(unit)).wrapping_mul(16777619);}h}
+   // `String(undefined)` is "undefined" in a template, unlike utf16_fnv's `seed ?? ''`.
+   Part::Value(value)=>if value.is_undefined(){template_seed_text(state,"undefined")}else if value.is_null(){template_seed_text(state,"null")}
+    else{crate::book_reflection::utf16_fnv(value,state)},
+  };
+ }
+ f64::from(state)
+}
+fn template_seed_text(mut state:u32,text:&str)->u32{for unit in text.encode_utf16(){state=(state^u32::from(unit)).wrapping_mul(16777619);}state}
 /// The surface finish table entry the host keeps for `value` (fallback as `surfaceFinish` takes it).
 fn finish(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
 fn apply_finish(material:&JsValue,finish:JsValue,kind:&str,metallic:bool)->R<()>{crate::book_model_policy::book_apply_material_finish(material.clone(),finish,kind,metallic)}
@@ -177,13 +200,14 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
  let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
  let ratio=num(&bread(style,"coverRatio")?);
  let design_width=crate::host::js_round(1024.0*if ratio==0.0||ratio.is_nan(){0.66}else{ratio});
- let dimensions=crate::book_model_policy::book_cover_raster_size(n(design_width/1024.0),texture_height,max_dimension)?;
- put(&canvas,"width",&read(&dimensions,"width")?)?;put(&canvas,"height",&read(&dimensions,"height")?)?;
+ let (width,height)=crate::book_model_policy::cover_raster_dims(design_width/1024.0,texture_height,max_dimension);
+ putn(&canvas,"width",width)?;putn(&canvas,"height",height)?;
  let c=call(&canvas,"getContext",&[&word("2d")])?;
- call(&c,"scale",&[&n(num(&get(&canvas,"width"))/design_width),&n(num(&get(&canvas,"height"))/1024.0)])?;
+ let painter=c.unchecked_ref::<Board2d>();
+ painter.scale(num(&get(&canvas,"width"))/design_width,num(&get(&canvas,"height"))/1024.0)?;
  let random=cover_seed(host,book,style,"case")?;
  let thumb=level.as_string().is_some_and(|level|level=="overview");
- put(&c,"fillStyle",&bread(style,"color")?)?;call(&c,"fillRect",&[&n(0.0),&n(0.0),&n(design_width),&n(1024.0)])?;
+ put(&c,"fillStyle",&bread(style,"color")?)?;painter.fill_rect(0.0,0.0,design_width,1024.0)?;
  // A cloth case: dyed mottling, then the weave itself. A 256 px thumbnail shows neither.
  if !thumb{call(host,"paintCloth",&[&c,&n(design_width),&random])?;call(host,"paintWeave",&[&c,&n(design_width)])?;}
  let pick=|key:&'static str|->R<JsValue>{bread(style,key)};
@@ -191,15 +215,19 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
  let fallback=pick("fontFallback")?;let fallback=if truthy(&fallback){fallback}else{word("Georgia, serif")};
  let family=JsString::from(format!("\"{}\", {}",string(&face),string(&fallback)));
  let device=if thumb{-1.0}else{
-  let mark=get(&crate::spine_surface::spine_layout(book)?,"device");
-  if absent(&mark){
-   let id=or(opt(book,"shelfVisualId"),||or(opt(book,"id"),||word("")));
-   text_seed(&format!("device|{}|{}",string(&id),string(&or(opt(book,"title"),||word("")))))%3.0
-  }else{num(&mark)}
+  match crate::spine_surface::spine_device(book)?{
+   Some(mark)=>mark,
+   None=>{
+    let id=or(opt(book,"shelfVisualId"),||or(opt(book,"id"),||word("")));
+    template_seed(&[Part::Text("device|"),Part::Value(&id),Part::Text("|"),Part::Value(&or(opt(book,"title"),||word("")))])%3.0
+   }
+  }
  };
  let title=call(host,"title",&[book])?;let title=if truthy(&title){title}else{word("Sin título")};
  let author=call(host,"author",&[&bread(book,"author")?])?;let author=if truthy(&author){author}else{word("")};
- crate::book_paint::book_cover_case(c.unchecked_ref::<Canvas2d>(),design_width,&JsString::from(string(&title)),&JsString::from(string(&author)),
+ // `String(title)` and `String(author)` (each already a string from the host's title and author).
+ let text=|value:JsValue|->JsString{if value.is_string(){value.unchecked_into()}else{JsString::from(string(&value))}};
+ crate::book_paint::book_cover_case(c.unchecked_ref::<Canvas2d>(),design_width,&text(title),&text(author),
   &bread(style,"ink")?,&bread(style,"fontWeight")?,&family,thumb,device,read(host,"drawDevice")?.unchecked_ref(),random.unchecked_ref())?;
  let map=make(three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(three,"SRGBColorSpace")?)?;
  Ok(map)
@@ -208,7 +236,7 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
 fn cover_seed(host:&JsValue,book:&JsValue,style:&JsValue,salt:&str)->R<JsValue>{
  let id=or(opt(book,"shelfVisualId"),||or(opt(book,"id"),||word("")));
  let title=or(opt(book,"title"),||word(""));
- let seed=text_seed(&format!("{}|{}|{}|{salt}",string(&id),string(&title),string(&opt(style,"color"))));
+ let seed=template_seed(&[Part::Value(&id),Part::Text("|"),Part::Value(&title),Part::Text("|"),Part::Value(&opt(style,"color")),Part::Text("|"),Part::Text(salt)]);
  call(host,"random",&[&n(seed)])
 }
 

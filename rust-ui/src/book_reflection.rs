@@ -49,13 +49,14 @@ pub fn reflection_uv_scale(value: &JsValue) -> Result<Vec<f64>, JsValue> {
         let read = |key: &str| -> Result<JsValue, JsValue> { if absent(value) { Ok(JsValue::UNDEFINED) } else { crate::host::read(value, key) } };
         let first = read(index)?;
         let chosen = if absent(&first) { read(name)? } else { first };
-        let number = crate::host::num(&chosen);
-        Ok(if number.is_finite() && number > 0.0 { number } else { 1.0 })
+        Ok(uv_axis(&chosen))
     };
     let x = axis("0", "x")?;
     let y = axis("1", "y")?;
     Ok(vec![x, y])
 }
+/// One axis of the UV scale, already chosen (`value?.[0] ?? value?.x`): `Number(axis)`, 1 unless finite and positive.
+fn uv_axis(chosen: &JsValue) -> f64 { let number = crate::host::num(chosen); if number.is_finite() && number > 0.0 { number } else { 1.0 } }
 
 // ---- the layer on a material ---------------------------------------------------------------------------
 // `applyBookReflectionSurface` (src/js/book-reflection-surface.js) creates the uniforms from reflection_setup's
@@ -78,15 +79,15 @@ fn make(three:&JsValue,class:&'static str,args:&[f64])->R<JsValue>{
 fn uniform(r:&JsValue,name:&'static str)->R<JsValue>{read(&read(r,"uniforms")?,name)}
 /// The starting numbers of a layer, in one call (src/js/book-reflection-surface.js creates its uniforms and
 /// controls from them): the seed's phases x, y, z and amplitude, the slope, the environment share and the UV
-/// scale x, y, each as the matching setter computes it.
+/// scale x, y (from the axes the host picked, `uvScale?.[0] ?? uvScale?.x` and the same for y), each as the
+/// matching setter computes it.
 #[wasm_bindgen]
-pub fn reflection_setup(out:&mut [f64],seed:&JsValue,strength:&JsValue,environment:&JsValue,uv_scale:&JsValue)->R<()>{
+pub fn reflection_setup(out:&mut [f64],seed:&JsValue,strength:&JsValue,environment:&JsValue,uv_x:&JsValue,uv_y:&JsValue)->R<()>{
  if out.len()<8{return Err(js_sys::RangeError::new("reflection_setup needs 8 numbers").into());}
  out[..4].copy_from_slice(&profile_of(seed));
  out[4]=reflection_slope(strength);
  out[5]=reflection_environment(environment);
- let scale=reflection_uv_scale(uv_scale)?;
- out[6]=scale[0];out[7]=scale[1];
+ out[6]=uv_axis(uv_x);out[7]=uv_axis(uv_y);
  Ok(())
 }
 #[wasm_bindgen]

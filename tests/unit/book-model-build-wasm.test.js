@@ -197,7 +197,7 @@ it('builds random books and sizes exactly like the original', async () => {
   const next = random(77);
   for (let trial = 0; trial < 40; trial++) {
     const height = 80 + next() * 600, width = height * (.45 + next() * .5), thickness = 4 + next() * 70;
-    const book = { id:`r${trial}`, title:['Ulysses', 'Война и мир', 'A very long title that will not fit on one spine line at all', '一'][trial % 4],
+    const book = { id:`r${trial}`, title:['Ulysses', 'Война и мир', 'A very long title that will not fit on one spine line at all', '一', 'Lone \ud800 and \ufffd'][trial % 5],
       author:trial % 3 ? 'Some Author' : '', progress:trial % 5 ? next() : undefined, locator:trial % 2 ? 'loc' : undefined,
       coverFinish:['matte', 'satin', 'glossy', undefined][trial % 4], spineFinish:['matte', 'gold', 'silver'][trial % 3],
       spineSurfaceFinish:['matte', 'satin', 'glossy'][trial % 3], pageEdgeFinish:['glossy', 'satin', undefined][trial % 3] };

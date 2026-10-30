@@ -64,10 +64,26 @@ export function paintCloth(c, designWidth, random, { threads = true, metal = fal
   const plan = stream && rustBookClothPlan(getRustCore(), stream.get(), designWidth, metal)
   if (plan) {
     stream.set(plan.state)
-    needRustShelf().spine_cloth_plan(c, designWidth, plan)
+    paintClothPlan(c, designWidth, plan)
     return
   }
   needRustShelf().paint_cloth_callback(c, designWidth, random, metal)
+}
+
+// Replay the same Canvas operations after the numeric plan has been copied: the dye field in one soft-light
+// pass, then each slub. Every slub sets its own colour string, so the replay stays beside the canvas (a
+// replay driven from the shelf module crossed the boundary about nine times per slub, ~150 slubs a cloth).
+function paintClothPlan(c, designWidth, plan) {
+  const field = Object.assign(document.createElement('canvas'), { width:plan.fieldWidth, height:30 })
+  const f = field.getContext('2d'), image = f.createImageData?.(plan.fieldWidth, 30)
+  if (image?.data) { image.data.set(plan.pixels); f.putImageData(image, 0, 0) }
+  c.save(); c.globalCompositeOperation = 'soft-light'; c.imageSmoothingEnabled = true
+  c.imageSmoothingQuality = 'high'; c.drawImage(field, 0, 0, designWidth, 1024); c.restore()
+  const commands = plan.commands
+  for (let at = 0; at < commands.length; at += 6) {
+    c.fillStyle = commands[at + 5] ? `rgba(255,248,235,${commands[at + 4]})` : `rgba(0,0,0,${commands[at + 4]})`
+    c.fillRect(commands[at], commands[at + 1], commands[at + 2], commands[at + 3])
+  }
 }
 
 // The plan's replay (the dye field in one soft-light pass, then the slubs) and the weave are painted by the shelf

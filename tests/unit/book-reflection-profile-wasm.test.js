@@ -7,7 +7,7 @@ import { applyBookReflectionSurface as original } from './helpers/reference-book
 // The Rust waviness profile (rust-ui/src/book_reflection.rs) against the frozen JavaScript profile:
 // the phase vector and the amplitude (carried by the strength uniform) must match to the bit for any seed.
 function random(seed) { return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 } }
-const pieces = ['', 'a', 'Libro', '42|cover', 'ñandú', '東京', '😀', '\ud800', 'x\udc00', '\u0000', ' ', 'back', 'binding', 'tail', 'head']
+const pieces = ['', 'a', 'Libro', '42|cover', 'ñandú', '東京', '😀', '\ud800', 'x\udc00', '\ufffd', '\u0000', ' ', 'back', 'binding', 'tail', 'head']
 function seedOf(next) {
   const kind = Math.floor(next() * 12)
   if (kind === 0) return undefined
