@@ -5,7 +5,7 @@ import {performance} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import * as rust from '../src/wasm/shelf/inhouse_read_shelf.js';
-import {createSceneMotionFrame} from '../src/js/scene-motion-frame.js';
+import {createSceneMotionFrame} from '../tests/unit/helpers/scene-frame-per-entry.js';
 rust.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});
 const median=a=>a.toSorted((a,b)=>a-b)[Math.floor(a.length/2)],key=e=>`book:drive:${e.book.driveFileId}`,results=[];
 for(const count of [24,96,240])for(const mode of ['idle','remote','remote+checkpoint']){

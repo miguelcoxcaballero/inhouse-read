@@ -24,15 +24,23 @@ impl RustSceneProjectionFrame{
  /// cover left/top/width/height/display/events. NaN remains dirty on each call;
  /// signed zero compares equal, exactly as the former JS strict comparisons.
  pub fn hit(&mut self,scene:&RustScene,index:usize,reset:bool,fresh_cover:bool)->u32{
-  scene.hit_entry(&mut self.hit[..]);
+  let mut io=*self.hit;
+  let dirty=self.hit_io(scene,index,reset,fresh_cover,&mut io);
+  *self.hit=io;dirty
+ }
+}
+impl RustSceneProjectionFrame{
+ /// `hit` on a caller's 49-number record (the whole-scene entry frame's hit stage).
+ pub(super) fn hit_io(&mut self,scene:&RustScene,index:usize,reset:bool,fresh_cover:bool,io:&mut [f64;49])->u32{
+  scene.hit_entry(&mut io[..]);
   let Some(state)=self.styles.get_mut(index)else{return 0;};
   if reset{*state=Styles::default();}
   let mut dirty=if state.fixed{0}else{1};state.fixed=true;
-  for i in 0..5{let value=self.hit[40+i];if value!=state.base[i]{dirty|=1<<(i+1);state.base[i]=value;}}
-  if self.hit[0]!=1.0{
+  for i in 0..5{let value=io[40+i];if value!=state.base[i]{dirty|=1<<(i+1);state.base[i]=value;}}
+  if io[0]!=1.0{
    if fresh_cover{state.cover_fixed=false;state.cover.fill(f64::NAN);}
    if !state.cover_fixed{dirty|=1<<6;state.cover_fixed=true;}
-   let cover=[self.hit[45],self.hit[46],self.hit[8],self.hit[9],self.hit[47],self.hit[48]];
+   let cover=[io[45],io[46],io[8],io[9],io[47],io[48]];
    for (i,value) in cover.into_iter().enumerate(){if value!=state.cover[i]{dirty|=1<<(i+7);state.cover[i]=value;}}
   }
   dirty

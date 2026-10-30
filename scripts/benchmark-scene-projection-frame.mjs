@@ -4,7 +4,7 @@ import {performance} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import * as rust from '../src/wasm/shelf/inhouse_read_shelf.js';
-import {createSceneProjectionFrame} from '../src/js/scene-projection-frame.js';
+import {createSceneProjectionFrame} from '../tests/unit/helpers/scene-frame-per-entry.js';
 rust.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});
 const median=a=>a.toSorted((a,b)=>a-b)[Math.floor(a.length/2)],results=[];
 const state=()=>({left:NaN,top:NaN,width:NaN,height:NaN,z:NaN,fixed:false,coverLeft:NaN,coverTop:NaN,coverWidth:NaN,coverHeight:NaN,display:'',events:'',coverFixed:false});

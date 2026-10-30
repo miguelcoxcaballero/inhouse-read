@@ -27,6 +27,18 @@ impl RustSceneMotionFrame {
  /// Output: nine local physical fields, eight remote pixel fields and eight
  /// checkpoint pixel fields. Flags preserve the host's original update order.
  pub fn sample(&mut self,index:usize,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool)->u32{
+  let mut pose=[0.0;8];pose.copy_from_slice(&self.input[..8]);
+  let mut output=*self.output;
+  let flags=self.sample_pose(index,pose,motion,transition,now,arranging,&mut output);
+  *self.output=output;flags
+ }
+}
+impl RustSceneMotionFrame {
+ /// One entry's sample from its pose `[x, y, z, quaternion, scale]` in pixels, into `output`
+ /// (only the slots its flags name are written). The whole-scene frame calls this per entry
+ /// in the same order the host called `sample`.
+ #[allow(clippy::too_many_arguments)]
+ pub(super) fn sample_pose(&mut self,index:usize,mut pose:[f64;8],motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool,output:&mut [f64;25])->u32{
   let Some(key)=self.keys.get(index).and_then(|key|key.as_ref())else{return 0;};
   if index==0||self.frame_now!=now.to_bits()||self.frame_arranging!=arranging{
    self.frame_now=now.to_bits();self.frame_arranging=arranging;
@@ -35,28 +47,27 @@ impl RustSceneMotionFrame {
   }
   let shelf=self.shelves.get(index).copied().unwrap_or(0.0);
   let (width,ppm)=(self.input[8],self.input[9]);
-  let mut pose=[0.0;8];pose.copy_from_slice(&self.input[..8]);
   let mut flags=0;
   if let Some(bay)=self.row(shelf).or_else(||self.row(0.0)){
-   self.output[0]=shelf;
-   self.output[1]=(pose[0]+width/2.0-bay[0])/ppm;
-   self.output[2]=(pose[1]+bay[1])/ppm;self.output[3]=pose[2]/ppm;
-   self.output[4..9].copy_from_slice(&pose[3..8]);flags|=1;
+   output[0]=shelf;
+   output[1]=(pose[0]+width/2.0-bay[0])/ppm;
+   output[2]=(pose[1]+bay[1])/ppm;output[3]=pose[2]/ppm;
+   output[4..9].copy_from_slice(&pose[3..8]);flags|=1;
    let mut remote=[0.0;9];
    if !arranging&&self.remote_active&&motion.pose(key,now,&mut remote){
     if let Some(bay)=self.row(remote[0]){
      pose[0]=bay[0]-width/2.0+remote[1]*ppm;
      pose[1]=-bay[1]+remote[2]*ppm;pose[2]=remote[3]*ppm;
      pose[3..8].copy_from_slice(&remote[4..9]);
-     self.output[9..17].copy_from_slice(&pose);flags|=2;
+     output[9..17].copy_from_slice(&pose);flags|=2;
     }
    }
   }
   let target=[(pose[0]+width/2.0)/ppm,pose[1]/ppm,pose[2]/ppm,pose[3],pose[4],pose[5],pose[6],pose[7]];
   let mut bridge=[0.0;8];
   if self.transition_active&&transition.pose(key,&target,now,&mut bridge){
-   self.output[17]=bridge[0]*ppm-width/2.0;self.output[18]=bridge[1]*ppm;self.output[19]=bridge[2]*ppm;
-   self.output[20..25].copy_from_slice(&bridge[3..8]);flags|=4;
+   output[17]=bridge[0]*ppm-width/2.0;output[18]=bridge[1]*ppm;output[19]=bridge[2]*ppm;
+   output[20..25].copy_from_slice(&bridge[3..8]);flags|=4;
   }
   flags
  }

@@ -26,3 +26,33 @@ it('ignores hidden geometry, returns an empty fallback for missing meshes, and r
  expect(rust.scene_lamp_hit_hull({},0,0)).toBe('');expect(rust.scene_lamp_hit_hull(group,NaN,0)).toBe('')
  for(const mesh of group.children){mesh.geometry.dispose();mesh.material.dispose()}
 })
+
+// The scene keeps one retained hull per standing lamp and asks it every physics frame. It must give the
+// uncached function's text whenever an input changed and "as before" (undefined) otherwise.
+it('rebuilds a retained lamp hull only when a matrix, mesh, visibility or the tap corner changes',()=>{
+ const group=lamp(),extra=new THREE.Mesh(new THREE.SphereGeometry(18,12,8),new THREE.MeshBasicMaterial());extra.position.set(0,70,0);group.add(extra)
+ group.updateMatrixWorld(true)
+ const before=rust.shelf_live_handles(),hull=new rust.RustLampHull()
+ let random=7;const next=()=>((random=(random*48271)%2147483647)/2147483647)
+ let fresh=true,last=null,rebuilt=0,kept=0
+ for(let step=0;step<400;step++){
+  const roll=next()
+  if(roll<.2){group.position.x+=next()*3-1.5}
+  else if(roll<.3){group.rotation.y+=next()*.02-.01}
+  else if(roll<.35){extra.visible=!extra.visible}
+  else if(roll<.38){extra.geometry.attributes.position.array[0]+=.5;extra.geometry.attributes.position.needsUpdate=true}
+  else if(roll<.4){const old=extra.geometry;extra.geometry=new THREE.SphereGeometry(18+next()*4,12,8);old.dispose()}
+  else if(roll<.45){fresh=true}
+  group.updateMatrixWorld(true)
+  const left=roll>.9?Math.round(next()*20):0,top=roll>.95?-0:0
+  const expected=rust.scene_lamp_hit_hull(group,left,top),got=hull.outline(group,left,top,fresh)
+  if(got===undefined){expect(fresh).toBe(false);expect(expected).toBe(last);kept++}
+  else{expect(got).toBe(expected);rebuilt++}
+  last=expected;fresh=false
+ }
+ expect(rebuilt).toBeGreaterThan(20);expect(kept).toBeGreaterThan(50)
+ expect(hull.outline(group,NaN,0,true)).toBe('');expect(hull.outline({},0,0,true)).toBe('')
+ hull.free()
+ expect(rust.shelf_live_handles()).toBe(before)
+ for(const mesh of group.children){mesh.geometry.dispose();mesh.material.dispose()}
+})

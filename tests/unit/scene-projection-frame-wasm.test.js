@@ -2,7 +2,7 @@
 import {expect,it} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
-import {createSceneProjectionFrame} from '../../src/js/scene-projection-frame.js';
+import {createSceneProjectionFrame} from './helpers/scene-frame-per-entry.js';
 
 const initial=()=>({left:NaN,top:NaN,width:NaN,height:NaN,z:NaN,fixed:false,coverLeft:NaN,coverTop:NaN,coverWidth:NaN,coverHeight:NaN,display:'',events:'',coverFixed:false});
 // Frozen decision order from the former scene cache, including resets when a
