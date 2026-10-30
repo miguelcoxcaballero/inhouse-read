@@ -9,4 +9,7 @@ ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const observed=['voice_initialize','voice_event','voice_diagnostic','voice_prepare_text']
 fixture.ui={...ui}
 for(const name of observed)fixture.ui[name]=(...args)=>{fixture.calls[name]=(fixture.calls[name]||0)+1;return ui[name](...args)}
+// ReadingVoice's getDiagnosticState and prepareText are answered by the voice_method dispatcher, which runs the same Rust functions.
+const dispatched={getDiagnosticState:'voice_diagnostic',prepareText:'voice_prepare_text'}
+fixture.ui.voice_method=(host,member,...rest)=>{const name=dispatched[member];if(name)fixture.calls[name]=(fixture.calls[name]||0)+1;return ui.voice_method(host,member,...rest)}
 afterAll(()=>{for(const name of observed)expect(fixture.calls[name],name).toBeGreaterThan(0)})
