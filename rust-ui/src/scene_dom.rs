@@ -7,7 +7,7 @@
 use std::cell::Cell;
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Map,Object,Reflect,JSON};
-use crate::host::{absent,global,method,method_opt,read,set,truthy};
+use crate::host::{absent,get_at,global,method,method_opt,num,read,set,truthy};
 type R<T=()> = Result<T,JsValue>;
 
 fn st(text:&str)->JsValue{JsValue::from_str(text)}
@@ -193,25 +193,29 @@ pub fn scene_retain_replacement(entry:&JsValue,target:&JsValue)->R<bool>{
  Ok(true)
 }
 
-/// A shown book's materials follow its record: each changed key updates its part in place; a
-/// changed ribbon without an in-place update asks `replace` for a new model instead.
+/// Three's `Object3D#traverse` order: the object, then each child's subtree.
+fn traverse(object:&JsValue,visit:&mut dyn FnMut(&JsValue)->R)->R{
+ visit(object)?;
+ let children=read(object,"children")?;
+ let count=num(&read(&children,"length")?) as u32;
+ for index in 0..count{traverse(&get_at(&children,index),visit)?;}
+ Ok(())
+}
+/// `[].concat(object.material || [])`: a material list or a single material.
+fn materials(object:&JsValue)->R<Vec<JsValue>>{
+ let material=read(object,"material")?;
+ Ok(if Array::is_array(&material){material.unchecked_into::<Array>().iter().collect()}else if truthy(&material){vec![material]}else{Vec::new()})
+}
+
+/// Releases every geometry and, once each, every material under `object`.
 #[wasm_bindgen]
-pub fn scene_update_materials(entry:&JsValue,bookmark_for:&js_sys::Function,replace:&js_sys::Function)->R{
- let model=read(entry,"model")?;
- let kind=read(entry,"kind")?;
- if !truthy(&model)||kind==st("plant")||kind==st("lamp"){return Ok(());}
- let data=read(&model,"userData")?;
- let saved=read(&data,"shelfKeys")?;
- let previous=if truthy(&saved){saved}else{Object::new().into()};
- let next=scene_material_keys(entry,bookmark_for)?;
- let differs=|key:&str|->R<bool>{Ok(read(&previous,key)?!=read(&next,key)?)};
- if differs("spine")?{method_opt(&data,"updateSpineAppearance",&[&read(entry,"book")?,&read(entry,"style")?])?;}
- if differs("cover")?{method_opt(&data,"updateCoverSource",&[&read(entry,"coverUrl")?,&read(entry,"book")?,&read(entry,"style")?])?;}
- if differs("coverFinish")?||differs("coverRelief")?{method_opt(&data,"updateCoverAppearance",&[&read(entry,"book")?])?;}
- if differs("edgeFinish")?{method_opt(&data,"updateEdgeAppearance",&[&read(entry,"book")?])?;}
- if differs("bookmark")?{
-  if truthy(&read(&data,"updateBookmark")?){method(&data,"updateBookmark",&[&read(entry,"book")?])?;}
-  else{replace.call1(&JsValue::UNDEFINED,entry)?;return Ok(());}
- }
- set(&data,"shelfKeys",&next)
+pub fn scene_release_object(object:&JsValue)->R{
+ let seen=js_sys::Set::new(&JsValue::UNDEFINED);
+ traverse(object,&mut |child|{
+  method_opt(&read(child,"geometry")?,"dispose",&[])?;
+  for material in materials(child)?{seen.add(&material);}
+  Ok(())
+ })?;
+ for material in seen.values(){method(&material?,"dispose",&[])?;}
+ Ok(())
 }

@@ -128,3 +128,12 @@ export function updateMaterials(entry, bookmarkFor, replaceWhenReady) {
   }
   model.userData.shelfKeys = next;
 }
+
+export function releaseObject(object) {
+  const materials = new Set();
+  object.traverse(child => {
+    child.geometry?.dispose();
+    for (const material of [].concat(child.material || [])) materials.add(material);
+  });
+  for (const material of materials) material.dispose();
+}

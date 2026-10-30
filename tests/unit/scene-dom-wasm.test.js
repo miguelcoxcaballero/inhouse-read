@@ -95,7 +95,8 @@ function model(log,i){
   if((i>>name.length%5)&1||name==='updateSpineAppearance')data[name]=function(...args){log.push([name,this===data,...args.map(a=>a?.id??a)]);};
  return {userData:data};
 }
-it('updates shown materials and retains pending replacements with the same calls',()=>{
+// The in-place material update went back to JavaScript (scene-frame-5): both sides prepare with it.
+it('retains pending replacements with the same calls',()=>{
  let calls=0,kept=0,replaced=0;
  for(let i=0;i<120;i++){
   const logs=[[],[]],states=[];
@@ -104,7 +105,7 @@ it('updates shown materials and retains pending replacements with the same calls
    if(e.model&&i%2)e.model.userData.shelfKeys=(side?rust.scene_material_keys(e,bookmarkFor):keys(e,bookmarkFor));
    if(i%4===1)e.book={...e.book,progressFraction:.9};
    const replace=next=>log.push(['replace',next===e]);
-   if(side)rust.scene_update_materials(e,bookmarkFor,replace);else update(e,bookmarkFor,replace);
+   reference.updateMaterials(e,bookmarkFor,replace);
    e.replacement=i%5?model(log,i+1):null;e.qualityReplacement=i%13===0;
    if(e.replacement)e.replacement.userData.shelfReplacementTarget=i%3?{geometry:side?rust.scene_replacement_target(e,bookmarkFor).geometry:reference.replacementTarget(e,bookmarkFor).geometry,
     materials:{...(side?rust.scene_material_keys(e,bookmarkFor):keys(e,bookmarkFor)),bookmark:i%2?'old':undefined}}:undefined;
@@ -116,4 +117,24 @@ it('updates shown materials and retains pending replacements with the same calls
   calls+=logs[0].length;kept+=JSON.parse(states[0]).kept?1:0;replaced+=logs[0].filter(call=>call[0]==='replace').length;
  }
  expect(calls).toBeGreaterThan(100);expect(kept).toBeGreaterThan(5);expect(replaced).toBeGreaterThan(5);
+});
+
+function scene3d(log,seed){
+ const mat=i=>{const m={name:`m${i}`,dispose(){log.push(['dispose',this.name]);}};for(const key of ['map','normalMap','bumpMap','roughnessMap','alphaMap'])if((seed+i+key.length)%3)m[key]={anisotropy:1,name:`${key}${i}`};return m;};
+ const shared=mat(99);
+ const make=(depth,i)=>{
+  const object={name:`o${depth}-${i}`,isMesh:(i+depth)%3!==0,children:[],traverse(callback){callback(this);for(const child of this.children)child.traverse(callback);}};
+  if((i+seed)%4===1)object.material=[mat(i),shared,mat(i+1)];else if((i+seed)%4===2)object.material=shared;else if((i+seed)%4===3)object.material=mat(i);
+  if((i+depth)%2)object.geometry={dispose(){log.push(['geometry',object.name]);}};
+  if(depth<3)for(let k=0;k<(seed+i)%3+1;k++)object.children.push(make(depth+1,i*3+k));
+  return object;
+ };
+ const root=make(0,seed);root.userData={};return root;
+}
+it('releases models with the same walk',()=>{
+ for(let seed=0;seed<12;seed++){
+  const logs=[[],[]],[a,b]=[scene3d(logs[0],seed),scene3d(logs[1],seed)];
+  reference.releaseObject(a);rust.scene_release_object(b);
+  expect(logs[1]).toEqual(logs[0]);
+ }
 });
