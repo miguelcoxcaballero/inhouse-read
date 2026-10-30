@@ -128,9 +128,6 @@ mod reader_lazy_policy;
 mod core_bridge;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
-mod pdf_core_bridge;
-
-#[cfg(any(feature = "ui", feature = "shelf"))]
 mod format_detect;
 
 #[cfg(feature = "shelf")]
