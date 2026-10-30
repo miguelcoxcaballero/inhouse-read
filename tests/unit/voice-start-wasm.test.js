@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {LegacyVoiceStart} from './helpers/reference-voice-start.js'
-import {restartVisibleVoice,playReadingVoice} from '../../src/js/readers/voice-start.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const restartVisibleVoice=method('restartFromVisiblePage')
+const playReadingVoice=method('play')
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({deps:{},ui:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({loadNeural:()=>fixture.deps.load(),neuralEngine:()=>fixture.deps.engine(),unlockNeural:()=>fixture.deps.unlock()}))

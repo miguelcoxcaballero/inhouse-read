@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {it,expect,vi,afterEach} from 'vitest'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {browseVoice,returnVoiceAudio,seekVoicePoint} from '../../src/js/readers/voice-navigation.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const browseVoice=method('browse')
+const returnVoiceAudio=method('returnToAudio')
+const seekVoicePoint=method('seekToPoint')
 const fixture=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 afterEach(()=>{fixture.ui=null})

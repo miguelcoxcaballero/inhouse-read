@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {LegacyVoiceSelection} from './helpers/reference-voice-selection.js'
-import {selectReadingVoice} from '../../src/js/readers/voice-selection.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const selectReadingVoice=method('voiceFor')
 import {declaredLanguage,isNeuralId,langBase,resolveVoice} from '../../src/js/readers/voice-catalog.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({catalog:()=>[],ui:null}))
