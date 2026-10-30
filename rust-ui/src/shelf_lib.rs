@@ -167,3 +167,5 @@ pub fn lamp_light(spot: bool, input: &[f64], out: &mut [f64]) -> bool { lamp_lig
 pub fn lamp_filaments(input: &[f64], out: &mut [f64]) -> bool { lamp_light::filaments(input, out) }
 
 mod book_surface_policy;
+
+mod reading_display;
