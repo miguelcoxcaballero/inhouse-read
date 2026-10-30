@@ -62,6 +62,7 @@ mod book_projection;
 mod foliage;
 mod packet_host;
 mod plant_build;
+mod shelf_model_host;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
