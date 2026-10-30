@@ -73,6 +73,7 @@ mod supertonic_store;
 mod package_store;
 mod synth_client;
 mod native_synth_client;
+mod native_ort;
 mod reader_lists;
 mod foliate_cursor;
 mod eager;

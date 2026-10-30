@@ -1,4 +1,6 @@
 import {describe,it,expect,vi} from 'vitest'
+// The runtime's requests, upload fences and release are rust-ui (native_ort.rs): the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import {createNativeOrt,NativeTensor,encodeTensor,decodeTensor} from '../../src/js/readers/neural-voice/native-ort.js'
 const environment=()=>Object.assign(new EventTarget(),{btoa,atob})
 const event=(env,detail)=>env.dispatchEvent(new CustomEvent('inhouse-inference',{detail}))
