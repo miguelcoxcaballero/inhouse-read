@@ -5,6 +5,8 @@
 //! object, so nothing here holds a handle once a call returns and an abandoned model is collected
 //! like any other. The per-frame pose setters and the asynchronous relief bake stay in the host and
 //! read the same state.
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Float32Array,Function,JsString,Object,Promise,Reflect,Set,Uint8Array};
@@ -12,14 +14,54 @@ use crate::host::{absent,jmax,jmin,num,truthy};
 use crate::book_paint::Canvas2d;
 
 type R<T>=Result<T,JsValue>;
-// Every key below is sent again for each book: interned once.
+thread_local!{
+ /// The property names as JS strings, made once: every access borrows one instead of cloning a handle.
+ static KEYS:RefCell<HashMap<&'static str,JsValue>>=RefCell::new(HashMap::new());
+ /// Three's constructors, looked up once per namespace (tests load fresh copies of three).
+ static CLASSES:RefCell<Option<(JsValue,HashMap<&'static str,Function>)>>=const{RefCell::new(None)};
+}
+/// A getter or setter that calls back into this module only nests shared borrows; a key first met
+/// inside one is used without being remembered.
+fn with_key<T>(name:&'static str,f:impl FnOnce(&JsValue)->T)->T{
+ KEYS.with(|keys|{
+  if let Ok(known)=keys.try_borrow(){if let Some(key)=known.get(name){return f(key);}}
+  let key=JsValue::from_str(name);
+  if let Ok(mut known)=keys.try_borrow_mut(){known.insert(name,key.clone());}
+  f(&key)
+ })
+}
 fn k(name:&'static str)->&'static str{wasm_bindgen::intern(name)}
-fn get(v:&JsValue,name:&'static str)->JsValue{crate::host::get(v,k(name))}
-fn read(v:&JsValue,name:&'static str)->R<JsValue>{crate::host::read(v,k(name))}
-fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{crate::host::set(v,k(name),x)}
-fn call(v:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{crate::host::method(v,k(name),args)}
+// Three objects and the model's state are objects: read and written directly.
+fn get(v:&JsValue,name:&'static str)->JsValue{if absent(v){return JsValue::UNDEFINED;}with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
+fn read(v:&JsValue,name:&'static str)->R<JsValue>{
+ if absent(v){return crate::host::read(v,name);}
+ with_key(name,|key|Reflect::get(v,key))
+}
+fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{with_key(name,|key|Reflect::set(v,key,x))?;Ok(())}
+// Numbers go straight to the engine, without a boxed JS number for each.
+fn putn(v:&JsValue,name:&'static str,x:f64)->R<()>{with_key(name,|key|set_number(v,key,x))?;Ok(())}
+#[wasm_bindgen]
+extern "C"{
+ #[wasm_bindgen(js_namespace=Reflect,js_name=set,catch)] fn set_number(target:&JsValue,key:&JsValue,value:f64)->Result<bool,JsValue>;
+ /// A Vector3 or Euler (anything with `set(x, y, z)`).
+ type Triple;
+ #[wasm_bindgen(method,structural,catch,js_name=set)] fn set_triple(this:&Triple,x:f64,y:f64,z:f64)->Result<JsValue,JsValue>;
+}
+fn apply(function:&JsValue,name:&'static str,this:&JsValue,args:&[&JsValue])->R<JsValue>{
+ let function=function.dyn_ref::<Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new(&format!("{name} is not a function"))))?;
+ match args{[]=>function.call0(this),[a]=>function.call1(this,a),[a,b]=>function.call2(this,a,b),[a,b,c]=>function.call3(this,a,b,c),
+  _=>{let list=Array::new();for a in args{list.push(a);}function.apply(this,&list)}}
+}
+fn call(v:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{let function=read(v,name)?;apply(&function,name,v,args)}
 /// `v?.name?.(...)`.
-fn call_opt(v:&JsValue,name:&'static str,args:&[&JsValue])->R<()>{crate::host::method_opt(v,k(name),args)?;Ok(())}
+fn call_opt(v:&JsValue,name:&'static str,args:&[&JsValue])->R<()>{
+ if absent(v){return Ok(());}
+ let function=read(v,name)?;if absent(&function){return Ok(());}
+ apply(&function,name,v,args)?;Ok(())
+}
+// The book, its style and the caller's options may be anything: read them as the engine would.
+fn bread(v:&JsValue,name:&'static str)->R<JsValue>{crate::host::read(v,k(name))}
+fn bget(v:&JsValue,name:&'static str)->JsValue{crate::host::get(v,k(name))}
 fn word(t:&'static str)->JsValue{JsValue::from_str(k(t))}
 fn n(x:f64)->JsValue{JsValue::from_f64(x)}
 fn b(x:bool)->JsValue{JsValue::from_bool(x)}
@@ -28,17 +70,30 @@ fn range(message:&str)->JsValue{js_sys::RangeError::new(message).into()}
 fn string(v:&JsValue)->String{crate::host::text_of(v)}
 /// `a ?? b`.
 fn or(a:JsValue,b:impl FnOnce()->JsValue)->JsValue{if absent(&a){b()}else{a}}
-/// `value?.name`.
-fn opt(v:&JsValue,name:&'static str)->JsValue{if absent(v){JsValue::UNDEFINED}else{get(v,name)}}
+/// `value?.name` of the book or style.
+fn opt(v:&JsValue,name:&'static str)->JsValue{if absent(v){JsValue::UNDEFINED}else{bget(v,name)}}
 
 /// `new THREE[class](...args)`.
 fn make(three:&JsValue,class:&'static str,args:&[&JsValue])->R<JsValue>{
- let constructor:Function=read(three,class)?.dyn_into().map_err(|_|JsValue::from(js_sys::TypeError::new(&format!("THREE.{class} is not a constructor"))))?;
- let list=Array::new();for a in args{list.push(a);}
+ let cached=CLASSES.with(|classes|{
+  let classes=classes.borrow();
+  classes.as_ref().filter(|(namespace,_)|namespace==three).and_then(|(_,found)|found.get(class).cloned())
+ });
+ let constructor=match cached{Some(found)=>found,None=>{
+  let found:Function=read(three,class)?.dyn_into().map_err(|_|JsValue::from(js_sys::TypeError::new(&format!("THREE.{class} is not a constructor"))))?;
+  CLASSES.with(|classes|{
+   let mut classes=classes.borrow_mut();
+   if !classes.as_ref().is_some_and(|(namespace,_)|namespace==three){*classes=Some((three.clone(),HashMap::new()));}
+   if let Some((_,known))=classes.as_mut(){known.insert(class,found.clone());}
+  });
+  found
+ }};
+ let list=match args{[]=>Array::new(),[a]=>Array::of1(a),[a,b]=>Array::of2(a,b),[a,b,c]=>Array::of3(a,b,c),
+  _=>{let list=Array::new();for a in args{list.push(a);}list}};
  Reflect::construct(&constructor,&list)
 }
 fn object(fields:&[(&'static str,JsValue)])->R<JsValue>{let o:JsValue=Object::new().into();for(key,value)in fields{put(&o,key,value)?;}Ok(o)}
-fn set3(target:&JsValue,name:&'static str,x:f64,y:f64,z:f64)->R<()>{call(&get(target,name),"set",&[&n(x),&n(y),&n(z)])?;Ok(())}
+fn set3(target:&JsValue,name:&'static str,x:f64,y:f64,z:f64)->R<()>{read(target,name)?.unchecked_into::<Triple>().set_triple(x,y,z)?;Ok(())}
 fn pixel_ratio()->JsValue{let ratio=crate::host::get(&crate::host::global(),"devicePixelRatio");if ratio.as_f64().is_some(){ratio}else{n(1.0)}}
 fn shared(key:JsValue,build:&JsValue)->R<JsValue>{crate::book_model_policy::book_shared_texture(key,build.unchecked_ref())}
 fn text_seed(text:&str)->f64{f64::from(crate::spine_surface::spine_text_seed(JsString::from(text)))}
@@ -145,7 +200,7 @@ pub fn book_case_geometries(three:&JsValue,width:&JsValue,height:&JsValue,board:
 /// The generated cloth case of a book with no jacket (or while its jacket downloads).
 fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,texture_height:f64,max_dimension:f64,level:&JsValue)->R<JsValue>{
  let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
- let ratio=num(&read(style,"coverRatio")?);
+ let ratio=num(&bread(style,"coverRatio")?);
  let design_width=crate::host::js_round(1024.0*if ratio==0.0||ratio.is_nan(){0.66}else{ratio});
  let dimensions=crate::book_model_policy::book_cover_raster_size(n(design_width/1024.0),texture_height,max_dimension)?;
  put(&canvas,"width",&read(&dimensions,"width")?)?;put(&canvas,"height",&read(&dimensions,"height")?)?;
@@ -153,10 +208,10 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
  call(&c,"scale",&[&n(num(&get(&canvas,"width"))/design_width),&n(num(&get(&canvas,"height"))/1024.0)])?;
  let random=cover_seed(host,book,style,"case")?;
  let thumb=level.as_string().is_some_and(|level|level=="overview");
- put(&c,"fillStyle",&read(style,"color")?)?;call(&c,"fillRect",&[&n(0.0),&n(0.0),&n(design_width),&n(1024.0)])?;
+ put(&c,"fillStyle",&bread(style,"color")?)?;call(&c,"fillRect",&[&n(0.0),&n(0.0),&n(design_width),&n(1024.0)])?;
  // A cloth case: dyed mottling, then the weave itself. A 256 px thumbnail shows neither.
  if !thumb{call(host,"paintCloth",&[&c,&n(design_width),&random])?;call(host,"paintWeave",&[&c,&n(design_width)])?;}
- let pick=|key:&'static str|->R<JsValue>{read(style,key)};
+ let pick=|key:&'static str|->R<JsValue>{bread(style,key)};
  let face=pick("fontCanvasFamily")?;let face=if truthy(&face){face}else{let f=pick("fontFamily")?;if truthy(&f){f}else{word("Playfair Display")}};
  let fallback=pick("fontFallback")?;let fallback=if truthy(&fallback){fallback}else{word("Georgia, serif")};
  let family=JsString::from(format!("\"{}\", {}",string(&face),string(&fallback)));
@@ -168,9 +223,9 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
   }else{num(&mark)}
  };
  let title=call(host,"title",&[book])?;let title=if truthy(&title){title}else{word("Sin título")};
- let author=call(host,"author",&[&read(book,"author")?])?;let author=if truthy(&author){author}else{word("")};
+ let author=call(host,"author",&[&bread(book,"author")?])?;let author=if truthy(&author){author}else{word("")};
  crate::book_paint::book_cover_case(c.unchecked_ref::<Canvas2d>(),design_width,&JsString::from(string(&title)),&JsString::from(string(&author)),
-  &read(style,"ink")?,&read(style,"fontWeight")?,&family,thumb,device,read(host,"drawDevice")?.unchecked_ref(),random.unchecked_ref())?;
+  &bread(style,"ink")?,&bread(style,"fontWeight")?,&family,thumb,device,read(host,"drawDevice")?.unchecked_ref(),random.unchecked_ref())?;
  let map=make(three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(three,"SRGBColorSpace")?)?;
  Ok(map)
 }
@@ -185,7 +240,7 @@ fn cover_seed(host:&JsValue,book:&JsValue,style:&JsValue,salt:&str)->R<JsValue>{
 /// The warm reading-room rig for shelf, editor and opening/closing books.
 #[wasm_bindgen]
 pub fn book_light_scene(three:&JsValue,scene:&JsValue,environment:&JsValue)->R<JsValue>{
- put(scene,"environment",environment)?;put(scene,"environmentIntensity",&n(0.55))?;
+ put(scene,"environment",environment)?;putn(scene,"environmentIntensity",0.55)?;
  // Pale ceiling above, a muted bounce from the wooden floor below.
  call(scene,"add",&[&make(three,"HemisphereLight",&[&n(f64::from(0xf6f3eeu32)),&n(f64::from(0x5e5047u32)),&n(0.5)])?])?;
  let reader=make(three,"DirectionalLight",&[&n(f64::from(0xfff4e8u32)),&n(1.9)])?;
@@ -213,14 +268,14 @@ fn own(s:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{
 fn hosted(s:&JsValue,name:&'static str)->R<JsValue>{bind(&read(&state(s,"host"),name)?,&[s])}
 fn state(s:&JsValue,name:&'static str)->JsValue{get(s,name)}
 fn invalidate(s:&JsValue)->R<()>{call_opt(&get(&state(s,"group"),"userData"),"invalidate",&[])}
-fn bump(s:&JsValue,name:&'static str)->R<f64>{let next=num(&state(s,name))+1.0;put(s,name,&n(next))?;Ok(next)}
+fn bump(s:&JsValue,name:&'static str)->R<f64>{let next=num(&state(s,name))+1.0;putn(s,name,next)?;Ok(next)}
 
 /// A cover laminate (clearcoat above the printed image) and, once relief is armed, the thinnest clearcoat
 /// that keeps its program from the start: raising varnish later only changes uniforms and textures.
 fn laminate(s:&JsValue,value:&JsValue)->R<()>{
  let cover=state(s,"cover");
  apply_finish(&cover,finish(&state(s,"host"),value,&word("satin"))?,"cover",false)?;
- if truthy(&state(s,"reliefArmed"))&&!truthy(&get(&cover,"clearcoat")){put(&cover,"clearcoat",&n(0.001))?;}
+ if truthy(&state(s,"reliefArmed"))&&!truthy(&get(&cover,"clearcoat")){putn(&cover,"clearcoat",0.001)?;}
  Ok(())
 }
 /// Neutral 1x1 maps: clearcoat x1, roughness x1, metalness 0, flat normal.
@@ -249,13 +304,13 @@ pub fn book_model_relief_uniforms(s:&JsValue)->R<()>{
  let strength=||->R<JsValue>{if truthy(&read(&wanted,"layers")?){Ok(n(1.0))}else{read(&wanted,"strength")}};
  put(&read(&state(s,"reliefUniforms"),"bookReliefStrength")?,"value",&if active{strength()?}else{n(0.0)})?;
  if !active{
-  put(&cover,"metalness",&n(0.0))?;call(&read(&cover,"clearcoatNormalScale")?,"set",&[&n(1.0),&n(1.0)])?;
+  putn(&cover,"metalness",0.0)?;call(&read(&cover,"clearcoatNormalScale")?,"set",&[&n(1.0),&n(1.0)])?;
   if truthy(&state(s,"reliefArmed")){laminate(s,&state(s,"coverFinishValue"))?;}
   return Ok(());
  }
  // Varnish is a dielectric layer over unchanged printed ink: colour selection never implies a metal.
  // Multicolour intensities are already in the pixels: a global scalar must not attenuate them.
- put(&cover,"clearcoat",&n(1.0))?;put(&cover,"metalness",&n(0.0))?;
+ putn(&cover,"clearcoat",1.0)?;putn(&cover,"metalness",0.0)?;
  call(&read(&cover,"clearcoatNormalScale")?,"setScalar",&[&n(3.5*num(&strength()?))])?;Ok(())
 }
 /// Commit both relief maps; the previously owned ones are released once.
@@ -310,7 +365,7 @@ pub fn book_model_map_texture(three:&JsValue,rgba:&JsValue,width:&JsValue,height
  let texture=make(three,"DataTexture",&[&bytes,width,height])?;
  put(&texture,"flipY",&JsValue::TRUE)?;
  put(&texture,"magFilter",&read(three,"LinearFilter")?)?;put(&texture,"minFilter",&read(three,"LinearMipmapLinearFilter")?)?;
- put(&texture,"generateMipmaps",&JsValue::TRUE)?;put(&texture,"anisotropy",&n(4.0))?;put(&texture,"needsUpdate",&JsValue::TRUE)?;
+ put(&texture,"generateMipmaps",&JsValue::TRUE)?;putn(&texture,"anisotropy",4.0)?;put(&texture,"needsUpdate",&JsValue::TRUE)?;
  Ok(texture)
 }
 
@@ -338,23 +393,23 @@ fn dimension(of:&JsValue,key:&'static str,fallback:&'static str)->R<f64>{
 #[wasm_bindgen]
 pub fn book_model_page_snapshot(s:&JsValue,snapshot:&JsValue,options:&JsValue)->R<bool>{
  let (initial,redraw)=if options.is_undefined(){(JsValue::UNDEFINED,true)}else{
-  let theme=read(options,"pageTheme")?;let redraw=read(options,"redraw")?;(theme,redraw.is_undefined()||truthy(&redraw))};
+  let theme=bread(options,"pageTheme")?;let redraw=bread(options,"redraw")?;(theme,redraw.is_undefined()||truthy(&redraw))};
  if truthy(&state(s,"disposed"))||!truthy(&opt(snapshot,"source")){return Ok(false);}
  let (host,three)=(state(s,"host"),state(s,"three"));
  let image_width=dimension(snapshot,"width","naturalWidth")?;
  let image_height=dimension(snapshot,"height","naturalHeight")?;
  if !(image_width>0.0&&image_height>0.0){return Ok(false);}
- let variant=if truthy(&opt(&read(snapshot,"paper")?,"source")){read(snapshot,"paper")?}else{JsValue::NULL};
+ let variant=if truthy(&opt(&bread(snapshot,"paper")?,"source")){bread(snapshot,"paper")?}else{JsValue::NULL};
  let same=truthy(&variant)&&dimension(&variant,"width","")?==image_width&&dimension(&variant,"height","")?==image_height;
- let theme_raster=call(&host,"pageRaster",&[&read(snapshot,"source")?])?;
- let stock_raster=if same{call(&host,"pageRaster",&[&read(&variant,"source")?])?}else{JsValue::FALSE};
+ let theme_raster=call(&host,"pageRaster",&[&bread(snapshot,"source")?])?;
+ let stock_raster=if same{call(&host,"pageRaster",&[&bread(&variant,"source")?])?}else{JsValue::FALSE};
  // Fresh copies of one settled render contain identical pixels: keep the uploaded textures and
  // geometry; bounds and locator metadata still come from this snapshot. Unknown copies rebuild.
  let installed=state(s,"installedRaster");
  let user=read(&state(s,"group"),"userData")?;
  if truthy(&theme_raster)&&truthy(&stock_raster)&&!absent(&installed)&&get(&installed,"theme")==theme_raster
   &&get(&installed,"stock")==stock_raster&&get(&installed,"width")==n(image_width)&&get(&installed,"height")==n(image_height){
-  if !absent(&initial){put(s,"pageTheme",&n(theme_of(&initial)))?;}
+  if !absent(&initial){putn(s,"pageTheme",theme_of(&initial))?;}
   call(&host,"applyPageTheme",&[s])?;
   put(&user,"pageSnapshot",snapshot)?;
   if redraw{invalidate(s)?;}
@@ -365,24 +420,24 @@ pub fn book_model_page_snapshot(s:&JsValue,snapshot:&JsValue,options:&JsValue)->
  let fit=call(&host,"fit",&[&n(image_width),&n(image_height),&state(s,"pageWidth"),&state(s,"pageHeight")])?;
  call(&read(&page_image,"geometry")?,"dispose",&[])?;
  put(&page_image,"geometry",&make(&three,"PlaneGeometry",&[&read(&fit,"width")?,&read(&fit,"height")?])?)?;
- let map=page_texture(&three,&read(snapshot,"source")?)?;
+ let map=page_texture(&three,&bread(snapshot,"source")?)?;
  call_opt(&get(&page_material,"map"),"dispose",&[])?;put(&page_material,"map",&map)?;put(&page_material,"needsUpdate",&JsValue::TRUE)?;
  put(&page_image,"visible",&JsValue::TRUE)?;
  // The stock variant must be the same page: same canvas size.
  call_opt(&get(&stock_material,"map"),"dispose",&[])?;
  if same{
   call(&read(&stock_image,"geometry")?,"dispose",&[])?;put(&stock_image,"geometry",&call(&read(&page_image,"geometry")?,"clone",&[])?)?;
-  let stock=if truthy(&theme_raster)&&theme_raster==stock_raster{map.clone()}else{page_texture(&three,&read(&variant,"source")?)?};
+  let stock=if truthy(&theme_raster)&&theme_raster==stock_raster{map.clone()}else{page_texture(&three,&bread(&variant,"source")?)?};
   put(&stock_material,"map",&stock)?;put(&stock_material,"needsUpdate",&JsValue::TRUE)?;
   put(&stock_image,"visible",&JsValue::TRUE)?;
  }else{
   put(&stock_material,"map",&blank_page_map(&three)?)?;
-  put(&stock_image,"visible",&JsValue::FALSE)?;put(&page_material,"opacity",&n(1.0))?;
+  put(&stock_image,"visible",&JsValue::FALSE)?;putn(&page_material,"opacity",1.0)?;
  }
- if !absent(&initial){put(s,"pageTheme",&n(theme_of(&initial)))?;}
+ if !absent(&initial){putn(s,"pageTheme",theme_of(&initial))?;}
  // Match the reader's snapshot; ordinary unthemed book paper stays white.
- let theme_tone=call(&host,"paperTone",&[&read(snapshot,"source")?,&read(snapshot,"toneKey")?])?;put(s,"themeTone",&theme_tone)?;
- let stock_tone=if same{call(&host,"paperTone",&[&read(&variant,"source")?,&read(&variant,"toneKey")?])?}else{JsValue::NULL};
+ let theme_tone=call(&host,"paperTone",&[&bread(snapshot,"source")?,&bread(snapshot,"toneKey")?])?;put(s,"themeTone",&theme_tone)?;
+ let stock_tone=if same{call(&host,"paperTone",&[&bread(&variant,"source")?,&bread(&variant,"toneKey")?])?}else{JsValue::NULL};
  put(s,"stockTone",&stock_tone)?;
  if truthy(&get(&stock_image,"visible")){call(&host,"applyPageTheme",&[s])?;}
  else if truthy(&theme_tone){page_tone_copy(s,&theme_tone)?;}
@@ -405,7 +460,7 @@ pub fn book_model_page_textures(s:&JsValue)->R<JsValue>{
 /// Install a cover map: the renderer's sampling quality, the previous map released.
 fn replace_map(s:&JsValue,map:&JsValue,bounds:&JsValue)->R<()>{
  put(s,"coverImageBounds",&if bounds.is_undefined(){JsValue::NULL}else{bounds.clone()})?;put(s,"coverMaskSource",&JsValue::NULL)?;
- put(map,"anisotropy",&n(jmin(16.0,num(&call(&state(s,"host"),"anisotropy",&[])?))))?;
+ putn(map,"anisotropy",jmin(16.0,num(&call(&state(s,"host"),"anisotropy",&[])?)))?;
  let cover=state(s,"cover");
  call_opt(&get(&cover,"map"),"dispose",&[])?;put(&cover,"map",map)?;put(&cover,"needsUpdate",&JsValue::TRUE)
 }
@@ -446,8 +501,8 @@ pub fn book_model_cover_raster(s:&JsValue,image:&JsValue,dimensions:&JsValue,boo
  let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
  put(&canvas,"height",&read(dimensions,"height")?)?;put(&canvas,"width",&read(dimensions,"width")?)?;
  let c=call(&canvas,"getContext",&[&word("2d")])?;
- put(&c,"fillStyle",&read(style,"color")?)?;call(&c,"fillRect",&[&n(0.0),&n(0.0),&get(&canvas,"width"),&get(&canvas,"height")])?;
- let fit=call(&host,"fit",&[&read(image,"width")?,&read(image,"height")?,&get(&canvas,"width"),&get(&canvas,"height")])?;
+ put(&c,"fillStyle",&bread(style,"color")?)?;call(&c,"fillRect",&[&n(0.0),&n(0.0),&get(&canvas,"width"),&get(&canvas,"height")])?;
+ let fit=call(&host,"fit",&[&bread(image,"width")?,&bread(image,"height")?,&get(&canvas,"width"),&get(&canvas,"height")])?;
  put(&c,"imageSmoothingEnabled",&JsValue::TRUE)?;put(&c,"imageSmoothingQuality",&word("high"))?;
  call(&c,"drawImage",&[image,&read(&fit,"x")?,&read(&fit,"y")?,&read(&fit,"width")?,&read(&fit,"height")?])?;
  // A printed jacket is still paper over board: joint, edges, corners.
@@ -467,9 +522,9 @@ pub fn book_model_cover_image(s:&JsValue,revision:f64,book:&JsValue,style:&JsVal
  let attempt=||->R<()>{
   let host=state(s,"host");let level=state(s,"level");
   let is=|name:&str|level.as_string().is_some_and(|level|level==name);
-  let dimensions=crate::book_model_policy::book_cover_raster_size(read(style,"coverRatio")?,num(&state(s,"textureHeight")),num(&state(s,"maxTextureDimension")))?;
+  let dimensions=crate::book_model_policy::book_cover_raster_size(bread(style,"coverRatio")?,num(&state(s,"textureHeight")),num(&state(s,"maxTextureDimension")))?;
   let key=Array::new();
-  for value in[read(&dimensions,"width")?,read(&dimensions,"height")?,read(book,"id")?,read(book,"title")?,read(style,"color")?,b(is("overview"))]{key.push(&value);}
+  for value in[read(&dimensions,"width")?,read(&dimensions,"height")?,bread(book,"id")?,bread(book,"title")?,bread(style,"color")?,b(is("overview"))]{key.push(&value);}
   let key=js_sys::JSON::stringify(&key)?;
   let build=own(s,"book_model_cover_raster",&[image,&dimensions,book,style])?;
   let raster=call(&host,"reuse",&[&if is("detail"){entry.clone()}else{JsValue::NULL},&key,&build])?;
@@ -484,7 +539,7 @@ pub fn book_model_cover_image(s:&JsValue,revision:f64,book:&JsValue,style:&JsVal
 pub fn book_model_cover_source(s:&JsValue,url:&JsValue,book:&JsValue,style:&JsValue,options:&JsValue)->R<JsValue>{
  let book=if book.is_undefined(){state(s,"book")}else{book.clone()};
  let style=if style.is_undefined(){state(s,"style")}else{style.clone()};
- let force=if options.is_undefined(){false}else{truthy(&read(options,"force")?)};
+ let force=if options.is_undefined(){false}else{truthy(&bread(options,"force")?)};
  let user=read(&state(s,"group"),"userData")?;
  if truthy(&state(s,"disposed")){return Ok(Promise::resolve(&JsValue::FALSE).into());}
  if !force&&truthy(url)&&*url==state(s,"currentCoverUrl"){return read(&user,"ready");}
@@ -540,7 +595,7 @@ fn ribbon_mesh(s:&JsValue)->R<()>{
  let geometry=call(&state(s,"host"),"bookmark",&[&state(s,"width"),&state(s,"height"),&state(s,"thickness"),
   &read(&bookmark,"progress")?,&read(&bookmark,"peek")?,&options])?;
  let mesh=make(&state(s,"three"),"Mesh",&[&geometry,&material])?;
- put(&mesh,"renderOrder",&n(4.0))?;put(&mesh,"name",&word("reading-bookmark"))?;
+ putn(&mesh,"renderOrder",4.0)?;put(&mesh,"name",&word("reading-bookmark"))?;
  put(s,"ribbonMesh",&mesh)?;
  call(&state(s,"group"),"add",&[&mesh])?;Ok(())
 }
@@ -551,8 +606,8 @@ fn leaf_depth(s:&JsValue)->R<f64>{
 }
 fn leaf_options(s:&JsValue)->R<JsValue>{object(&[("board",state(s,"board")),("inset",state(s,"inset"))])}
 fn cap_finish(s:&JsValue,material:&JsValue,book:&JsValue)->R<()>{
- let finish=finish(&state(s,"host"),&read(book,"spineSurfaceFinish")?,&word("matte"))?;
- let metal=read(book,"spineFinish")?.as_string().is_some_and(|f|f=="gold")||read(book,"spineFinish")?.as_string().is_some_and(|f|f=="silver");
+ let finish=finish(&state(s,"host"),&bread(book,"spineSurfaceFinish")?,&word("matte"))?;
+ let metal=bread(book,"spineFinish")?.as_string().is_some_and(|f|f=="gold")||bread(book,"spineFinish")?.as_string().is_some_and(|f|f=="silver");
  apply_finish(material,finish,"cap",metal)
 }
 #[wasm_bindgen]
@@ -584,14 +639,14 @@ pub fn book_model_spine_appearance(s:&JsValue,book:&JsValue,style:&JsValue)->R<(
  call(&read(&mesh,"geometry")?,"dispose",&[])?;
  let geometry=call(&host,"binding",&[&state(s,"width"),&state(s,"height"),&state(s,"thickness"),&state(s,"bindingSegments"),&read(&surface,"relief")?,&state(s,"reliefRows")])?;
  put(&mesh,"geometry",&geometry)?;
- let color=read(style,"color")?;
+ let color=bread(style,"color")?;
  call(&read(&state(s,"cloth"),"color")?,"set",&[&color])?;
- call(&read(&state(s,"insideCover"),"color")?,"set",&[&read(style,"color")?])?;
- put(s,"clothColor",&read(style,"color")?)?;
+ call(&read(&state(s,"insideCover"),"color")?,"set",&[&bread(style,"color")?])?;
+ put(s,"clothColor",&bread(style,"color")?)?;
  let ribbon=state(s,"ribbonMaterial");
  if truthy(&ribbon){tint(s,&ribbon,silk(s)?,!truthy(&state(s,"detail")))?;}
  for material in Array::from(&state(s,"capMaterials")).iter(){
-  call(&read(&material,"color")?,"set",&[&read(style,"color")?])?;
+  call(&read(&material,"color")?,"set",&[&bread(style,"color")?])?;
   cap_finish(s,&material,book)?;
  }
  Ok(())
@@ -599,15 +654,15 @@ pub fn book_model_spine_appearance(s:&JsValue,book:&JsValue,style:&JsValue)->R<(
 #[wasm_bindgen]
 pub fn book_model_cover_appearance(s:&JsValue,book:&JsValue)->R<()>{
  let host=state(s,"host");
- let finish_of=|book:&JsValue|->R<JsValue>{call(&host,"surfaceFinish",&[&read(book,"coverFinish")?])};
+ let finish_of=|book:&JsValue|->R<JsValue>{call(&host,"surfaceFinish",&[&bread(book,"coverFinish")?])};
  let changed=finish_of(book)?!=state(s,"coverSurfaceFinish");
  put(s,"coverSurfaceFinish",&finish_of(book)?)?;
- put(s,"coverFinishValue",&read(book,"coverFinish")?)?;
- laminate(s,&read(book,"coverFinish")?)?;
+ put(s,"coverFinishValue",&bread(book,"coverFinish")?)?;
+ laminate(s,&bread(book,"coverFinish")?)?;
  book_model_relief_uniforms(s)?;
  grain_strength(s)?;
  let current=state(s,"wantedRelief");
- let wanted=if Reflect::has(book,&JsValue::from_str(k("coverRelief")))?{call(&host,"normalizeRelief",&[&read(book,"coverRelief")?])?}else{current.clone()};
+ let wanted=if Reflect::has(book,&JsValue::from_str(k("coverRelief")))?{call(&host,"normalizeRelief",&[&bread(book,"coverRelief")?])?}else{current.clone()};
  let selection_changed=JsValue::from(js_sys::JSON::stringify(&wanted)?)!=JsValue::from(js_sys::JSON::stringify(&current)?);
  if selection_changed{call(&read(&state(s,"group"),"userData")?,"setCoverRelief",&[&wanted])?;}
  else if changed&&truthy(&state(s,"reliefMaps")){call(&host,"rebake",&[s,&state(s,"reliefRevision")])?;}
@@ -630,7 +685,7 @@ pub fn book_model_update_bookmark(s:&JsValue,book:&JsValue)->R<()>{
   else{
    // Progress changes the same silk and bends its existing strip: GPU material, alpha and buffers stay.
    let material=state(s,"ribbonMaterial");
-   put(&material,"metalness",&n(if truthy(&read(&bookmark,"finished")?){0.16}else{0.0}))?;
+   putn(&material,"metalness",if truthy(&read(&bookmark,"finished")?){0.16}else{0.0})?;
    tint(s,&material,silk(s)?,!truthy(&state(s,"detail")))?;
   }
   call(&host,"ribbonGeometry",&[s])?;
@@ -647,7 +702,7 @@ pub fn book_model_update_bookmark(s:&JsValue,book:&JsValue)->R<()>{
 }
 #[wasm_bindgen]
 pub fn book_model_edge_appearance(s:&JsValue,book:&JsValue)->R<()>{
- apply_finish(&state(s,"edges"),finish(&state(s,"host"),&read(book,"pageEdgeFinish")?,&word("satin"))?,"paper",false)
+ apply_finish(&state(s,"edges"),finish(&state(s,"host"),&bread(book,"pageEdgeFinish")?,&word("satin"))?,"paper",false)
 }
 
 // ---- construction ------------------------------------------------------------------------------------
@@ -688,7 +743,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
   ("level",level.clone()),("ratio",n(ratio)),("textureHeight",texture_height),("maxTextureDimension",max_texture),
   ("bindingSegments",binding_segments.clone()),("reliefRows",relief_rows.clone()),("ribbonSegments",ribbon_segments),
   ("ribbonSeed",n(ribbon_seed)),("disposed",JsValue::FALSE)]{put(&s,key,&value)?;}
- let cloth=make(&three,"MeshStandardMaterial",&[&object(&[("color",read(style,"color")?),("roughness",n(0.86))])?])?;
+ let cloth=make(&three,"MeshStandardMaterial",&[&object(&[("color",bread(style,"color")?),("roughness",n(0.86))])?])?;
  put(&s,"cloth",&cloth)?;
  reflect(host,&cloth,&[("seed",JsValue::from(format!("{surface_seed}|back"))),("strength",n(0.018))])?;
  let surface=call(host,"spine",&[book,style,height,thickness,shelf,overview,&inspection])?;
@@ -706,10 +761,10 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  put(&s,"cover",&cover)?;
  // The clearcoat + relief program is costly to shade: views that only fly a book skip it unless the cover
  // already has a relief; shelf books keep cheap materials until a relief is selected.
- let armed=((detail||truthy(&inspection))&&truthy(eager))||truthy(&read(book,"coverRelief")?);
+ let armed=((detail||truthy(&inspection))&&truthy(eager))||truthy(&bread(book,"coverRelief")?);
  put(&s,"reliefArmed",&b(armed))?;
- put(&s,"coverFinishValue",&read(book,"coverFinish")?)?;
- laminate(&s,&read(book,"coverFinish")?)?;
+ put(&s,"coverFinishValue",&bread(book,"coverFinish")?)?;
+ laminate(&s,&bread(book,"coverFinish")?)?;
  // Keep the broad studio reflection from washing out printed ink at an oblique angle.
  reflect(host,&cover,&[("seed",JsValue::from(format!("{surface_seed}|cover"))),("strength",n(0.018)),("environmentReflection",n(0.75))])?;
  put(&s,"reliefUniforms",&call(host,"installRelief",&[&cover])?)?;
@@ -717,15 +772,15 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  if armed{put(&s,"reliefArmed",&JsValue::FALSE)?;book_model_arm_relief(&s)?;}
  // 224 threads per board height: below ~3 device pixels a thread the weave fades to a quiet tooth.
  let weave=crate::book_surface_policy::book_weave_strength(h,pixel_ratio());
- put(&s,"weaveStrength",&n(weave))?;
+ putn(&s,"weaveStrength",weave)?;
  if detail||truthy(&inspection){
   put(&cloth,"normalMap",&shared(word("cloth"),&read(host,"clothNormals")?)?)?;
   call(&read(&read(&cloth,"normalMap")?,"repeat")?,"set",&[&n(14.0*ratio),&n(14.0)])?;
   call(&read(&cloth,"normalScale")?,"setScalar",&[&n(0.5*weave)])?;
  }
  put(&s,"coverGrain",&JsValue::NULL)?;
- put(&s,"coverSurfaceFinish",&call(host,"surfaceFinish",&[&read(book,"coverFinish")?])?)?;
- let board=h*0.007;put(&s,"board",&n(board))?;
+ put(&s,"coverSurfaceFinish",&call(host,"surfaceFinish",&[&bread(book,"coverFinish")?])?)?;
+ let board=h*0.007;putn(&s,"board",board)?;
  let front_cover=make(&three,"Group",&[])?;
  named(&front_cover,"front-cover-hinge")?;
  // Rotate around the board's binding edge, not the page block's centre.
@@ -734,7 +789,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  // Both boards and both ends of the binding, each array built once.
  let parts=case_parts(width,height,board,truthy(shelf),truthy(overview),thickness,num(&binding_segments),if truthy(overview){0.0}else{board*1.1})?;
  // Inside of the board: the cloth turns in over its edges, the endpaper is pasted down over the rest.
- let inside=make(&three,"MeshStandardMaterial",&[&object(&[("color",read(style,"color")?),("roughness",n(0.9))])?])?;
+ let inside=make(&three,"MeshStandardMaterial",&[&object(&[("color",bread(style,"color")?),("roughness",n(0.9))])?])?;
  put(&inside,"visible",&JsValue::FALSE)?;put(&s,"insideCover",&inside)?;
  let front_geometry=parts.board(&three,true)?;
  let front_materials=list(&[&cover,&cloth,&inside]);put(&s,"frontMaterials",&front_materials)?;
@@ -752,18 +807,18 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  let endpaper_map=get(&endpaper,"map");
  if !absent(&endpaper_map){call(&read(&endpaper_map,"repeat")?,"set",&[&n(3.0*paste_width/paste_height),&n(3.0)])?;}
  let pastedown=mesh(&three,&paste_geometry,&endpaper)?;
- named(&pastedown,"endpaper")?;put(&read(&pastedown,"rotation")?,"y",&n(PI))?;put(&pastedown,"visible",&JsValue::FALSE)?;
+ named(&pastedown,"endpaper")?;putn(&read(&pastedown,"rotation")?,"y",PI)?;put(&pastedown,"visible",&JsValue::FALSE)?;
  set3(&pastedown,"position",-w/2.0+joint+paste_width/2.0,0.0,-board*0.54)?;
  add(&front_board,&pastedown)?;put(&s,"pastedown",&pastedown)?;
  // One material for face and edges: a single draw call per back board.
  let back_board=mesh(&three,&parts.board(&three,false)?,&cloth)?;
- named(&back_board,"back-cover")?;put(&read(&back_board,"position")?,"z",&n(-t/2.0+board/2.0))?;
+ named(&back_board,"back-cover")?;putn(&read(&back_board,"position")?,"z",-t/2.0+board/2.0)?;
  add(&group,&back_board)?;
- let inset=h*0.009;put(&s,"inset",&n(inset))?;
+ let inset=h*0.009;putn(&s,"inset",inset)?;
  let (edges,page_block)=if truthy(overview){
   // A thumbnail keeps a plain block and one tiny owned raster.
   let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
-  put(&canvas,"height",&n(32.0))?;put(&canvas,"width",&n(32.0))?;
+  putn(&canvas,"height",32.0)?;putn(&canvas,"width",32.0)?;
   crate::book_paint::book_thumbnail_pages(call(&canvas,"getContext",&[&word("2d")])?.unchecked_ref::<Canvas2d>());
   let map=make(&three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(&three,"SRGBColorSpace")?)?;
   let edges=make(&three,"MeshPhysicalMaterial",&[&object(&[("map",map),("roughness",n(1.0))])?])?;
@@ -781,17 +836,17 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
   (edges,block)
  };
  put(&s,"edges",&edges)?;
- apply_finish(&edges,finish(host,&read(book,"pageEdgeFinish")?,&word("satin"))?,"paper",false)?;
+ apply_finish(&edges,finish(host,&bread(book,"pageEdgeFinish")?,&word("satin"))?,"paper",false)?;
  named(&page_block,"page-block")?;
  let (page_width,page_height)=(w-inset*2.0,h-inset*2.0);
- put(&s,"pageWidth",&n(page_width))?;put(&s,"pageHeight",&n(page_height))?;
+ putn(&s,"pageWidth",page_width)?;putn(&s,"pageHeight",page_height)?;
  let page_front=t/2.0-board*1.2+board*0.03;
  // The paper runs on into the joint, where the leaf bends down into shade.
  let paper_geometry=book_paper_mesh(&three,&read(&paper_buffers,"paper")?)?;
  let page_paper=mesh(&three,&paper_geometry,&make(&three,"MeshBasicMaterial",&[&object(&[("color",word("#ffffff")),("toneMapped",JsValue::FALSE),("vertexColors",JsValue::TRUE)])?])?)?;
  set3(&page_paper,"position",inset*0.3-inset/2.0,0.0,page_front)?;
  // Fill depth with the opaque paper before shading the case beneath it.
- put(&page_paper,"renderOrder",&n(-2.0))?;put(&page_paper,"visible",&JsValue::FALSE)?;
+ putn(&page_paper,"renderOrder",-2.0)?;put(&page_paper,"visible",&JsValue::FALSE)?;
  named(&page_paper,"reading-page-paper")?;add(&group,&page_paper)?;put(&s,"pagePaper",&page_paper)?;
  // The saved rasters stay resident for reopening, hidden behind the closed board by their common parent.
  let page_print=make(&three,"Group",&[])?;
@@ -810,7 +865,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  let stock_image=mesh(&three,&make(&three,"PlaneGeometry",&[&n(page_width),&n(page_height)])?,&stock_material)?;
  named(&stock_image,"reading-page-stock")?;
  set3(&stock_image,"position",inset*0.3,0.0,page_front+board*0.01)?;
- put(&stock_image,"renderOrder",&n(-1.0))?;put(&stock_image,"visible",&JsValue::FALSE)?;add(&page_print,&stock_image)?;
+ putn(&stock_image,"renderOrder",-1.0)?;put(&stock_image,"visible",&JsValue::FALSE)?;add(&page_print,&stock_image)?;
  put(&s,"stockMaterial",&stock_material)?;put(&s,"stockImage",&stock_image)?;
  for(key,value)in[("pageTheme",n(1.0)),("themeTone",JsValue::NULL),("stockTone",JsValue::NULL),("installedRaster",JsValue::NULL),
   ("paperScratch",make(&three,"Color",&[])?)]{put(&s,key,&value)?;}
@@ -820,7 +875,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  put(&user,"setPageSnapshot",&own(&s,"book_model_page_snapshot",&[])?)?;
  let bookmark=call(host,"bookmarkFor",&[book])?;
  for(key,value)in[("bookmark",bookmark.clone()),("ribbonMaterial",JsValue::NULL),("ribbonMesh",JsValue::NULL),("coverOpening",n(0.0)),
-  ("bookmarkWithdraw",n(0.0)),("clothColor",read(style,"color")?)]{put(&s,key,&value)?;}
+  ("bookmarkWithdraw",n(0.0)),("clothColor",bread(style,"color")?)]{put(&s,key,&value)?;}
  if truthy(&bookmark){ribbon_mesh(&s)?;}
  // Lifted copies only: the leaves already read turn over with the board. Text paper is cooler and
  // smoother than the endpaper and, like the saved page beside it, skips tone mapping.
@@ -844,14 +899,14 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  named(&binding_mesh,"binding")?;add(&group,&binding_mesh)?;put(&s,"bindingMesh",&binding_mesh)?;
  let cap_materials=Array::new();put(&s,"capMaterials",&cap_materials)?;
  for y in[-h/2.0,h/2.0]{
-  let material=make(&three,"MeshPhysicalMaterial",&[&object(&[("color",read(style,"color")?),("side",read(&three,"DoubleSide")?)])?])?;
+  let material=make(&three,"MeshPhysicalMaterial",&[&object(&[("color",bread(style,"color")?),("side",read(&three,"DoubleSide")?)])?])?;
   cap_finish(&s,&material,book)?;
   let end=if y<0.0{"tail"}else{"head"};
   reflect(host,&material,&[("seed",JsValue::from(format!("{surface_seed}|{end}"))),("strength",n(0.01)),("uvScale",list(&[&n(1.0/w),&n(1.0/t)]))])?;
   let cap=mesh(&three,&parts.cap(&three)?,&material)?;
   named(&cap,if y<0.0{"binding-tail-cap"}else{"binding-head-cap"})?;
   cap_materials.push(&read(&cap,"material")?);
-  put(&read(&cap,"rotation")?,"x",&n(PI/2.0))?;put(&read(&cap,"position")?,"y",&n(y))?;add(&group,&cap)?;
+  putn(&read(&cap,"rotation")?,"x",PI/2.0)?;putn(&read(&cap,"position")?,"y",y)?;add(&group,&cap)?;
  }
  let noop=read(host,"noop")?;
  for(key,value)in[("coverRevision",n(0.0)),("currentCoverUrl",JsValue::UNDEFINED),("releaseImage",noop.clone()),("resolveCoverReady",noop),
@@ -866,7 +921,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  put(&user,"setCoverRelief",&hosted(&s,"setCoverRelief")?)?;
  put(&user,"updateCoverSource",&own(&s,"book_model_cover_source",&[])?)?;
  book_model_cover_source(&s,cover_url,&JsValue::UNDEFINED,&JsValue::UNDEFINED,&JsValue::UNDEFINED)?;
- if truthy(&read(book,"coverRelief")?){call(&user,"setCoverRelief",&[&read(book,"coverRelief")?])?;}
+ if truthy(&bread(book,"coverRelief")?){call(&user,"setCoverRelief",&[&bread(book,"coverRelief")?])?;}
  // Only a download still in flight (or one that already failed) needs the generated case meanwhile.
  if !truthy(&get(&cover,"map")){
   put(&cover,"map",&cover_texture(host,&three,book,style,num(&state(&s,"textureHeight")),num(&state(&s,"maxTextureDimension")),&level)?)?;
@@ -875,7 +930,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  put(&user,"dispose",&own(&s,"book_model_dispose",&[])?)?;
  put(&user,"updateSpineAppearance",&own(&s,"book_model_spine_appearance",&[])?)?;
  put(&user,"updateCoverAppearance",&own(&s,"book_model_cover_appearance",&[])?)?;
- put(&s,"ribbonBatch",&n(0.0))?;put(&s,"ribbonDirty",&JsValue::FALSE)?;
+ putn(&s,"ribbonBatch",0.0)?;put(&s,"ribbonDirty",&JsValue::FALSE)?;
  put(&user,"setCoverOpen",&hosted(&s,"coverOpen")?)?;
  put(&user,"setBookmarkWithdraw",&hosted(&s,"bookmarkWithdraw")?)?;
  put(&user,"setMotionPose",&hosted(&s,"motionPose")?)?;

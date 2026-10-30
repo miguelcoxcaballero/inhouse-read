@@ -1,5 +1,5 @@
 // Drive tools/bench/book-model.html in headless Chromium (SwiftShader) against a running `npx vite`:
-//   node tools/bench/run-book-model-bench.mjs <port> [--cpu 4] [--books 60] [--rounds 5] [--profile] [--motion]
+//   node tools/bench/run-book-model-bench.mjs <port> [--cpu 4] [--books 60] [--rounds 5] [--profile] [--motion] [--reference]
 // Prints JSON lines: creation time of shelf models (sync part of createBookModel), and the CPU cost
 // of bookView.draw during one opening (with and without the GPU draw itself).
 import { chromium } from 'playwright';
@@ -15,7 +15,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
 page.on('pageerror', error => console.error('pageerror', error.message));
-await page.goto(`http://127.0.0.1:${port}/inhouse-read/tools/bench/book-model.html`);
+await page.goto(`http://127.0.0.1:${port}/inhouse-read/tools/bench/book-model.html${args.includes('--reference') ? '?reference' : ''}`);
 await page.waitForFunction(() => window.benchReady, null, { timeout: 60000 });
 await page.evaluate(() => window.benchReady.then(() => true));
 const cdp = await page.context().newCDPSession(page);
@@ -141,6 +141,38 @@ if (args.includes('--case')) {
     return out;
   }, books);
   console.log(JSON.stringify({ bench:`case geometry of ${books} books`, cpu, ...result }));
+}
+
+if (args.includes('--model-compare')) {
+  // createBookModel: the frozen JavaScript assembly (tests/unit/helpers/reference-book-model.js) against the
+  // shelf module's (rust-ui/src/book_model_build.rs), interleaved round by round in one page.
+  const result = await page.evaluate(async ([count, rounds]) => {
+    const { model } = await window.benchReady;
+    const reference = await import('/inhouse-read/tests/unit/helpers/reference-book-model.js');
+    const list = window.benchBooks(count);
+    const run = (module, options, books) => {
+      const made = [], start = performance.now();
+      for (const entry of books) made.push(module.createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, null, options));
+      const elapsed = performance.now() - start;
+      for (const group of made) group.userData.dispose();
+      return elapsed;
+    };
+    const out = {};
+    for (const [name, options, books] of [['shelf', { shelf:true }, list], ['overview', { shelf:true, overview:true }, list], ['lifted', { eagerRelief:false }, list.slice(0, 8)]]) {
+      run(reference, options, books.slice(0, 4)); run(model, options, books.slice(0, 4));
+      const times = { js:[], rust:[] };
+      for (let round = 0; round < rounds; round++) {
+        if (round % 2) { times.rust.push(run(model, options, books)); times.js.push(run(reference, options, books)); }
+        else { times.js.push(run(reference, options, books)); times.rust.push(run(model, options, books)); }
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+      for (const key of ['js', 'rust']) times[key].sort((a, b) => a - b);
+      const mid = Math.floor(rounds / 2);
+      out[name] = { books:books.length, jsMedianMs:+times.js[mid].toFixed(1), rustMedianMs:+times.rust[mid].toFixed(1), jsMinMs:+times.js[0].toFixed(1), rustMinMs:+times.rust[0].toFixed(1) };
+    }
+    return out;
+  }, [books, rounds]);
+  console.log(JSON.stringify({ bench:'createBookModel frozen JS vs Rust assembly', cpu, ...result }));
 }
 
 if (args.includes('--shaders')) {
