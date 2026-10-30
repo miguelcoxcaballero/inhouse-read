@@ -73,7 +73,9 @@ function run(create, fail, cached, chunk, preserve) {
 }
 const env = rendererEnvironments => ({ THREE:world.three, ...world.hooks, needRustShelf:() => rustShelf, rendererEnvironments })
 
-beforeEach(() => { globalThis.WebGLRenderingContext = function WebGLRenderingContext() {} })
+const withWebGL = () => { globalThis.WebGLRenderingContext = function WebGLRenderingContext() {} }
+withWebGL()
+beforeEach(withWebGL)
 
 describe('the studio renderer set-up in Rust against the frozen JavaScript', () => {
   const full = run(preserve => reference(env(new WeakMap()), preserve), -1, null, chunks[0], false).steps

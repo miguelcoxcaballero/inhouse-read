@@ -31,6 +31,8 @@ vi.mock('three', async importOriginal => {
   }
   return { ...THREE, WebGLRenderer:Renderer, PMREMGenerator:PMREM };
 });
+// The studio is built by the shelf module (rust-ui/src/studio_environment.rs): hand the reset app the real one.
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock());
 
 beforeEach(() => {
   vi.resetModules(); gpu.renderers.length = 0; gpu.environments.length = 0; gpu.failPMREM = false;

@@ -134,7 +134,7 @@ async function listenerScript(implementation, seed) {
     applyCloudSettings:keys => { log.push(['settings', keys]) }
   })
   host.driveActions = { state:app, document:host.document, online:() => chance(.8), hasDriveSession:() => chance(.5),
-    getRememberedDriveProfile:() => null, cancelDrivePoll:timer => { log.push(['cancelPoll', timer]); clearTimeout(timer) },
+    getRememberedDriveProfile:() => null, cancelDrivePoll:timer => { log.push(['cancelPoll', timer === null ? null : typeof timer]); clearTimeout(timer) },
     armDrivePoll:(generation, delay) => { log.push(['armPoll', generation, delay]); return setTimeout(() => {}, delay) } }
   w.env.bookDataModule = () => rustShelf
   Object.assign(w.env, { profileView:host.profileView, releaseShelfSoundPreference:host.releaseShelfSoundPreference, readingStreak:host.readingStreak,
