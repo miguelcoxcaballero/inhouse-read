@@ -3,7 +3,9 @@ import {expect,it} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
 import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
-import {createSceneEntryFrame,ENTRY_INPUT,ENTRY_OUTPUT} from '../../src/js/scene-entry-frame.js';
+import {createSceneProjectionFrame} from '../../src/js/scene-projection-frame.js';
+import {createSceneProjectionFrame as perEntryProjection} from './helpers/scene-frame-per-entry.js';
+import {createSceneEntryFrame,ENTRY_INPUT,ENTRY_OUTPUT,HIT_INPUT,HIT_OUTPUT} from '../../src/js/scene-entry-frame.js';
 
 // The scene's former per-entry path, frozen: the shared-room motion sample as the host wrote it
 // (the same original as scene-motion-frame-wasm.test.js), Object3D#updateMatrix, the room's
@@ -101,6 +103,51 @@ it('gives every entry the bits of the former per-entry sample, matrix, room mult
   for(const flags of [0,1,3,5,7])expect(seen.has(flags)).toBe(true);
   expect(visible).toBeGreaterThan(1000);
  }finally{frame.free();motionFrame.free();scene.free();oldMotion.free();motion.free();oldBridge.free();bridge.free();}
+});
+
+it('takes every button target and style write of the former per-entry hit, after the frame step',()=>{
+ const scene=new rust.RustScene(390,1200,390,180,false,false,0),motionFrame=createSceneMotionFrame(rust,key),frame=createSceneEntryFrame(rust);
+ const before=perEntryProjection(rust),after=createSceneProjectionFrame(rust),motion=new rust.RustRoomMotion(),bridge=new rust.RustRoomTransition();
+ const room=new THREE.Object3D(),surface=new THREE.Object3D(),inverse=new Float64Array([0,0,0,1]),seen=new Set();
+ let entries=Array.from({length:14},(_,i)=>entry(i)),stable=0;
+ try{
+  for(let tick=0;tick<900;tick++){
+   if(tick===300||tick===600)entries=entries.toReversed();
+   if(tick===450)entries=[...entries.slice(0,10),entry(30),entry(31)];
+   if(tick%250===0)scene.setMode(tick%500===0,false,tick*16,0);
+   room.rotation.set(.244,-.524,0);room.scale.setScalar(.62+Math.floor(tick/50)%5*.01);room.updateMatrixWorld(true);
+   scene.beginEntries(tick*16,false,tick%200<100?1:2,inverse,2,tick%140<70?390:800,tick%100<50?0:600,44);
+   motionFrame.prepare(entries,[{bottom:300},{bottom:620},{bottom:940}],390,650);frame.prepare(entries.length);before.prepare(entries);after.prepare(entries);
+   entries.forEach((e,i)=>{
+    e.bits=Math.floor(tick/15+i)%64;const pose=new THREE.Object3D();
+    pose.position.set(i*33-180,-Math.floor(tick/3)%20*5-i*100,3);pose.rotation.set(.1,.2,Math.floor(tick/3)*.002,'ZYX');write(frame,i,e,pose);
+   });
+   frame.step(motionFrame.native,scene,motion,bridge,tick*16,false,room.matrixWorld);
+   const expected=entries.map((e,i)=>{
+    const node=(i+Math.floor(tick/40))%6!==5,kind=e.kind==='plant'?1:e.kind==='lamp'?2:0,under=kind===2&&i%2===0,disabled=(tick+i)%70<10;
+    const reset=(tick+i)%111===0,fresh=kind!==1&&(tick+i)%139===0,placed=i%4===0;
+    surface.position.set(i,2,1);surface.rotation.set(0,i*.1,(Math.floor(tick/7)%9)*.01);surface.updateMatrixWorld(true);
+    frame.refresh();
+    const box=placed?e.box:Float64Array.of(-3,-40-i,-2,3,40,2),out=frame.output.slice(i*ENTRY_OUTPUT,(i+1)*ENTRY_OUTPUT);
+    const matrix=placed?new THREE.Matrix4().fromArray(out,42):surface.matrixWorld;
+    const h=i*HIT_INPUT,v=frame.hitInput;
+    v[h]=node?1|(under?2:0)|(disabled?4:0)|(reset?8:0)|(fresh?16:0)|(placed?32:0):0;v[h+1]=e.bits;v.set(box,h+2);if(!placed)v.set(matrix.elements,h+8);
+    if(!node)return null;
+    const rect={left:out[58],right:out[59],top:out[60],bottom:out[61],width:out[62],height:out[63],closest:out[64]};
+    const dirty=before.hit(scene,i,kind,under,e.bits,disabled,rect,box,matrix,reset,fresh);
+    return [dirty,...bits(before.hitOutput.slice(33,49))];
+   });
+   if(tick%97===0)shelfWasm.memory.grow(1);
+   frame.hits(after.native,scene);
+   entries.forEach((e,i)=>{
+    frame.refresh();const v=frame.hitOutput,h=i*HIT_OUTPUT;
+    if(!expected[i])return;
+    const actual=[v[h],...bits(v.slice(h+1,h+17))];seen.add(actual[0]);if(actual[0]===0)stable++;
+    expect(actual).toEqual(expected[i]);
+   });
+  }
+  expect(stable).toBeGreaterThan(2000);expect(seen.size).toBeGreaterThan(8);
+ }finally{frame.free();motionFrame.free();before.free();after.free();scene.free();motion.free();bridge.free();}
 });
 
 it('releases its arena, refuses use after disposal and holds no host objects',()=>{

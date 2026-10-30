@@ -2,7 +2,7 @@
 import {expect,it} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
-import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
+import {createSceneMotionFrame} from './helpers/scene-frame-per-entry.js';
 
 const key=e=>e.kind==='plant'||e.kind==='lamp'?e.key:e.book?.driveFileId?`book:drive:${e.book.driveFileId}`:null;
 const packet=(poses,sequence,phase='frame',extra={})=>({from:'peer',gesture:'drag',sequence,phase,shelfType:'walnut',poses,...extra});
