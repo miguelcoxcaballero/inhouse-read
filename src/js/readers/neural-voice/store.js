@@ -10,7 +10,6 @@
 // closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
 // The download, the listing and the reads are rust-ui (voice_store.rs); this class keeps the injected browser services.
 import { DEFAULT_VOICE_BASE, neuralVoiceBase, piperVoices } from './catalog.js'
-import { dictionaryNeeded, dictionaryUrl, fetchDictionary } from './dictionary-cache.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 
 export const CACHE_NAME = 'inhouse-neural-voices-v1'
@@ -28,7 +27,6 @@ const defaultSleep = (ms, signal) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => { cleanup(); resolve() }, ms)
   signal?.addEventListener('abort', onAbort, { once: true })
 })
-const companions = { dictionaryNeeded, dictionaryUrl, fetchDictionary }
 
 export class VoiceStore {
   /**
@@ -59,5 +57,5 @@ export class VoiceStore {
    * Downloads a voice into the cache. `onProgress({received,total,fraction})` is called as bytes arrive (total is 0
    * while unknown). Resolves with {bytes}. Rejects with an Error whose `code` is 'offline' | 'http' | 'storage' | 'aborted'.
    */
-  download(piperId, options) { return ui().store_download(this, piperId, options, companions) }
+  download(piperId, options) { return ui().store_download(this, piperId, options) }
 }

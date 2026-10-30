@@ -259,9 +259,10 @@ fn octet_stream(length:Option<f64>)->R{
 }
 /// Downloads a voice into the cache. `onProgress({received,total,fraction})` is called as bytes arrive (total is 0 while
 /// unknown). Resolves with {bytes}. Rejects with an Error whose `code` is 'offline' | 'http' | 'storage' | 'aborted'.
-/// `companions` holds the dictionary helpers of the phonemizer (they also run inside the synthesis worker).
+/// The espeak dictionary a voice needs is fetched through the phonemizer's own verified cache (voice_dictionary.rs, which
+/// also runs inside the synthesis worker).
 #[wasm_bindgen]
-pub async fn store_download(s:JsValue,piper:JsValue,options:JsValue,companions:JsValue)->R{
+pub async fn store_download(s:JsValue,piper:JsValue,options:JsValue)->R{
  let signal=if absent(&options){JsValue::UNDEFINED}else{read(&options,"signal")?};
  let on_progress=if absent(&options){noop()}else{let given=read(&options,"onProgress")?;if given.is_undefined(){noop()}else{given}};
  let name=string(&piper);
@@ -277,7 +278,7 @@ pub async fn store_download(s:JsValue,piper:JsValue,options:JsValue,companions:J
  let parsed=js_sys::JSON::parse(&string(&config_text)).map_err(|cause|failure("http",&format!("{name}: invalid config"),Some(&cause)))?;
  let hebrew=get(&parsed,"phoneme_type")==st("hebrew");
  if t(&companion)&&!hebrew{return Err(failure("http",&format!("{name}: invalid Hebrew config"),None));}
- let dictionary=if hebrew{JsValue::NULL}else{call(&read(&companions,"dictionaryNeeded")?,"dictionaryNeeded",&[&get(&get(&parsed,"espeak"),"voice")])?};
+ let dictionary=if hebrew{JsValue::NULL}else{crate::voice_dictionary::needed(&get(&get(&parsed,"espeak"),"voice"))?};
  let dictionary_size={let size=num(&get(&dictionary,"bytes"));if size.is_nan(){0.0}else{size}};
  let extra=companion_size+dictionary_size;
  let expected=aw(method(&s,"expectedSize",&[&piper,&signal])?).await?;
@@ -304,8 +305,8 @@ pub async fn store_download(s:JsValue,piper:JsValue,options:JsValue,companions:J
   let sink=on_progress.clone();let before=bytes+companion_size;let whole=bytes+extra;
   let callback=Closure::<dyn FnMut(JsValue)>::new(move|progress:JsValue|{let received=num(&get(&progress,"received"));let _=report(&sink,before+received,whole,(before+received)/whole);});
   set(&options,"onProgress",callback.as_ref())?;
-  let url=call(&read(&companions,"dictionaryUrl")?,"dictionaryUrl",&[&method(&s,"dictionaryBase",&[])?,&get(&dictionary,"name")])?;
-  aw(call(&read(&companions,"fetchDictionary")?,"fetchDictionary",&[&url,&options])?).await?;
+  let url=crate::voice_dictionary::url_of(&method(&s,"dictionaryBase",&[])?,&get(&dictionary,"name"))?;
+  aw(crate::voice_dictionary::fetch(&url,&options).into()).await?;
   drop(callback);
  }
  aw(method(&s,"persist",&[])?).await?;

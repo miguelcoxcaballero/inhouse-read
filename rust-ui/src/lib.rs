@@ -124,5 +124,8 @@ mod reader_experience_policy;
 #[cfg(feature = "ui")]
 mod reader_lazy_policy;
 
+#[cfg(any(feature = "ui", feature = "voice"))]
+mod voice_dictionary;
+
 #[cfg(feature = "voice")]
 include!("voice_lib.rs");
