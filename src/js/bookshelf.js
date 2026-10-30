@@ -89,9 +89,8 @@ export const DEFAULT_TEXTS = Object.freeze({
 });
 
 
-// The modules whose functions the shelf module's parts call, and the host's own entries: the lookup table is
-// built from them by rust-ui/src/bookshelf/mount.rs (shelf_env), each entry read when it is used (a module
-// replaced after the shelf was built is still the one called).
+// The modules whose functions the shelf module's parts call, and the host's own entries. The table of entries
+// is rust-ui/src/bookshelf/mount.rs (shelf_env_table).
 const shelfModules = { cozySounds, cloudSettings, storagePolicy, spineStyles, layout, metadataRecords, coverAppearance, bookColors,
   bookTitle, bookModel, coverRelief, shelfZoom, viewGesture, perfMarks, scene, canvasFonts, bookshelfReturn, returnCanvas,
   decorationLayout, rustCore, placementPreview, placementWasm, plantCatalogLazy, shelfTypes, modelLayout, rooftop, plantCatalogData,
@@ -108,6 +107,20 @@ const shelfOwn = {
 };
 let shelfEnv = null;
 
+/** The shelf's lookup table from `table` (`name:module:export` entries): each module entry is read from its
+ * module's namespace when it is used (a module replaced after the shelf was built is still the one called),
+ * each own entry is the host's value. Exported for its differential test. */
+export function createShelfLookup(table, modules = shelfModules, own = shelfOwn) {
+  const env = {};
+  for (const entry of table.split(' ')) {
+    const [name, module, exported] = entry.split(':');
+    if (module === 'own') { env[name] = own[exported]; continue; }
+    if (!modules[module]) throw new TypeError(`renderBookshelf: falta el módulo ${module}`);
+    Object.defineProperty(env, name, { get:Reflect.get.bind(undefined, modules[module], exported), enumerable:true, configurable:true });
+  }
+  return env;
+}
+
 /**
  * Monta la estantería dentro de `container`.
  *
@@ -119,7 +132,7 @@ let shelfEnv = null;
 export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   if (!container) throw new Error('renderBookshelf: falta el contenedor');
   const shelfNative = needRustShelf();
-  shelfEnv ||= shelfNative.shelf_env(shelfModules, shelfOwn);
+  shelfEnv ||= createShelfLookup(shelfNative.shelf_env_table());
   // The set-up (merged options, shared state, frame, view swipe and pinch zoom, plant catalogue, page
   // listeners, first render) and the public handle are rust-ui/src/bookshelf/mount.rs.
   return shelfNative.shelf_handle(shelfNative.shelf_mount(shelfEnv, container, booksOrOptions, maybeOptions, DEFAULT_TEXTS), shelfNative);

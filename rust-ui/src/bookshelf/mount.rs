@@ -1,7 +1,7 @@
 //! renderBookshelf's set-up (formerly the body of bookshelf.js): the merged options, the shared state, the
 //! frame, the view-swipe and pinch-zoom controllers, the plant catalogue, the parts every piece of the screen
 //! shares, the page listeners and the first render, in the original order; also the lookup table of the other
-//! modules' functions (shelf_env) and the public handle (shelf_handle). Every function handed to the host comes from the context's dispatcher, so it costs no handle here
+//! modules' functions (shelf_env_table) and the public handle (shelf_handle). Every function handed to the host comes from the context's dispatcher, so it costs no handle here
 //! and, once the shelf is destroyed, answers as the original's `shelfCtxLive` guards did.
 use std::rc::{Rc,Weak};
 use wasm_bindgen::{prelude::*,JsCast};
@@ -197,23 +197,12 @@ const ENV:&[(&str,&str,&str)]=&[
  ("analyzeCoverRelief","coverRelief","analyzeCoverRelief"),("METAL_COLORS","bookColors","METAL_COLORS"),("COLOR_RELIEF_IDS","coverRelief","COLOR_RELIEF_IDS"),
 ];
 
-/// The shelf's lookup table: every module entry is read from its module's namespace when it is read (a module
-/// replaced after the shelf was built is still the one called; the getter is `Reflect.get` bound to the
-/// namespace and export, so it holds no closure), every own entry is the host's value.
+/// The shelf's lookup table as `name:module:export` entries separated by spaces, in the original order.
+/// bookshelf.js builds the accessors from it (each a `Reflect.get` bound to the namespace and export): built from
+/// here, its 67 property definitions cost about 0.4 ms before the first shelf frame.
 #[wasm_bindgen]
-pub fn shelf_env(modules:JsValue,own:JsValue)->R<JsValue>{
- let env:JsValue=js_sys::Object::new().into();
- let reflect_get=read(&global(),"Reflect").and_then(|reflect|read(&reflect,"get"))?;
- let bind=read(&reflect_get,"bind")?.dyn_into::<js_sys::Function>()?;
- for (name,module,export) in ENV{
-  if *module=="own"{put(&env,name,&read(&own,export)?);continue;}
-  let namespace=read(&modules,module)?;
-  if !namespace.is_object(){return Err(js_sys::TypeError::new(&format!("renderBookshelf: falta el módulo {module}")).into());}
-  let getter=bind.call3(&reflect_get,&JsValue::UNDEFINED,&namespace,&JsValue::from_str(export))?;
-  let descriptor=obj(&[("get",&getter),("enumerable",&JsValue::TRUE),("configurable",&JsValue::TRUE)]);
-  js_sys::Reflect::define_property(env.unchecked_ref(),&JsValue::from_str(name),descriptor.unchecked_ref())?;
- }
- Ok(env)
+pub fn shelf_env_table()->String{
+ ENV.iter().map(|(name,module,export)|format!("{name}:{module}:{export}")).collect::<Vec<_>>().join(" ")
 }
 
 /// The public handle of `renderBookshelf`: `{element, isInteracting, applyRoomPose, prepareCloudRoom, applyLiveRoomMotion,
