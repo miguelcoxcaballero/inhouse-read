@@ -1,6 +1,8 @@
+// The raw voice core's phonemizer ledger as phonemizer.js drove it before the voice module (rust-ui voice_phonemizer.rs
+// now calls the same rust-core/src/phonemizer_runtime.rs directly): it keeps the raw ABI of that ledger under test.
 // Emscripten objects and immutable dictionary bytes stay in their host heaps.
 // Only explicit phonemizer creation requests the small voice-domain planner.
-import {requireRustVoiceCore} from '../../rust-voice-core.js'
+import {requireRustVoiceCore} from '../../../src/js/rust-voice-core.js'
 const finalizer=typeof FinalizationRegistry==='function'?new FinalizationRegistry(({core,pointer})=>core.phonemizer_runtime_free(pointer)):null
 export class PhonemizerPlan {
   static async create(limit){return new PhonemizerPlan(await requireRustVoiceCore(),Number(limit))}

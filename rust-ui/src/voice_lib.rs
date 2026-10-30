@@ -20,9 +20,12 @@ mod supertonic_runtime;
 mod hebrew;
 #[path = "../../rust-core/src/onnx_durations.rs"]
 mod onnx_durations;
+#[path = "../../rust-core/src/phonemizer_runtime.rs"]
+mod phonemizer_runtime;
 #[cfg(not(feature = "ui"))]
 mod eager;
 mod voice_kernels;
+mod voice_phonemizer;
 
 /// The JavaScript side checks it before using the module.
 #[wasm_bindgen::prelude::wasm_bindgen]
