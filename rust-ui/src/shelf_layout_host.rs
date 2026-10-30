@@ -1,23 +1,31 @@
-//! The bookshelf's layout requests (bookshelf-layout.js): the spine style of every book, the packing of books and
-//! pots into fixed-width shelves, the split of the library into sections and the whole plan of the home shelf.
+//! The spine style of every book (bookshelf-layout.js `spineStylesFor`): its palette, finish, width and height,
+//! deterministic for the book's seed.
 //!
-//! Every decision is the numeric core's (rust-core/src/shelf_layout.rs, a separate WebAssembly module with its
-//! own memory and allocator). This module does what the JavaScript host did around it: it merges the options over
-//! their defaults, reads the books, calls the host's callbacks (`plantWidthFor`, `displayWidthFor`,
-//! `prepareStyles`) with the same arguments, receivers and order, writes the core's arena, calls its kernels and
-//! builds the objects bookshelf.js consumes, with the same keys in the same order and the same table objects.
-//! Collation (the alphabetical sort of the sections) stays the browser's `Intl.Collator`.
+//! Every decision is the numeric core's (rust-core/src/shelf_layout.rs `spine_styles`, a separate WebAssembly module
+//! with its own memory and allocator). This module makes the whole request the JavaScript host made around it: it
+//! merges the options over their defaults, finds each book's seed, writes the core's arena in one copy, calls the
+//! kernel and builds the style objects with the same keys in the same order and the same palette and finish entries.
+//!
+//! Speed: each step that crosses to the engine costs more than the work around it, so the per-book work crosses as
+//! little as it can, and the request is faster than the JavaScript it replaced (which asked book_data for every seed).
+//! Property names are made once; the core's kernels are typed method calls; the style objects made here are filled
+//! with a plain `Reflect.set` and their numbers are passed as numbers; a record's seed is its string `id`, read once
+//! (any other record asks book_data's `book_seed_for`, as the host did); a seed's text crosses once, as UTF-8, and only
+//! a seed that decodes to U+FFFD (a lone surrogate, or the character itself) is read unit by unit. The packing into
+//! shelves and the sections stay in JavaScript: they build an object per book around one kernel call, and from here
+//! each of those objects cost several crossings more than the engine takes to make it (measured 2-3x slower).
 use std::cell::RefCell;
+use std::rc::Rc;
 
-use js_sys::{Array, Float64Array, Function, JsString, Map, Object, Reflect, Uint8Array};
+use js_sys::{Array, Float64Array, JsString, Object, Reflect, Uint8Array};
 use wasm_bindgen::{prelude::*, JsCast};
 
-use crate::host::{absent, get, get_at, num, number_string, read, text, text_value, truthy};
+use crate::host::{absent, read, truthy};
 
 type R<T> = Result<T, JsValue>;
 
-/// The property names and strings of the per-book work, made once per module instance: making a JS string from
-/// Rust decodes it every time, which cost more than the work around it.
+/// The property names of the per-book work, made once per module instance: making a JS string from Rust decodes it
+/// every time, which cost more than the work around it.
 macro_rules! keys {
     ($($field:ident = $name:literal),* $(,)?) => {
         struct Keys { $($field: JsValue),* }
@@ -25,14 +33,31 @@ macro_rules! keys {
     };
 }
 keys!(seed = "seed", palette = "palette", color = "color", shade = "shade", ink = "ink", width = "width",
-    height_ratio = "heightRatio", texture = "texture", base = "base", word_count = "wordCount", kind = "kind",
-    book = "book", style = "style", display_width = "displayWidth", tilt = "tilt", variant = "variant",
-    index = "index", items = "items", used_width = "usedWidth", free_width = "freeWidth", progress_fraction = "progressFraction",
-    progress = "progress", last_opened_at = "lastOpenedAt", shelf_order = "shelfOrder", title = "title", author = "author",
-    place = "place", id = "id", books = "books", count = "count", shelves = "shelves", plant = "plant",
-    recent = "recent", library = "library", blank = "");
+    height_ratio = "heightRatio", texture = "texture", base = "base", word_count = "wordCount", id = "id",
+    shelf_visual_id = "shelfVisualId", min_width = "minWidth", max_width = "maxWidth", min_height_ratio = "minHeightRatio",
+    max_height_ratio = "maxHeightRatio", page_thickness = "pageThickness", binding_thickness = "bindingThickness");
 thread_local! {
     static KEYS: Keys = Keys::new();
+}
+
+#[wasm_bindgen]
+extern "C" {
+    /// The catalogue core's exports: its kernels are called as methods, as `core.name(...)` calls them.
+    type Core;
+    #[wasm_bindgen(method, catch)]
+    fn alloc_f64(this: &Core, words: f64) -> R<JsValue>;
+    #[wasm_bindgen(method, catch)]
+    fn free_f64(this: &Core, pointer: f64, words: f64) -> R<()>;
+    #[wasm_bindgen(method, catch)]
+    fn spine_styles(this: &Core, config: f64, words: f64, offsets: f64, units: f64, count: f64, total: f64, out: f64) -> R<f64>;
+    #[wasm_bindgen(method, getter, catch)]
+    fn memory(this: &Core) -> R<JsValue>;
+    /// `Reflect.set` on an object made here: a fresh plain object has no setter that could throw.
+    #[wasm_bindgen(js_namespace = Reflect, js_name = set)]
+    fn put(target: &JsValue, key: &JsValue, value: &JsValue) -> bool;
+    /// The same, for a number (no handle is made for it).
+    #[wasm_bindgen(js_namespace = Reflect, js_name = set)]
+    fn put_number(target: &JsValue, key: &JsValue, value: f64) -> bool;
 }
 
 /// `target[key]` for a cached key, throwing like the engine for null/undefined.
@@ -58,6 +83,9 @@ fn peek(target: &JsValue, key: &JsValue) -> JsValue {
     })
 }
 
+/// `Number(value)`: a number answers in one question.
+fn num(value: &JsValue) -> f64 { crate::host::num(value) }
+
 /// One input region of a kernel arena.
 enum Region<'a> {
     F64(&'a [f64]),
@@ -75,41 +103,39 @@ impl Region<'_> {
 
 /// What the host hands over: the catalogue core's exports and its frozen tables.
 struct Host {
-    core: JsValue,
+    core: Core,
     palette: JsValue,
     textures: JsValue,
     spine: JsValue,
-    layout: JsValue,
-    sections: JsValue,
+}
+
+thread_local! {
+    /// The last host read, with the object it was read from: bookshelf-layout.js hands the same object on every
+    /// call, so its fields are read once per module copy.
+    static HOST: RefCell<Option<(JsValue, Rc<Host>)>> = const { RefCell::new(None) };
 }
 
 impl Host {
-    fn of(host: &JsValue) -> R<Host> {
-        Ok(Host {
-            core: read(host, "core")?,
+    fn of(host: &JsValue) -> R<Rc<Host>> {
+        let known = HOST.with(|slot| slot.borrow().as_ref().filter(|(object, _)| object == host).map(|(_, read)| read.clone()));
+        if let Some(known) = known {
+            return Ok(known);
+        }
+        let made = Rc::new(Host {
+            core: read(host, "core")?.unchecked_into(),
             palette: read(host, "palette")?,
             textures: read(host, "textures")?,
             spine: read(host, "spine")?,
-            layout: read(host, "layout")?,
-            sections: read(host, "sections")?,
-        })
+        });
+        HOST.with(|slot| *slot.borrow_mut() = Some((host.clone(), made.clone())));
+        Ok(made)
     }
 
-    /// `core[name](...args)`.
-    fn kernel(&self, name: &str, args: &[f64]) -> R<f64> {
-        let function: Function = read(&self.core, name)?.dyn_into().map_err(|_| js_sys::TypeError::new(&format!("core.{name} is not a function")))?;
-        let list = Array::new();
-        for value in args {
-            list.push(&JsValue::from_f64(*value));
-        }
-        Ok(num(&function.apply(&self.core, &list)?))
-    }
+    fn buffer(&self) -> R<JsValue> { Ok(self.core.memory()?.unchecked_into::<js_sys::WebAssembly::Memory>().buffer()) }
 
-    fn buffer(&self) -> R<JsValue> { read(&read(&self.core, "memory")?, "buffer") }
-
-    /// `new Float64Array(core.memory.buffer, pointer + at * 8, size)`.
-    fn f64s(&self, pointer: f64, at: usize, size: usize) -> R<Float64Array> {
-        Ok(Float64Array::new_with_byte_offset_and_length(&self.buffer()?, (pointer as usize + at * 8) as u32, size as u32))
+    /// `new Float64Array(core.memory.buffer, pointer + at * 8, size)`, copied out.
+    fn f64s(&self, pointer: f64, at: usize, size: usize) -> R<Vec<f64>> {
+        Ok(Float64Array::new_with_byte_offset_and_length(&self.buffer()?, (pointer as usize + at * 8) as u32, size as u32).to_vec())
     }
 
     /// Writes every input region of an arena in one copy: the image spans the arena up to the end of the last
@@ -148,12 +174,13 @@ impl Host {
             length += size;
         }
         let words = length.max(1) as f64;
-        let pointer = self.kernel("alloc_f64", &[words])?;
-        if pointer == 0.0 || pointer.is_nan() {
+        let pointer = self.core.alloc_f64(words)?;
+        if !truthy(&pointer) {
             return Err(js_sys::RangeError::new("Shelf kernel: request too large").into());
         }
+        let pointer = num(&pointer);
         let result = work(pointer, &at);
-        self.kernel("free_f64", &[pointer, words])?;
+        self.core.free_f64(pointer, words)?;
         result
     }
 }
@@ -177,34 +204,42 @@ fn with_defaults(defaults: &JsValue, options: &JsValue) -> R<JsValue> {
 /// A parameter with the default `{}`.
 fn or_empty(options: &JsValue) -> JsValue { if options.is_undefined() { Object::new().into() } else { options.clone() } }
 
-/// The UTF-16 units of `texts` one after another, and the `count + 1` offsets where each starts. A well-formed
-/// string crosses once as UTF-8 (`as_string` would replace a lone surrogate, so the copy is checked against the
-/// original); any other string is read unit by unit.
-fn seed_units(texts: &[JsValue]) -> R<(Vec<u16>, Vec<f64>)> {
-    let mut offsets = Vec::with_capacity(texts.len() + 1);
-    let mut units = Vec::new();
-    for value in texts {
-        offsets.push(units.len() as f64);
-        let text: &JsString = value.dyn_ref().ok_or_else(|| js_sys::TypeError::new("a shelf seed is not a string"))?;
-        match text.as_string() {
-            Some(rust) if rust.is_ascii() || JsValue::from_str(&rust) == *value => units.extend(rust.encode_utf16()),
-            _ => units.extend((0..text.length()).map(|index| text.char_code_at(index) as u16)),
+/// The UTF-16 units of seeds one after another, and the `count + 1` offsets where each starts.
+struct Units {
+    units: Vec<u16>,
+    offsets: Vec<f64>,
+}
+
+impl Units {
+    fn with_capacity(count: usize) -> Units { Units { units: Vec::with_capacity(count * 24), offsets: Vec::with_capacity(count + 1) } }
+
+    /// Appends `value` (a string), whose UTF-8 copy is `copy` when it already crossed. A copy without U+FFFD is the
+    /// string itself; one with it may have replaced a lone surrogate, so that string is read unit by unit.
+    fn push(&mut self, value: &JsValue, copy: Option<String>) -> R<()> {
+        self.offsets.push(self.units.len() as f64);
+        let copy = match copy {
+            Some(copy) => Some(copy),
+            None => value.as_string(),
+        };
+        match copy {
+            Some(rust) if !rust.contains('\u{FFFD}') => self.units.extend(rust.encode_utf16()),
+            Some(_) => {
+                let text: &JsString = value.unchecked_ref();
+                self.units.extend((0..text.length()).map(|index| text.char_code_at(index) as u16));
+            }
+            None => return Err(js_sys::TypeError::new("a shelf seed is not a string").into()),
         }
+        Ok(())
     }
-    offsets.push(units.len() as f64);
-    Ok((units, offsets))
+
+    fn finish(mut self) -> Units {
+        self.offsets.push(self.units.len() as f64);
+        self
+    }
 }
 
 /// `Math.ceil(total / 4)`: the f64 words that hold `total` UTF-16 units.
 fn unit_words(total: usize) -> usize { total.div_ceil(4) }
-
-fn object(fields: &[(&JsValue, &JsValue)]) -> R<JsValue> {
-    let value: JsValue = Object::new().into();
-    for (key, field) in fields {
-        Reflect::set(&value, key, field)?;
-    }
-    Ok(value)
-}
 
 fn items(list: &JsValue) -> Vec<JsValue> {
     let list: &Array = list.unchecked_ref();
@@ -213,39 +248,69 @@ fn items(list: &JsValue) -> Vec<JsValue> {
 
 // ------------------------------------------------------------------------------------------------ spine styles
 
-fn spine_styles(k: &Keys, host: &Host, books: &JsValue, options: &JsValue) -> R<Array> {
-    let cfg = with_defaults(&host.spine, &or_empty(options))?;
-    if !Array::is_array(books) {
-        return Err(js_sys::TypeError::new("books.map is not a function").into());
+/// `seedFor(book)` (book_data's `book_seed_for`) and the seed's UTF-8 copy when it is already known. The common
+/// record, without `shelfVisualId` and with a non-empty string `id`, has that id as its seed: `String` of a string is
+/// the string itself. Any other book (no object, a visual id, an id that is not a non-empty string) asks
+/// `book_seed_for`, which reads the record as it always did.
+fn seed_of(k: &Keys, book: &JsValue) -> R<(JsValue, Option<String>)> {
+    if let Ok(visual) = Reflect::get(book, &k.shelf_visual_id) {
+        if visual.is_undefined() {
+            if let Ok(id) = Reflect::get(book, &k.id) {
+                if let Some(copy) = id.as_string() {
+                    if !copy.is_empty() {
+                        return Ok((id, Some(copy)));
+                    }
+                }
+            }
+        }
     }
-    let books = items(books);
-    let seeds = books.iter().map(|book| crate::book_data::book_seed_for(book.clone())).collect::<R<Vec<_>>>()?;
-    let count = seeds.len();
-    let (units, offsets) = seed_units(&seeds)?;
+    Ok((crate::book_data::book_seed_for(book.clone())?, None))
+}
+
+/// The spine options of a request: `withDefaults(DEFAULT_SPINE, options)` as the kernel reads it.
+fn spine_config(k: &Keys, host: &Host, options: &JsValue) -> R<[f64; 7]> {
+    let cfg = with_defaults(&host.spine, &or_empty(options))?;
+    let thickness = take(&cfg, &k.page_thickness)?;
+    let binding = take(&cfg, &k.binding_thickness)?;
+    Ok([
+        num(&take(&cfg, &k.min_width)?), num(&take(&cfg, &k.max_width)?), num(&take(&cfg, &k.min_height_ratio)?),
+        num(&take(&cfg, &k.max_height_ratio)?), thickness.as_f64().unwrap_or(f64::NAN), if truthy(&thickness) { 1.0 } else { 0.0 },
+        if truthy(&binding) { num(&binding) } else { 0.0 },
+    ])
+}
+
+/// The style of every book of `books` under `config`, in order.
+fn spine_styles_with(k: &Keys, host: &Host, books: &[JsValue], config: &[f64; 7]) -> R<Vec<JsValue>> {
+    let count = books.len();
+    let mut seeds = Vec::with_capacity(count);
+    let mut units = Units::with_capacity(count);
+    let mut words = Vec::with_capacity(count);
+    for book in books {
+        let (seed, copy) = seed_of(k, book)?;
+        units.push(&seed, copy)?;
+        seeds.push(seed);
+    }
+    // `typeof book?.wordCount === 'number' ? book.wordCount : NaN`, after every seed, as the original read them.
+    for book in books {
+        words.push(peek(book, &k.word_count).as_f64().unwrap_or(f64::NAN));
+    }
+    let Units { units, offsets } = units.finish();
     let total = units.len();
-    let thickness = read(&cfg, "pageThickness")?;
-    let binding = read(&cfg, "bindingThickness")?;
-    let config = [
-        num(&read(&cfg, "minWidth")?), num(&read(&cfg, "maxWidth")?), num(&read(&cfg, "minHeightRatio")?), num(&read(&cfg, "maxHeightRatio")?),
-        thickness.as_f64().unwrap_or(f64::NAN), if truthy(&thickness) { 1.0 } else { 0.0 }, if truthy(&binding) { num(&binding) } else { 0.0 },
-    ];
-    let words: Vec<f64> = books.iter().map(|book| peek(book, &k.word_count).as_f64().unwrap_or(f64::NAN)).collect();
     let out = host.in_arena(&[7, count, count + 1, count * 5, unit_words(total)], |pointer, at| {
-        host.fill(pointer, at, &[(0, Region::F64(&config)), (1, Region::F64(&words)), (2, Region::F64(&offsets)), (4, Region::U16(&units))])?;
+        host.fill(pointer, at, &[(0, Region::F64(config)), (1, Region::F64(&words)), (2, Region::F64(&offsets)), (4, Region::U16(&units))])?;
         let p = |index: usize| pointer + (at[index] * 8) as f64;
-        if host.kernel("spine_styles", &[p(0), p(1), p(2), p(4), count as f64, total as f64, p(3)])? != 1.0 {
+        if host.core.spine_styles(p(0), p(1), p(2), p(4), count as f64, total as f64, p(3))? != 1.0 {
             return Err(js_sys::RangeError::new("Shelf layout: spine styles rejected").into());
         }
-        Ok(host.f64s(pointer, at[3], count * 5)?.to_vec())
+        host.f64s(pointer, at[3], count * 5)
     })?;
     // The catalogue's palette and textures are frozen tables: each entry is read once per request.
     let mut palettes: Vec<(u64, [JsValue; 4])> = Vec::new();
     let mut textures: Vec<(u64, JsValue)> = Vec::new();
-    let styles = Array::new();
+    let mut styles = Vec::with_capacity(count);
     for (index, seed) in seeds.iter().enumerate() {
         let row = &out[index * 5..index * 5 + 5];
-        let found = palettes.iter().position(|(key, _)| *key == row[0].to_bits());
-        let at = match found {
+        let at = match palettes.iter().position(|(key, _)| *key == row[0].to_bits()) {
             Some(at) => at,
             None => {
                 let palette = Reflect::get(&host.palette, &JsValue::from_f64(row[0]))?;
@@ -255,19 +320,23 @@ fn spine_styles(k: &Keys, host: &Host, books: &JsValue, options: &JsValue) -> R<
             }
         };
         let texture = match textures.iter().position(|(key, _)| *key == row[1].to_bits()) {
-            Some(at) => textures[at].1.clone(),
+            Some(at) => at,
             None => {
-                let texture = Reflect::get(&host.textures, &JsValue::from_f64(row[1]))?;
-                textures.push((row[1].to_bits(), texture.clone()));
-                texture
+                textures.push((row[1].to_bits(), Reflect::get(&host.textures, &JsValue::from_f64(row[1]))?));
+                textures.len() - 1
             }
         };
         let [color, shade, ink, palette] = &palettes[at].1;
-        let style = object(&[
-            (&k.seed, seed), (&k.palette, palette), (&k.color, color), (&k.shade, shade), (&k.ink, ink),
-            (&k.width, &JsValue::from_f64(row[2])), (&k.height_ratio, &JsValue::from_f64(row[3])), (&k.texture, &texture),
-        ])?;
-        styles.push(&style);
+        let style: JsValue = Object::new().into();
+        put(&style, &k.seed, seed);
+        put(&style, &k.palette, palette);
+        put(&style, &k.color, color);
+        put(&style, &k.shade, shade);
+        put(&style, &k.ink, ink);
+        put_number(&style, &k.width, row[2]);
+        put_number(&style, &k.height_ratio, row[3]);
+        put(&style, &k.texture, &textures[texture].1);
+        styles.push(style);
     }
     Ok(styles)
 }
@@ -275,279 +344,12 @@ fn spine_styles(k: &Keys, host: &Host, books: &JsValue, options: &JsValue) -> R<
 /// `spineStylesFor(books, options = {})`: the spine of every book, deterministic for its seed.
 #[wasm_bindgen]
 pub fn shelf_spine_styles(host: &JsValue, books: &JsValue, options: &JsValue) -> R<Array> {
-    KEYS.with(|k| spine_styles(k, &Host::of(host)?, books, options))
-}
-
-// ------------------------------------------------------------------------------------------------ shelves
-
-/// `cfg.name(...args)`, a method call as `cfg.name?.(...)` makes it (the caller checked it is present).
-fn call_on(cfg: &JsValue, function: &JsValue, name: &str, args: &[&JsValue]) -> R<JsValue> {
-    // `is_function` is the `typeof` check: a callable object without Function's prototype is still called.
-    if !function.is_function() {
-        return Err(js_sys::TypeError::new(&format!("cfg.{name} is not a function")).into());
-    }
-    let function: &Function = function.unchecked_ref();
-    match args {
-        [a] => function.call1(cfg, a),
-        [a, b] => function.call2(cfg, a, b),
-        _ => function.apply(cfg, &args.iter().copied().collect::<Array>()),
-    }
-}
-
-fn layout_shelves(k: &Keys, host: &Host, books: &JsValue, options: &JsValue, prepared: &JsValue) -> R<Array> {
-    let cfg = with_defaults(&host.layout, &or_empty(options))?;
-    let shelves = Array::new();
-    if !Array::is_array(books) || books.unchecked_ref::<Array>().length() == 0 {
-        return Ok(shelves);
-    }
-    let shelf_width = read(&cfg, "shelfWidth")?;
-    if !(num(&shelf_width) - num(&read(&cfg, "padding")?) * 2.0 > 0.0) {
-        return Ok(shelves);
-    }
-    let books = items(books);
-    let count = books.len();
-    let display_width_for = read(&cfg, "displayWidthFor")?;
-    let spine = read(&cfg, "spine")?;
-    let (mut styles, mut requested) = (Vec::with_capacity(count), Vec::with_capacity(count));
-    for (index, book) in books.iter().enumerate() {
-        let given = if absent(prepared) { JsValue::UNDEFINED } else { get_at(prepared, index as u32) };
-        let style = if absent(&given) { spine_styles(k, host, &Array::of1(book), &spine)?.get(0) } else { given };
-        requested.push(if display_width_for.is_function() { num(&call_on(&cfg, &display_width_for, "displayWidthFor", &[book, &style])?) } else { f64::NAN });
-        styles.push(style);
-    }
-
-    // Each species takes its real size (`plantWidthFor`); without it, a fixed width.
-    let variants = read(&cfg, "plantVariants")?;
-    let plant_width_for = read(&cfg, "plantWidthFor")?;
-    let width_of = |variant: &JsValue| -> R<JsValue> {
-        let value = if absent(&plant_width_for) { JsValue::UNDEFINED } else { call_on(&cfg, &plant_width_for, "plantWidthFor", &[variant])? };
-        if absent(&value) { read(&cfg, "plantWidth") } else { Ok(value) }
-    };
-    let list: &Array = variants.unchecked_ref();
-    let species = items(&variants);
-    let keys: Vec<f64> = species.iter().map(|variant| f64::from(list.index_of(variant, 0))).collect();
-    let widths = species.iter().map(|variant| Ok(num(&width_of(variant)?))).collect::<R<Vec<f64>>>()?;
-    let mut distinct = keys.clone();
-    distinct.sort_by(f64::total_cmp);
-    distinct.dedup();
-    let undefined_width = if species.is_empty() || species.len() > 1 && distinct.len() == 1 { width_of(&JsValue::UNDEFINED)? } else { read(&cfg, "plantWidth")? };
-    let seeds = styles.iter().map(|style| Ok(text_value(&take(style, &k.seed)?))).collect::<R<Vec<JsValue>>>()?;
-    let (units, offsets) = seed_units(&seeds)?;
-    let total = units.len();
-    let config = [
-        num(&shelf_width), num(&read(&cfg, "padding")?), num(&read(&cfg, "gap")?), num(&read(&cfg, "plantEvery")?), num(&read(&cfg, "plantWidth")?),
-        num(&read(&cfg, "maxTailPlants")?), num(&read(&cfg, "tiltThreshold")?), num(&read(&cfg, "maxTilt")?), num(&undefined_width),
-    ];
-    let spine_widths = styles.iter().map(|style| Ok(num(&take(style, &k.width)?))).collect::<R<Vec<f64>>>()?;
-    let kinds = species.len();
-    // The plan, or the length it needs when `capacity` is too small.
-    let run = |capacity: usize| -> R<Result<Vec<f64>, usize>> {
-        host.in_arena(&[9, kinds, kinds, count, count, count + 1, unit_words(total), capacity], |pointer, at| {
-            host.fill(pointer, at, &[(0, Region::F64(&config)), (1, Region::F64(&widths)), (2, Region::F64(&keys)), (3, Region::F64(&spine_widths)),
-                (4, Region::F64(&requested)), (5, Region::F64(&offsets)), (6, Region::U16(&units))])?;
-            let p = |index: usize| pointer + (at[index] * 8) as f64;
-            let length = host.kernel("layout_shelves", &[p(0), p(1), p(2), kinds as f64, p(3), p(4), p(5), p(6), count as f64, total as f64, p(7), capacity as f64])?;
-            if length == 0.0 {
-                return Err(js_sys::RangeError::new("Shelf layout: request rejected").into());
-            }
-            let length = length as usize;
-            Ok(if length > capacity { Err(length) } else { Ok(host.f64s(pointer, at[7], length)?.to_vec()) })
-        })
-    };
-    let plan = match run(2 + count * 3 + (count * 2 + 16) * 6)? {
-        Ok(plan) => plan,
-        Err(length) => match run(length)? {
-            Ok(plan) => plan,
-            Err(_) => return Err(js_sys::RangeError::new("Shelf layout: request rejected").into()),
-        },
-    };
-
-    let shelf_count = plan[0] as usize;
-    let mut item = 2 + shelf_count * 3;
-    for index in 0..shelf_count {
-        let at = 2 + index * 3;
-        let (item_count, used, free) = (plan[at], plan[at + 1], plan[at + 2]);
-        let row = Array::new();
-        let mut n = 0.0;
-        while n < item_count {
-            let [plant, refer, width, tilt, position, salt] = [plan[item], plan[item + 1], plan[item + 2], plan[item + 3], plan[item + 4], plan[item + 5]];
-            let width = JsValue::from_f64(width);
-            let placed = if plant != 0.0 {
-                let variant = if refer < 0.0 { JsValue::UNDEFINED } else { Reflect::get(&variants, &JsValue::from_f64(refer))? };
-                let tail = if salt == 0.0 { "mid".to_string() } else { format!("tail-{}", number_string(salt - 1.0)) };
-                let seed = format!("shelf-{index}-{}-{tail}", number_string(position));
-                object(&[(&k.kind, &k.plant), (&k.variant, &variant), (&k.width, &width), (&k.seed, &seed.into())])?
-            } else {
-                let refer = refer as usize;
-                object(&[(&k.kind, &k.book), (&k.book, &books[refer]), (&k.style, &styles[refer]), (&k.width, &width), (&k.display_width, &width),
-                    (&k.tilt, &JsValue::from_f64(tilt))])?
-            };
-            row.push(&placed);
-            n += 1.0;
-            item += 6;
-        }
-        let shelf = object(&[(&k.index, &JsValue::from_f64(index as f64)), (&k.items, &row), (&k.used_width, &JsValue::from_f64(used)),
-            (&k.free_width, &JsValue::from_f64(free)), (&k.width, &shelf_width)])?;
-        shelves.push(&shelf);
-    }
-    Ok(shelves)
-}
-
-/// `layoutShelves(books, options = {}, preparedStyles)`: the books packed into fixed-width shelves with pots between
-/// them, in the order received.
-#[wasm_bindgen]
-pub fn shelf_layout_shelves(host: &JsValue, books: &JsValue, options: &JsValue, prepared: &JsValue) -> R<Array> {
-    KEYS.with(|k| layout_shelves(k, &Host::of(host)?, books, options, prepared))
-}
-
-// ------------------------------------------------------------------------------------------------ sections
-
-thread_local! {
-    /// Made on the first sort that needs it: making it at start-up loads the locale's collation data.
-    static COMPARE: RefCell<Option<Function>> = const { RefCell::new(None) };
-}
-
-fn compare_text() -> Function {
-    COMPARE.with(|slot| {
-        slot.borrow_mut().get_or_insert_with(|| {
-            let options = Object::new();
-            let _ = Reflect::set(&options, &"sensitivity".into(), &"base".into());
-            let _ = Reflect::set(&options, &"numeric".into(), &JsValue::TRUE);
-            js_sys::Intl::Collator::new(&Array::of1(&"es".into()), &options).compare()
-        }).clone()
-    })
-}
-
-/// `value ?? ''`.
-fn or_blank(value: JsValue) -> JsValue { if absent(&value) { "".into() } else { value } }
-
-/// `order` stably sorted by `keys[index]` under the collator's `compare`, equal keys keeping their order. With
-/// string keys the engine's own stable sort runs over String wrappers of them, each remembering its place, so no
-/// comparison crosses into the module; other keys (coerced by `compare` the same way) are sorted here.
-fn sorted_by(k: &Keys, keys: &[JsValue], order: Vec<usize>, compare: &Function) -> R<Vec<usize>> {
-    let place = &k.place;
-    if keys.iter().all(JsValue::is_string) {
-        let list = Array::new();
-        for (position, &index) in order.iter().enumerate() {
-            let wrapper = crate::host::boxed(&keys[index]);
-            Reflect::set(&wrapper, place, &JsValue::from_f64(position as f64))?;
-            list.push(&wrapper);
-        }
-        crate::host::method(&list, "sort", &[compare])?;
-        return (0..list.length()).map(|at| Ok(order[num(&Reflect::get(&list.get(at), place)?) as usize])).collect();
-    }
-    let mut failure = None;
-    let mut sorted = order;
-    sorted.sort_by(|&a, &b| {
-        if failure.is_some() {
-            return std::cmp::Ordering::Equal;
-        }
-        let value = match compare.call2(&JsValue::UNDEFINED, &keys[a], &keys[b]) {
-            Ok(value) => num(&value),
-            Err(error) => {
-                failure = Some(error);
-                0.0
-            }
-        };
-        if value < 0.0 { std::cmp::Ordering::Less } else if value > 0.0 { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Equal }
-    });
-    match failure {
-        Some(error) => Err(error),
-        None => Ok(sorted),
-    }
-}
-
-fn sections(k: &Keys, host: &Host, books: &JsValue, options: &JsValue) -> R<(Array, JsValue)> {
-    let cfg = with_defaults(&host.sections, &or_empty(options))?;
-    let found = Array::new();
-    let list: Vec<JsValue> = if Array::is_array(books) { items(books).into_iter().filter(truthy).collect() } else { Vec::new() };
-    if list.is_empty() {
-        return Ok((found, cfg));
-    }
-    let count = list.len();
-    let sort = read(&cfg, "sort")?;
-    let mode = if text(&sort, "none") { 0.0 } else if text(&sort, "author") { 1.0 } else { 2.0 };
-    let mut rank = vec![0.0; count];
-    if mode != 0.0 {
-        let compare = compare_text();
-        let field = |key: &JsValue| list.iter().map(|book| Ok(or_blank(take(book, key)?))).collect::<R<Vec<_>>>();
-        // Title, then (stably) author: the order of `(author, title, index)` the original's comparator gives.
-        let mut order = sorted_by(k, &field(&k.title)?, (0..count).collect(), &compare)?;
-        if mode == 1.0 {
-            order = sorted_by(k, &field(&k.author)?, order, &compare)?;
-        }
-        for (position, index) in order.into_iter().enumerate() {
-            rank[index] = position as f64;
-        }
-    }
-    let first = Map::new();
-    let mut groups = Vec::with_capacity(count);
-    let mut data = Vec::with_capacity(count * 5);
-    for (index, book) in list.iter().enumerate() {
-        // A book already met keeps its first position (the values are never undefined).
-        let known = first.get(book);
-        groups.push(if known.is_undefined() {
-            first.set(book, &JsValue::from_f64(index as f64));
-            index as f64
-        } else {
-            num(&known)
-        });
-        let fraction = peek(book, &k.progress_fraction);
-        let raw = num(&if absent(&fraction) { peek(book, &k.progress) } else { fraction });
-        let opened = take(book, &k.last_opened_at)?;
-        let last = num(&opened);
-        let order = take(book, &k.shelf_order)?.as_f64().filter(|value| value.is_finite()).unwrap_or(f64::INFINITY);
-        data.extend_from_slice(&[raw, if absent(&opened) { 0.0 } else { 1.0 }, if last == 0.0 || last.is_nan() { 0.0 } else { last }, order, rank[index]]);
-    }
-    let config = [num(&read(&cfg, "recentLimit")?), mode];
-    let out = host.in_arena(&[2, count * 5, count, count + 2], |pointer, at| {
-        host.fill(pointer, at, &[(0, Region::F64(&config)), (1, Region::F64(&data)), (2, Region::F64(&groups))])?;
-        let p = |index: usize| pointer + (at[index] * 8) as f64;
-        let length = host.kernel("library_sections", &[p(0), p(1), p(2), count as f64, p(3)])?;
-        if length == 0.0 {
-            return Err(js_sys::RangeError::new("Shelf sections: request rejected").into());
-        }
-        Ok(host.f64s(pointer, at[3], length as usize)?.to_vec())
-    })?;
-    let recent_end = 2 + out[0] as usize;
-    let pick = |range: &[f64]| range.iter().map(|&index| list[index as usize].clone()).collect::<Array>();
-    let (recent, rest) = (pick(&out[2..recent_end]), pick(&out[recent_end..]));
-    if recent.length() > 0 {
-        found.push(&object(&[(&k.id, &k.recent), (&k.title, &read(&cfg, "recentTitle")?), (&k.books, &recent)])?);
-    }
-    if rest.length() > 0 {
-        // The only shelf needs no title: it is plainly everything.
-        let title = if found.length() == 0 { k.blank.clone() } else { read(&cfg, "libraryTitle")? };
-        found.push(&object(&[(&k.id, &k.library), (&k.title, &title), (&k.books, &rest)])?);
-    }
-    Ok((found, cfg))
-}
-
-/// `buildSections(books, options = {})`: "keep reading" and the library; a book appears in one section only.
-#[wasm_bindgen]
-pub fn shelf_sections(host: &JsValue, books: &JsValue, options: &JsValue) -> R<Array> {
-    KEYS.with(|k| Ok(sections(k, &Host::of(host)?, books, options)?.0))
-}
-
-/// `planBookshelf(books, options = {}, prepareStyles)`: the whole library as sections already packed into shelves.
-#[wasm_bindgen]
-pub fn shelf_plan_bookshelf(host: &JsValue, books: &JsValue, options: &JsValue, prepare: &JsValue) -> R<Array> {
     KEYS.with(|k| {
         let host = Host::of(host)?;
-        let options = or_empty(options);
-        let plan = Array::new();
-        for section in items(&sections(k, &host, books, &options)?.0) {
-            let shelved = take(&section, &k.books)?;
-            let count = read(&shelved, "length")?;
-            let prepared = if prepare.is_function() {
-                let spine = if absent(&options) { JsValue::UNDEFINED } else { get(&options, "spine") };
-                prepare.unchecked_ref::<Function>().call2(&JsValue::UNDEFINED, &shelved, &spine)?
-            } else {
-                JsValue::UNDEFINED
-            };
-            let shelves = layout_shelves(k, &host, &shelved, &options, &prepared)?;
-            plan.push(&object(&[(&k.id, &take(&section, &k.id)?), (&k.title, &take(&section, &k.title)?), (&k.count, &count), (&k.shelves, &shelves)])?);
+        let config = spine_config(k, &host, options)?;
+        if !Array::is_array(books) {
+            return Err(js_sys::TypeError::new("books.map is not a function").into());
         }
-        Ok(plan)
+        Ok(spine_styles_with(k, &host, &items(books), &config)?.into_iter().collect())
     })
 }
