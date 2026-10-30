@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { setTimeout as delay } from 'node:timers/promises'
-import { DEFAULT_VOICE_BASE, piperVoices } from '../src/js/readers/neural-voice/catalog.js'
+import { DEFAULT_VOICE_BASE, piperVoices } from '../tests/unit/helpers/reference-neural-catalog.js'
 // The app computes these URLs in rust-ui (voice_urls.rs), which is not built yet when fixtures are prepared. The frozen
 // JavaScript original is checked against the Rust one by tests/unit/voice-urls-wasm.test.js.
 import { piperPath, voiceUrls } from '../tests/unit/helpers/reference-voice-urls.js'

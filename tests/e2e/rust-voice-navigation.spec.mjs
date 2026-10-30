@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
-import {neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
+import {neuralVoices} from '../unit/helpers/reference-neural-catalog.js'
 const LESSAC='piper:en_US-lessac-medium'
 test('Rust keeps manual browsing separate from listening and seeks only after a hold',async({page},info)=>{
  test.setTimeout(60000);await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'})

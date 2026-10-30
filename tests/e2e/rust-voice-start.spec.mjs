@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
-import {neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
+import {neuralVoices} from '../unit/helpers/reference-neural-catalog.js'
 import {pickVoice} from './helpers/audio-menus.mjs'
 const LESSAC='piper:en_US-lessac-medium'
 test('compiled audiobook starts and resumes at the newly visible page through Rust',async({page},info)=>{

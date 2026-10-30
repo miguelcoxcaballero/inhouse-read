@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { audioMenu, openAudioMenu, pickVoice, selectedOption } from './helpers/audio-menus.mjs'
 import { fakeEngineScript, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
-import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
+import { neuralVoices } from '../unit/helpers/reference-neural-catalog.js'
 
 const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'

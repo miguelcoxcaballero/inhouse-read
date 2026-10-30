@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, extname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
-import { piperVoices } from '../../src/js/readers/neural-voice/catalog.js'
+import { piperVoices } from '../unit/helpers/reference-neural-catalog.js'
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const FIXTURES = process.env.NEURAL_VOICE_FIXTURES || '/tmp/claude-0/-home-user-inhouse-read/6c70f5ca-de80-5128-bee1-f59b39f4610d/scratchpad/piper/web/models-extra'

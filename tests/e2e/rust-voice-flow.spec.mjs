@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
-import {neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
+import {neuralVoices} from '../unit/helpers/reference-neural-catalog.js'
 import {pickVoice,pickLanguage,selectedOption,openAudioMenu} from './helpers/audio-menus.mjs'
 const LESSAC='piper:en_US-lessac-medium',ALBA='piper:en_GB-alba-medium',DAVEFX='piper:es_ES-davefx-medium'
 test('compiled reader keeps language selection and installed natural voice menus in Rust',async({page},info)=>{

@@ -1,6 +1,6 @@
 // Frozen from 0a4d84ea (1.7.309): the Piper URL helpers of src/js/readers/neural-voice/catalog.js before they moved to
 // rust-ui voice_urls.rs, and the two catalogue lookups that production no longer used (the picker ranks voices in Rust).
-import { DEFAULT_VOICE_BASE, neuralVoiceBase, neuralVoices } from '../../../src/js/readers/neural-voice/catalog.js'
+import { DEFAULT_VOICE_BASE, neuralVoiceBase, neuralVoices } from './reference-neural-catalog.js'
 
 export const NAKDIMON = Object.freeze({
   url: 'https://raw.githubusercontent.com/OHF-Voice/piper1-gpl/efffbfb226bfb511ebbcf55d0cecd8b35a89743d/src/piper/hebrew/nakdimon.onnx',

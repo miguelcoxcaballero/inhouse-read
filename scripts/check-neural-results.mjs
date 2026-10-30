@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { piperVoices, supertonicVoices } from '../src/js/readers/neural-voice/catalog.js'
+import { piperVoices, supertonicVoices } from '../tests/unit/helpers/reference-neural-catalog.js'
 
 export const MINIMUM_TESTS = Object.freeze({ engine:9, reading:14, languages:piperVoices.length + 1, supertonic:supertonicVoices.length })
 
