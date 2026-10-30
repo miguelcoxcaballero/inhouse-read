@@ -2,6 +2,7 @@
 // (bookshelf-scene.js before the move). The closure's variables are parameters here; the bodies are
 // unchanged. tests/unit/scene-host-wasm.test.js runs each against its Rust port on equal inputs.
 import * as THREE from 'three';
+import { clearPlantDiagnostics, lampKeys, plantKeys, plantShapeKeys } from './reference-scene-dom.js';
 
 export function trashFootprint(bin) {
   const position = bin.position.clone(), rotation = bin.rotation.clone(), scale = bin.scale.clone();
@@ -153,3 +154,99 @@ export function hideTrashNode(trashNode) {
   trashNode.hidden = true; trashNode.inert = true; trashNode.tabIndex = -1;
   trashNode.setAttribute('aria-hidden', 'true'); trashNode.style.pointerEvents = 'none';
 }
+
+// adoptMetadataRecords after its scene-wide guards, up to the assignment of the records.
+export function adoptRecords(bookEntries, previous, records, byNode, stateFor, canAdoptShelfMetadata) {
+  const books = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp');
+  if (!Array.isArray(records) || records.length !== books.length ||
+      bookEntries.some(entry => entry.replacement || entry.plantQuality || entry.insertion || entry.trashDrop || entry.preview.active || entry.landing))
+    return false;
+  const byId = new Map(books.map(entry => [String(entry.book?.id), entry]));
+  if (byId.size !== books.length || !canAdoptShelfMetadata(previous, records)) return false;
+  for (const book of previous) {
+    const entry = byId.get(String(book.id));
+    if (!entry || entry.book !== book || !entry.node?.isConnected || byNode.get(entry.node) !== entry || stateFor(entry) !== entry.state)
+      return false;
+  }
+  for (const book of records) byId.get(String(book.id)).book = book;
+  return true;
+}
+
+// setLampPower's new fade; `animate` is `animate && !reducedMotion.matches`.
+export function lampSwitch(entry, isOn, animate) {
+  const previous = entry.lampPower?.value ?? entry.model?.userData.lightEmitter?.power ?? (entry.isOn === false ? 0 : 1);
+  entry.isOn = isOn !== false;
+  const target = entry.isOn ? 1 : 0;
+  entry.lampPower = { value:previous, from:previous, target, started:performance.now(),
+    duration:animate ? 220 : 0 };
+}
+
+export const coversPending = (bookEntries, caller) => bookEntries.some(entry => entry !== caller && entry.kind !== 'plant' && entry.kind !== 'lamp' &&
+  entry.model?.visible && entry.model.userData.coverLoaded === undefined);
+
+// captureNativeInspection's reuse of the other tile's capture.
+export function sharedCapture(captured, overview, frame, raw, sourceFrame, sourceContext, sourceRevision, sourceMaterialized) {
+  return Boolean(captured && captured.overview!==overview && captured.frame===frame && sourceFrame===frame &&
+    captured.context===sourceContext && sourceContext!==raw && captured.revision===sourceRevision &&
+    sourceMaterialized===sourceRevision && captured.width===Math.ceil(frame.width*frame.ratio) && captured.height===Math.ceil(frame.height*frame.ratio) &&
+    raw.canvas.width===captured.width && raw.canvas.height===captured.height &&
+    sourceContext.canvas.width===captured.width && sourceContext.canvas.height===captured.height);
+}
+
+// updateLayout's rebinding loop; the closure's maps and functions come in `host`, and the record keys are
+// the frozen originals of reference-scene-dom.js.
+export function rebindEntries(nextEntries, oldEntries, host) {
+  const { foliage:semanticFoliage, styles:originalStyles, release:releaseEntry, place:placeBoxes, fresh:freshEntry } = host;
+  const updateRecord = (entry, book, style, coverUrl, data) => host.record(entry, data);
+  const next = { entries:nextEntries };
+  const retained = [];
+  for (let index = 0; index < next.entries.length; index++) {
+    const data = next.entries[index], key = entryKey(data, index);
+    let entry = oldEntries.get(key);
+    if (entry) {
+      oldEntries.delete(key);
+      if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
+      if (data.kind === 'plant' || data.kind === 'lamp') {
+        const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
+        let retainModel = !changed;
+        if (changed) {
+          const recolored = data.kind === 'plant' && plantShapeKeys(entry) === plantShapeKeys(data) &&
+            entry.model?.userData.updatePotColor?.(data.potColorId);
+          if (!recolored) releaseEntry(entry);
+          else {
+            entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
+            entry.model.userData.shelfPlantKeys = plantKeys(data); retainModel = true;
+          }
+        }
+        if (retainModel && entry.node !== data.node) {
+          const native = semanticFoliage.get(entry.node);
+          if (native && data.node) {
+            semanticFoliage.delete(entry.node);
+            const svg = native.svg.cloneNode(true);
+            native.svg.remove();
+            const rebound = { ...native,svg,path:svg.querySelector(':scope > path'),
+              exclusions:svg.querySelector('clipPath path') };
+            data.node.append(svg); semanticFoliage.set(data.node,rebound);
+          }
+        }
+        if (entry.node !== data.node) clearPlantDiagnostics(entry.node);
+        Object.assign(entry, data); placeBoxes(entry);
+      } else { entry.node = data.node; updateRecord(entry, data.book, data.style, data.coverUrl, data); }
+    } else { entry = freshEntry(data, index); placeBoxes(entry); }
+    entry.preview = freshPreview();
+    entry.landing = null;
+    entry.written = null; entry.leanNode = null; entry.domDirty = true;
+    entry.key = key;
+    retained.push(entry);
+    if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
+  }
+  return retained;
+}
+
+const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
+export const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
+export const freshEntry = (entry, index, pose = new THREE.Object3D(), flags = NO_FLAGS) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose,
+  lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, hitRect:null, insertion:null,
+  overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
+  classText:null, flags, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
+  written:null, seen:0, domDirty:true });

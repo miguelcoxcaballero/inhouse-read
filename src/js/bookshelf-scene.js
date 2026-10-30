@@ -270,13 +270,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let depth = specDepth();
   // `plant:`/`lamp:` and the object id, or `book:` and the book's id (rust-ui/src/scene_host.rs).
   const entryKey = (entry, index) => rust.scene_entry_key(entry, index);
-  const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
-  const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
-    lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, hitRect:null, insertion:null,
-    overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
-    // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
-    classText:null, flags:NO_FLAGS, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
-    written:null, seen:0, domDirty:true });
+  // A new entry at rest with empty per-frame DOM caches (rust-ui/src/scene_host.rs).
+  const freshEntry = (entry, index) => rust.scene_fresh_entry(entry, index, new THREE.Object3D(), NO_FLAGS);
   // The camera framing, the turn between the views, the inspection zoom and pan and the drop guide's place
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
@@ -532,12 +527,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const sourceContext=captured?.overview?inspectionOverviewContext:inspectionContext;
     const sourceRevision=captured?.overview?nativeOverviewRevision:nativeInspectionRevision;
     const sourceMaterialized=captured?.overview?nativeOverviewMaterialized:nativeInspectionMaterialized;
-    const shared=captured && captured.overview!==overview && captured.frame===frame && sourceFrame===frame &&
-      captured.context===sourceContext && sourceContext!==raw && captured.revision===sourceRevision &&
-      sourceMaterialized===sourceRevision && captured.width===Math.ceil(frame.width*frame.ratio) && captured.height===Math.ceil(frame.height*frame.ratio) &&
-      raw.canvas.width===captured.width && raw.canvas.height===captured.height &&
-      sourceContext.canvas.width===captured.width && sourceContext.canvas.height===captured.height;
-    if (shared) {
+    if (rust.scene_shared_capture(captured,overview,frame,raw,sourceFrame,sourceContext,sourceRevision,sourceMaterialized)) {
       raw.clearRect(0,0,raw.canvas.width,raw.canvas.height);
       raw.drawImage(sourceContext.canvas,0,0);
     } else {
@@ -715,7 +705,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // What a book's materials, a plant's or a lamp's model are compared by (rust-ui/src/scene_dom.rs).
   function materialKeys(entry) { return rust.scene_material_keys(entry, bookmarkFor); }
   const plantKeys = entry => rust.scene_model_key(entry, 0);
-  const plantShapeKeys = entry => rust.scene_model_key(entry, 1);
   const lampKeys = entry => rust.scene_model_key(entry, 2);
 
   // A selected book's slot is already painted empty. Its decoded lettering,
@@ -736,8 +725,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const STARTUP_SETTLE_MS = 2500;
   let startupSettle = { until:0, timer:0, held:false };
   // Other books still decoding their first cover (the caller has just settled).
-  const coversPending = caller => bookEntries.some(entry => entry !== caller && entry.kind !== 'plant' && entry.kind !== 'lamp' &&
-    entry.model?.visible && entry.model.userData.coverLoaded === undefined);
+  const coversPending = caller => rust.scene_covers_pending(bookEntries, caller);
   const fontsPending = () => document.fonts?.status === 'loading';
   function settledInvalidate(preserveInspectionOverview, source, caller = null) {
     const gate = startupSettle;
@@ -2649,13 +2637,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (disposed || entry?.kind !== 'lamp') return;
       noteInspectionDirty('lamp-power');
-      const previous = entry.lampPower?.value ?? entry.model?.userData.lightEmitter?.power ?? (entry.isOn === false ? 0 : 1);
-      entry.isOn = isOn !== false;
-      inspectionOverview = null;
-      const target = entry.isOn ? 1 : 0;
-      entry.lampPower = { value:previous, from:previous, target, started:performance.now(),
-        duration:animate && !reducedMotion.matches ? 220 : 0 };
-      shelfSnapshotDirty = true;
+      // Its power eases from the shown one to the switch's (rust-ui/src/scene_host.rs).
+      rust.scene_lamp_switch(entry, isOn, Boolean(animate && !reducedMotion.matches));
+      inspectionOverview = null; shelfSnapshotDirty = true;
       invalidate(false);
     },
     setLampKelvin(node, kelvin, { animate = true } = {}) {
@@ -2871,19 +2855,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (drawPending || viewportChanged()) return false;
       const owner = currentNativeRendererPresentation(renderer);
       if (owner && owner !== nativeRoomLease) return false;
-      const books = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp');
-      if (!Array.isArray(records) || records.length !== books.length ||
-          bookEntries.some(entry => entry.replacement || entry.plantQuality || entry.insertion || entry.trashDrop || entry.preview.active || entry.landing))
-        return false;
-      const byId = new Map(books.map(entry => [String(entry.book?.id), entry]));
-      if (byId.size !== books.length || !canAdoptShelfMetadata(previous, records)) return false;
-      for (const book of previous) {
-        const entry = byId.get(String(book.id));
-        if (!entry || entry.book !== book || !entry.node?.isConnected || byNode.get(entry.node) !== entry || stateFor(entry) !== entry.state)
-          return false;
-      }
-      // Validation of the entire batch precedes every reference assignment.
-      for (const book of records) byId.get(String(book.id)).book = book;
+      // One record per shown book, nothing under way and every previous record still shown as it was:
+      // the whole batch is validated before any record is assigned (rust-ui/src/scene_host.rs).
+      if (!rust.scene_adopt_records(bookEntries, previous, records, byNode, stateFor, canAdoptShelfMetadata)) return false;
       acknowledgeRoom(roomCheckpoint);
       return true;
     },
@@ -2975,53 +2949,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (catalogNode && !catalog) { catalog = createShelfCatalog(); furniture.add(catalog); }
         else if (!catalogNode && catalog) { catalog.removeFromParent(); catalog.userData.dispose(); catalog = null; }
       }
-      const retained = [];
-      for (let index = 0; index < next.entries.length; index++) {
-        const data = next.entries[index], key = entryKey(data, index);
-        let entry = oldEntries.get(key);
-        if (entry) {
-          oldEntries.delete(key);
-          if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
-          if (data.kind === 'plant' || data.kind === 'lamp') {
-            const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
-            let retainModel = !changed;
-            if (changed) {
-              const recolored = data.kind === 'plant' && plantShapeKeys(entry) === plantShapeKeys(data) &&
-                entry.model?.userData.updatePotColor?.(data.potColorId);
-              if (!recolored) releaseEntry(entry);
-              else {
-                // The model cancelled maps painted with the former color.
-                // Clear the scene's handle too, so detail still required by
-                // the current inspection can be prepared again this draw.
-                entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
-                entry.model.userData.shelfPlantKeys = plantKeys(data); retainModel = true;
-              }
-            }
-            if (retainModel && entry.node !== data.node) {
-              const native = semanticFoliage.get(entry.node);
-              if (native && data.node) {
-                semanticFoliage.delete(entry.node);
-                // The outgoing node's hit target ceases to exist: a clone of its projected triangles and
-                // cache moves to the new button, without reprojecting leaves (rust-ui/src/scene_host.rs).
-                semanticFoliage.set(data.node,rust.scene_rebind_foliage(native,data.node));
-              }
-            }
-            if (entry.node !== data.node) clearPlantDiagnostics(entry.node);
-            Object.assign(entry, data); placeBoxes(entry);
-          } else { entry.node = data.node; updateRecord(entry, data.book, data.style, data.coverUrl, data); }
-        } else { entry = freshEntry(data, index); placeBoxes(entry); }
-        // The new layout has already committed the preview's destination.
-        // Retaining that offset would apply it twice; captured projected rects
-        // are handed to animateFromRects for the remaining release movement.
-        entry.preview = freshPreview();
-        entry.landing = null;
-        // The outgoing DOM was just restored and the new one may be a fresh tree:
-        // write every inline value of the projected nodes again and reread its state.
-        entry.written = null; entry.leanNode = null; entry.domDirty = true;
-        entry.key = key;
-        retained.push(entry);
-        if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
-      }
+      // Each incoming entry takes over its old one by key, or starts fresh, with a resting preview (the layout
+      // already committed its destination) and its DOM written again: the old tree was just restored (rust-ui/src/scene_host.rs).
+      const retained = rust.scene_rebind_entries(next.entries, oldEntries, { foliage:semanticFoliage, styles:originalStyles,
+        release:releaseEntry, place:placeBoxes, fresh:freshEntry, record:(entry, data) => updateRecord(entry, data.book, data.style, data.coverUrl, data) });
       for (const entry of oldEntries.values()) releaseEntry(entry);
       bookEntries = retained; casterIds = new Float64Array(bookEntries.length); casterListDirty = true; byNode.clear();
       // Lamp fixtures are structural scene data. Rebuild their cached list and

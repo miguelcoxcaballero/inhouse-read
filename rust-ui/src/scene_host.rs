@@ -334,3 +334,205 @@ pub fn scene_trash_footprint(bin:&JsValue,bounds:&JsValue,fresh:&Function)->R<Js
  state(openness)?;
  Ok(bounds.clone())
 }
+
+/// `for (const value of iterable)`, failing like the engine for a value that is not iterable.
+fn each(iterable:&JsValue,mut visit:impl FnMut(JsValue)->R<bool>)->R<bool>{
+ let values=js_sys::try_iter(iterable)?.ok_or_else(||JsValue::from(js_sys::TypeError::new("object is not iterable")))?;
+ for value in values{if !visit(value?)?{return Ok(false);}}
+ Ok(true)
+}
+fn decorative(entry:&JsValue)->R<bool>{let kind=read(entry,"kind")?;Ok(kind==st("plant")||kind==st("lamp"))}
+
+/// Saved metadata replaces the shown books' records without a frame when nothing else changed: one
+/// record per book, no replacement, plant quality, return, drop, preview or landing under way, unique
+/// ids, an adoptable batch (`can_adopt(previous, records)`) and every previous record still shown by a
+/// connected, bound button in the same state (`state_for`). Only then is every record assigned.
+#[wasm_bindgen]
+pub fn scene_adopt_records(entries:&Array,previous:&JsValue,records:&JsValue,by_node:&Map,state_for:&Function,can_adopt:&Function)->R<bool>{
+ let mut books=Vec::new();
+ for entry in entries.iter(){if !decorative(&entry)?{books.push(entry);}}
+ if !Array::is_array(records)||read(records,"length")?!=JsValue::from_f64(books.len() as f64){return Ok(false);}
+ for entry in entries.iter(){
+  for key in ["replacement","plantQuality","insertion","trashDrop"]{if truthy(&read(&entry,key)?){return Ok(false);}}
+  if truthy(&read(&read(&entry,"preview")?,"active")?)||truthy(&read(&entry,"landing")?){return Ok(false);}
+ }
+ let by_id=Map::new();
+ for entry in &books{
+  let book=read(entry,"book")?;
+  by_id.set(&text_value(&if absent(&book){JsValue::UNDEFINED}else{read(&book,"id")?}),entry);
+ }
+ if by_id.size() as usize!=books.len()||!truthy(&can_adopt.call2(&JsValue::UNDEFINED,previous,records)?){return Ok(false);}
+ let current=each(previous,|book|{
+  let entry=by_id.get(&text_value(&read(&book,"id")?));
+  if !truthy(&entry)||read(&entry,"book")?!=book{return Ok(false);}
+  let node=read(&entry,"node")?;
+  if absent(&node)||!truthy(&read(&node,"isConnected")?)||by_node.get(&node)!=entry{return Ok(false);}
+  Ok(state_for.call1(&JsValue::UNDEFINED,&entry)?==read(&entry,"state")?)
+ })?;
+ if !current{return Ok(false);}
+ each(records,|book|{set(&by_id.get(&text_value(&read(&book,"id")?)),"book",&book)?;Ok(true)})?;
+ Ok(true)
+}
+
+/// A lamp's switch: its power eases from the one it shows (its fade, its light, else its last
+/// state) to on or off, over 220 ms when `animate`, starting now.
+#[wasm_bindgen]
+pub fn scene_lamp_switch(entry:&JsValue,is_on:&JsValue,animate:bool)->R{
+ let power=read(entry,"lampPower")?;
+ let mut previous=if absent(&power){JsValue::UNDEFINED}else{read(&power,"value")?};
+ if absent(&previous){
+  let model=read(entry,"model")?;
+  if !absent(&model){
+   let emitter=read(&read(&model,"userData")?,"lightEmitter")?;
+   if !absent(&emitter){previous=read(&emitter,"power")?;}
+  }
+ }
+ if absent(&previous){previous=JsValue::from_f64(if read(entry,"isOn")?==JsValue::FALSE{0.0}else{1.0});}
+ set(entry,"isOn",&JsValue::from_bool(*is_on!=JsValue::FALSE))?;
+ let fade:JsValue=Object::new().into();
+ set(&fade,"value",&previous)?;set(&fade,"from",&previous)?;
+ set(&fade,"target",&JsValue::from_f64(if truthy(&read(entry,"isOn")?){1.0}else{0.0}))?;
+ set(&fade,"started",&JsValue::from_f64(crate::host::clock()?))?;
+ set(&fade,"duration",&JsValue::from_f64(if animate{220.0}else{0.0}))?;
+ set(entry,"lampPower",&fade)
+}
+
+/// Whether another visible book than `caller` still decodes its first cover.
+#[wasm_bindgen]
+pub fn scene_covers_pending(entries:&Array,caller:&JsValue)->R<bool>{
+ for entry in entries.iter(){
+  if entry==*caller||decorative(&entry)?{continue;}
+  let model=read(&entry,"model")?;
+  if absent(&model)||!truthy(&read(&model,"visible")?){continue;}
+  if read(&read(&model,"userData")?,"coverLoaded")?.is_undefined(){return Ok(true);}
+ }
+ Ok(false)
+}
+
+/// Whether the other inspection export of this same synchronous batch (`captured`) already holds the
+/// pixels of `frame`, so `raw` can copy its canvas instead of reading the GPU again: the same frame,
+/// context, revision and materialized size, from the other tile.
+#[wasm_bindgen]
+pub fn scene_shared_capture(captured:&JsValue,overview:bool,frame:&JsValue,raw:&JsValue,source_frame:&JsValue,source_context:&JsValue,
+ source_revision:&JsValue,source_materialized:&JsValue)->R<bool>{
+ if !truthy(captured)||read(captured,"overview")?==JsValue::from_bool(overview)||read(captured,"frame")?!=*frame||*source_frame!=*frame||
+  read(captured,"context")?!=*source_context||*source_context==*raw||read(captured,"revision")?!=*source_revision||
+  *source_materialized!=*source_revision{return Ok(false);}
+ let size=|key:&str|->R<JsValue>{Ok(JsValue::from_f64((num(&read(frame,key)?)*num(&read(frame,"ratio")?)).ceil()))};
+ let (width,height)=(read(captured,"width")?,read(captured,"height")?);
+ if width!=size("width")?||height!=size("height")?{return Ok(false);}
+ for context in [raw,source_context]{
+  let canvas=read(context,"canvas")?;
+  if read(&canvas,"width")?!=width||read(&canvas,"height")?!=height{return Ok(false);}
+ }
+ Ok(true)
+}
+
+/// The resting offset of a shelf entry's placement preview.
+#[wasm_bindgen]
+pub fn scene_fresh_preview()->R<JsValue>{
+ let preview:JsValue=Object::new().into();
+ for key in ["x","y","fromX","fromY","targetX","targetY","started"]{set(&preview,key,&JsValue::from_f64(0.0))?;}
+ set(&preview,"active",&JsValue::FALSE)?;
+ Ok(preview)
+}
+
+/// A layout's new entry: its record, key and `pose`, no model yet, at rest, and empty per-frame caches
+/// of what the DOM said last time (see stateFor, hitSurface, project); `flags` is the shared at-rest set.
+#[wasm_bindgen]
+pub fn scene_fresh_entry(entry:&JsValue,index:f64,pose:&JsValue,flags:&JsValue)->R<JsValue>{
+ let fresh:JsValue=Object::assign(&Object::new(),entry.unchecked_ref::<Object>()).into();
+ set(&fresh,"key",&scene_entry_key(entry,index)?)?;
+ let (null,zero,empty,no)=(JsValue::NULL,JsValue::from_f64(0.0),st(""),JsValue::FALSE);
+ set(&fresh,"model",&null)?;set(&fresh,"replacement",&null)?;set(&fresh,"pose",pose)?;
+ let lift:JsValue=Object::new().into();
+ for key in ["value","from","target","started"]{set(&lift,key,&zero)?;}
+ set(&fresh,"lift",&lift)?;set(&fresh,"landing",&null)?;
+ let offset:JsValue=Object::new().into();set(&offset,"x",&zero)?;set(&offset,"y",&zero)?;
+ set(&fresh,"offset",&offset)?;set(&fresh,"preview",&scene_fresh_preview()?)?;
+ for (key,value) in [("state",&empty),("rect",&null),("hitRect",&null),("insertion",&null),("overview",&no),("inspectionResolution",&zero),
+  ("qualityReplacement",&no),("replacementReady",&no),("classText",&null),("flags",flags),("bits",&zero),("dragX",&empty),("dragY",&empty),
+  ("dragNumberX",&zero),("dragNumberY",&zero),("stateText",&empty),("box",&null),("fallback",&null),("written",&null),("seen",&zero),
+  ("domDirty",&JsValue::TRUE)]{set(&fresh,key,value)?;}
+ Ok(fresh)
+}
+
+/// A retained plant or lamp takes the incoming layout's record: a changed lamp or plant model is
+/// released, unless only a plant's pot colour changed and its model recolours itself in place (its
+/// detail is then prepared again); a retained model's projected foliage moves to the new button;
+/// the old button loses its model diagnostics; the record's fields are copied over.
+fn rebind_decor(entry:&JsValue,data:&JsValue,lamp:bool,host:&JsValue,foliage:&Map)->R{
+ use crate::scene_dom::{scene_clear_plant_diagnostics,scene_model_key};
+ let keys=if lamp{2}else{0};
+ let changed=scene_model_key(entry,keys)?!=scene_model_key(data,keys)?;
+ let mut retain=!changed;
+ if changed{
+  let recolored=!lamp&&scene_model_key(entry,1)?==scene_model_key(data,1)?&&{
+   let model=read(entry,"model")?;
+   if absent(&model){false}else{
+    let user=read(&model,"userData")?;
+    let recolor=read(&user,"updatePotColor")?;
+    !absent(&recolor)&&truthy(&method(&user,"updatePotColor",&[&read(data,"potColorId")?])?)
+   }
+  };
+  if !recolored{method(host,"release",&[entry])?;}
+  else{
+   let quality=read(entry,"plantQuality")?;
+   if !absent(&quality){method(&read(&quality,"plan")?,"dispose",&[])?;}
+   set(entry,"plantQuality",&JsValue::NULL)?;
+   set(&read(&read(entry,"model")?,"userData")?,"shelfPlantKeys",&scene_model_key(data,0)?)?;
+   retain=true;
+  }
+ }
+ if retain&&read(entry,"node")?!=read(data,"node")?{
+  let native=foliage.get(&read(entry,"node")?);
+  let node=read(data,"node")?;
+  if truthy(&native)&&truthy(&node){
+   foliage.delete(&read(entry,"node")?);
+   foliage.set(&node,&scene_rebind_foliage(&native,&node)?);
+  }
+ }
+ if read(entry,"node")?!=read(data,"node")?{scene_clear_plant_diagnostics(&read(entry,"node")?)?;}
+ Object::assign(entry.unchecked_ref::<Object>(),data.unchecked_ref::<Object>());
+ method(host,"place",&[entry])?;
+ Ok(())
+}
+
+/// A committed layout's entries, in its order: each incoming one takes over the old entry of its key
+/// (which leaves `old_entries`) or starts fresh (`host.fresh`, then `host.place`). A book's record goes
+/// through `host.record(entry, data)`, a plant's or lamp's through `rebind_decor`. Every entry
+/// restarts its preview, landing and written DOM state, and its button's original inline style is
+/// remembered once (`host.styles`). An away button hands its class to its replacement.
+#[wasm_bindgen]
+pub fn scene_rebind_entries(next_entries:&Array,old_entries:&Map,host:&JsValue)->R<Array>{
+ let foliage:Map=read(host,"foliage")?.unchecked_into();
+ let styles:Map=read(host,"styles")?.unchecked_into();
+ let retained=Array::new();
+ let count=num(&read(next_entries,"length")?) as u32;
+ for index in 0..count{
+  let data=get_at(next_entries,index);
+  let key=scene_entry_key(&data,f64::from(index))?;
+  let mut entry=old_entries.get(&key);
+  if truthy(&entry){
+   old_entries.delete(&key);
+   let (node,incoming)=(read(&entry,"node")?,read(&data,"node")?);
+   if node!=incoming&&!absent(&node)&&has_class(&node,"is-away")?&&!absent(&incoming){
+    method(&read(&incoming,"classList")?,"add",&[&st("is-away")])?;
+   }
+   let kind=read(&data,"kind")?;
+   if kind==st("plant")||kind==st("lamp"){rebind_decor(&entry,&data,kind==st("lamp"),host,&foliage)?;}
+   else{set(&entry,"node",&read(&data,"node")?)?;method(host,"record",&[&entry,&data])?;}
+  }else{
+   entry=method(host,"fresh",&[&data,&JsValue::from_f64(f64::from(index))])?;
+   method(host,"place",&[&entry])?;
+  }
+  set(&entry,"preview",&scene_fresh_preview()?)?;
+  set(&entry,"landing",&JsValue::NULL)?;
+  set(&entry,"written",&JsValue::NULL)?;set(&entry,"leanNode",&JsValue::NULL)?;set(&entry,"domDirty",&JsValue::TRUE)?;
+  set(&entry,"key",&key)?;
+  retained.push(&entry);
+  let node=read(&entry,"node")?;
+  if truthy(&node)&&!styles.has(&node){styles.set(&node,&method(&node,"getAttribute",&[&st("style")])?);}
+ }
+ Ok(retained)
+}

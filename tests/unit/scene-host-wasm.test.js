@@ -197,3 +197,135 @@ it('paints the veneer swatch, tints the wood and hides the bin\'s button as befo
   expect(b.outerHTML).toBe(a.outerHTML);expect([b.hidden,b.inert,b.tabIndex]).toEqual([a.hidden,a.inert,a.tabIndex]);
  }
 });
+
+function adoption(seed,log){
+ const next=random(seed+900),count=1+seed%7,byNode=new Map(),host=document.createElement('div');
+ document.body.append(host);
+ const entries=Array.from({length:count},(_,index)=>{
+  const kind=next()<.2?(next()<.5?'plant':'lamp'):undefined,node=next()<.95?document.createElement('button'):null;
+  if(node&&next()<.95)host.append(node);
+  const book=kind?undefined:{id:next()<.08?'dup':next()<.05?undefined:`b${index}`,title:`t${index}`};
+  const entry={kind,node,book,state:`s${index}`,preview:{active:next()<.03},landing:next()<.03?{}:null,replacement:next()<.03?{}:undefined,
+   plantQuality:null,insertion:next()<.02?{}:null,trashDrop:null};
+  if(node&&next()<.95)byNode.set(node,next()<.97?entry:{});
+  return entry;
+ });
+ const books=entries.filter(entry=>entry.book);
+ const previous=books.map(entry=>next()<.97?entry.book:{...entry.book});
+ const records=next()<.05?{length:books.length}:books.map(entry=>({...entry.book,title:`new ${entry.book.title}`}));
+ if(next()<.05&&Array.isArray(records))records.pop();
+ const stateFor=entry=>{log.push(['state',entry.state]);return next()<.97?entry.state:'moved';};
+ const canAdopt=(before,after)=>{log.push(['can',before.length,after.length]);return next()<.95;};
+ return {entries,previous,records,byNode,stateFor,canAdopt,host};
+}
+it('adopts saved metadata records under the same conditions and assigns them all at once',()=>{
+ let adopted=0;
+ for(let seed=0;seed<300;seed++){
+  const logs=[[],[]],[a,b]=[adoption(seed,logs[0]),adoption(seed,logs[1])];
+  const expected=reference.adoptRecords(a.entries,a.previous,a.records,a.byNode,a.stateFor,a.canAdopt);adopted+=expected;
+  expect(rust.scene_adopt_records(b.entries,b.previous,b.records,b.byNode,b.stateFor,b.canAdopt)).toBe(expected);
+  expect(logs[1]).toEqual(logs[0]);
+  expect(b.entries.map(entry=>entry.book&&[entry.book.id,entry.book.title,b.records.indexOf?.(entry.book)])).toEqual(a.entries.map(entry=>entry.book&&[entry.book.id,entry.book.title,a.records.indexOf?.(entry.book)]));
+  a.host.remove();b.host.remove();
+ }
+ expect(adopted).toBeGreaterThan(20);expect(adopted).toBeLessThan(300);
+});
+
+it('switches a lamp, finds pending covers and decides a shared inspection capture as before',()=>{
+ let clock=0;vi.spyOn(performance,'now').mockImplementation(()=>clock);
+ const values=[undefined,null,0,.4,1,-0,NaN];
+ for(let seed=0;seed<200;seed++){
+  const next=random(seed+1100),pick=list=>list[Math.floor(next()*list.length)];
+  const make=()=>({isOn:pick([undefined,false,true,0]),lampPower:next()<.5?{value:pick(values)}:undefined,
+   model:next()<.6?{userData:{lightEmitter:next()<.6?{power:pick(values)}:undefined}}:undefined});
+  const state=JSON.stringify(make()),[a,b]=[JSON.parse(state),JSON.parse(state)];
+  const isOn=pick([true,false,undefined,0,null]),animate=next()<.5;clock=seed*16.5;
+  reference.lampSwitch(a,isOn,animate);rust.scene_lamp_switch(b,isOn,animate);
+  expect(b.isOn).toBe(a.isOn);expect(Object.entries(b.lampPower).map(([k,v])=>[k,bits([v])[0]])).toEqual(Object.entries(a.lampPower).map(([k,v])=>[k,bits([v])[0]]));
+ }
+ for(let seed=0;seed<200;seed++){
+  const next=random(seed+1300),entries=Array.from({length:seed%6},()=>({kind:[undefined,'plant','lamp','book'][Math.floor(next()*4)],
+   model:next()<.8?{visible:next()<.7?true:[false,0,undefined][Math.floor(next()*3)],userData:{coverLoaded:[undefined,true,false,null][Math.floor(next()*4)]}}:null}));
+  for(const caller of [null,entries[0],entries[1]])expect(rust.scene_covers_pending(entries,caller)).toBe(reference.coversPending(entries,caller));
+ }
+ const canvas=(width,height)=>({width,height}),frameOf=(width,height,ratio)=>({width,height,ratio});
+ let shared=0;
+ for(let seed=0;seed<400;seed++){
+  const next=random(seed+1500),pick=list=>list[Math.floor(next()*list.length)];
+  const frame=frameOf(pick([100,100.5,33.3]),pick([80,79.2]),pick([1,1.5,2,2.625]));
+  const width=Math.ceil(frame.width*frame.ratio),height=Math.ceil(frame.height*frame.ratio);
+  const source={canvas:next()<.9?canvas(width,height):canvas(width+1,height)},raw={canvas:next()<.9?canvas(width,height):canvas(width,height-1)};
+  const overview=next()<.5,revision=pick([1,2]);
+  const captured=next()<.1?null:{overview:next()<.9?!overview:overview,frame:next()<.95?frame:{...frame},context:next()<.95?source:raw,revision:next()<.9?revision:3,
+   width:next()<.95?width:width-1,height:next()<.95?height:-0};
+  const args=[captured,overview,frame,next()<.95?raw:source,next()<.95?frame:null,source,revision,next()<.9?revision:0];
+  const expected=reference.sharedCapture(...args);shared+=expected;
+  expect(rust.scene_shared_capture(...args)).toBe(expected);
+ }
+ expect(shared).toBeGreaterThan(20);expect(shared).toBeLessThan(400);
+});
+
+it('makes a layout\'s fresh entries and previews with the same fields in the same order',()=>{
+ const flags=Object.freeze({away:false});
+ expect(JSON.stringify(rust.scene_fresh_preview())).toBe(JSON.stringify(reference.freshPreview()));
+ for(let index=0;index<12;index++){
+  const node=document.createElement('button');if(index%2)node.dataset.objectId=`o${index}`;
+  const source={kind:['plant','lamp',undefined][index%3],node,book:index%4?{id:`b${index}`}:undefined,width:10+index,x:index,key:index%5?`k${index}`:undefined,
+   ...(index%3?{lift:'old',written:'old',preview:'old'}:{})};
+  const pose=new THREE.Object3D(),[a,b]=[reference.freshEntry(source,index,pose,flags),rust.scene_fresh_entry(source,index,pose,flags)];
+  expect(Object.keys(b)).toEqual(Object.keys(a));
+  for(const key of Object.keys(a))if(typeof a[key]!=='object'||a[key]===null)expect(Object.is(b[key],a[key])).toBe(true);
+  expect(b.pose).toBe(pose);expect(b.flags).toBe(flags);expect(b.node).toBe(node);expect(b.book).toBe(source.book);
+  for(const key of ['lift','offset','preview'])expect(JSON.stringify(b[key])).toBe(JSON.stringify(a[key]));
+  expect(b.lift).not.toBe(source.lift);
+ }
+});
+
+function layoutCase(seed,log){
+ const next=random(seed+2000),pick=list=>list[Math.floor(next()*list.length)];
+ const nodes=Array.from({length:12},(_,i)=>{
+  const node=document.createElement('button');node.className=pick(['ihr-spine','ihr-spine is-away','']);
+  if(next()<.5)node.setAttribute('style',`left: ${i}px;`);if(next()<.6)node.dataset.objectId=`o${i%7}`;
+  node.dataset.plantModelDepth='1';node.dataset.n=String(i);return node;
+ });
+ const record=i=>({kind:pick(['plant','lamp',undefined,'plant']),node:pick([...nodes,null]),book:{id:`b${i%6}`},width:pick([10,12]),height:20,
+  variant:pick([0,1]),catalogId:'c',potId:'p',potColorId:pick(['red','blue']),seed:1,lampId:pick(['l','m']),depth:5,mount:pick(['floor','undershelf']),style:{},coverUrl:''});
+ const old=new Map(),foliage=new Map(),styles=new Map();
+ for(let i=0;i<9;i++){
+  const data=record(i),entry={...data,model:next()<.8?{userData:{shelfPlantKeys:'old',...(next()<.6?{updatePotColor(color){log.push(['recolor',color]);return next()<.7;}}:{})}}:null,
+   plantQuality:next()<.4?{plan:{dispose(){log.push(['dispose',i]);}}}:null,preview:{x:5},landing:{},written:{},leanNode:data.node,domDirty:false,n:i};
+  entry.key=reference.entryKey(data,i);old.set(entry.key,entry);
+  if(data.node&&next()<.5){
+   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=`<path d="M${i} 0Z"></path>`;data.node.append(svg);
+   foliage.set(data.node,{svg,path:svg.firstChild,exclusions:null,state:{n:i}});
+  }
+ }
+ for(const node of nodes)if(next()<.2)styles.set(node,'kept');
+ const entries=Array.from({length:4+seed%7},(_,i)=>record(next()<.7?i:i+20));
+ const flags=Object.freeze({away:false});
+ const host={foliage,styles,release:entry=>log.push(['release',entry.n]),place:entry=>log.push(['place',entry.n??entry.key,entry.node?.dataset.n]),
+  fresh:(data,index)=>{log.push(['fresh',index]);return reference.freshEntry(data,index,{pose:index},flags);},
+  record:(entry,data)=>log.push(['record',entry.n,data.book?.id,data.node?.dataset.n])};
+ return {entries,old,host,nodes};
+}
+const layoutState=({old,host,nodes},retained)=>({
+ retained:retained.map(entry=>[entry.n??null,entry.key,entry.kind,entry.node?.dataset.n,JSON.stringify(entry.preview),entry.landing,entry.written,entry.leanNode,entry.domDirty,
+  Boolean(entry.plantQuality),entry.model?.userData.shelfPlantKeys,entry.potColorId,entry.width,entry.lampId]),
+ old:[...old.keys()],
+ foliage:[...host.foliage.entries()].map(([node,native])=>[node.dataset.n,native.svg.outerHTML,native.svg.parentNode?.dataset?.n,Object.keys(native),native.state.n]),
+ styles:[...host.styles.entries()].map(([node,style])=>[node.dataset.n,style]),
+ nodes:nodes.map(node=>node.outerHTML)
+});
+it('rebinds a committed layout\'s entries exactly as before',()=>{
+ const seen=new Set();
+ for(let seed=0;seed<160;seed++){
+  const logs=[[],[]],[a,b]=[layoutCase(seed,logs[0]),layoutCase(seed,logs[1])];
+  const expected=reference.rebindEntries(a.entries,a.old,a.host),native=rust.scene_rebind_entries(b.entries,b.old,b.host);
+  expect(Array.isArray(native)).toBe(true);
+  expect(layoutState(b,native)).toEqual(layoutState(a,expected));
+  expect(logs[1]).toEqual(logs[0]);
+  for(const [name] of logs[0])seen.add(name);
+  a.nodes.forEach(node=>node.remove());b.nodes.forEach(node=>node.remove());
+ }
+ expect([...seen].sort()).toEqual(['dispose','fresh','place','recolor','record','release']);
+});
