@@ -10,30 +10,9 @@ const DB_VERSION = 2
 const STORE = 'books'
 const REMOVED_STORE = 'removed-books'
 
-/**
- * @typedef {Object} BookRecord
- * @property {string} id            - hash estable derivado del origen del libro
- * @property {string} title
- * @property {string} [author]
- * @property {string} format        - etiqueta legible: 'PDF' | 'EPUB' | 'MOBI' | ...
- * @property {'local'|'drive'} sourceType
- * @property {string} [driveFileId] - solo si sourceType === 'drive'
- * @property {Blob}   [content]     - bytes del propio libro, también descargado de Drive: permite
- *                                    reabrirlo sin volver a pedirle el archivo al
- *                                    usuario, sin depender de ninguna API de
- *                                    carpetas (funciona igual en Android que en
- *                                    escritorio)
- * @property {Blob}   [cover]       - portada renderizada, si se pudo extraer
- * @property {string} [contentRevision] - identity of these committed original bytes
- * @property {number} [wordCount] - complete extractable text across all PDF pages/spine sections
- * @property {number} [wordCountVersion] - counting convention, independent of reader layout
- * @property {boolean} [wordCountComplete] - partial/legacy counts never determine shelf geometry
- * @property {string} [wordCountContentRevision] - bytes to which the count belongs
- * @property {number} addedAt
- * @property {number} lastOpenedAt
- * @property {number} progressFraction - 0..1
- * @property {*}      [locator]     - página PDF o CFI/fraction de foliate, opaco para el store
- */
+// The record shape (BookRecord) and every read/modify/write, with the promises of its IndexedDB
+// requests and transactions, are rust-ui/src/library_store.rs. Opening the database and the
+// list reads stay here: they start before any module could load.
 
 function openDB(dbName) {
   return new Promise((resolve, reject) => {
@@ -69,22 +48,10 @@ function wrap(request) {
   })
 }
 
-function committed(transaction) {
-  const completion = new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve()
-    transaction.onabort = () => reject(transaction.error || new Error('No se pudo guardar la biblioteca.'))
-    transaction.onerror = () => reject(transaction.error)
-  })
-  // A failed request can reject before its abort event. The caller still
-  // receives that failure, without a second unhandled rejection here.
-  completion.catch(() => {})
-  return completion
-}
-
 export const idForSource = source => bookDataModule().library_id_for_source(source)
 // A browser type primitive; comparison and traversal belong to Rust.
 const dateInstance = value => value instanceof Date
-export const libraryHost = { wrap, committed,
+export const libraryHost = {
   recordComparator:next => { const native = bookDataModule(); return (record, index) => native.library_record_equal(next, record, index, dateInstance) },
   recentComparator:() => { const native = bookDataModule(); return (a, b) => native.library_recent_order(a, b) }
 }

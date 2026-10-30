@@ -1,5 +1,22 @@
-//! Library decisions and atomic read/modify/write operations. The host supplies
-//! IndexedDB request/completion promises; no module load happens in a transaction.
+//! Library decisions and atomic read/modify/write operations, and the promises of their
+//! IndexedDB requests and transactions. No module load happens in a transaction.
+//!
+//! A book record (`books` store, keyPath `id`, index `lastOpenedAt`):
+//! - `id`: stable hash of the book's origin (`drive:<fileId>` or `local:<name>:<size>`);
+//! - `title`, `author?`, `format` (readable label: 'PDF' | 'EPUB' | 'MOBI' | ...);
+//! - `sourceType`: 'local' | 'drive', with `driveFileId` only for Drive books;
+//! - `content?`: the book's own bytes (a Blob, also when downloaded from Drive), so it reopens
+//!   without asking for the file again or any folder API (the same on Android and desktop);
+//! - `cover?`: the rendered cover Blob, when one could be extracted;
+//! - `contentRevision?`: identity of these committed original bytes;
+//! - `wordCount?`, `wordCountVersion?`, `wordCountComplete?`, `wordCountContentRevision?`: the
+//!   complete extractable text across all PDF pages/spine sections, its counting convention
+//!   (independent of reader layout), whether it is complete (partial/legacy counts never
+//!   determine shelf geometry) and the bytes it belongs to;
+//! - `addedAt`, `lastOpenedAt`, `progressFraction` (0..1) and `locator?` (a PDF page or a
+//!   foliate CFI/fraction, opaque to the store).
+//!
+//! Books taken off the shelf are remembered in `removed-books` (keyPath `id`).
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Object,Promise};
 use crate::host::{read,method,truthy,absent,call,global};
@@ -13,13 +30,13 @@ fn coalesce(a:JsValue,b:JsValue)->JsValue{if absent(&a){b}else{a}}
 fn opts(value:&JsValue,key:&str,fallback:JsValue)->R<JsValue>{let value=read(value,key)?;Ok(if value.is_undefined(){fallback}else{value})}
 fn callback(env:&JsValue,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(env,name)?,name,args)}
 async fn wait(value:R<JsValue>)->R<JsValue>{cloud_host::settle(value).await}
-async fn request(env:&JsValue,value:R<JsValue>)->R<JsValue>{wait(callback(env,"wrap",&[&value?])).await}
+async fn request(_env:&JsValue,value:R<JsValue>)->R<JsValue>{wait(Ok(idb_request(&value?)?.into())).await}
 async fn db(value:&JsValue)->R<JsValue>{wait(Ok(value.clone())).await}
 fn now()->R<JsValue>{method(&read(&global(),"Date")?,"now",&[])}
 fn number(value:&JsValue)->R<f64>{Ok(crate::host::num(&call(&read(&global(),"Number")?,"Number",&[value])?))}
 fn joined(values:&[JsValue])->R<JsValue>{method(&s(""),"concat",&values.iter().collect::<Vec<_>>())}
 fn fields(parts:&[&JsValue])->R<JsValue>{let entries=Array::new();for part in parts{copy_data_entries(&entries,part)?;}Ok(Object::from_entries(&entries.into())?.into())}
-fn complete(env:&JsValue,transaction:&JsValue)->R<JsValue>{callback(env,"committed",&[transaction])}
+fn complete(_env:&JsValue,transaction:&JsValue)->R<JsValue>{Ok(idb_committed(transaction)?.into())}
 fn store_at(db:&JsValue,name:&str,mode:&str)->R<JsValue>{method(&method(db,"transaction",&[&s(name),&s(mode)])?,"objectStore",&[&s(name)])}
 fn transaction(db:&JsValue)->R<JsValue>{let names=Array::new();names.push(&s(BOOKS));names.push(&s(REMOVED));method(db,"transaction",&[&names.into(),&s("readwrite")])}
 fn matches(removal:&JsValue,source:&JsValue)->R<bool>{
@@ -238,3 +255,69 @@ pub fn library_clear(database:JsValue,env:JsValue)->Promise{cloud_host::start(as
  method(&method(&transaction,"objectStore",&[&s(REMOVED)])?,"clear",&[])?;
  wait(Ok(completion)).await?;Ok(JsValue::UNDEFINED)
 })}
+
+// ---- IndexedDB request and transaction promises ----
+use std::cell::{Cell,RefCell};
+use wasm_bindgen::closure::Closure;
+type Handler=Closure<dyn FnMut(JsValue)>;
+thread_local!{
+ static HANDLERS:RefCell<Vec<(u64,Handler)>>=const{RefCell::new(Vec::new())};
+ static NEXT:Cell<u64>=const{Cell::new(0)};
+ static IGNORE:Handler=Closure::new(|_:JsValue|{});
+}
+/// Event handlers live here until their request or transaction settles; a handler may release
+/// itself (wasm-bindgen defers dropping the running closure).
+fn handler(body:impl FnMut(JsValue)+'static)->(u64,JsValue){
+ let key=NEXT.with(|next|{next.set(next.get()+1);next.get()});
+ let closure:Handler=Closure::wrap(Box::new(body) as Box<dyn FnMut(JsValue)>);let function=closure.as_ref().clone();
+ HANDLERS.with(|live|live.borrow_mut().push((key,closure)));(key,function)
+}
+fn release_now(keys:&[u64]){
+ let found:Vec<(u64,Handler)>=HANDLERS.with(|live|{let mut live=live.borrow_mut();let mut found=Vec::new();let mut index=0;
+  while index<live.len(){if keys.contains(&live[index].0){found.push(live.remove(index));}else{index+=1;}}found});drop(found);
+}
+fn settle_with(target:&JsValue,key:&str,done:&Function){
+ match read(target,key){Ok(value)=>{let _=done.call1(&JsValue::UNDEFINED,&value);}Err(error)=>wasm_bindgen::throw_val(error)}
+}
+/// `new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result);
+/// request.onerror = () => reject(request.error) })`.
+pub fn idb_request(request:&JsValue)->R<Promise>{
+ Ok(Promise::new(&mut|resolve:Function,reject:Function|{
+  let keys=Rc::new(Cell::new([0u64;2]));
+  let (target,ks)=(request.clone(),keys.clone());
+  let (ok,success)=handler(move|_|{release_now(&ks.get());settle_with(&target,"result",&resolve);});
+  let (target,ks,fail)=(request.clone(),keys.clone(),reject.clone());
+  let (err,failure)=handler(move|_|{release_now(&ks.get());settle_with(&target,"error",&fail);});
+  keys.set([ok,err]);
+  if let Err(error)=crate::host::set(request,"onsuccess",&success).and_then(|_|crate::host::set(request,"onerror",&failure)){
+   release_now(&[ok,err]);let _=reject.call1(&JsValue::UNDEFINED,&error);
+  }
+ }))
+}
+/// The completion of a readwrite transaction: resolves on `complete`, rejects with its error on
+/// `error` or `abort` (a generic error when an abort has none). Its rejection is also observed
+/// here, so a failed request that rejects first leaves no unhandled second rejection.
+pub fn idb_committed(transaction:&JsValue)->R<Promise>{
+ let completion=Promise::new(&mut|resolve:Function,reject:Function|{
+  let keys=Rc::new(Cell::new([0u64;3]));
+  let ks=keys.clone();
+  let (done,complete)=handler(move|_|{release_now(&ks.get());let _=resolve.call0(&JsValue::UNDEFINED);});
+  let (target,ks,fail)=(transaction.clone(),keys.clone(),reject.clone());
+  let (aborted,abort)=handler(move|_|{release_now(&ks.get());
+   match read(&target,"error"){
+    Ok(error)=>{let error=if truthy(&error){error}else{js_sys::Error::new("No se pudo guardar la biblioteca.").into()};let _=fail.call1(&JsValue::UNDEFINED,&error);}
+    Err(error)=>wasm_bindgen::throw_val(error)
+   }
+  });
+  let (target,fail)=(transaction.clone(),reject.clone());
+  let (failed,error)=handler(move|_|settle_with(&target,"error",&fail));
+  keys.set([done,aborted,failed]);
+  let set=|key:&str,value:&JsValue|crate::host::set(transaction,key,value);
+  if let Err(problem)=set("oncomplete",&complete).and_then(|_|set("onabort",&abort)).and_then(|_|set("onerror",&error)){
+   release_now(&[done,aborted,failed]);let _=reject.call1(&JsValue::UNDEFINED,&problem);
+  }
+ });
+ IGNORE.with(|ignore|{let _=completion.catch(ignore);});
+ Ok(completion)
+}
+use std::rc::Rc;

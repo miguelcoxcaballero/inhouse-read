@@ -1,6 +1,8 @@
 import {it,expect,vi,beforeEach,afterEach} from 'vitest'
 import {webcrypto} from 'node:crypto'
-import {setImmediate as nextTurn} from 'node:timers/promises'
+// WebCrypto runs on real host threads while app timers are fake: yield real time, as the policy test does.
+import {setTimeout as waitForHost} from 'node:timers/promises'
+const nextTurn=()=>waitForHost(1)
 import {rustUI} from './helpers/rust-ui-ready.js'
 const io=vi.hoisted(()=>({context:vi.fn(),read:vi.fn(),write:vi.fn(),revision:vi.fn(),stateRead:vi.fn(),stateWrite:vi.fn()}))
 vi.mock('../../src/js/cloud-native.js',()=>({cloudModule:async()=>rustUI}))
