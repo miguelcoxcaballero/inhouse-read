@@ -1,5 +1,5 @@
 // Drive tools/bench/book-model.html in headless Chromium (SwiftShader) against a running `npx vite`:
-//   node tools/bench/run-book-model-bench.mjs <port> [--cpu 4] [--books 60] [--rounds 5] [--profile] [--motion] [--reference] [--model-compare] [--view-compare] [--overview] [--lifted]
+//   node tools/bench/run-book-model-bench.mjs <port> [--cpu 4] [--books 60] [--rounds 5] [--profile] [--motion] [--reference] [--model-compare] [--page-compare] [--view-compare] [--overview] [--lifted]
 // Prints JSON lines: creation time of shelf models (sync part of createBookModel), and the CPU cost
 // of bookView.draw during one opening (with and without the GPU draw itself).
 import { chromium } from 'playwright';
@@ -24,8 +24,8 @@ await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
 const median = values => { const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
 const overview = args.includes('--overview');
-async function createRound(count) {
-  return page.evaluate(async ([count, lifted, overview]) => {
+async function createRound(count, on = page) {
+  return on.evaluate(async ([count, lifted, overview]) => {
     const { model } = await window.benchReady;
     const list = window.benchBooks(count), made = [];
     const start = performance.now();
@@ -38,7 +38,30 @@ async function createRound(count) {
   }, [count, lifted, overview]);
 }
 
-if (creation) {
+if (args.includes('--page-compare')) {
+  // createBookModel of the frozen JavaScript (?reference) and of the shelf module, one page per module
+  // (each with its own JIT, heap, shared textures and renderers), rounds interleaved between the pages.
+  const other = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+  other.on('pageerror', error => console.error('pageerror', error.message));
+  await other.goto(`http://127.0.0.1:${port}/inhouse-read/tools/bench/book-model.html?reference`);
+  await other.waitForFunction(() => window.benchReady, null, { timeout: 60000 });
+  await other.evaluate(() => window.benchReady.then(() => true));
+  const otherCdp = await other.context().newCDPSession(other);
+  await otherCdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
+  for (let warm = 0; warm < 2; warm++) { await createRound(4, other); await createRound(4, page); }
+  const times = { js: [], rust: [] };
+  for (let r = 0; r < rounds; r++) {
+    if (r % 2) { times.rust.push(await createRound(books, page)); times.js.push(await createRound(books, other)); }
+    else { times.js.push(await createRound(books, other)); times.rust.push(await createRound(books, page)); }
+  }
+  const mode = lifted ? 'lifted' : overview ? 'overview' : 'shelf';
+  console.log(JSON.stringify({ bench: `createBookModel(${mode}) one page per module`, cpu, books,
+    jsRoundsMs: times.js.map(t => +t.toFixed(1)), rustRoundsMs: times.rust.map(t => +t.toFixed(1)),
+    jsMedianMs: +median(times.js).toFixed(1), rustMedianMs: +median(times.rust).toFixed(1),
+    jsMinMs: +Math.min(...times.js).toFixed(1), rustMinMs: +Math.min(...times.rust).toFixed(1),
+    rustOverJs: +(median(times.rust) / median(times.js)).toFixed(3) }));
+  await other.close();
+} else if (creation) {
   await createRound(4); // warm module code paths, shared textures and the JIT
   const times = [];
   for (let r = 0; r < rounds; r++) times.push(await createRound(books));
