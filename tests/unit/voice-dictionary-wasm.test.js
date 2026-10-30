@@ -121,7 +121,9 @@ describe('the verified dictionary cache in Rust behaves like the original', () =
     const fetches = [async () => new Response(null, { status:404 }), async () => { throw new TypeError('offline') }, () => { throw new Error('sync') },
       async () => new Response(new ReadableStream({ start(controller) { controller.error(new Error('broken')) } })), async () => null, async () => ({ ok:false }),
       async () => ({ ok:false, status:null }), async () => { const error = new Error('aborted fetch'); error.name = 'AbortError'; throw error },
-      async () => ({ ok:true, body:{ getReader: () => ({ read: async () => ({ done:false, value:'text' }), cancel: async () => {} }) } }),
+      // A chunk that is not bytes (a non-numeric length would loop on settled reads in both: not exercised).
+      async () => { let sent = false; return { ok:true, body:{ getReader: () => ({ read: async () => sent ? { done:true } : (sent = true, { done:false, value:new Uint8Array(9) }), cancel: async () => {} }) } } },
+      async () => ({ ok:true, body:{ getReader: () => ({ read: async () => null, cancel: async () => { throw new Error('cancel') } }) } }),
       async () => ({ ok:true, body:{ getReader: 5 } }), null, 5, 'fetch']
     for (const fetch of fetches) await same(trace => ({ ...doubles(trace), fetch, onProgress: progress(trace) }))
   })

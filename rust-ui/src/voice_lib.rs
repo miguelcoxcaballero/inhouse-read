@@ -22,6 +22,8 @@ mod hebrew;
 mod onnx_durations;
 #[path = "../../rust-core/src/phonemizer_runtime.rs"]
 mod phonemizer_runtime;
+#[path = "../../rust-core/src/supertonic_catalog.rs"]
+mod supertonic_catalog;
 #[cfg(not(feature = "ui"))]
 mod eager;
 mod voice_kernels;

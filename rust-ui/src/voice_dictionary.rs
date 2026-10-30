@@ -8,7 +8,7 @@
 //! JavaScript original is tests/unit/helpers/reference-dictionary-cache.js. Cache Storage, fetch, the stream reader,
 //! Response and crypto.subtle stay the browser's: they are looked up at call time as the bare names were.
 use std::{cell::RefCell,rc::Rc};
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*,JsCast};
 use wasm_bindgen_futures::{JsFuture,future_to_promise};
 use js_sys::{Array,JsString,Object,Promise,Uint8Array};
 use crate::host::{absent,call,construct,get,global,method,method_opt,num,number_string,read,set};
@@ -182,7 +182,11 @@ fn cancel_reader(reader:&JsValue){let _=method(reader,"cancel",&[]).and_then(|ca
 async fn read_network(response:&JsValue,index:usize,signal:&JsValue,on_progress:&JsValue)->R{
  let total=size_of(index);
  let body=read(response,"body")?;
- let reader=method_opt(&body,"getReader",&[])?.unwrap_or(JsValue::UNDEFINED);
+ // `response.body?.getReader?.()`, failing with the engine's own message for a getReader that is not a function.
+ let get_reader=if absent(&body){JsValue::UNDEFINED}else{read(&body,"getReader")?};
+ let reader=if absent(&get_reader){JsValue::UNDEFINED}else{
+  get_reader.dyn_ref::<js_sys::Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new("response.body?.getReader is not a function")))?.call0(&body)?
+ };
  if !reader.is_truthy(){
   let bytes=settled(abortable(method(response,"arrayBuffer",&[])?,signal,None)?).await?;
   validate(&bytes,index,signal).await?;
@@ -198,6 +202,10 @@ async fn read_network(response:&JsValue,index:usize,signal:&JsValue,on_progress:
    let source=reader.clone();
    let cancel:Rc<dyn Fn()>=Rc::new(move||cancel_reader(&source));
    let step=settled(abortable(method(&reader,"read",&[])?,signal,Some(cancel))?).await?;
+   if absent(&step){
+    let what=if step.is_null(){"null"}else{"undefined"};
+    return Err(js_sys::TypeError::new(&format!("Cannot destructure property 'done' of '(intermediate value)' as it is {what}.")).into())
+   }
    let (done,value)=(read(&step,"done")?,read(&step,"value")?);
    if done.is_truthy(){break}
    let offset=received;

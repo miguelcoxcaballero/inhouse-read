@@ -14,6 +14,7 @@ use wasm_bindgen::JsCast;
 use crate::eager::{eager, settled};
 use crate::host::{absent, call, get, get_at, method, method_opt, num, read, set, text_value};
 use crate::supertonic_runtime as runtime;
+use crate::supertonic_catalog as catalog;
 use crate::voice_kernels as kernels;
 
 type R<T = JsValue> = Result<T, JsValue>;
@@ -72,8 +73,10 @@ impl Inner {
     fn normalize(&self, value: &JsValue, lang: &JsValue) -> R<JsString> { normalize(&self.kit, value, lang) }
     fn style(&self, style: &JsValue) -> R { Reflect::get(&self.style_tensors, style) }
 }
-fn normalize(kit: &JsValue, value: &JsValue, lang: &JsValue) -> R<JsString> {
-    if !method(&get(kit, "languages"), "includes", &[lang])?.is_truthy() {
+/// `SUPERTONIC_LANGUAGES.includes(lang)`.
+fn is_language(lang: &JsValue) -> bool { lang.as_string().is_some_and(|lang| catalog::is_language(&lang)) }
+fn normalize(_kit: &JsValue, value: &JsValue, lang: &JsValue) -> R<JsString> {
+    if !is_language(lang) {
         return Err(error(&format!("Idioma Supertonic no disponible: {}", string(lang))));
     }
     let source = if value.is_truthy() { text_value(value) } else { text("") };
@@ -251,7 +254,7 @@ impl VoiceSupertonic {
         let active = { let active = field("isActive")?; if active.is_undefined() { get(&self.inner.kit, "always") } else { active } };
         let marks = { let marks = field("marks")?; if marks.is_undefined() { Array::new().into() } else { marks } };
         let inner = self.inner.clone();
-        let valid = method(&get(&inner.kit, "languages"), "includes", &[&lang])?.is_truthy() && inner.style(&style)?.is_truthy();
+        let valid = is_language(&lang) && inner.style(&style)?.is_truthy();
         let token = unsafe { runtime::supertonic_state_begin(inner.state.get(), u32::from(valid), rate.as_f64().unwrap_or(f64::NAN)) };
         if token < 0.0 {
             let reason = if token == -1.0 { cancelled() } else { error(if token == -2.0 { "Síntesis ya en curso" } else { "Opciones de voz inválidas" }) };
@@ -323,14 +326,14 @@ pub fn voice_supertonic_create(options: JsValue, kit: JsValue) -> Promise {
             drop(buffers);
             Reflect::delete_property(&Object::from(options.clone()), &text("buffers"))?;
             let styles = field("styles");
-            for name in Array::from(&get(&kit, "legacy")).iter() {
-                if !get(&styles, &string(&name)).is_truthy() { return Err(error(&format!("Falta el estilo {}", string(&name)))); }
+            for &name in catalog::LEGACY_STYLES {
+                if !get(&styles, name).is_truthy() { return Err(error(&format!("Falta el estilo {name}"))); }
             }
-            let present: Vec<JsValue> = Array::from(&get(&kit, "styles")).iter().filter(|name| get(&styles, &string(name)).is_truthy()).collect();
+            let present: Vec<&str> = catalog::STYLES.iter().copied().filter(|&name| get(&styles, name).is_truthy()).collect();
             for name in present {
-                let raw = get(&styles, &string(&name));
+                let raw = get(&styles, name);
                 let tensors = JsValue::from(Object::new());
-                set(&style_tensors, &string(&name), &tensors)?;
+                set(&style_tensors, name, &tensors)?;
                 for (key, field) in [("ttl", "style_ttl"), ("dp", "style_dp")] {
                     let source = read(&raw, field)?;
                     let dims = get(&source, "dims");
@@ -344,7 +347,7 @@ pub fn voice_supertonic_create(options: JsValue, kit: JsValue) -> Promise {
                         let values: Vec<f64> = Array::from(&data).iter().map(|value| value.as_f64().unwrap_or(f64::NAN)).collect();
                         kernels::voice_host_style_valid(dims.clone(), &values)
                     };
-                    if !valid { return Err(error(&format!("Estilo {} inválido", string(&name)))); }
+                    if !valid { return Err(error(&format!("Estilo {name} inválido"))); }
                     set(&tensors, key, &tensor(&ort, "float32", &Float32Array::new(&data).into(), &dims)?)?;
                 }
             }
