@@ -4,7 +4,7 @@
 use wasm_bindgen::{prelude::*,JsCast};
 use wasm_bindgen_futures::JsFuture;
 use js_sys::{Function,Object,Promise};
-use crate::host::{absent,get,global,method,read,set,truthy};
+use crate::host::{absent,clear_timeout,get,global,method,read,set,truthy};
 use crate::cloud_host::start;
 type R<T=()>=Result<T,JsValue>;
 

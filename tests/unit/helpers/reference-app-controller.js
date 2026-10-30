@@ -48,3 +48,43 @@ export async function importFile(env, file) {
   // Its successful result already guarantees committed original bytes.
   return openFile(file, { restoreRemoved:true })
 }
+
+// app.js's `pagehide`, the length refresh of its first `visibilitychange` listener, and its
+// `inhouse-room-setting-changed` and `storage` listeners, frozen before they moved to
+// rust-ui/src/app_controller.rs. `env.releasePositionGuard` stands for
+// `savedReaderPositionGuard?.free(); savedReaderPositionGuard = null`.
+export function pageHide(env, event) {
+  const { app, profileView, releaseShelfSoundPreference, readingStreak, nativeImportShelfGate, shelfRefreshQueue,
+    wordCountQueue, bookDataModule, driveActionsHost, releasePositionGuard, liveRoom } = env
+  if (event.persisted) return
+  app.appDisposed = true
+  profileView.destroy()
+  releaseShelfSoundPreference()
+  readingStreak.destroy()
+  nativeImportShelfGate.destroy()
+  shelfRefreshQueue.dispose()
+  clearTimeout(app.lengthRefreshTimer)
+  app.lengthRefreshTimer = null
+  wordCountQueue.dispose()
+  clearTimeout(app.backupTimer)
+  if (app.drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
+  clearTimeout(app.roomCaptureTimer)
+  releasePositionGuard()
+  clearTimeout(app.roomRefreshRetry)
+  liveRoom.destroy()
+}
+
+export function lengthVisibility(env) {
+  const { app, document, scheduleLengthRefresh } = env
+  if (!document.hidden && app.shelfLengthStatusVersion !== app.lengthStatusVersion) scheduleLengthRefresh()
+}
+
+export function roomSettingChanged(env, e) {
+  const { app, libraryBackup, scheduleRoomCapture } = env
+  if (app.driveProfile?.id && libraryBackup.markSettingChanged(app.driveProfile.id,e.detail)) scheduleRoomCapture()
+}
+
+export function storageChanged(env, e) {
+  const { applyCloudSettings } = env
+  if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
+}
