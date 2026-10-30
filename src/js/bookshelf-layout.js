@@ -79,6 +79,10 @@ function writeSeeds(pointer, at, texts) {
   return offsets;
 }
 
+// The spine styles are requested by the Rust UI/shelf module (rust-ui/src/shelf_layout_host.rs): it merges the
+// options, finds each book's seed, writes this core's arena, calls `spine_styles` and builds these same objects.
+const spineHost = { core, palette: SPINE_PALETTE, textures: SPINE_TEXTURES, spine: DEFAULT_SPINE };
+
 /**
  * Estilo del lomo de cada libro: determinista respecto a `seedFor(book)`. El
  * grosor usa el total de palabras normalizado a una convención física de
@@ -86,26 +90,7 @@ function writeSeeds(pointer, at, texts) {
  * @returns {Array<{seed:string, palette:object, color:string, shade:string, ink:string,
  *            width:number, heightRatio:number, texture:string}>}
  */
-export function spineStylesFor(books, options = {}) {
-  const cfg = withDefaults(DEFAULT_SPINE, options);
-  const seeds = books.map(seedFor), count = seeds.length;
-  const total = seeds.reduce((sum, seed) => sum + seed.length, 0);
-  return inArena([7, count, count + 1, count * 5, unitWords(total)], (pointer, at) => {
-    f64View(pointer, at[0], 7).set([cfg.minWidth, cfg.maxWidth, cfg.minHeightRatio, cfg.maxHeightRatio,
-      typeof cfg.pageThickness === 'number' ? cfg.pageThickness : NaN, cfg.pageThickness ? 1 : 0, cfg.bindingThickness || 0]);
-    const words = f64View(pointer, at[1], count);
-    books.forEach((book, i) => { words[i] = typeof book?.wordCount === 'number' ? book.wordCount : NaN; });
-    f64View(pointer, at[2], count + 1).set(writeSeeds(pointer, at[4], seeds));
-    if (core.spine_styles(pointer + at[0] * 8, pointer + at[1] * 8, pointer + at[2] * 8, pointer + at[4] * 8, count, total,
-      pointer + at[3] * 8) !== 1) throw new RangeError('Shelf layout: spine styles rejected');
-    const out = f64View(pointer, at[3], count * 5);
-    return seeds.map((seed, i) => {
-      const palette = SPINE_PALETTE[out[i * 5]];
-      return { seed, palette, color: palette.base, shade: palette.shade, ink: palette.ink, width: out[i * 5 + 2],
-        heightRatio: out[i * 5 + 3], texture: SPINE_TEXTURES[out[i * 5 + 1]] };
-    });
-  });
-}
+export function spineStylesFor(books, options = {}) { return bookDataModule().shelf_spine_styles(spineHost, books, options); }
 
 /** Aspecto del lomo de un libro; `options` sobrescribe DEFAULT_SPINE (p.ej. escalado móvil). */
 export const spineStyleFor = (book, options = {}) => spineStylesFor([book], options)[0];
