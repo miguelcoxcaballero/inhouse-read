@@ -9,8 +9,9 @@ const KEY='inhouse-read-shelf-sounds',RETRY_MS=60000;
 const ATLAS_BIN=new URL('../assets/sfx/atlas.bin',import.meta.url).href;
 const ATLAS_INDEX=new URL('../assets/sfx/atlas.json',import.meta.url).href;
 let muted=false,state=null,core=null;
-let atlas=null,atlasState='idle',atlasRetry=0;
-const buffers=new Map(),groups=new Map(),routes=new Map(),lastTake=new Map();
+let atlasState='idle',atlasRetry=0;
+// The recordings and the caches Rust (cozy_atlas.rs) reads: groups of takes, routes, last takes, buffers.
+const store={ready:false,samples:null,groups:new Map(),routes:new Map(),lastTake:new Map(),buffers:new Map()};
 try{muted=localStorage.getItem(KEY)==='off';}catch{}
 // The first shelf already awaits Rust. Settings can bind before that bootstrap,
 // without constructing a context or making the module a startup dependency.
@@ -18,7 +19,9 @@ const engine=()=>core??=needRustShelf();
 const transport=()=>state??=engine().cozy_transport_new(muted);
 const persistPreference=()=>{try{localStorage.setItem(KEY,muted?'off':'on');}catch{}};
 const host={
- global:globalThis,document,ignore:()=>{},loadAtlas,buffer:resolveBuffer,clearBuffers:()=>buffers.clear(),persistPreference,
+ global:globalThis,document,ignore:()=>{},loadAtlas,clearBuffers:()=>store.buffers.clear(),persistPreference,
+ // A random recorded take of the most specific atlas group, or the synthesised sound.
+ buffer:(audio,kind,material,level,variant)=>engine().cozy_atlas_buffer(needRustShelf(),store,audio,kind,material,level,variant),
  park:()=>engine().cozy_transport_park(host,state),idle:()=>engine().cozy_transport_idle(host,state),
  unlockFailed:()=>engine().cozy_transport_failed(host,state,false),playFailed:()=>engine().cozy_transport_failed(host,state,true),
  primeEnded:source=>()=>engine().cozy_transport_prime_ended(source),
@@ -33,15 +36,7 @@ export const shelfSoundsEnabled=()=>state?engine().cozy_transport_enabled(host,s
 /** The level an event is rendered at: soft under 0.33, medium under 0.66, otherwise hard. */
 export const shelfSoundLevel=strength=>engine().cozy_transport_level(strength);
 /** Index the atlas as groups of takes (`book_set_wood_t0`… belong to `book_set_wood`), keeping only valid clips. */
-export function indexShelfSoundAtlas(index,samples){
- const found=new Map();
- for(const [name,clip] of Object.entries(index&&typeof index==='object'?index:{})){
-  const offset=clip?.offset,length=clip?.length,rate=clip?.rate??24000;
-  if(!Number.isInteger(offset)||!Number.isInteger(length)||offset<0||length<2||offset+length>samples||!(rate>=8000&&rate<=96000))continue;
-  const group=name.replace(/_t\d+$/,'');if(!found.has(group))found.set(group,[]);found.get(group).push({name,offset,length,rate});
- }
- return found;
-}
+export const indexShelfSoundAtlas=(index,samples)=>engine().cozy_atlas_index(index,samples);
 function loadAtlas(){
  if(atlasState==='loading'||atlasState==='ready'||atlasState==='failed'&&Date.now()<atlasRetry||typeof fetch!=='function')return;
  atlasState='loading';
@@ -49,39 +44,8 @@ function loadAtlas(){
  Promise.all([get(ATLAS_INDEX,response=>response.json()),get(ATLAS_BIN,response=>response.arrayBuffer())]).then(([index,bin])=>{
   const samples=new Int16Array(bin,0,bin.byteLength>>1),found=indexShelfSoundAtlas(index,samples.length);
   if(!found.size)throw Error('empty sound atlas');
-  groups.clear();for(const [group,takes] of found)groups.set(group,takes);
-  atlas=samples;routes.clear();atlasState='ready';
+  store.groups=found;store.samples=samples;store.routes.clear();store.ready=true;atlasState='ready';
  }).catch(()=>{atlasState='failed';atlasRetry=Date.now()+RETRY_MS;});
-}
-/** The atlas takes of an event, or null for the synthesised sound. Rust lists the groups, most specific first. */
-function takesFor(kind,material,level){
- if(atlasState!=='ready')return null;
- const key=`${kind}:${material}:${level}`;if(routes.has(key))return routes.get(key);
- let takes=null;
- try{for(const group of String(needRustShelf().cozy_clip?.(kind,material,level)||'').split(',')){if(groups.has(group)){takes=groups.get(group);break;}}}catch{}
- routes.set(key,takes);return takes;
-}
-function clipBuffer(audio,clip){
- const key=`clip:${clip.name}`;let buffer=buffers.get(key);if(buffer)return buffer;
- const pcm=new Float32Array(clip.length);for(let i=0;i<clip.length;i++)pcm[i]=atlas[clip.offset+i]/32768;
- buffer=audio.createBuffer(1,clip.length,clip.rate);buffer.copyToChannel(pcm,0);buffers.set(key,buffer);return buffer;
-}
-// Recorded buffers and PCM decoding remain a WebAudio port; lifecycle, event
-// deadlines, voice limits and suspension are governed by Rust.
-function resolveBuffer(audio,kind,material,level,variant){
- let buffer,rate=1;const takes=takesFor(kind,material,level);
- if(takes){
-  const group=takes[0].name,last=lastTake.get(group);let index=Math.floor(Math.random()*takes.length);
-  if(takes.length>1&&index===last)index=(index+1)%takes.length;lastTake.set(group,index);
-  buffer=clipBuffer(audio,takes[index]);rate=1+(Math.random()*2-1)*.04;
- }else{
-  const key=`${kind}:${material}:${level}:${variant}`;buffer=buffers.get(key);
-  if(!buffer){
-   const pcm=needRustShelf().cozy_sound(kind,material,variant,level);if(!pcm.length)return null;
-   buffer=audio.createBuffer(1,pcm.length,needRustShelf().cozy_sample_rate());buffer.copyToChannel(pcm,0);buffers.set(key,buffer);
-  }
- }
- return {buffer,rate};
 }
 export function unlockShelfSounds(){if(state)engine().cozy_transport_unlock(host,state);}
 export function playShelfSound(kind,material=0,strength=1,pan=0){if(state)engine().cozy_transport_play(host,state,kind,material,strength,pan);}

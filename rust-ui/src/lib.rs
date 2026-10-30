@@ -121,3 +121,15 @@ mod reader_experience_policy;
 
 #[cfg(feature = "ui")]
 mod reader_lazy_policy;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod core_bridge;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod pdf_core_bridge;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod format_detect;
+
+#[cfg(feature = "shelf")]
+mod cozy_atlas;
