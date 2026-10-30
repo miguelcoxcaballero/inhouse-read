@@ -70,7 +70,7 @@ describe('native import shelf work',()=>{
     const body=source.split('async function performShelfRefresh({ immediate = false } = {}) {')[1].split('// Re-rendering a shelf')[0];
     const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
     const takeFirstRawRecords=vi.fn(()=>Promise.resolve([]));
-    await new AsyncFunction('appDisposed','nativeImportShelfGate','takeFirstRawRecords',body)(false,{deferRefresh:()=>true},takeFirstRawRecords);
+    await new AsyncFunction('app','nativeImportShelfGate','takeFirstRawRecords',body)({appDisposed:false},{deferRefresh:()=>true},takeFirstRawRecords);
     expect(takeFirstRawRecords).toHaveBeenCalledOnce();
   });
 });

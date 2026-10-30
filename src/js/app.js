@@ -118,12 +118,8 @@ const preparedBooks = new Map()
 const preparedPages = createPreparedPageCache()
 const coverUpgrades = new Map()
 const progressWrites = createReadingProgressQueue(library, {
-  onSaved: (record, bookId, fields = []) => {
-    if (!app.appDisposed && fields.includes('progressFraction')) readerPositionGuard().remember(bookId,{fraction:record?.progressFraction,locator:record?.locator})
-    localRoomBookChanged(bookId, fields)
-    if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId)
-    scheduleLibraryBackup()
-  }
+  // The follow-up of a saved position (rust-ui/src/app_controller.rs).
+  onSaved: (record, bookId, fields) => withShell(shell => shell.app_progress_saved(shellHost, record, bookId, fields))
 })
 let savedReaderPositionGuard = null
 const readerPositionGuard = () => savedReaderPositionGuard ||= new (bookDataModule().RustReaderPositionGuard)()
@@ -211,27 +207,13 @@ function persistBookState(bookId, fields) {
 // end of this file); a book never opens before they are in.
 const readingExperience = createLazyReaderExperience(reader, {
   persist:persistBookState,
-  async onLengthMetadata(record, metadata) {
-    if (app.appDisposed) return
-    // Reuse the visible reader's count rather than parsing this book again in
-    // a detached worker. A replacement file must never inherit the old count.
-    const revision = record.contentRevision
-    const fields = { wordCount:metadata.wordCount, wordCountComplete:metadata.wordCountComplete,
-      wordCountVersion:metadata.wordCountVersion, wordCountContentRevision:revision, lengthDirty:true }
-    if (!revision || !isBookLengthReady({ ...record, ...fields })) return
-    const saved = await library.patch(record.id, fields, {
-      ifCurrent:current => Boolean(current?.content) && current.contentRevision === revision
-    })
-    if (!saved) return
-    wordCountQueue.cancel(record.id)
-    app.lengthStatusVersion += 1
-    scheduleLengthRefresh()
-    if (saved.driveFileId && hasDriveSession()) { cloudSync.scheduleProgress(saved.id); scheduleLibraryBackup() }
-  }
+  // Reuse the visible reader's count rather than parsing this book again (rust-ui/src/app_controller.rs).
+  onLengthMetadata: (record, metadata) => withShell(shell => shell.app_length_metadata(shellHost, record, metadata))
 })
 
 const shellHost = {
   els, document, reader, library, cloudSync, preparedPages, readingStreak, STREAK_KEY, APP_VERSION, state:app,
+  wordCountQueue, scheduleLibraryBackup, readerPositionGuard, onLocalBookChange:localRoomBookChanged,
   authNotice:document.getElementById('drive-auth-notice'), authMessage:document.getElementById('drive-auth-message'),
   authRetry:document.getElementById('drive-auth-retry'), authCancel:document.getElementById('drive-auth-cancel'),
   get readingExperience() { return readingExperience },
