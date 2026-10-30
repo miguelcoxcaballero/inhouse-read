@@ -1,6 +1,6 @@
 // @vitest-environment node
 import {expect,it} from 'vitest'
-import {PhonemizerPlan} from '../../src/js/readers/neural-voice/phonemizer-plan.js'
+import {PhonemizerPlan} from './helpers/raw-phonemizer-plan.js'
 
 it('matches the original rebuild/retry policy across thresholds and long workloads',async()=>{
  for(const limit of [0,-1,.5,1,2,40,1000,Infinity,NaN]){

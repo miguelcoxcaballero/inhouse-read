@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 default = ["ui"]
 ui = ["dep:num2words2-core", "dep:num-bigint"]
 shelf = ["dep:rapier3d"]
+voice = []
 
 [dependencies]
 rapier3d = { version = "=0.36.1", default-features = false, features = ["dim3", "f32", "std", "enhanced-determinism"], optional = true }
