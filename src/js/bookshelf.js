@@ -171,6 +171,14 @@ const DEFAULTS = Object.freeze({
 const shelfEnv = {
   physicalPlacement: createBookshelfScene.physicalPlacement === true,
   playShelfSound:(...args)=>playShelfSound(...args),
+  // The set-up's own collaborators (rust-ui/src/bookshelf/mount.rs).
+  withDefaults: (...args) => withDefaults(...args),
+  createBookReturnCache: (...args) => createBookReturnCache(...args),
+  attachShelfSounds: (...args) => attachShelfSounds(...args),
+  createShelfViewGesture: (...args) => createShelfViewGesture(...args),
+  createShelfZoom: (...args) => createShelfZoom(...args),
+  createLazyPlantCatalog: (...args) => createLazyPlantCatalog(...args),
+  refreshCanvasFontsAfterPaint: (...args) => refreshCanvasFontsAfterPaint(...args),
   displayBookTitle: (...args) => displayBookTitle(...args),
   getBookRenderer: (...args) => getBookRenderer(...args),
   canAdoptShelfMetadata: (...args) => canAdoptShelfMetadata(...args),
@@ -235,16 +243,6 @@ const shelfEnv = {
   get COLOR_RELIEF_IDS() { return COLOR_RELIEF_IDS; }
 };
 
-function normalizeArgs(second, third) { return needRustShelf().shelf_normalize_args(second, third); }
-
-/* ------------------------------------------------------------------ *
- * Componente
- * ------------------------------------------------------------------ */
-
-// An earlier build kept a ~1 MB picture of the shelf in localStorage; the browser
-// reads all of localStorage at startup, so it is dropped.
-function forgetBootPoster() { needRustShelf().shelf_forget_boot_poster(); }
-
 /**
  * Monta la estantería dentro de `container`.
  *
@@ -255,171 +253,17 @@ function forgetBootPoster() { needRustShelf().shelf_forget_boot_poster(); }
  */
 export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   if (!container) throw new Error('renderBookshelf: falta el contenedor');
-  const { books, options } = normalizeArgs(booksOrOptions, maybeOptions);
-
-  const opts = withDefaults(DEFAULTS, options);
-  opts.texts = withDefaults(DEFAULT_TEXTS, options.texts);
-  // Nombres del handoff y nombres genéricos: valen los dos.
-  const onOpen = options.onOpenBook || options.onBookOpen;
-  const onPickLocal = options.onPickLocalFile || options.onAddBooks;
-  const onDrive = options.onOpenDrive;
   const shelfNative = needRustShelf();
-  const state = shelfNative.shelf_screen_state(shelfEnv, books, options);
-  const returnViews = createBookReturnCache();
-  forgetBootPoster();
-
-  const hasBookTrash = typeof options.onBookRemove === 'function';
-  const hasTrash = !opts.sections || hasBookTrash;
-  // The region, its scroller, the bin with its two status lines and the booklet: rust-ui/src/bookshelf/frame.rs.
-  const { root, scroller, trashNode, trashStatus, trashAnnounce, catalogNode } =
-    shelfNative.shelf_frame(hasTrash, !opts.sections, state.viewMode === 'isometric');
-  const soundBindings={destroy:attachShelfSounds(root)};
-  const shelfViewGesture = createShelfViewGesture({ root, scroller,
-    getMode:() => state.viewMode, setMode:setViewMode,
-    isEnabled:() => shelfNative.shelf_can_change_view(state),
-    onGestureStart:event => shelfLifecycle.beginViewGesture(event)
-  });
-  const shelfZoom = createShelfZoom({root,scroller,getScene:()=>state.shelfScene,
-    isEnabled:()=>shelfNative.shelf_can_zoom(state),
-    onGestureStart:()=>shelfLifecycle.beginZoomGesture(),onSound:(kind,strength)=>playShelfSound(kind,0,strength,0)});
-  if (trashStatus) root.append(trashStatus, trashAnnounce);
-  const plantCatalog = createLazyPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
-    onShelfChange:({ shelfType }, { whenClosed = run => run() } = {}) => {
-      shelfLifecycle.setCatalogShelfType(shelfType);
-      whenClosed(() => { if (!state.destroyed) render(); });
-    },
-    // The camera flies from the booklet in the room into the catalogue page.
-    // The room is a scaled picture meanwhile: hold its repaints, whose
-    // measurements would include that scale, until it is back in place.
-    motionTarget:() => root.closest('.screen') || root,
-    onMotion:phase => shelfLifecycle.setCatalogMotion(phase) });
-  // Fetch the catalogue when the shelf settles, but leave its GPU studio for
-  // the first open, after the camera flight. Hidden PMREM/shader work competes
-  // with shelf redraws even when scheduled in an idle callback.
-  function prepareCatalogWhenIdle(delay = 0) { if (shelfCtxLive) shelfLifecycle.prepareCatalogWhenIdle(delay); }
-  catalogNode?.addEventListener('click', () => shelfLifecycle.openCatalog());
-  // La app monta hoy "añadir libro" y "Drive" en su propio header, así que la
-  // barra de acciones de la estantería está apagada por defecto para no
-  // duplicar controles. Se enciende con `showActions: true` (o sola, si se
-  // pasa `onOpenDrive`, que es la integración del handoff original).
-  const showActions = (options.showActions ?? Boolean(onDrive)) && (onPickLocal || onDrive);
-  // One URL per saved cover: IndexedDB returns fresh record/Blob objects after every progress write, and the
-  // decoded pixels must survive refreshes. The shelf module owns both tables.
-  const coverCache = new WeakMap();
-  const savedCoverUrls = new Map();
-  // The shelf screen's parts that live in the shelf module share this context: the state object, the
-  // options and the functions of other modules they call.
-  // `legacy` holds what the shelf module still asks of this closure; it shrinks as those parts move.
-  const shelfParts = { state, opts, options, env:shelfEnv, root, scroller, container,
-    onOpen, onPickLocal, onDrive, soundBindings, coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, catalogNode, plantCatalog, shelfViewGesture, shelfZoom,
-    get observer() { return observer; },
-    get onViewportResize() { return onViewportResize; },
-    get onVisualViewportChange() { return onVisualViewportChange; }, legacy:{
-    returnViews,
-    syncShelfZoom: () => shelfZoom.sync(),
-  } };
-  const shelfCtx = new shelfNative.RustShelfCtx(shelfParts);
+  // The set-up (merged options, shared state, frame, view swipe and pinch zoom, plant catalogue, page
+  // listeners, first render) is rust-ui/src/bookshelf/mount.rs; this keeps the public handle.
+  const shelfCtx = shelfNative.shelf_mount(shelfEnv, container, booksOrOptions, maybeOptions, DEFAULTS, DEFAULT_TEXTS);
   let shelfCtxLive = true;
-  const shelfLifecycle = shelfCtx.lifecycleCallbacks();
-  if (showActions) {
-    root.append(buildActionBar());
-    root.classList.add('ihr-bookshelf--with-actions');
-  }
-  container.append(root);
-  // Opened straight in the diagonal view: leave the startup work first.
-  prepareCatalogWhenIdle(6000);
-
-  /* --------------------------- portadas --------------------------- */
-
-  // Covers (their URLs, the reading of their colour and cloth, the refresh of the spines that show them) are the
-  // shelf module's.
-
-  // The style of a shelf item, the CSS variables of a style and their update on a node are the shelf module's.
-
-  // El retorno desde el lector necesita su primer fotograma antes de que el
-  // navegador pinte la estantería. La resolución normal usa `await` incluso
-  // cuando la portada ya está en IndexedDB como Blob y deja un fotograma vacío.
-  /** Precarga en pointerdown: cuando el giro enseña la cara, ya está pintada. */
-  /* --------------------------- construcción --------------------------- */
-
-  function buildActionBar() { return shelfCtx.buildActionBar(); }
-
-  // The objects on the shelf (lamps, plants), the drag that moves them and the bin are the shelf module's.
-  // The catalogue may answer after the shelf is gone: the original refused then, as busy.
-  function addCatalogLamp(request, catalogOptions) {
-    return shelfCtxLive ? shelfCtx.addCatalogLamp(request, catalogOptions) : Promise.reject(new Error('Espera a que termine la animación.'));
-  }
-  function addCatalogPlant(request, catalogOptions) {
-    return shelfCtxLive ? shelfCtx.addCatalogPlant(request, catalogOptions) : Promise.reject(new Error('Espera a que termine la animación.'));
-  }
-
-
-
-  /* --------------------------- render --------------------------- */
-
-  /**
-   * Ancho útil de balda. `options.shelfWidth` lo fija a mano, para montar la
-   * estantería en un contenedor de ancho conocido (o en tests sin layout).
-   */
-
-  /** Los lomos tienen su grosor real (15-45 mm) a la escala de la balda. */
-
-  function setViewMode(mode) { if (shelfCtxLive) shelfLifecycle.setViewMode(mode); }
-
-
-  // Rust owns the render transaction, rows and input bindings.
-
-  function render() { if (shelfCtxLive) shelfCtx.render(); }
-
-
-  function prepareInitialAppearances() { if (shelfCtxLive) shelfCtx.prepareInitialAppearances(); }
-
-  /* --------------------------- apertura --------------------------- */
-
-  // The lifted book (its pull-out, cover, editor, page preparation and hand-over to the reader) is the shelf module's.
-
-
-  /* --------------------------- ciclo de vida --------------------------- */
-
-  let observer = null;
-  const onViewportResize = () => { if (shelfCtxLive) shelfLifecycle.viewportResize(); };
-  const onVisualViewportChange = () => { if (shelfCtxLive) shelfLifecycle.visualViewportChange(); };
-  const onInputInterrupted = () => {
-    if (!shelfCtxLive) return;
-    shelfViewGesture.cancel(); shelfZoom.cancel(); shelfLifecycle.cancelInput();
-  };
-  const onInputVisibility = () => { if (document.hidden) onInputInterrupted(); };
-  window.addEventListener('blur', onInputInterrupted);
-  document.addEventListener('visibilitychange', onInputVisibility);
-  window.addEventListener('resize', onViewportResize);
-  window.visualViewport?.addEventListener('resize', onVisualViewportChange);
-  window.visualViewport?.addEventListener('scroll', onVisualViewportChange);
-  if (typeof ResizeObserver === 'function') {
-    observer = new ResizeObserver(() => { if (shelfCtxLive) shelfLifecycle.observedResize(); });
-    observer.observe(scroller);
-  }
-
-  prepareInitialAppearances();
-  render();
-  // The shared scene refreshes its own text textures when fonts arrive. Keep
-  // its semantic buttons: rebuilding them here can detach a visible spine
-  // between pointerdown/measurement and the following event. The legacy
-  // canvas snapshots need only new artwork; DOM lettering reflows itself.
-  refreshCanvasFontsAfterPaint(() => { if (shelfCtxLive) shelfLifecycle.refreshFonts(); });
-
+  const { state, parts:shelfParts, root, lifecycle:shelfLifecycle } = shelfCtx.mounted();
 
   /** Refresh decisions and metadata adoption live in Rust; the host keeps the public option shape. */
   function refresh(nextBooks, { defer = false } = {}) {
     if (shelfCtxLive) shelfCtx.refresh(nextBooks, defer);
   }
-
-
-
-
-  // Non-WebGL pages: the white-paper variant sits under the reader's own canvas,
-  // which fades over it (opacity 0 = white paper, 1 = the reading theme).
-
-
   // A destroyed shelf has handed its context back; whatever a late callback asks of it is then moot.
   function setReturningBook(bookId) { if (shelfCtxLive) shelfCtx.setReturningBook(bookId); }
   function finishReturnSlot(ready) { if (shelfCtxLive) shelfCtx.finishReturnSlot(Boolean(ready)); }
@@ -454,8 +298,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     },
 
     destroy() {
-      window.removeEventListener('blur', onInputInterrupted);
-      document.removeEventListener('visibilitychange', onInputVisibility);
+      window.removeEventListener('blur', shelfParts.onInputInterrupted);
+      document.removeEventListener('visibilitychange', shelfParts.onInputVisibility);
       shelfNative.shelf_destroy_dispatch(shelfParts, shelfCtxLive ? shelfLifecycle.destroy : null);
       if (shelfCtxLive) { shelfCtxLive = false; shelfCtx.free(); }
     }
