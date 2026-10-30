@@ -99,65 +99,52 @@ const els = {
   appVersion: document.getElementById('app-version')
 }
 
-let shelf = null
-let shelfRecords = null
-let currentBookId = null
-let pendingLocalReopenId = null
-let pendingReaderTransition = null
+// The application's state, one object shared by app.js and every host below: their Rust modules read
+// and write it as `host.state`. Setting the Drive profile re-arms the Drive poll.
+let driveProfile = null
+const app = {
+  shelf:null, shelfRecords:null, currentBookId:null, pendingLocalReopenId:null, pendingReaderTransition:null,
+  preparationGeneration:0, requestedPreparationId:null, activePreparedBookId:null, activeOpeningContext:null,
+  closingReader:false, shelfRefreshDeferred:false, readerPreparationQueue:Promise.resolve(), pageGate:null,
+  restoringProgress:false, lengthStatusVersion:0, shelfLengthStatusVersion:-1, appDisposed:false,
+  drivePollTimer:null, drivePollGeneration:0, driveUploadsInFlight:0, cloudRoomChanged:false,
+  backupTimer:null, roomCaptureTimer:null, roomCaptureBusy:false, roomCaptureAgain:false, roomCaptureFailures:0,
+  lengthRefreshTimer:null, roomRefreshRetry:null, shelfRefreshQueued:false, readerLoadGeneration:0,
+  get driveProfile() { return driveProfile }, set driveProfile(value) { driveProfile = value; syncDrivePoll() }
+}
 const preparedBooks = new Map()
-let preparationGeneration = 0
-let requestedPreparationId = null
-let activePreparedBookId = null
-let activeOpeningContext = null
-let closingReader = false
-let shelfRefreshDeferred = false
-let readerPreparationQueue = Promise.resolve()
 // The page the open book lands on, prepared while the book is lifted off the
 // shelf (see prepared-page.js and the 'Página preparada' block below).
 const preparedPages = createPreparedPageCache()
-let pageGate = null
 const coverUpgrades = new Map()
 const progressWrites = createReadingProgressQueue(library, {
   onSaved: (record, bookId, fields = []) => {
-    if (!appDisposed && fields.includes('progressFraction')) readerPositionGuard().remember(bookId,{fraction:record?.progressFraction,locator:record?.locator})
+    if (!app.appDisposed && fields.includes('progressFraction')) readerPositionGuard().remember(bookId,{fraction:record?.progressFraction,locator:record?.locator})
     localRoomBookChanged(bookId, fields)
     if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId)
     scheduleLibraryBackup()
   }
 })
-let driveProfile = null
 let savedReaderPositionGuard = null
 const readerPositionGuard = () => savedReaderPositionGuard ||= new (bookDataModule().RustReaderPositionGuard)()
-let restoringProgress = false
-let lengthStatusVersion = 0
-let shelfLengthStatusVersion = -1
-let appDisposed = false
-let drivePollTimer = null, drivePollGeneration = 0
 let deployCheck = null
 const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
 const nativeImportShelfGate = createNativeImportShelfGate({
   isReaderVisible: () => !els.readerScreen.hidden,
   refresh: () => refreshShelf()
 })
-let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
-  onChange: record => { if (record) shelf?.updateCloudRecord?.(record); return refreshShelf() }
+  onChange: record => { if (record) app.shelf?.updateCloudRecord?.(record); return refreshShelf() }
 })
-let cloudRoomChanged = false
-let backupTimer = null
-let roomCaptureTimer = null
-let roomCaptureBusy = false
-let roomCaptureAgain = false
-let roomCaptureFailures = 0
 const liveRoom = new LiveRoom({
-  enabled:()=>!appDisposed&&!document.hidden&&Boolean(driveProfile?.id),
+  enabled:()=>!app.appDisposed&&!document.hidden&&Boolean(app.driveProfile?.id),
   receive:(account,snapshot)=>libraryBackup.receiveSnapshot(account,snapshot),
-  receiveMotion:(account,packet)=>{if(account===driveProfile?.id && els.readerScreen.hidden)shelf?.applyLiveRoomMotion?.(packet)},
-  disconnected:source=>shelf?.clearLiveRoomMotion?.(source)
+  receiveMotion:(account,packet)=>{if(account===app.driveProfile?.id && els.readerScreen.hidden)app.shelf?.applyLiveRoomMotion?.(packet)},
+  disconnected:source=>app.shelf?.clearLiveRoomMotion?.(source)
 })
 globalThis.addEventListener('inhouse-room-motion-local', e=>{
-  if(driveProfile?.id)liveRoom.publishMotion(driveProfile.id,e.detail)
+  if(app.driveProfile?.id)liveRoom.publishMotion(app.driveProfile.id,e.detail)
 })
 const libraryBackup = new LibraryBackup(library, cloudSync, {
   onStatus:setDriveSyncStatus,
@@ -179,14 +166,7 @@ const roomCoordinationHost = {
   captureCallback: () => withBookDataModule(module => module.app_room_capture_run(roomCoordinationHost)),
   backupFailure: error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`),
   warnRoom: error => console.warn('Colocación pendiente:', error.message),
-  state: {
-    get driveProfile(){return driveProfile},
-    get backupTimer(){return backupTimer},set backupTimer(value){backupTimer=value},
-    get roomCaptureTimer(){return roomCaptureTimer},set roomCaptureTimer(value){roomCaptureTimer=value},
-    get roomCaptureBusy(){return roomCaptureBusy},set roomCaptureBusy(value){roomCaptureBusy=value},
-    get roomCaptureAgain(){return roomCaptureAgain},set roomCaptureAgain(value){roomCaptureAgain=value},
-    get roomCaptureFailures(){return roomCaptureFailures},set roomCaptureFailures(value){roomCaptureFailures=value}
-  }
+  state:app
 }
 function scheduleLibraryBackup() {
   return withBookDataModule(module => module.app_backup_schedule(roomCoordinationHost))
@@ -199,7 +179,7 @@ function localRoomBookChanged(id,fields) {
 }
 globalThis.addEventListener('inhouse-room-book-changed',e=>localRoomBookChanged(e.detail?.id,e.detail?.fields||[]))
 globalThis.addEventListener('inhouse-room-setting-changed', e => {
-  if (driveProfile?.id && libraryBackup.markSettingChanged(driveProfile.id,e.detail)) scheduleRoomCapture()
+  if (app.driveProfile?.id && libraryBackup.markSettingChanged(app.driveProfile.id,e.detail)) scheduleRoomCapture()
 })
 globalThis.addEventListener('storage',e => {
   if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
@@ -214,8 +194,8 @@ const wordCountQueue = createBookLengthQueue(library, {
     await shelfWorkReady()
   },
   onChange: record => {
-    if (appDisposed) return
-    lengthStatusVersion += 1
+    if (app.appDisposed) return
+    app.lengthStatusVersion += 1
     // Batch short books: rebuilding the shelf once per completed chapter or
     // library record would spend far more time drawing than counting text.
     scheduleLengthRefresh()
@@ -232,7 +212,7 @@ function persistBookState(bookId, fields) {
 const readingExperience = createLazyReaderExperience(reader, {
   persist:persistBookState,
   async onLengthMetadata(record, metadata) {
-    if (appDisposed) return
+    if (app.appDisposed) return
     // Reuse the visible reader's count rather than parsing this book again in
     // a detached worker. A replacement file must never inherit the old count.
     const revision = record.contentRevision
@@ -244,24 +224,14 @@ const readingExperience = createLazyReaderExperience(reader, {
     })
     if (!saved) return
     wordCountQueue.cancel(record.id)
-    lengthStatusVersion += 1
+    app.lengthStatusVersion += 1
     scheduleLengthRefresh()
     if (saved.driveFileId && hasDriveSession()) { cloudSync.scheduleProgress(saved.id); scheduleLibraryBackup() }
   }
 })
 
-const shellState = {
-  lengthRefreshTimer:null, roomRefreshRetry:null, shelfRefreshQueued:false, readerLoadGeneration:0,
-  get appDisposed() { return appDisposed }, get closingReader() { return closingReader },
-  get shelfRefreshDeferred() { return shelfRefreshDeferred }, get shelf() { return shelf },
-  get lengthStatusVersion() { return lengthStatusVersion }, get shelfLengthStatusVersion() { return shelfLengthStatusVersion },
-  get cloudRoomChanged() { return cloudRoomChanged }, set cloudRoomChanged(value) { cloudRoomChanged = value },
-  get pendingLocalReopenId() { return pendingLocalReopenId }, set pendingLocalReopenId(value) { pendingLocalReopenId = value },
-  get pendingReaderTransition() { return pendingReaderTransition }, set pendingReaderTransition(value) { pendingReaderTransition = value },
-  get driveProfile() { return driveProfile }
-}
 const shellHost = {
-  els, document, reader, library, cloudSync, preparedPages, readingStreak, STREAK_KEY, APP_VERSION, state:shellState,
+  els, document, reader, library, cloudSync, preparedPages, readingStreak, STREAK_KEY, APP_VERSION, state:app,
   authNotice:document.getElementById('drive-auth-notice'), authMessage:document.getElementById('drive-auth-message'),
   authRetry:document.getElementById('drive-auth-retry'), authCancel:document.getElementById('drive-auth-cancel'),
   get readingExperience() { return readingExperience },
@@ -274,26 +244,26 @@ els.themeToggle.addEventListener('click', () => withShell(shell => shell.app_set
 function showScreen(name) { return withShell(shell => shell.app_show_screen(shellHost, name)) }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && shelfLengthStatusVersion !== lengthStatusVersion) scheduleLengthRefresh()
+  if (!document.hidden && app.shelfLengthStatusVersion !== app.lengthStatusVersion) scheduleLengthRefresh()
 })
 // A discarded page has no shelf to update. Keep the queue alive for bfcache
 // restores, but cancel callbacks for a document that is actually leaving.
 addEventListener('pagehide', event => {
   if (event.persisted) return
-  appDisposed = true
+  app.appDisposed = true
   profileView.destroy()
   releaseShelfSoundPreference()
   readingStreak.destroy()
   nativeImportShelfGate.destroy()
   shelfRefreshQueue.dispose()
-  clearTimeout(shellState.lengthRefreshTimer)
-  shellState.lengthRefreshTimer = null
+  clearTimeout(app.lengthRefreshTimer)
+  app.lengthRefreshTimer = null
   wordCountQueue.dispose()
-  clearTimeout(backupTimer)
-  if (drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
-  clearTimeout(roomCaptureTimer)
+  clearTimeout(app.backupTimer)
+  if (app.drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
+  clearTimeout(app.roomCaptureTimer)
   savedReaderPositionGuard?.free(); savedReaderPositionGuard = null
-  clearTimeout(shellState.roomRefreshRetry)
+  clearTimeout(app.roomRefreshRetry)
   liveRoom.destroy()
 })
 
@@ -315,16 +285,16 @@ async function performShelfRefresh({ immediate = false } = {}) {
   // A native import changes the library after the boot snapshot was taken.
   // Discard that one-shot snapshot even when its room is deferred, so returning
   // from the reader fetches the newly committed book instead of an empty shelf.
-  if (appDisposed || nativeImportShelfGate.deferRefresh()) return
+  if (app.appDisposed || nativeImportShelfGate.deferRefresh()) return
   // Sync may keep receiving records while reading. Retain that notification;
   // do not reread every cover/blob or rebuild hidden shelf geometry for it.
-  if (!els.readerScreen.hidden) { shelfRefreshDeferred = true; return }
-  shelfRefreshDeferred = false
+  if (!els.readerScreen.hidden) { app.shelfRefreshDeferred = true; return }
+  app.shelfRefreshDeferred = false
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
   if (document.querySelector('.ihr-flyout')) return void needRustShelf().app_refresh_after_flyout(shellHost)
-  if (shelf?.isInteracting) { retryRoomRefresh(); return }
-  const accountId = (driveProfile || getRememberedDriveProfile())?.id
+  if (app.shelf?.isInteracting) { retryRoomRefresh(); return }
+  const accountId = (app.driveProfile || getRememberedDriveProfile())?.id
   let storedBooks = await (firstRecords ?? library.listAll())
   // Saved plant meshes and plant/lamp paint are read in parallel. A late read
   // must not hold the shelf back for long: they are generated instead.
@@ -334,9 +304,9 @@ async function performShelfRefresh({ immediate = false } = {}) {
   await Promise.all([shelfBakesSettled(120), requireRustShelf(), requireRustCore()])
   if (firstRecords) storedBooks = recentFirst(storedBooks)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
-  if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
+  if (app.appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
   const result = await needRustShelf().app_refresh_after_load(shelfRefreshHost, storedBooks, accountId, immediate)
-  if (shelf?.isInteracting) retryRoomRefresh()
+  if (app.shelf?.isInteracting) retryRoomRefresh()
   return result
 }
 
@@ -378,20 +348,7 @@ const shelfRefreshHost = {
   placementMapper: () => row => bookDataModule().app_placement_record(shelfRefreshHost, row),
   orderMapper: () => row => bookDataModule().app_order_record(shelfRefreshHost, row),
   warnPreparation: error => console.warn('Preparación del grosor:', error),
-  state: {
-    get appDisposed() { return appDisposed },
-    get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
-    get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
-    get preparationGeneration() { return preparationGeneration }, set preparationGeneration(value) { preparationGeneration = value },
-    get readerPreparationQueue() { return readerPreparationQueue },
-    get currentBookId() { return currentBookId }, set currentBookId(value) { currentBookId = value },
-    get closingReader() { return closingReader },
-    get cloudRoomChanged() { return cloudRoomChanged }, set cloudRoomChanged(value) { cloudRoomChanged = value },
-    get shelf() { return shelf }, set shelf(value) { shelf = value },
-    get shelfRecords() { return shelfRecords }, set shelfRecords(value) { shelfRecords = value },
-    get lengthStatusVersion() { return lengthStatusVersion },
-    get shelfLengthStatusVersion() { return shelfLengthStatusVersion }, set shelfLengthStatusVersion(value) { shelfLengthStatusVersion = value }
-  }
+  state:app
 }
 
 function setReaderChromeHidden(hidden) { return needRustShelf().app_set_reader_chrome_hidden(shellHost, hidden) }
@@ -427,16 +384,11 @@ const readerOpeningHost = {
     window.removeEventListener('focus', onFocusBack)
     bookDataModule().app_schedule_picker_cancel(readerOpeningHost, flight)
   },
-  state: {
-    get activeOpeningContext() { return activeOpeningContext }, set activeOpeningContext(value) { activeOpeningContext = value },
-    get pendingLocalReopenId() { return pendingLocalReopenId }, set pendingLocalReopenId(value) { pendingLocalReopenId = value },
-    get pendingReaderTransition() { return pendingReaderTransition }, set pendingReaderTransition(value) { pendingReaderTransition = value },
-    get currentBookId() { return currentBookId }, get activePreparedBookId() { return activePreparedBookId }
-  }
+  state:app
 }
 
 function pickLocalFile() {
-  pendingLocalReopenId = null
+  app.pendingLocalReopenId = null
   els.filePicker.click()
 }
 
@@ -458,13 +410,7 @@ const fileContentHost = {
     onFollowLink: href => bookDataModule().app_reader_follow_link(fileContentHost, href),
     onToggleChrome: () => bookDataModule().app_reader_toggle_chrome(fileContentHost)
   }),
-  state: {
-    get readerPreparationQueue() { return readerPreparationQueue },
-    get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
-    get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
-    get currentBookId() { return currentBookId }, set currentBookId(value) { currentBookId = value },
-    get restoringProgress() { return restoringProgress }, set restoringProgress(value) { restoringProgress = value }
-  }
+  state:app
 }
 
 function prepareBookOpen(book, { settled } = {}) {
@@ -491,16 +437,7 @@ const readerPreparationHost = {
   get positionGuard() { return readerPositionGuard() },
   get readingExperience() { return readingExperience },
   get cloudSync() { return cloudSync },
-  state: {
-    get preparationGeneration() { return preparationGeneration }, set preparationGeneration(value) { preparationGeneration = value },
-    get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
-    get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
-    get currentBookId() { return currentBookId },
-    get readerPreparationQueue() { return readerPreparationQueue }, set readerPreparationQueue(value) { readerPreparationQueue = value },
-    get restoringProgress() { return restoringProgress }, set restoringProgress(value) { restoringProgress = value },
-    get pageGate() { return pageGate }, set pageGate(value) { pageGate = value },
-    get shelf() { return shelf }
-  },
+  state:app,
   needsDriveDownload, hasDriveSession, openFile, markTiming, pageKeyMismatch, idleSlice,
   getComputedStyle: element => getComputedStyle(element),
   createStageGate: settled => createStageGate(settled, { idle:idleSlice }),
@@ -542,14 +479,7 @@ const driveActionsHost = {
   resumeReady: () => bookDataModule().app_drive_resume_ready(driveActionsHost),
   resumeFailure: error => bookDataModule().app_drive_resume_failure(driveActionsHost,error),
   savedCheckMarkup:'<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>',
-  state: {
-    get driveProfile(){return driveProfile}, set driveProfile(value){driveProfile=value; syncDrivePoll()},
-    get appDisposed(){return appDisposed},
-    get drivePollTimer(){return drivePollTimer}, set drivePollTimer(value){drivePollTimer=value},
-    get drivePollGeneration(){return drivePollGeneration}, set drivePollGeneration(value){drivePollGeneration=value},
-    get cloudRoomChanged(){return cloudRoomChanged},
-    get driveUploadsInFlight(){return driveUploadsInFlight}, set driveUploadsInFlight(value){driveUploadsInFlight=value}
-  }
+  state:app
 }
 
 function handleCoverAction(action, book, button) {
@@ -610,10 +540,7 @@ const coverBackgroundHost = {
     failed: error => bookDataModule().app_cover_failed(coverBackgroundHost, flight, error),
     finish: () => bookDataModule().app_cover_finished(coverBackgroundHost, flight)
   }),
-  state: {
-    get appDisposed() { return appDisposed }, get closingReader() { return closingReader },
-    get currentBookId() { return currentBookId }
-  }
+  state:app
 }
 
 function onReaderRelocate({ fraction, cfi, index, textOffset }) {
@@ -622,10 +549,7 @@ function onReaderRelocate({ fraction, cfi, index, textOffset }) {
 const readerRuntimeHost = {
   els, readingExperience, reader, progressWrites,
   warnReaderProgress: error => console.warn('No se pudo guardar el progreso:', error),
-  state: {
-    get currentBookId() { return currentBookId }, get restoringProgress() { return restoringProgress },
-    get closingReader() { return closingReader }
-  }
+  state:app
 }
 
 // JS owns callback lifetimes; the close/return sequence and cleanup run in Rust.
@@ -641,14 +565,7 @@ const readerCloseHost = {
   closeProgressFlush: id => () => bookDataModule().app_flush_closed_progress(readerCloseHost, id),
   warnClosedProgress: error => bookDataModule().app_warn_closed_progress(readerCloseHost, error),
   warnPendingShelf: error => console.warn('Estantería pendiente:', error),
-  state: {
-    get currentBookId() { return currentBookId }, set currentBookId(value) { currentBookId = value },
-    get closingReader() { return closingReader }, set closingReader(value) { closingReader = value },
-    get requestedPreparationId() { return requestedPreparationId }, set requestedPreparationId(value) { requestedPreparationId = value },
-    get activePreparedBookId() { return activePreparedBookId }, set activePreparedBookId(value) { activePreparedBookId = value },
-    get shelfRefreshDeferred() { return shelfRefreshDeferred },
-    get cloudRoomChanged() { return cloudRoomChanged }, get shelf() { return shelf }
-  }
+  state:app
 }
 els.readerBack.addEventListener('click', () => bookDataModule().app_close_reader(readerCloseHost))
 
@@ -667,7 +584,7 @@ withShell(shell => {
   shell.app_watch_prepared_pages(shellHost)
 })
 // A newer deploy found at launch reloads only a shelf nobody is using yet.
-deployCheck = initContentFreshnessChecks({ isIdle: () => !closingReader && !driveUploadsInFlight && !shellState.shelfRefreshQueued && !shelf?.isInteracting &&
+deployCheck = initContentFreshnessChecks({ isIdle: () => !app.closingReader && !app.driveUploadsInFlight && !app.shelfRefreshQueued && !app.shelf?.isInteracting &&
   !document.querySelector('.ihr-flyout') && els.readerScreen.hidden && els.driveModal.hidden &&
   document.getElementById('drive-auth-notice').hidden })
 refreshShelf({ immediate:true })
@@ -679,7 +596,7 @@ initAndroidUpdateChecks()
 // for them (see idle-startup.js).
 runAfterFirstFrame([
   () => rememberLaunchFrames(els.bookshelfRoot, { books:() => library.listRaw(), idle:idleWork, shelfModule:needRustShelf,
-    isIdle:() => !appDisposed && els.readerScreen.hidden && !shelf?.isInteracting && !closingReader }),
+    isIdle:() => !app.appDisposed && els.readerScreen.hidden && !app.shelf?.isInteracting && !app.closingReader }),
   () => { void loadRustCore(); void loadRustDecorCore(); profileView.warm() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),
@@ -688,10 +605,10 @@ runAfterFirstFrame([
 initReadingDisplay()
 initAndroidFileImports({
   onActivity: active => nativeImportShelfGate.setActive(active),
-  canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),
+  canImport: () => !app.closingReader && !els.readerScreen.classList.contains('is-preparing'),
   onFile: async file => {
-    await shelf?.close()
-    await progressWrites.get(currentBookId)?.catch(() => {})
+    await app.shelf?.close()
+    await progressWrites.get(app.currentBookId)?.catch(() => {})
     // Resolve the import after the loading wrapper has released its controls.
     // Its successful result already guarantees committed original bytes.
     return openFile(file, { restoreRemoved:true })

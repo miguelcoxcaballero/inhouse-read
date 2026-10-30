@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scoreFontMask } from '../../src/js/font-score-core.js'
+// The font-score Worker's client is in the shelf module (rust-ui/src/font_score_client.rs): hand it the real one.
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
 
 const drain=task=>{let step=task.next();while(!step.done)step=task.next();return step.value}
 let phase, rasters, workers, failAt, fontLoads
