@@ -14,101 +14,30 @@ function reflectionProfile(seed) {
   return { phase:new Vector3(x, y, z), amplitude };
 }
 
-const declarations = /* glsl */`
-varying vec2 vBookReflectionUv;
-uniform vec3 bookReflectionPhase;
-uniform float bookReflectionStrength;
-uniform float bookEnvironmentReflection;
-vec3 bookReflectionNormal;
-vec3 bookReflectionClearcoatNormal;
-#ifdef USE_ANISOTROPY
-  vec3 bookReflectionAnisotropyT;
-  vec3 bookReflectionAnisotropyB;
-#endif
-`;
+// The shader text of the layer (analytic slopes of three broad height waves, specular-only, with three's
+// physical chunk overriding only its specular terms) is the shelf module's (rust-ui/src/book_shaders.rs).
+// Like the original, the two chunks it patches are read once, as this module loads.
+const physicalChunk = ShaderChunk.lights_physical_pars_fragment, mapsChunk = ShaderChunk.lights_fragment_maps;
 
-// Analytic slopes of three broad, nonparallel height waves (roughly one or
-// two waves per cover), rather than a tiled/noisy normal texture. At .018 the
-// maximum tilt is about two degrees. Raw geometry UVs make each book's shape
-// identical in the shelf, enlarged view and lifted copy, independent of the
-// resolution/repeat of its existing paper or cloth texture.
-const normalSetup = /* glsl */`
-  vec3 bookWaveAngle = vec3(
-    dot(vBookReflectionUv, vec2(5.2, 1.7)),
-    dot(vBookReflectionUv, vec2(-2.4, 9.0)),
-    dot(vBookReflectionUv, vec2(10.9, 5.1))
-  ) + bookReflectionPhase;
-  vec3 bookWaveCos = cos(bookWaveAngle);
-  vec2 bookSlope = bookReflectionStrength * (
-    vec2(.72, .2353846154) * bookWaveCos.x +
-    vec2(-.2, .75) * bookWaveCos.y +
-    vec2(.19, .0888990826) * bookWaveCos.z
-  );
-
-  // Recover the UV directions in view space, including curved bindings and
-  // mirrored/back faces. Normalize the directions separately so the slope
-  // remains small on thin spines as well as broad cover boards. A degenerate
-  // UV face contributes zero tilt; guarded lengths cannot introduce NaNs.
-  vec3 bookDx = dFdx(-vViewPosition);
-  vec3 bookDy = dFdy(-vViewPosition);
-  vec2 bookUvDx = dFdx(vBookReflectionUv);
-  vec2 bookUvDy = dFdy(vBookReflectionUv);
-  vec3 bookDyPerp = cross(bookDy, nonPerturbedNormal);
-  vec3 bookDxPerp = cross(nonPerturbedNormal, bookDx);
-  vec3 bookT = bookDyPerp * bookUvDx.x + bookDxPerp * bookUvDy.x;
-  vec3 bookB = bookDyPerp * bookUvDx.y + bookDxPerp * bookUvDy.y;
-  bookT *= inversesqrt(max(dot(bookT, bookT), 1e-20));
-  bookB *= inversesqrt(max(dot(bookB, bookB), 1e-20));
-  vec3 bookReflectionTilt = bookT * bookSlope.x + bookB * bookSlope.y;
-  bookReflectionNormal = normalize(normal - bookReflectionTilt);
-  bookReflectionClearcoatNormal = bookReflectionNormal;
-  #ifdef USE_CLEARCOAT
-    bookReflectionClearcoatNormal = normalize(clearcoatNormal - bookReflectionTilt);
-  #endif
-`;
-
-const anisotropySetup = /* glsl */`
-  #ifdef USE_ANISOTROPY
-    // Foil keeps its grain aligned with the tilted reflection surface. The
-    // unmodified material frame remains available to all diffuse operations.
-    bookReflectionAnisotropyT = normalize(material.anisotropyT - bookReflectionNormal *
-      dot(bookReflectionNormal, material.anisotropyT));
-    bookReflectionAnisotropyB = normalize(cross(bookReflectionNormal, bookReflectionAnisotropyT));
-    bookReflectionAnisotropyB *= dot(bookReflectionAnisotropyB, material.anisotropyB) < 0.0 ? -1.0 : 1.0;
-  #endif
-`;
-
-// Three r180's physical chunk mixes direct Lambert and GGX in one function.
-// Override only the specular terms; retain the original diffuse irradiance,
-// indirect multiscattering energy compensation and coat attenuation. This is
-// deliberately local to these materials; global ShaderChunks stay untouched.
-const physicalPars = ShaderChunk.lights_physical_pars_fragment
-  .replaceAll('dot( material.anisotropyT,', 'dot( bookReflectionAnisotropyT,')
-  .replaceAll('dot( material.anisotropyB,', 'dot( bookReflectionAnisotropyB,')
-  .replace('float dotNLcc = saturate( dot( geometryClearcoatNormal, directLight.direction ) );',
-    'float dotNLcc = saturate( dot( bookReflectionClearcoatNormal, directLight.direction ) );')
-  .replace('BRDF_GGX_Clearcoat( directLight.direction, geometryViewDir, geometryClearcoatNormal, material )',
-    'BRDF_GGX_Clearcoat( directLight.direction, geometryViewDir, bookReflectionClearcoatNormal, material )')
-  .replace('reflectedLight.directSpecular += irradiance * BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material );',
-    `vec3 bookSpecularIrradiance = saturate(dot(bookReflectionNormal, directLight.direction)) * directLight.color;
-  reflectedLight.directSpecular += bookSpecularIrradiance * BRDF_GGX( directLight.direction, geometryViewDir, bookReflectionNormal, material );`)
-  .replace('clearcoatRadiance * EnvironmentBRDF( geometryClearcoatNormal,',
-    'clearcoatRadiance * EnvironmentBRDF( bookReflectionClearcoatNormal,')
-  // The app currently uses point/spot/directional sources. Keep area-light
-  // reflections coherent too without changing their diffuse LTC evaluation.
-  .replace('vec3 normal = geometryNormal;', 'vec3 normal = bookReflectionNormal;')
-  .replace('lightColor * material.diffuseColor * LTC_Evaluate( normal,',
-    'lightColor * material.diffuseColor * LTC_Evaluate( geometryNormal,');
-
-const environmentMaps = ShaderChunk.lights_fragment_maps
-  .replaceAll('\tradiance += getIBL', '\tradiance += bookEnvironmentReflection * getIBL')
-  .replace('clearcoatRadiance += getIBL', 'clearcoatRadiance += bookEnvironmentReflection * getIBL')
-  .replace('getIBLAnisotropyRadiance( geometryViewDir, geometryNormal, material.roughness, material.anisotropyB,',
-    'getIBLAnisotropyRadiance( geometryViewDir, bookReflectionNormal, material.roughness, bookReflectionAnisotropyB,')
-  .replace('getIBLRadiance( geometryViewDir, geometryNormal,',
-    'getIBLRadiance( geometryViewDir, bookReflectionNormal,')
-  .replace('getIBLRadiance( geometryViewDir, geometryClearcoatNormal,',
-    'getIBLRadiance( geometryViewDir, bookReflectionClearcoatNormal,');
+/** The patched sources of a hook, remembered per distinct sources (and chunks): a shelf of books compiles
+ * each program variant with one patch instead of one per material. */
+export function rememberedPatch(cache, keys, patch) {
+  let level = cache;
+  for (let i = 0; i < keys.length - 1; i++) {
+    let next = level.get(keys[i]);
+    if (!next) level.set(keys[i], next = new Map());
+    level = next;
+  }
+  const last = keys[keys.length - 1];
+  let result = level.get(last);
+  if (result === undefined) {
+    // Sources are three's own program text: a handful of variants. Bound the cache all the same.
+    if (cache.size > 64) cache.clear();
+    level.set(last, result = patch());
+  }
+  return result;
+}
+const reflectionPatches = new Map();
 
 /** Add stable, specular-only board waviness to one outer physical material.
  * Install after any existing onBeforeCompile hook (e.g. spine grazing fade).
@@ -161,14 +90,10 @@ export function applyBookReflectionSurface(material, { seed = '', strength = .01
   material.onBeforeCompile = function(shader, renderer) {
     beforeCompile.call(this, shader, renderer);
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace('void main() {', 'varying vec2 vBookReflectionUv;\nuniform vec2 bookReflectionUvScale;\nvoid main() {')
-      .replace('#include <uv_vertex>', '#include <uv_vertex>\n  vBookReflectionUv = uv * bookReflectionUvScale;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <lights_physical_pars_fragment>', declarations + physicalPars)
-      .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n' + normalSetup)
-      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n' + anisotropySetup)
-      .replace('#include <lights_fragment_maps>', environmentMaps);
+    const { vertexShader, fragmentShader } = shader;
+    const [vertex, fragment] = rememberedPatch(reflectionPatches, [vertexShader, fragmentShader],
+      () => needRustShelf().book_reflection_shaders(vertexShader, fragmentShader, physicalChunk, mapsChunk));
+    shader.vertexShader = vertex; shader.fragmentShader = fragment;
   };
   material.customProgramCacheKey = () => `${previousKey}|${CACHE_KEY}`;
   material.needsUpdate = true;

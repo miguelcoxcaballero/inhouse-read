@@ -2,9 +2,17 @@
 //! chooses their quality, retains shared sources and releases each owned map once.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array, Function, Map, Object, Set};
-use crate::host::{absent, get, jmax, jmin, js_round, method, num, set, truthy};
+use crate::host::{absent, jmax, jmin, js_round, num, truthy};
 
-fn object(fields: &[(&str, JsValue)]) -> Result<JsValue, JsValue> {
+// Every name and level sent from here is a literal sent again for each book (several materials and
+// plans per model): interned, so the page keeps one string for it instead of decoding it each time.
+fn key(name: &'static str) -> &'static str { wasm_bindgen::intern(name) }
+fn get(value: &JsValue, name: &'static str) -> JsValue { crate::host::get(value, key(name)) }
+fn set(value: &JsValue, name: &'static str, next: &JsValue) -> Result<(), JsValue> { crate::host::set(value, key(name), next) }
+fn method(target: &JsValue, name: &'static str, args: &[&JsValue]) -> Result<JsValue, JsValue> { crate::host::method(target, key(name), args) }
+fn word(text: &'static str) -> JsValue { JsValue::from_str(key(text)) }
+
+fn object(fields: &[(&'static str, JsValue)]) -> Result<JsValue, JsValue> {
     let value: JsValue = Object::new().into();
     for (key, item) in fields { set(&value, key, item)?; }
     Ok(value)
@@ -23,7 +31,7 @@ pub fn book_model_plan(height: f64, shelf: bool, overview: bool, inspection: f64
     let texture_height = if inspection != 0.0 { inspection } else if overview { 256.0 }
         else if shelf { 512.0 } else { lifted_height(height, &pixel_ratio) };
     object(&[
-        ("inspectionResolution", inspection.into()), ("detailLevel", level.into()),
+        ("inspectionResolution", inspection.into()), ("detailLevel", word(level)),
         ("textureHeight", texture_height.into()),
         ("maxTextureDimension", if overview { 256.0 } else { f64::INFINITY }.into()),
         ("bindingSegments", if overview { 16.0 } else if shelf { 32.0 } else { 96.0 }.into()),
@@ -36,11 +44,11 @@ pub fn book_model_plan(height: f64, shelf: bool, overview: bool, inspection: f64
 #[wasm_bindgen]
 pub fn book_spine_options(height: f64, shelf: bool, overview: bool, inspection: f64, pixel_ratio: JsValue) -> Result<JsValue, JsValue> {
     if overview { return object(&[("textureWidth", 64.0.into()), ("textureHeight", 256.0.into()),
-        ("engraving", false.into()), ("level", "overview".into())]); }
+        ("engraving", false.into()), ("level", word("overview"))]); }
     let (width, height, level) = if inspection != 0.0 && !inspection.is_nan() { (512.0, inspection, "detail") }
         else if shelf { (256.0, 1024.0, "shelf") }
         else { let height = lifted_height(height, &pixel_ratio); (height / 2.0, height, "detail") };
-    object(&[("textureWidth", width.into()), ("textureHeight", height.into()), ("level", level.into())])
+    object(&[("textureWidth", width.into()), ("textureHeight", height.into()), ("level", word(level))])
 }
 
 #[wasm_bindgen]
