@@ -31,8 +31,15 @@ fn clone_fields(value: &JsValue) -> R<JsValue> { let entries=Array::new();copy_d
 // RTC events, session timers, BroadcastChannel messages and Drive I/O stay host capabilities.
 fn supplied(host: &JsValue, name: &str) -> Option<js_sys::Function> { crate::host::get(host,name).dyn_into::<js_sys::Function>().ok() }
 fn platform(name: &str) -> R<JsValue> { read(&crate::host::global(),name) }
-fn now(host: &JsValue) -> R<JsValue> { match supplied(host,"now") {Some(f)=>f.call0(host),None=>method(&platform("Date")?,"now",&[])} }
-fn clock(host: &JsValue) -> R<JsValue> { match supplied(host,"clock") {Some(f)=>f.call0(host),None=>method(&platform("performance")?,"now",&[])} }
+// One import call each (the bindings name the global at each call): a received motion packet reads
+// the clock, so this must cost no more than the host closure it replaces.
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace=performance,js_name=now,catch)] fn performance_now() -> R<f64>;
+    #[wasm_bindgen(js_namespace=Date,js_name=now,catch)] fn date_now() -> R<f64>;
+}
+fn now(host: &JsValue) -> R<JsValue> { match supplied(host,"now") {Some(f)=>f.call0(host),None=>Ok(n(date_now()?))} }
+fn clock(host: &JsValue) -> R<JsValue> { match supplied(host,"clock") {Some(f)=>f.call0(host),None=>Ok(n(performance_now()?))} }
 fn random_id(host: &JsValue) -> R<JsValue> { match supplied(host,"randomId") {Some(f)=>f.call0(host),None=>method(&platform("crypto")?,"randomUUID",&[])} }
 fn text_encode(value: &JsValue) -> R<JsValue> { method(&crate::host::construct("TextEncoder",&[])?,"encode",&[value]) }
 fn utf8(host: &JsValue, value: &JsValue) -> R<JsValue> { match supplied(host,"utf8") {Some(f)=>f.call1(host,value),None=>text_encode(value)} }
