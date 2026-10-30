@@ -9,12 +9,27 @@
 //! Collation (the alphabetical sort of the sections) stays the browser's `Intl.Collator`.
 use std::cell::RefCell;
 
-use js_sys::{Array, Float64Array, Function, JsString, Map, Object, Reflect, Uint16Array};
+use js_sys::{Array, Float64Array, Function, JsString, Map, Object, Reflect, Uint8Array};
 use wasm_bindgen::{prelude::*, JsCast};
 
 use crate::host::{absent, get, get_at, num, number_string, read, set, text, text_value, truthy};
 
 type R<T> = Result<T, JsValue>;
+
+/// One input region of a kernel arena.
+enum Region<'a> {
+    F64(&'a [f64]),
+    U16(&'a [u16]),
+}
+
+impl Region<'_> {
+    fn words(&self) -> usize {
+        match self {
+            Region::F64(values) => values.len(),
+            Region::U16(units) => unit_words(units.len()),
+        }
+    }
+}
 
 /// What the host hands over: the catalogue core's exports and its frozen tables.
 struct Host {
@@ -55,8 +70,28 @@ impl Host {
         Ok(Float64Array::new_with_byte_offset_and_length(&self.buffer()?, (pointer as usize + at * 8) as u32, size as u32))
     }
 
-    fn write(&self, pointer: f64, at: usize, values: &[f64]) -> R<()> {
-        self.f64s(pointer, at, values.len())?.copy_from(values);
+    /// Writes every input region of an arena in one copy: the image spans the arena up to the end of the last
+    /// region (gaps, such as an output region before the seeds, are zero), the seeds' UTF-16 units packed four to a
+    /// word in little-endian order, as a `Uint16Array` over the same bytes reads them.
+    fn fill(&self, pointer: f64, at: &[usize], regions: &[(usize, Region)]) -> R<()> {
+        let end = regions.iter().map(|(slot, region)| at[*slot] + region.words()).max().unwrap_or(0);
+        let mut image = vec![0u8; end * 8];
+        for (slot, region) in regions {
+            let start = at[*slot] * 8;
+            match region {
+                Region::F64(values) => {
+                    for (index, value) in values.iter().enumerate() {
+                        image[start + index * 8..start + index * 8 + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                Region::U16(units) => {
+                    for (index, unit) in units.iter().enumerate() {
+                        image[start + index * 2..start + index * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+                    }
+                }
+            }
+        }
+        Uint8Array::new_with_byte_offset_and_length(&self.buffer()?, pointer as u32, image.len() as u32).copy_from(&image);
         Ok(())
     }
 
@@ -100,24 +135,22 @@ fn with_defaults(defaults: &JsValue, options: &JsValue) -> R<JsValue> {
 /// A parameter with the default `{}`.
 fn or_empty(options: &JsValue) -> JsValue { if options.is_undefined() { Object::new().into() } else { options.clone() } }
 
-/// The UTF-16 units of `texts` one after another, and the `count + 1` offsets where each starts.
+/// The UTF-16 units of `texts` one after another, and the `count + 1` offsets where each starts. A well-formed
+/// string crosses once as UTF-8 (`as_string` would replace a lone surrogate, so the copy is checked against the
+/// original); any other string is read unit by unit.
 fn seed_units(texts: &[JsValue]) -> R<(Vec<u16>, Vec<f64>)> {
     let mut offsets = Vec::with_capacity(texts.len() + 1);
     let mut units = Vec::new();
-    for text in texts {
+    for value in texts {
         offsets.push(units.len() as f64);
-        let text: &JsString = text.dyn_ref().ok_or_else(|| js_sys::TypeError::new("a shelf seed is not a string"))?;
-        for index in 0..text.length() {
-            units.push(text.char_code_at(index) as u16);
+        let text: &JsString = value.dyn_ref().ok_or_else(|| js_sys::TypeError::new("a shelf seed is not a string"))?;
+        match text.as_string() {
+            Some(rust) if rust.is_ascii() || JsValue::from_str(&rust) == *value => units.extend(rust.encode_utf16()),
+            _ => units.extend((0..text.length()).map(|index| text.char_code_at(index) as u16)),
         }
     }
     offsets.push(units.len() as f64);
     Ok((units, offsets))
-}
-
-fn write_units(host: &Host, pointer: f64, at: usize, units: &[u16]) -> R<()> {
-    Uint16Array::new_with_byte_offset_and_length(&host.buffer()?, (pointer as usize + at * 8) as u32, units.len() as u32).copy_from(units);
-    Ok(())
 }
 
 /// `Math.ceil(total / 4)`: the f64 words that hold `total` UTF-16 units.
@@ -156,24 +189,41 @@ fn spine_styles(host: &Host, books: &JsValue, options: &JsValue) -> R<Array> {
     ];
     let words = books.iter().map(|book| Ok(get(book, "wordCount").as_f64().unwrap_or(f64::NAN))).collect::<R<Vec<f64>>>()?;
     let out = host.in_arena(&[7, count, count + 1, count * 5, unit_words(total)], |pointer, at| {
-        host.write(pointer, at[0], &config)?;
-        host.write(pointer, at[1], &words)?;
-        host.write(pointer, at[2], &offsets)?;
-        write_units(host, pointer, at[4], &units)?;
+        host.fill(pointer, at, &[(0, Region::F64(&config)), (1, Region::F64(&words)), (2, Region::F64(&offsets)), (4, Region::U16(&units))])?;
         let p = |index: usize| pointer + (at[index] * 8) as f64;
         if host.kernel("spine_styles", &[p(0), p(1), p(2), p(4), count as f64, total as f64, p(3)])? != 1.0 {
             return Err(js_sys::RangeError::new("Shelf layout: spine styles rejected").into());
         }
         Ok(host.f64s(pointer, at[3], count * 5)?.to_vec())
     })?;
+    // The catalogue's palette and textures are frozen tables: each entry is read once per request.
+    let mut palettes: Vec<(u64, [JsValue; 4])> = Vec::new();
+    let mut textures: Vec<(u64, JsValue)> = Vec::new();
     let styles = Array::new();
     for (index, seed) in seeds.iter().enumerate() {
         let row = &out[index * 5..index * 5 + 5];
-        let palette = Reflect::get(&host.palette, &JsValue::from_f64(row[0]))?;
+        let found = palettes.iter().position(|(key, _)| *key == row[0].to_bits());
+        let at = match found {
+            Some(at) => at,
+            None => {
+                let palette = Reflect::get(&host.palette, &JsValue::from_f64(row[0]))?;
+                let entry = [read(&palette, "base")?, read(&palette, "shade")?, read(&palette, "ink")?, palette];
+                palettes.push((row[0].to_bits(), entry));
+                palettes.len() - 1
+            }
+        };
+        let texture = match textures.iter().position(|(key, _)| *key == row[1].to_bits()) {
+            Some(at) => textures[at].1.clone(),
+            None => {
+                let texture = Reflect::get(&host.textures, &JsValue::from_f64(row[1]))?;
+                textures.push((row[1].to_bits(), texture.clone()));
+                texture
+            }
+        };
+        let [color, shade, ink, palette] = &palettes[at].1;
         let style = object(&[
-            ("seed", seed), ("palette", &palette), ("color", &read(&palette, "base")?), ("shade", &read(&palette, "shade")?),
-            ("ink", &read(&palette, "ink")?), ("width", &JsValue::from_f64(row[2])), ("heightRatio", &JsValue::from_f64(row[3])),
-            ("texture", &Reflect::get(&host.textures, &JsValue::from_f64(row[1]))?),
+            ("seed", seed), ("palette", palette), ("color", color), ("shade", shade), ("ink", ink),
+            ("width", &JsValue::from_f64(row[2])), ("heightRatio", &JsValue::from_f64(row[3])), ("texture", &texture),
         ])?;
         styles.push(&style);
     }
@@ -245,13 +295,8 @@ fn layout_shelves(host: &Host, books: &JsValue, options: &JsValue, prepared: &Js
     // The plan, or the length it needs when `capacity` is too small.
     let run = |capacity: usize| -> R<Result<Vec<f64>, usize>> {
         host.in_arena(&[9, kinds, kinds, count, count, count + 1, unit_words(total), capacity], |pointer, at| {
-            host.write(pointer, at[0], &config)?;
-            host.write(pointer, at[1], &widths)?;
-            host.write(pointer, at[2], &keys)?;
-            host.write(pointer, at[3], &spine_widths)?;
-            host.write(pointer, at[4], &requested)?;
-            host.write(pointer, at[5], &offsets)?;
-            write_units(host, pointer, at[6], &units)?;
+            host.fill(pointer, at, &[(0, Region::F64(&config)), (1, Region::F64(&widths)), (2, Region::F64(&keys)), (3, Region::F64(&spine_widths)),
+                (4, Region::F64(&requested)), (5, Region::F64(&offsets)), (6, Region::U16(&units))])?;
             let p = |index: usize| pointer + (at[index] * 8) as f64;
             let length = host.kernel("layout_shelves", &[p(0), p(1), p(2), kinds as f64, p(3), p(4), p(5), p(6), count as f64, total as f64, p(7), capacity as f64])?;
             if length == 0.0 {
@@ -328,6 +373,42 @@ fn compare_text() -> Function {
 /// `value ?? ''`.
 fn or_blank(value: JsValue) -> JsValue { if absent(&value) { "".into() } else { value } }
 
+/// `order` stably sorted by `keys[index]` under the collator's `compare`, equal keys keeping their order. With
+/// string keys the engine's own stable sort runs over String wrappers of them, each remembering its place, so no
+/// comparison crosses into the module; other keys (coerced by `compare` the same way) are sorted here.
+fn sorted_by(keys: &[JsValue], order: Vec<usize>, compare: &Function) -> R<Vec<usize>> {
+    let place: JsValue = "place".into();
+    if keys.iter().all(JsValue::is_string) {
+        let list = Array::new();
+        for (position, &index) in order.iter().enumerate() {
+            let wrapper = crate::host::boxed(&keys[index]);
+            Reflect::set(&wrapper, &place, &JsValue::from_f64(position as f64))?;
+            list.push(&wrapper);
+        }
+        crate::host::method(&list, "sort", &[compare])?;
+        return (0..list.length()).map(|at| Ok(order[num(&Reflect::get(&list.get(at), &place)?) as usize])).collect();
+    }
+    let mut failure = None;
+    let mut sorted = order;
+    sorted.sort_by(|&a, &b| {
+        if failure.is_some() {
+            return std::cmp::Ordering::Equal;
+        }
+        let value = match compare.call2(&JsValue::UNDEFINED, &keys[a], &keys[b]) {
+            Ok(value) => num(&value),
+            Err(error) => {
+                failure = Some(error);
+                0.0
+            }
+        };
+        if value < 0.0 { std::cmp::Ordering::Less } else if value > 0.0 { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Equal }
+    });
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(sorted),
+    }
+}
+
 fn sections(host: &Host, books: &JsValue, options: &JsValue) -> R<(Array, JsValue)> {
     let cfg = with_defaults(&host.sections, &or_empty(options))?;
     let found = Array::new();
@@ -341,32 +422,11 @@ fn sections(host: &Host, books: &JsValue, options: &JsValue) -> R<(Array, JsValu
     let mut rank = vec![0.0; count];
     if mode != 0.0 {
         let compare = compare_text();
-        let authors = list.iter().map(|book| Ok(or_blank(read(book, "author")?))).collect::<R<Vec<_>>>()?;
-        let titles = list.iter().map(|book| Ok(or_blank(read(book, "title")?))).collect::<R<Vec<_>>>()?;
-        let mut failure = None;
-        let mut order: Vec<usize> = (0..count).collect();
-        order.sort_by(|&a, &b| {
-            if failure.is_some() {
-                return std::cmp::Ordering::Equal;
-            }
-            let mut step = |x: &JsValue, y: &JsValue| match compare.call2(&JsValue::UNDEFINED, x, y) {
-                Ok(value) => num(&value),
-                Err(error) => {
-                    failure = Some(error);
-                    0.0
-                }
-            };
-            let mut value = if mode == 1.0 { step(&authors[a], &authors[b]) } else { 0.0 };
-            if value == 0.0 || value.is_nan() {
-                value = step(&titles[a], &titles[b]);
-            }
-            if value == 0.0 || value.is_nan() {
-                value = a as f64 - b as f64;
-            }
-            if value < 0.0 { std::cmp::Ordering::Less } else if value > 0.0 { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Equal }
-        });
-        if let Some(error) = failure {
-            return Err(error);
+        let field = |key: &str| list.iter().map(|book| Ok(or_blank(read(book, key)?))).collect::<R<Vec<_>>>();
+        // Title, then (stably) author: the order of `(author, title, index)` the original's comparator gives.
+        let mut order = sorted_by(&field("title")?, (0..count).collect(), &compare)?;
+        if mode == 1.0 {
+            order = sorted_by(&field("author")?, order, &compare)?;
         }
         for (position, index) in order.into_iter().enumerate() {
             rank[index] = position as f64;
@@ -376,10 +436,14 @@ fn sections(host: &Host, books: &JsValue, options: &JsValue) -> R<(Array, JsValu
     let mut groups = Vec::with_capacity(count);
     let mut data = Vec::with_capacity(count * 5);
     for (index, book) in list.iter().enumerate() {
-        if !first.has(book) {
+        // A book already met keeps its first position (the values are never undefined).
+        let known = first.get(book);
+        groups.push(if known.is_undefined() {
             first.set(book, &JsValue::from_f64(index as f64));
-        }
-        groups.push(num(&first.get(book)));
+            index as f64
+        } else {
+            num(&known)
+        });
         let fraction = get(book, "progressFraction");
         let raw = num(&if absent(&fraction) { get(book, "progress") } else { fraction });
         let opened = read(book, "lastOpenedAt")?;
@@ -389,9 +453,7 @@ fn sections(host: &Host, books: &JsValue, options: &JsValue) -> R<(Array, JsValu
     }
     let config = [num(&read(&cfg, "recentLimit")?), mode];
     let out = host.in_arena(&[2, count * 5, count, count + 2], |pointer, at| {
-        host.write(pointer, at[0], &config)?;
-        host.write(pointer, at[1], &data)?;
-        host.write(pointer, at[2], &groups)?;
+        host.fill(pointer, at, &[(0, Region::F64(&config)), (1, Region::F64(&data)), (2, Region::F64(&groups))])?;
         let p = |index: usize| pointer + (at[index] * 8) as f64;
         let length = host.kernel("library_sections", &[p(0), p(1), p(2), count as f64, p(3)])?;
         if length == 0.0 {
