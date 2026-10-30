@@ -218,3 +218,23 @@ pub fn library_recent_first(records:JsValue,env:JsValue)->R<JsValue>{
  let function=read(&records,"sort")?;let compare=callback(&env,"recentComparator",&[])?;
  function.dyn_ref::<Function>().ok_or_else(||js_sys::TypeError::new("sort is not a function"))?.call1(&records,&compare)
 }
+/// Every removal mark (`removed-books`), as stored.
+#[wasm_bindgen]
+pub fn library_list_removed(database:JsValue,env:JsValue)->Promise{cloud_host::start(async move{
+ let store=store_at(&db(&database).await?,REMOVED,"readonly")?;
+ request(&env,method(&store,"getAll",&[])).await
+})}
+/// Deletes one book record (its removal marks stay).
+#[wasm_bindgen]
+pub fn library_remove(database:JsValue,env:JsValue,id:JsValue)->Promise{cloud_host::start(async move{
+ let store=store_at(&db(&database).await?,BOOKS,"readwrite")?;
+ request(&env,method(&store,"delete",&[&id])).await?;Ok(JsValue::UNDEFINED)
+})}
+/// Empties the books and their removal marks in one transaction, resolved once it has committed.
+#[wasm_bindgen]
+pub fn library_clear(database:JsValue,env:JsValue)->Promise{cloud_host::start(async move{
+ let transaction=transaction(&db(&database).await?)?;let completion=complete(&env,&transaction)?;
+ method(&method(&transaction,"objectStore",&[&s(BOOKS)])?,"clear",&[])?;
+ method(&method(&transaction,"objectStore",&[&s(REMOVED)])?,"clear",&[])?;
+ wait(Ok(completion)).await?;Ok(JsValue::UNDEFINED)
+})}

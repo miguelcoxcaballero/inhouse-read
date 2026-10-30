@@ -133,8 +133,7 @@ export class LibraryStore {
   }
 
   async listRemoved() {
-    const db = await this.#dbPromise
-    return wrap(db.transaction(REMOVED_STORE, 'readonly').objectStore(REMOVED_STORE).getAll())
+    return withBookDataModule(native => native.library_list_removed(this.#dbPromise, libraryHost))
   }
 
   async get(id) {
@@ -163,16 +162,9 @@ export class LibraryStore {
   }
 
   async remove(id) {
-    const store = await this.#store('readwrite')
-    await wrap(store.delete(id))
+    return withBookDataModule(native => native.library_remove(this.#dbPromise, libraryHost, id))
   }
-
   async clear() {
-    const db = await this.#dbPromise
-    const transaction = db.transaction([STORE, REMOVED_STORE], 'readwrite')
-    const completion = committed(transaction)
-    transaction.objectStore(STORE).clear()
-    transaction.objectStore(REMOVED_STORE).clear()
-    await completion
+    return withBookDataModule(native => native.library_clear(this.#dbPromise, libraryHost))
   }
 }

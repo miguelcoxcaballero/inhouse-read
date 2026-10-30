@@ -123,3 +123,9 @@ mod reader_experience_policy;
 
 #[cfg(feature = "ui")]
 mod reader_lazy_policy;
+
+#[cfg(feature = "shelf")]
+mod reading_streak;
+
+#[cfg(feature = "shelf")]
+mod native_room_shaders;
