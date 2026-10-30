@@ -1,5 +1,5 @@
 // Drive tools/bench/book-model.html in headless Chromium (SwiftShader) against a running `npx vite`:
-//   node tools/bench/run-book-model-bench.mjs <port> [--cpu 4] [--books 60] [--rounds 5] [--profile] [--motion] [--reference]
+//   node tools/bench/run-book-model-bench.mjs <port> [--cpu 4] [--books 60] [--rounds 5] [--profile] [--motion] [--reference] [--model-compare] [--view-compare] [--overview] [--lifted]
 // Prints JSON lines: creation time of shelf models (sync part of createBookModel), and the CPU cost
 // of bookView.draw during one opening (with and without the GPU draw itself).
 import { chromium } from 'playwright';
@@ -23,18 +23,19 @@ await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
 
 const median = values => { const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
+const overview = args.includes('--overview');
 async function createRound(count) {
-  return page.evaluate(async ([count, lifted]) => {
+  return page.evaluate(async ([count, lifted, overview]) => {
     const { model } = await window.benchReady;
     const list = window.benchBooks(count), made = [];
     const start = performance.now();
     for (const entry of list) made.push(model.createBookModel(entry.book, entry.style, entry.width, entry.height,
-      entry.thickness, null, lifted ? { eagerRelief: false } : { shelf: true }));
+      entry.thickness, null, lifted ? { eagerRelief: false } : overview ? { shelf: true, overview: true } : { shelf: true }));
     const elapsed = performance.now() - start;
     for (const group of made) group.userData.dispose();
     await new Promise(resolve => setTimeout(resolve, 50));
     return elapsed;
-  }, [count, lifted]);
+  }, [count, lifted, overview]);
 }
 
 if (creation) {
@@ -141,6 +142,52 @@ if (args.includes('--case')) {
     return out;
   }, books);
   console.log(JSON.stringify({ bench:`case geometry of ${books} books`, cpu, ...result }));
+}
+
+if (args.includes('--view-compare')) {
+  // bookView: the frozen JavaScript view (tests/unit/helpers/reference-book-model.js) against the shelf module's
+  // (rust-ui/src/book_view_host.rs, per-frame drawing still in book-model.js), interleaved round by round in one
+  // page: creating and disposing lifted views, and the CPU of view.draw over an opening (GPU draw stubbed out).
+  const result = await page.evaluate(async ([count, rounds]) => {
+    const { model } = await window.benchReady;
+    const reference = await import('/inhouse-read/tests/unit/helpers/reference-book-model.js');
+    const list = window.benchBooks(count), host = document.getElementById('inner');
+    const options = entry => ({ width:entry.width, height:entry.height, thickness:entry.thickness, viewportWidth:390, viewportHeight:844,
+      centerX:195, centerY:422, coverUrl:null });
+    for (const module of [model, reference]) for (const gpu of [module.getBookRenderer(), module.getPresentationBookRenderer()].filter(Boolean)) gpu.render = () => {};
+    const create = module => {
+      const start = performance.now();
+      for (const entry of list) module.bookView(host, entry.book, entry.style, options(entry)).dispose();
+      return performance.now() - start;
+    };
+    const views = new Map();
+    const draw = module => {
+      const [entry] = list;
+      const view = views.get(module) ?? views.set(module, module.bookView(host, entry.book, entry.style, options(entry))).get(module);
+      const start = performance.now();
+      for (let i = 0; i < 900; i++) {
+        const t = (i % 91) / 90;
+        view.draw({ x:-40 * t, y:10 * t, scale:1 + t, angle:90 * (1 - t), pitch:9 * (1 - t), roll:0, coverOpen:t, bookmarkWithdraw:t, pageTheme:t });
+      }
+      return (performance.now() - start) / 900;
+    };
+    const out = {};
+    for (const [name, run] of [['create', create], ['drawPerFrame', draw]]) {
+      run(reference); run(model);
+      const times = { js:[], rust:[] };
+      for (let round = 0; round < rounds; round++) {
+        if (round % 2) { times.rust.push(run(model)); times.js.push(run(reference)); }
+        else { times.js.push(run(reference)); times.rust.push(run(model)); }
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+      for (const key of ['js', 'rust']) times[key].sort((a, b) => a - b);
+      const mid = Math.floor(rounds / 2);
+      out[name] = { jsMedianMs:+times.js[mid].toFixed(3), rustMedianMs:+times.rust[mid].toFixed(3), jsMinMs:+times.js[0].toFixed(3), rustMinMs:+times.rust[0].toFixed(3) };
+    }
+    for (const view of views.values()) view.dispose();
+    return out;
+  }, [books, rounds]);
+  console.log(JSON.stringify({ bench:`bookView frozen JS vs Rust host (${books} views created per round; draw over 900 poses)`, cpu, ...result }));
 }
 
 if (args.includes('--model-compare')) {

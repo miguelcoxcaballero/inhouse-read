@@ -314,3 +314,27 @@ it('rejects missing options like the original', async () => {
     expect(() => reference.bookView(document.body, book, style, options)).toThrow(TypeError);
   }
 });
+
+it('holds no WebAssembly handle once views are built, driven and disposed', async () => {
+  const time = clock();
+  const { needRustShelf } = await import('../../src/js/rust-shelf.js');
+  const production = await import('../../src/js/book-model.js');
+  const live = () => needRustShelf().shelf_live_handles();
+  const cycle = async () => {
+    const host = document.createElement('div'); document.body.append(host);
+    const view = production.bookView(host, { ...book }, { ...style }, { width:132, height:200, thickness:40, viewportWidth:390, viewportHeight:844,
+      centerX:195, centerY:350, initialPose:pose });
+    view.draw(pose); view.setPageSnapshot(page(600, 900)); view.updateBookmark({ ...book, progress:.7 });
+    view.updateAppearance({ ...style, color:'#18364b' });
+    await view.prepareReturnAppearance({ ...book, title:'Again' }, { ...style, color:'#18364b' }, null);
+    await view.prepareCoverRelief(); await view.setCoverRelief(null);
+    await view.preparePagePrograms(callback => callback?.());
+    const motion = view.animateCoverClose(); time.frames(60); await motion.finished;
+    view.handoffToShelfInsertion(bridge => { bridge.cancel(); return null; });
+    view.dispose(); host.remove();
+  };
+  for (let i = 0; i < 3; i++) await cycle();
+  const before = live();
+  for (let i = 0; i < 10; i++) await cycle();
+  expect(live()).toBe(before);
+}, 120_000);
