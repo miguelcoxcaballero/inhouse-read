@@ -321,3 +321,216 @@ pub fn studio_lamp_stage(undershelf: bool, width: f64) -> R<JsValue> {
     field_object(&[("surfaces", surfaces.into_iter().collect::<Array>().into()), ("camera", numbers(&camera)),
         ("filament", 0.4.into()), ("cone", 0.55.into()), ("bulb", 0.4.into())])
 }
+
+// ---- The three.js side of one studio (formerly src/js/catalog-studio.js's openStudio) ----
+// Every object is made, configured and added in the original's order, so three numbers them the same and
+// the pictures are identical. The studio's link/draw/unframe/finish and its context-loss listener are this
+// module's exports bound to one plain record (`{host, adapter, hooks, parts, scene, camera, renderer,
+// state}`), so nothing here holds a Rust closure.
+
+/// `new constructor(...args)`.
+fn construct_with(constructor: &JsValue, name: &str, args: &[&JsValue]) -> R<JsValue> {
+    let constructor: js_sys::Function = constructor.clone().dyn_into()
+        .map_err(|_| JsValue::from(js_sys::TypeError::new(&format!("{name} is not a constructor"))))?;
+    let list = Array::new();
+    for argument in args { list.push(argument); }
+    js_sys::Reflect::construct(&constructor, &list)
+}
+/// `new THREE[name](...args)`.
+fn three_new(three: &JsValue, name: &str, args: &[&JsValue]) -> R<JsValue> { construct_with(&read(three, name)?, name, args) }
+/// `target[name](...list)`: a spread call over an array of arguments.
+fn spread(target: &JsValue, name: &str, list: &JsValue) -> R<JsValue> {
+    let function: js_sys::Function = read(target, name)?.dyn_into()
+        .map_err(|_| JsValue::from(js_sys::TypeError::new(&format!("{name} is not a function"))))?;
+    function.apply(target, &Array::from(list))
+}
+/// `target?.name()`: nothing for an absent target, a TypeError for a missing method.
+fn present_call(target: &JsValue, name: &str) -> R<()> { if !absent(target) { method(target, name, &[])?; } Ok(()) }
+fn at(list: &JsValue, index: u32) -> JsValue { crate::host::get_at(list, index) }
+fn bind_export(exports: &JsValue, name: &str, record: &JsValue) -> R<JsValue> {
+    method(&read(exports, name)?, "bind", &[&JsValue::UNDEFINED, record])
+}
+
+/// The preview's node says the 3D view cannot be shown.
+fn unavailable(host: &JsValue) -> R<()> {
+    set(&read(host, "dataset")?, "renderer", &"unavailable".into())?;
+    set(host, "textContent", &"Vista 3D no disponible".into())
+}
+
+/// The renderer, its studio environment and its lights, in the original's order. Any failure is answered
+/// by the caller, which releases what was made.
+fn studio_build_renderer(three: &JsValue, room_environment: &JsValue, hooks: &JsValue, exports: &JsValue, plan: &JsValue,
+    parts: &JsValue, scene: &JsValue, host: &JsValue, record: &JsValue) -> R<()> {
+    if get(&global(), "WebGLRenderingContext").is_undefined() { return Err(js_sys::Error::new("WebGL unavailable").into()); }
+    let renderer = three_new(three, "WebGLRenderer", &[&field_object(&[("antialias", true.into()), ("alpha", true.into())])?])?;
+    set(parts, "renderer", &renderer)?;
+    method(hooks, "configureShaderDiagnostics", &[&renderer])?;
+    let ratio = get(&global(), "devicePixelRatio");
+    let ratio = if truthy(&ratio) { crate::host::num(&ratio) } else { 1.0 };
+    method(&renderer, "setPixelRatio", &[&js_sys::Math::min(ratio, 2.0).into()])?;
+    set(&renderer, "toneMapping", &read(three, "ACESFilmicToneMapping")?)?;
+    set(&renderer, "toneMappingExposure", &read(plan, "exposure")?)?;
+    if truthy(&read(plan, "shadows")?) {
+        set(&read(&renderer, "shadowMap")?, "enabled", &true.into())?;
+        set(&read(&renderer, "shadowMap")?, "type", &read(three, "PCFSoftShadowMap")?)?;
+        // Main-camera resize and reopening do not move these stationary casters.
+        set(&read(&renderer, "shadowMap")?, "autoUpdate", &false.into())?;
+    }
+    method(&read(&renderer, "domElement")?, "setAttribute", &[&"aria-hidden".into(), &"true".into()])?;
+    let lost = bind_export(exports, "studio_three_lost", record)?;
+    method(&read(&renderer, "domElement")?, "addEventListener", &[&"webglcontextlost".into(), &lost])?;
+    let pmrem = three_new(three, "PMREMGenerator", &[&renderer])?;
+    let room = construct_with(room_environment, "RoomEnvironment", &[])?;
+    let cards = read(plan, "cards")?;
+    if truthy(&read(&cards, "length")?) {
+        let material = three_new(three, "MeshBasicMaterial", &[&field_object(&[("color", "#252a30".into()), ("side", read(three, "DoubleSide")?)])?])?;
+        for card in Array::from(&cards).iter() {
+            let geometry = three_new(three, "PlaneGeometry", &[&at(&card, 3), &at(&card, 4)])?;
+            let mesh = three_new(three, "Mesh", &[&geometry, &material])?;
+            method(&read(&mesh, "position")?, "set", &[&at(&card, 0), &at(&card, 1), &at(&card, 2)])?;
+            method(&mesh, "lookAt", &[&0.0.into(), &at(&card, 1), &0.0.into()])?;
+            method(&room, "add", &[&mesh])?;
+        }
+    }
+    set(parts, "environment", &method(&pmrem, "fromScene", &[&room, &read(plan, "sigma")?])?)?;
+    method(&room, "dispose", &[])?;
+    method(&pmrem, "dispose", &[])?;
+    set(scene, "environment", &read(&read(parts, "environment")?, "texture")?)?;
+    set(scene, "environmentIntensity", &read(plan, "environment")?)?;
+    let hemisphere = three_new(three, "HemisphereLight", &[&read(plan, "sky")?, &read(plan, "ground")?, &read(plan, "hemisphere")?])?;
+    set(&read(parts, "lights")?, "hemisphere", &hemisphere)?;
+    method(scene, "add", &[&hemisphere])?;
+    let key = three_new(three, "DirectionalLight", &[&read(&read(plan, "key")?, "color")?, &read(&read(plan, "key")?, "intensity")?])?;
+    set(&read(parts, "lights")?, "key", &key)?;
+    spread(&read(&key, "position")?, "set", &read(&read(plan, "key")?, "position")?)?;
+    if truthy(&read(plan, "shadow")?) {
+        let frustum = read(&read(plan, "shadow")?, "camera")?;
+        let bounds: Vec<JsValue> = (0..6).map(|index| at(&frustum, index)).collect();
+        if truthy(&read(&read(plan, "shadow")?, "cast")?) { set(&key, "castShadow", &true.into())?; }
+        let size = read(&read(plan, "shadow")?, "mapSize")?;
+        method(&read(&read(&key, "shadow")?, "mapSize")?, "set", &[&size, &size])?;
+        let shadow_camera = read(&read(&key, "shadow")?, "camera")?;
+        for (name, value) in ["left", "right", "top", "bottom", "near", "far"].iter().zip(bounds.iter()) { set(&shadow_camera, name, value)?; }
+        if truthy(&read(&read(plan, "shadow")?, "project")?) { method(&read(&read(&key, "shadow")?, "camera")?, "updateProjectionMatrix", &[])?; }
+        set(&read(&key, "shadow")?, "bias", &read(&read(plan, "shadow")?, "bias")?)?;
+        set(&read(&key, "shadow")?, "normalBias", &read(&read(plan, "shadow")?, "normalBias")?)?;
+    }
+    method(scene, "add", &[&key])?;
+    let fill = three_new(three, "DirectionalLight", &[&read(&read(plan, "fill")?, "color")?, &read(&read(plan, "fill")?, "intensity")?])?;
+    set(&read(parts, "lights")?, "fill", &fill)?;
+    spread(&read(&fill, "position")?, "set", &read(&read(plan, "fill")?, "position")?)?;
+    method(scene, "add", &[&fill])?;
+    method(host, "replaceChildren", &[&read(&renderer, "domElement")?])?;
+    set(&read(host, "dataset")?, "renderer", &"three-mesh".into())
+}
+
+/// Open one catalogue studio: the scene and its orthographic camera from `studio_plan`, the renderer with its
+/// studio environment and lights when the page has WebGL (otherwise, or when any of it fails, the node says
+/// the view is unavailable), the native loop (`studio_open`) and, with a renderer, the resize observer.
+/// `adapter` adds the studio's own `make`, `swap`, `retint`, `tintSet` and `release` (and optionally
+/// `prepareScene`, `linkRoot`, `beforeDraw`), `size(model)` and `padding`; `hooks` holds the other modules'
+/// functions (`createCatalogPreviewFrame`, `whenProgramsReady`, `retainPrograms`, `configureShaderDiagnostics`);
+/// `exports` is this module, whose callbacks are bound. Answers `{state, parts, shelf:exports}`.
+#[wasm_bindgen]
+pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsValue, room_environment: JsValue, hooks: JsValue,
+    exports: JsValue) -> R<JsValue> {
+    let plan = studio_plan(kind)?;
+    let scene = three_new(&three, "Scene", &[])?;
+    let frustum = read(&plan, "camera")?;
+    let bounds: Vec<JsValue> = (0..6).map(|index| at(&frustum, index)).collect();
+    let camera = three_new(&three, "OrthographicCamera", &bounds.iter().collect::<Vec<_>>())?;
+    let stand = method(&frustum, "slice", &[&6.0.into()])?;
+    if truthy(&read(&stand, "length")?) {
+        spread(&read(&camera, "position")?, "set", &stand)?;
+        method(&camera, "lookAt", &[&0.0.into(), &0.0.into(), &0.0.into()])?;
+    }
+    let framing = method(&hooks, "createCatalogPreviewFrame", &[])?;
+    let parts = field_object(&[("scene", scene.clone()), ("camera", camera.clone()), ("renderer", JsValue::NULL), ("environment", JsValue::NULL),
+        ("lights", Object::new().into()), ("framing", framing), ("observer", JsValue::NULL)])?;
+    crate::host::method_opt(&adapter, "prepareScene", &[&parts])?;
+    let record = field_object(&[("host", host.clone()), ("adapter", adapter.clone()), ("hooks", hooks.clone()), ("parts", parts.clone()),
+        ("scene", scene.clone()), ("camera", camera), ("renderer", JsValue::NULL), ("state", JsValue::UNDEFINED)])?;
+    if studio_build_renderer(&three, &room_environment, &hooks, &exports, &plan, &parts, &scene, &host, &record).is_err() {
+        present_call(&read(&parts, "renderer")?, "dispose")?;
+        set(&parts, "renderer", &JsValue::NULL)?;
+        present_call(&read(&parts, "environment")?, "dispose")?;
+        set(&parts, "environment", &JsValue::NULL)?;
+        unavailable(&host)?;
+    }
+    let renderer = read(&parts, "renderer")?;
+    set(&record, "renderer", &renderer)?;
+    let studio: JsValue = Object::new().into();
+    for name in ["make", "swap", "retint", "tintSet"] { set(&studio, name, &read(&adapter, name)?)?; }
+    for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
+        set(&studio, name, &bind_export(&exports, export, &record)?)?;
+    }
+    let callbacks = field_object(&[("render", read(&exports, "studio_render")?), ("build", read(&exports, "studio_build")?),
+        ("visibility", read(&exports, "studio_visibility")?), ("invalidate", read(&exports, "studio_invalidate")?),
+        ("reveal", read(&exports, "studio_shown")?), ("swap", read(&exports, "studio_swap")?)])?;
+    let state = studio_open(kind, studio, host.clone(), truthy(&renderer), callbacks)?;
+    set(&record, "state", &state)?;
+    if truthy(&renderer) {
+        set(&parts, "observer", &crate::host::construct("ResizeObserver", &[&read(&state, "invalidate")?])?)?;
+        method(&read(&parts, "observer")?, "observe", &[&host])?;
+    }
+    field_object(&[("state", state), ("parts", parts), ("shelf", exports)])
+}
+
+/// The renderer's context was lost: a studio still open says its view is unavailable.
+#[wasm_bindgen]
+pub fn studio_three_lost(record: &JsValue, event: &JsValue) -> R<()> {
+    method(event, "preventDefault", &[])?;
+    if !truthy(&read(&get(record, "state"), "disposed")?) { unavailable(&get(record, "host"))?; }
+    Ok(())
+}
+
+/// Link a model's programs (the adapter may name the root to link) and call `done` once they are ready;
+/// answers the cancellation.
+#[wasm_bindgen]
+pub fn studio_three_link(record: &JsValue, model: JsValue, done: JsValue) -> R<JsValue> {
+    let root = crate::host::method_opt(&get(record, "adapter"), "linkRoot", &[&model])?.filter(|root| !absent(root)).unwrap_or_else(|| model.clone());
+    method(&get(record, "hooks"), "whenProgramsReady", &[&get(record, "renderer"), &get(record, "scene"), &get(record, "camera"), &root, &done])
+}
+
+/// Draw a model at the preview's layout size (the page may be scaled mid-flight, its drawing buffer not),
+/// keep its linked programs for a return to an earlier selection, and count the frame on the node.
+#[wasm_bindgen]
+pub fn studio_three_draw(record: &JsValue, model: JsValue) -> R<()> {
+    let (host, adapter, renderer, camera) = (get(record, "host"), get(record, "adapter"), get(record, "renderer"), get(record, "camera"));
+    let rect = if truthy(&read(&host, "clientWidth")?) {
+        field_object(&[("width", read(&host, "clientWidth")?), ("height", read(&host, "clientHeight")?)])?
+    } else { method(&host, "getBoundingClientRect", &[])? };
+    let framing = read(&get(record, "parts"), "framing")?;
+    let apply: js_sys::Function = read(&framing, "apply")?.dyn_into()
+        .map_err(|_| JsValue::from(js_sys::TypeError::new("apply is not a function")))?;
+    let size = method(&adapter, "size", &[&model])?;
+    let padding = read(&adapter, "padding")?;
+    apply.apply(&framing, &[camera.clone(), renderer.clone(), rect, size, padding].into_iter().collect::<Array>())?;
+    crate::host::method_opt(&adapter, "beforeDraw", &[&model])?;
+    method(&renderer, "render", &[&get(record, "scene"), &camera])?;
+    // Going back to an earlier selection reuses its linked shaders.
+    if truthy(&read(&renderer, "info")?) { method(&get(record, "hooks"), "retainPrograms", &[&renderer])?; }
+    let dataset = read(&host, "dataset")?;
+    let count = read(&dataset, "renderCount")?;
+    let count = if truthy(&count) { crate::host::num(&count) } else { 0.0 };
+    set(&dataset, "renderCount", &crate::host::number_string(count + 1.0).into())
+}
+
+/// The preview's framing is released.
+#[wasm_bindgen]
+pub fn studio_three_unframe(record: &JsValue) -> R<JsValue> { method(&read(&get(record, "parts"), "framing")?, "dispose", &[]) }
+
+/// Stop observing, let the adapter release its model, then the environment, the renderer and its context,
+/// and empty the node.
+#[wasm_bindgen]
+pub fn studio_three_finish(record: &JsValue, model: JsValue) -> R<()> {
+    let parts = get(record, "parts");
+    present_call(&read(&parts, "observer")?, "disconnect")?;
+    method(&get(record, "adapter"), "release", &[&model, &parts])?;
+    present_call(&read(&parts, "environment")?, "dispose")?;
+    let renderer = get(record, "renderer");
+    if !absent(&renderer) { method(&renderer, "dispose", &[])?; }
+    if !absent(&renderer) { method(&renderer, "forceContextLoss", &[])?; }
+    method(&get(record, "host"), "replaceChildren", &[])?;
+    Ok(())
+}
