@@ -34,7 +34,7 @@ import { idleWork, shelfWorkReady, setShelfWorkActive } from './idle-startup.js'
 import { runAfterFirstFrame } from './idle-startup.js'
 import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
-import { getRustShelf, needRustShelf, requireRustShelf } from './rust-shelf.js'
+import { getRustShelf, needRustShelf, requireRustShelf, whenRustShelf } from './rust-shelf.js'
 import { shelfBakesSettled } from './shelf-bake-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone } from './gestures.js'
@@ -533,7 +533,7 @@ els.driveClose.addEventListener('click', () => { els.driveModal.hidden = true })
 
 // ---- Arranque ----
 
-withShell(shell => {
+whenRustShelf(shell => {
   shell.app_start_shell(shellHost)
   shell.app_watch_reader_controls(shellHost)
   shell.app_watch_prepared_pages(shellHost)

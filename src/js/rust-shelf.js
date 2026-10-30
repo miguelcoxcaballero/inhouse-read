@@ -8,6 +8,7 @@ let shelf = null
 let loading = null
 let retryAfter = 0
 const FAILED_RETRY_DELAY_MS = 30_000
+const waiting = []
 
 export const getRustShelf = () => shelf
 
@@ -32,6 +33,9 @@ export function loadRustShelf() {
     if (shelfModule.shelf_abi_version() !== 1) throw new Error('Incompatible Rust shelf module')
     shelf = shelfModule
     retryAfter = 0
+    for (const use of waiting.splice(0)) {
+      try { use(shelf) } catch (error) { console.error(error) }
+    }
     return shelf
   })().catch(() => {
     retryAfter = Date.now() + FAILED_RETRY_DELAY_MS
@@ -46,4 +50,12 @@ export async function requireRustShelf() {
   const ready = await loadRustShelf()
   if (!ready) throw new Error('El módulo de la estantería no se pudo cargar. Recarga la página.')
   return ready
+}
+
+/** Start-up wiring that needs the module: runs now when it is in, else on the first load that
+ * succeeds, so a failed first load retried later (by the shelf refresh) still wires it. */
+export function whenRustShelf(use) {
+  if (shelf) return void use(shelf)
+  waiting.push(use)
+  loadRustShelf()
 }

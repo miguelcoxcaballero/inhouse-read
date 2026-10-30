@@ -8,7 +8,7 @@
 // The counters, the timer, the panel, the celebration, its sounds and vibration, and the widget
 // payloads are rust-ui/src/reading_streak.rs (the shelf module, which the page head compiles and the
 // first shelf frame awaits). JavaScript hands the controller the app's callbacks.
-import { getRustShelf, needRustShelf, requireRustShelf } from './rust-shelf.js'
+import { needRustShelf, whenRustShelf } from './rust-shelf.js'
 
 /** Llama propia: exterior naranja, corazón amarillo y un brillo. En gris cuando hoy falta por leer. */
 export const flameSvg = (className = '') => needRustShelf().streak_flame_svg(`${className}`)
@@ -22,10 +22,8 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     controller = new shelf.ReadingStreak(document, storage, host)
     for (const run of waiting.splice(0)) run()
   }
-  const ready = getRustShelf()
-  // The shelf module has no JavaScript twin: one that cannot load rejects with its own message.
-  if (ready) start(ready)
-  else requireRustShelf().then(start)
+  // The shelf module has no JavaScript twin: a failed first load is retried by the shelf refresh.
+  whenRustShelf(start)
   const later = run => { if (controller) return run(); if (!destroyed) waiting.push(run) }
 
   return {

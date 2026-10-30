@@ -9,6 +9,7 @@ export async function rustShelfMock() {
     getRustShelf: () => shelf,
     needRustShelf: () => shelf,
     loadRustShelf: () => Promise.resolve(shelf),
-    requireRustShelf: () => Promise.resolve(shelf)
+    requireRustShelf: () => Promise.resolve(shelf),
+    whenRustShelf: use => use(shelf)
   }
 }
