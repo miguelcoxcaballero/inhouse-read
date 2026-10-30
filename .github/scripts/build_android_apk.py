@@ -17,6 +17,7 @@ import subprocess
 from register_book_imports import register_book_imports
 from register_streak_widget import register_streak_widget
 from register_reading_focus import register_reading_focus
+from register_book_share import register_book_share
 from audiobook_fixture import write_audiobook, write_background_pdf
 from pathlib import Path
 
@@ -25,11 +26,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android" / "inhouse-read-logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.24.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.25.apk"
 APP_NAME = "Inhouse Read"
 PACKAGE_ID = "com.inhousesoftware.read"
-ANDROID_VERSION_NAME = "1.1.24"
-ANDROID_VERSION_CODE = 37
+ANDROID_VERSION_NAME = "1.1.25"
+ANDROID_VERSION_CODE = 38
 
 
 class Value:
@@ -90,6 +91,7 @@ def main() -> None:
     register_book_imports(project_dir, PACKAGE_ID, REPO_ROOT)
     register_streak_widget(project_dir, PACKAGE_ID, REPO_ROOT)
     register_reading_focus(project_dir, PACKAGE_ID, REPO_ROOT)
+    register_book_share(project_dir, PACKAGE_ID, REPO_ROOT)
     builder.patch_startup_theme(project_dir)
     builder.patch_gradle_versions(project_dir)
     builder.patch_android_dependencies(project_dir)

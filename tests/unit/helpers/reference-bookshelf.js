@@ -180,6 +180,7 @@ const ICONS = Object.freeze({
   read: ['M3 5.5c3-1 6-.5 9 1.5 3-2 6-2.5 9-1.5v14c-3-1-6-.5-9 1.5-3-2-6-2.5-9-1.5v-14Z', 'M12 7v14'],
   download: ['M12 3v12', 'm7 10 5 5 5-5', 'M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4'],
   check: ['m5 12 4 4L19 6'],
+  share: ['M15 5a3 3 0 1 0 6 0a3 3 0 1 0-6 0', 'M3 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0', 'M15 19a3 3 0 1 0 6 0a3 3 0 1 0-6 0', 'm8.6 13.5 6.8 4', 'm15.4 6.5-6.8 4'],
   close: ['m6 6 12 12', 'M18 6 6 18'],
   pipette: ['m19 5-2-2a2.12 2.12 0 0 0-3 0l-1 1 5 5 1-1a2.12 2.12 0 0 0 0-3Z', 'm14 5 5 5', 'm3 21 3-1 11-11-3-3L3 17l-1 3Z'],
   // Pincel: el editor cambia el aspecto del lomo (color, letras, acabados).
@@ -2401,10 +2402,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         'aria-label':'Guardado en Google Drive', title:'Guardado en Google Drive' },
         [svgIcon(ICONS.drive,{ className:'ihr-icon' }),el('span',{ class:'ihr-flyout__cloud-check','aria-hidden':'true' },[svgIcon(ICONS.check,{ className:'ihr-icon' })])]));
     };
+    // Compartir (added after the port, mirrored here): the book file to the system share sheet.
+    const shareAction = book.content || book.driveFileId
+      ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__share-action',title:'Compartir',
+        'aria-label':'Compartir el libro',disabled:!options.onBookAction,
+        onClick:event => options.onBookAction?.('share',book,event.currentTarget) },
+        [svgIcon(ICONS.share,{ className:'ihr-icon' })])
+      : null;
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
       cloudAction,
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', 'aria-label':'Editar', title:'Editar', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' })])
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', 'aria-label':'Editar', title:'Editar', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' })]),
+      shareAction
     ];
 
     const appearanceId = String(book.id ?? book.path ?? book.title ?? 'book');
@@ -3400,7 +3409,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     };
     editorHeader.addEventListener('pointerup', endSheetDrag);
     editorHeader.addEventListener('pointercancel', endSheetDrag);
-    meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
+    meta.append(el('div', { class: 'ihr-flyout__actions' }, [actionButtons[0], actionButtons[1], actionButtons[3], actionButtons[2]]));
     meta.append(editorPanel);
     const readyCheck = setInterval(() => {
       const task = options.getBookPreparation?.(book)
