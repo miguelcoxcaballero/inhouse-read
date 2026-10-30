@@ -678,7 +678,7 @@ initAndroidUpdateChecks()
 // files, and the reader / catalogue chunks are loaded before anyone reaches
 // for them (see idle-startup.js).
 runAfterFirstFrame([
-  () => rememberLaunchFrames(els.bookshelfRoot, { books:() => library.listRaw(), idle:idleWork,
+  () => rememberLaunchFrames(els.bookshelfRoot, { books:() => library.listRaw(), idle:idleWork, shelfModule:needRustShelf,
     isIdle:() => !appDisposed && els.readerScreen.hidden && !shelf?.isInteracting && !closingReader }),
   () => { void loadRustCore(); void loadRustDecorCore(); profileView.warm() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
