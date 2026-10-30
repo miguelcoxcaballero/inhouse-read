@@ -8,6 +8,8 @@ vi.mock('../../src/js/rust-voice-core.js',()=>({requireRustVoiceCore:async()=>st
 vi.mock('../../src/js/readers/neural-voice/phonemizer.js',()=>({createPhonemizer:async()=>({phonemize:async()=>[1,0,4,0,2],destroy(){}})}));
 vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:async()=>({
   synthesize:async()=>({pcm:state.raw.slice(),sampleRate:24000}),dispose(){}})}));
+// The client's preparation, job chain and synthesis loop are rust-ui: the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import { NativeSynthClient } from '../../src/js/readers/neural-voice/native-client.js';
 import { NativeTensor } from '../../src/js/readers/neural-voice/native-ort.js';
 import { peakNormalize,trimSilence,fadeEdges,silence,concat,pauseAfter,restScale } from './helpers/reference-pcm.js';

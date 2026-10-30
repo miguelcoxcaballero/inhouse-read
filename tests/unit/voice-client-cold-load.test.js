@@ -3,6 +3,8 @@ import {readFileSync} from 'node:fs'
 import {beforeEach,expect,it,vi} from 'vitest'
 const loader=vi.hoisted(()=>({loaded:null,promise:null,require:vi.fn()}))
 vi.mock('../../src/js/rust-voice-core.js',()=>({getRustVoiceCore:()=>loader.loaded,requireRustVoiceCore:()=>loader.require(),loadedRustVoiceCore:()=>{if(!loader.loaded)throw new Error('not loaded');return loader.loaded}}))
+// The client's routing and preparation are rust-ui (synth_client.rs): the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import {SynthClient} from '../../src/js/readers/neural-voice/client.js'
 import {NativeSynthClient} from '../../src/js/readers/neural-voice/native-client.js'
 const core=new WebAssembly.Instance(new WebAssembly.Module(readFileSync('src/wasm/inhouse_read_voice.wasm'))).exports
