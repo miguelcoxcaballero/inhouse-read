@@ -536,3 +536,65 @@ pub fn scene_rebind_entries(next_entries:&Array,old_entries:&Map,host:&JsValue)-
  }
  Ok(retained)
 }
+
+/// A selected book's slot is already painted empty: its material changes need no new room image.
+/// The live class matters, since its flags may still describe the previous frame.
+#[wasm_bindgen]
+pub fn scene_hidden_material(entry:&JsValue)->R<bool>{
+ if decorative(entry)?||truthy(&read(entry,"insertion")?)||truthy(&read(entry,"trashDrop")?){return Ok(false);}
+ let node=read(entry,"node")?;
+ Ok(!absent(&node)&&has_class(&node,"is-away")?)
+}
+
+/// A book's newer record (`book`, `style`, `cover_url`, and the layout's `dimensions` if it gave them):
+/// its size follows the style, fitted to its shelf (scene_record_dimensions); a new Drive identity calls
+/// `host.identity()`; its boxes are placed again (`host.place`); a shown model is replaced when its shape
+/// changed or a replacement is pending (`host.replace`), else its materials update in place. Returns
+/// whether the painted room changes: a new size or place, a pending replacement, or a shown material.
+#[wasm_bindgen]
+pub fn scene_update_record(entry:&JsValue,book:&JsValue,style:&JsValue,cover_url:&JsValue,dimensions:&JsValue,host:&JsValue)->R<bool>{
+ use crate::scene_dom::{scene_material_keys,scene_update_materials};
+ let bookmark:Function=read(host,"bookmarkFor")?.unchecked_into();
+ let model=read(entry,"model")?;
+ let shown=if absent(&model){JsValue::UNDEFINED}else{read(&read(&model,"userData")?,"shelfKeys")?};
+ let previous=if truthy(&shown){shown}else{scene_material_keys(entry,&bookmark)?};
+ const SIZES:[&str;3]=["width","height","thickness"];
+ const PLACES:[&str;4]=["x","y","depthInset","shelf"];
+ let values=|keys:&[&str]|->R<Vec<JsValue>>{keys.iter().map(|key|read(entry,key)).collect()};
+ let (old_sizes,old_places)=(values(&SIZES)?,values(&PLACES)?);
+ let row=js_sys::Reflect::get(&read(host,"rows")?,&read(entry,"shelf")?)?;
+ let mut io=[0.0;20];
+ for (at,key) in ["y","height","width","thickness"].into_iter().enumerate(){io[at]=num(&read(entry,key)?);}
+ io[4]=num(&read(&read(entry,"style")?,"heightRatio")?);
+ for (at,key) in ["heightRatio","coverRatio","width"].into_iter().enumerate(){io[5+at]=num(&read(style,key)?);}
+ io[8]=if truthy(dimensions){1.0}else{0.0};io[9]=if truthy(&row){1.0}else{0.0};
+ io[10]=if absent(&row){f64::NAN}else{num(&read(&row,"top")?)};io[11]=if absent(&row){f64::NAN}else{num(&read(&row,"bottom")?)};
+ io[12]=num(&read(host,"usableDepth")?);io[13]=num(&read(host,"baggeboScale")?);
+ crate::scene_plan::scene_record_dimensions(&mut io);
+ for (at,key) in ["y","height","width","thickness"].into_iter().enumerate(){set(entry,key,&JsValue::from_f64(io[14+at]))?;}
+ if truthy(dimensions){
+  for key in ["width","height","thickness","x","y","depthInset","shelf"]{
+   let value=read(dimensions,key)?;
+   if !value.is_undefined(){set(entry,key,&value)?;}
+  }
+ }
+ let drive=|value:&JsValue|->R<JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{read(value,"driveFileId")}};
+ let identity_changed=drive(&read(entry,"book")?)?!=drive(book)?;
+ set(entry,"book",book)?;set(entry,"style",style)?;set(entry,"coverUrl",cover_url)?;
+ if identity_changed{method(host,"identity",&[])?;}
+ method(host,"place",&[entry])?;
+ if truthy(&read(entry,"model")?){
+  let mut changed_shape=false;
+  for (old,key) in old_sizes.iter().zip(SIZES){if (num(old)-num(&read(entry,key)?)).abs()>0.01{changed_shape=true;break;}}
+  if changed_shape||truthy(&read(entry,"replacement")?){method(host,"replace",&[entry])?;}
+  else{scene_update_materials(entry,&bookmark,&read(host,"replace")?.unchecked_into())?;}
+ }
+ let next=scene_material_keys(entry,&bookmark)?;
+ for (old,key) in old_sizes.iter().zip(SIZES).chain(old_places.iter().zip(PLACES)){if *old!=read(entry,key)?{return Ok(true);}}
+ if truthy(&read(entry,"replacement")?){return Ok(true);}
+ if scene_hidden_material(entry)?{return Ok(false);}
+ for key in Object::keys(next.unchecked_ref::<Object>()).iter(){
+  if js_sys::Reflect::get(&previous,&key)?!=js_sys::Reflect::get(&next,&key)?{return Ok(true);}
+ }
+ Ok(false)
+}

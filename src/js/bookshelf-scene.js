@@ -711,8 +711,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // jacket and final ribbon can change while reading without changing that
   // image or its shadow casters. The live class matters: flags may still
   // describe the previous frame when a returning book is restored.
-  const hiddenBookMaterial = entry => entry.kind !== 'plant' && entry.kind !== 'lamp' &&
-    !entry.insertion && !entry.trashDrop && Boolean(entry.node?.classList.contains('is-away'));
+  const hiddenBookMaterial = entry => rust.scene_hidden_material(entry);
   const invalidateBookMaterial = entry => {
     if (!hiddenBookMaterial(entry)) settledInvalidate(true, 'quality', entry);
   };
@@ -1013,41 +1012,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // Each changed material key updates its part of the shown model in place (rust-ui/src/scene_dom.rs).
   function updateMaterials(entry) { rust.scene_update_materials(entry, bookmarkFor, replaceWhenReady); }
 
-  const recordIo = new Float64Array(20);
+  // A book's newer record: its size follows its style, fitted to its shelf unless the layout dictated it,
+  // its model is replaced or updated in place, and saving metadata or an equivalent analysis does not
+  // repaint the room: only real shape, position and shown material changes do (rust-ui/src/scene_host.rs).
+  const recordHost = { bookmarkFor, place:placeBoxes, replace:replaceWhenReady, get rows() { return rows; },
+    get usableDepth() { return SHELF_SPECS[shelfType].usableDepth; }, get baggeboScale() { return unitWidth / BAGGEBO_SPEC.width; },
+    identity() { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); } };
   function updateRecord(entry, book, style, coverUrl, dimensions = null) {
-    const previousKeys = entry.model?.userData.shelfKeys || materialKeys(entry);
-    const oldDimensions = [entry.width, entry.height, entry.thickness];
-    const oldPosition = [entry.x, entry.y, entry.depthInset, entry.shelf];
-    // The record's size follows its style, fitted to its shelf unless the layout dictated it (Rust).
-    const row = rows[entry.shelf];
-    recordIo.set([entry.y, entry.height, entry.width, entry.thickness, entry.style.heightRatio, style.heightRatio, style.coverRatio, style.width,
-      dimensions ? 1 : 0, row ? 1 : 0, row?.top, row?.bottom, SHELF_SPECS[shelfType].usableDepth, unitWidth / BAGGEBO_SPEC.width]);
-    rust.scene_record_dimensions(recordIo);
-    [entry.y, entry.height, entry.width, entry.thickness] = recordIo.subarray(14, 18);
-    if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
-    const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
-    entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
-    if (identityChanged) { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); }
-    placeBoxes(entry);
-    if (entry.model) {
-      const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
-      if (changedShape || entry.replacement) replaceWhenReady(entry);
-      else updateMaterials(entry);
-    }
-    const nextKeys = materialKeys(entry);
-    // Saving metadata or completing an equivalent analysis does not alter
-    // the painted room. Retain the latest record without shading and copying
-    // that same room again; real shape, position and material changes redraw.
-    const geometryChanged = oldDimensions.some((value,index) =>
-      value !== [entry.width, entry.height, entry.thickness][index]) || oldPosition.some((value,index) =>
-      value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]);
-    // Shape and slot changes still invalidate while hidden; they change the
-    // docking projection. A pending replacement keeps its existing lifecycle.
-    return geometryChanged || Boolean(entry.replacement) || (!hiddenBookMaterial(entry) &&
-      Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]));
+    return rust.scene_update_record(entry, book, style, coverUrl, dimensions, recordHost);
   }
 
-  // Both shelves keep their real, fixed depth: nothing grows the furniture.
   function updateWoodTheme() {
     // The walnut's theme tints, the floor contact and the wall (rust-ui/src/scene_host.rs).
     rust.scene_wood_theme(darkPage(), wood, backWood, darkWood, occlusionMaterial, roomWallMaterial);

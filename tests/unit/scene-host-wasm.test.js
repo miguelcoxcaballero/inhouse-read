@@ -2,6 +2,7 @@ import {expect,it,vi,afterEach} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust} from './helpers/rust-shelf-ready.js';
 import * as reference from './helpers/reference-scene-host.js';
+import {bookmarkFor} from '../../src/js/bookshelf-layout.js';
 
 // The shelf scene's recipes that moved to rust-ui/src/scene_host.rs, each run against its frozen
 // JavaScript original (helpers/reference-scene-host.js) on equal inputs: the same numbers (Object.is,
@@ -328,4 +329,40 @@ it('rebinds a committed layout\'s entries exactly as before',()=>{
   a.nodes.forEach(node=>node.remove());b.nodes.forEach(node=>node.remove());
  }
  expect([...seen].sort()).toEqual(['dispose','fresh','place','recolor','record','release']);
+});
+
+function recordCase(seed,log){
+ const next=random(seed+3000),pick=list=>list[Math.floor(next()*list.length)];
+ const book=()=>({id:`b${seed}`,title:pick(['A','B']),author:'C',driveFileId:pick([undefined,'d1','d2']),pageEdgeFinish:pick([undefined,'gilt']),
+  coverFinish:pick(['matte','gloss']),progressFraction:pick([0,.5])});
+ const style=()=>({color:pick(['#335577','#775533']),coverRatio:pick([undefined,1.5,0,NaN]),heightRatio:pick([undefined,1,1.08,0]),width:pick([undefined,20,24]),fontFamily:'serif'});
+ const node=document.createElement('button');if(next()<.3)node.className='is-away';
+ const userData={};
+ for(const name of ['updateSpineAppearance','updateCoverSource','updateCoverAppearance','updateEdgeAppearance','updateBookmark'])
+  if(next()<.7)userData[name]=function(...args){log.push([name,this===userData,...args.map(a=>a?.id??a)]);};
+ const entry={kind:pick(['book',undefined]),node,book:book(),style:style(),coverUrl:pick(['','blob:x']),x:pick([10,10.5]),y:pick([100,-0]),width:pick([20,24,'20']),
+  height:pick([150,160]),thickness:pick([24,undefined]),depthInset:0,shelf:pick([0,1,2,'1',undefined]),insertion:next()<.1?{}:null,trashDrop:null,
+  model:next()<.75?{userData}:null,replacement:next()<.2?{}:null};
+ if(entry.model&&next()<.6)entry.model.userData.shelfKeys={spine:"old",bookmark:pick(["old",undefined])};
+ const rows=[{top:20,bottom:220},{top:240,bottom:pick([300,460])},undefined];
+ const dimensions=next()<.4?{width:pick([undefined,22]),height:pick([undefined,170]),thickness:undefined,x:pick([undefined,5]),y:undefined,depthInset:pick([undefined,2]),shelf:pick([undefined,1])}:null;
+ const host={bookmarkFor,rows,usableDepth:pick([210,250]),baggeboScale:pick([1,.65]),recordDimensions:io=>rust.scene_record_dimensions(io),
+  place:entry=>log.push(['place',entry.width,entry.height,entry.shelf]),replace:entry=>log.push(['replace',entry.book.id]),identity:()=>log.push(['identity'])};
+ return {entry,args:[book(),style(),pick(['','blob:y','blob:x']),dimensions],host};
+}
+it('takes a book\'s newer record exactly as before',()=>{
+ let changed=0;
+ for(let seed=0;seed<400;seed++){
+  const logs=[[],[]],[a,b]=[recordCase(seed,logs[0]),recordCase(seed,logs[1])];
+  const expected=reference.updateRecord(a.entry,...a.args,a.host),native=rust.scene_update_record(b.entry,...b.args,b.host);
+  expect(native).toBe(expected);changed+=expected;
+  expect(logs[1]).toEqual(logs[0]);
+  const fields=entry=>['x','y','width','height','thickness','depthInset','shelf'].map(key=>bits([entry[key]])[0]).concat([entry.book.id,entry.coverUrl,JSON.stringify(entry.model?.userData.shelfKeys)]);
+  expect(fields(b.entry)).toEqual(fields(a.entry));expect(b.entry.style).toBe(b.args[1]);expect(b.entry.book).toBe(b.args[0]);
+ }
+ expect(changed).toBeGreaterThan(40);expect(changed).toBeLessThan(400);
+ for(let seed=0;seed<40;seed++){
+  const [a,b]=[recordCase(seed,[]),recordCase(seed,[])];
+  expect(rust.scene_hidden_material(b.entry)).toBe(reference.hiddenBookMaterial(a.entry));
+ }
 });

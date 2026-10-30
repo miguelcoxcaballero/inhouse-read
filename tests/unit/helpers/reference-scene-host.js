@@ -2,7 +2,8 @@
 // (bookshelf-scene.js before the move). The closure's variables are parameters here; the bodies are
 // unchanged. tests/unit/scene-host-wasm.test.js runs each against its Rust port on equal inputs.
 import * as THREE from 'three';
-import { clearPlantDiagnostics, lampKeys, plantKeys, plantShapeKeys } from './reference-scene-dom.js';
+import { clearPlantDiagnostics, lampKeys, plantKeys, plantShapeKeys, materialKeys as referenceMaterialKeys,
+  updateMaterials as referenceUpdateMaterials } from './reference-scene-dom.js';
 
 export function trashFootprint(bin) {
   const position = bin.position.clone(), rotation = bin.rotation.clone(), scale = bin.scale.clone();
@@ -241,6 +242,42 @@ export function rebindEntries(nextEntries, oldEntries, host) {
     if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
   }
   return retained;
+}
+
+export const hiddenBookMaterial = entry => entry.kind !== 'plant' && entry.kind !== 'lamp' &&
+  !entry.insertion && !entry.trashDrop && Boolean(entry.node?.classList.contains('is-away'));
+
+// updateRecord; the closure comes in `host` (as the scene's recordHost, plus the native dimensions step
+// the original called), the keys and the in-place update are the frozen originals of reference-scene-dom.js.
+export function updateRecord(entry, book, style, coverUrl, dimensions = null, host) {
+  const { bookmarkFor, place:placeBoxes, replace:replaceWhenReady, rows } = host;
+  const materialKeys = entry => referenceMaterialKeys(entry, bookmarkFor);
+  const updateMaterials = entry => referenceUpdateMaterials(entry, bookmarkFor, replaceWhenReady);
+  const recordIo = new Float64Array(20);
+  const previousKeys = entry.model?.userData.shelfKeys || materialKeys(entry);
+  const oldDimensions = [entry.width, entry.height, entry.thickness];
+  const oldPosition = [entry.x, entry.y, entry.depthInset, entry.shelf];
+  const row = rows[entry.shelf];
+  recordIo.set([entry.y, entry.height, entry.width, entry.thickness, entry.style.heightRatio, style.heightRatio, style.coverRatio, style.width,
+    dimensions ? 1 : 0, row ? 1 : 0, row?.top, row?.bottom, host.usableDepth, host.baggeboScale]);
+  host.recordDimensions(recordIo);
+  [entry.y, entry.height, entry.width, entry.thickness] = recordIo.subarray(14, 18);
+  if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
+  const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
+  entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
+  if (identityChanged) host.identity();
+  placeBoxes(entry);
+  if (entry.model) {
+    const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
+    if (changedShape || entry.replacement) replaceWhenReady(entry);
+    else updateMaterials(entry);
+  }
+  const nextKeys = materialKeys(entry);
+  const geometryChanged = oldDimensions.some((value,index) =>
+    value !== [entry.width, entry.height, entry.thickness][index]) || oldPosition.some((value,index) =>
+    value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]);
+  return geometryChanged || Boolean(entry.replacement) || (!hiddenBookMaterial(entry) &&
+    Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]));
 }
 
 const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
