@@ -2,7 +2,8 @@
 import {readFileSync} from 'node:fs'
 import {it,expect,beforeAll,afterEach,vi} from 'vitest'
 const state=vi.hoisted(()=>({core:null}))
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}))
+// The voice catalogue (neural-voice/catalog.js) awaits the real app core at import; the bridge under test sees state.core.
+vi.mock('../../src/js/rust-core.js',async original=>({...await original(),getRustCore:()=>state.core}))
 // This suite exercises the pre-reader app-core bridge, before the object-aware
 // UI/Shelf policy exists. Its native adoption has a separate parity suite.
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>null}))
