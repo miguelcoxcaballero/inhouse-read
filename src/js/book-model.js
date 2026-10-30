@@ -22,7 +22,7 @@ import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './bo
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
-import { applyBookReflectionSurface } from './book-reflection-surface.js';
+import { applyBookReflectionSurface, rememberedPatch } from './book-reflection-surface.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from './gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
@@ -114,21 +114,47 @@ export function leafStackGeometry(width, height, depth, { board = height * .007,
   return geometry;
 }
 
-/** Half-ellipse end of the case. Close-up copies leave the hollow open so the
- * headband is visible inside a thin rim of cloth and board. */
-function capGeometry(width, thickness, segments, rim = 0) {
-  const shape = new THREE.Shape(), bulge = thickness * .38;
-  shape.moveTo(-width / 2, -thickness / 2);
-  for (let i = 1; i <= segments; i++) {
-    const a = i / segments * Math.PI;
-    shape.lineTo(-width / 2 - bulge * Math.sin(a), -thickness / 2 * Math.cos(a));
-  }
-  if (rim) for (let i = segments; i >= 0; i--) {
-    const a = i / segments * Math.PI;
-    shape.lineTo(-width / 2 - (bulge - rim) * Math.sin(a), -(thickness / 2 - rim) * Math.cos(a));
-  }
-  shape.closePath();
-  return new THREE.ShapeGeometry(shape);
+// The case: both boards (rounded edges, cover UVs on the faces, the bevel inside the book's dimensions)
+// and both half-ellipse ends of the binding (close-up copies leave the hollow open so the headband shows
+// inside a thin rim). One call to the shelf module (rust-ui/src/book_case.rs) builds each array once;
+// three only installs them. The front board's faces come split into outside (0) and inside (2) groups.
+function bookCase(width, height, depth, shelf, overview, thickness = 0, segments = 0, rim = 0) {
+  if (![width, height, depth].every(value => Number.isFinite(value) && value > 0)
+    || segments && !(Number.isFinite(thickness) && thickness > 0)) throw new RangeError('Medidas de tapas no válidas.');
+  const data = needRustShelf().book_case_geometry(width, height, depth, Boolean(shelf), Boolean(overview), thickness, segments, rim);
+  const [vertices, lidStart, lidCount, wallStart, wallCount, fronts, capVertices, capIndices] = data;
+  let at = 8;
+  const take = length => data.subarray(at, at += length);
+  const front = take(fronts * 3), board = { position:take(vertices * 3), uv:take(vertices * 2), normal:take(vertices * 3) };
+  const cap = capVertices ? { position:take(capVertices * 3), normal:take(capVertices * 3), uv:take(capVertices * 2),
+    index:take(capIndices) } : null;
+  return { groups:[lidStart, lidCount, 0, wallStart, wallCount, 1], front, board, cap };
+}
+// An ExtrudeGeometry's own attributes and groups (its order: position, uv, normal).
+function boardFrom(parts, front = false) {
+  const geometry = new THREE.BufferGeometry(), groups = front ? parts.front : parts.groups;
+  geometry.type = 'ExtrudeGeometry';
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(parts.board.position, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(parts.board.uv, 2));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(parts.board.normal, 3));
+  for (let i = 0; i < groups.length; i += 3) geometry.addGroup(groups[i], groups[i + 1], groups[i + 2]);
+  return geometry;
+}
+// A ShapeGeometry's: the index as setIndex(array) makes it, then position, normal, uv.
+function capFrom({ position, normal, uv, index }) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.type = 'ShapeGeometry';
+  geometry.setIndex(new (index.some(value => value >= 65535) ? THREE.Uint32BufferAttribute : THREE.Uint16BufferAttribute)(index, 1));
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return geometry;
+}
+/** The case of a model on its own (createBookModel installs the same four): the front board with its
+ * outside/inside groups, the back board, and the tail and head ends of the binding. */
+export function bookCaseGeometries(width, height, board, thickness, { shelf = false, overview = false, segments, rim = 0 }) {
+  const parts = bookCase(width, height, board, shelf, overview, thickness, segments, rim);
+  return { front:boardFrom(parts, true), back:boardFrom(parts), caps:[capFrom(parts.cap), capFrom(parts.cap)] };
 }
 
 // Paper edges are fibrous: even "brillante" is a burnished edge, not lacquer.
@@ -144,23 +170,17 @@ function applySurfaceFinish(material, value, fallback = 'satin') {
 // into bright slivers along the rolled edge. Only while the spine as a whole
 // faces away, the surface that turns from the viewer shows plain cloth; the
 // rules near the joint, which still face the viewer, keep their ink.
+// The shader text of this fade, the cover relief below and the reflection layer is the shelf module's
+// (rust-ui/src/book_shaders.rs), patched once per program variant.
+const spineFadePatches = new Map(), reliefPatches = new Map();
 function spineGrazingFade(material) {
   const uniforms = { spineCloth:{ value:new THREE.Color() }, spineClothMetal:{ value:0 }, spineClothRough:{ value:.88 } };
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader.replace('void main() {', 'varying float vSpineFacing;\nvoid main() {')
-      .replace('#include <project_vertex>',
-        '#include <project_vertex>\n\tvSpineFacing = abs(normalize((modelViewMatrix * vec4(-1., 0., 0., 0.)).xyz).z);');
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {',
-      'varying float vSpineFacing;\nuniform vec3 spineCloth;\nuniform float spineClothMetal, spineClothRough;\nvoid main() {')
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-	float spineEdge = .62 * (1. - smoothstep(.35, .6, vSpineFacing));
-	float spineKeep = smoothstep(spineEdge - .16, spineEdge,
-		abs(dot(nonPerturbedNormal, isOrthographic ? vec3(0., 0., 1.) : normalize(vViewPosition))));
-	diffuseColor.rgb = mix(spineCloth, diffuseColor.rgb, spineKeep);
-	metalnessFactor = mix(spineClothMetal, metalnessFactor, spineKeep);
-	roughnessFactor = mix(spineClothRough, roughnessFactor, spineKeep);
-	normal = normalize(mix(nonPerturbedNormal, normal, spineKeep));`);
+    const { vertexShader, fragmentShader } = shader;
+    const [vertex, fragment] = rememberedPatch(spineFadePatches, [vertexShader, fragmentShader],
+      () => needRustShelf().book_spine_fade_shaders(vertexShader, fragmentShader));
+    shader.vertexShader = vertex; shader.fragmentShader = fragment;
   };
   material.customProgramCacheKey = () => 'spine-grazing-fade';
   return (book, style) => {
@@ -194,35 +214,15 @@ function installCoverRelief(material) {
     bookReliefBaseFinish:{ value:new THREE.Vector3() },
     bookReliefStrength:{ value:0 }
   };
-  const physical = THREE.ShaderChunk.lights_physical_fragment
-    .replace('material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).y;',
-      'material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).a;')
-    .replace('PhysicalMaterial material;', `roughnessFactor = mix( bookReliefBaseFinish.y, roughnessFactor, bookReliefAmount );
-PhysicalMaterial material;`)
-    .replace('material.clearcoat = saturate( material.clearcoat );', `material.clearcoat = mix( bookReliefBaseFinish.x, material.clearcoat, bookReliefAmount );
-  material.clearcoatRoughness = mix( bookReliefBaseFinish.z, material.clearcoatRoughness, bookReliefAmount );
-  material.clearcoat = saturate( material.clearcoat );`);
+  // The physical chunk as it is when the relief is installed, patched once per chunk text.
+  const chunk = THREE.ShaderChunk.lights_physical_fragment;
+  const physical = rememberedPatch(reliefPatches, ['physical', chunk], () => needRustShelf().book_relief_physical(chunk));
   material.onBeforeCompile = function(shader, renderer) {
     previousHook.call(this, shader, renderer);
     Object.assign(shader.uniforms, uniforms);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', `uniform vec3 bookReliefBaseFinish;
-uniform float bookReliefStrength;
-float bookReliefAmount = 0.0;
-void main() {`)
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-	#ifdef USE_CLEARCOAT_NORMALMAP
-		vec4 reliefSample = texture2D( clearcoatNormalMap, vClearcoatNormalMapUv );
-		bookReliefAmount = step( 0.5 / 255.0, reliefSample.a ) * bookReliefStrength;
-		vec3 reliefN = vec3( ( reliefSample.xy * 255.0 - 128.0 ) / 127.0, reliefSample.z * 2.0 - 1.0 );
-		reliefN.xy *= clearcoatNormalScale;
-		reliefN.z = mix( 1.0, reliefN.z, bookReliefStrength );
-		normal = normalize( normal + tbn2 * reliefN - tbn2[ 2 ] );
-	#endif`)
-      .replace('#include <clearcoat_normal_fragment_maps>', THREE.ShaderChunk.clearcoat_normal_fragment_maps
-        .replace('texture2D( clearcoatNormalMap, vClearcoatNormalMapUv ).xyz * 2.0 - 1.0',
-          'vec3( ( reliefSample.xy * 255.0 - 128.0 ) / 127.0, reliefSample.z * 2.0 - 1.0 )'))
-      .replace('#include <lights_physical_fragment>', physical);
+    const { fragmentShader } = shader, maps = THREE.ShaderChunk.clearcoat_normal_fragment_maps;
+    shader.fragmentShader = rememberedPatch(reliefPatches, ['fragment', fragmentShader, physical, maps],
+      () => needRustShelf().book_cover_relief_fragment(fragmentShader, physical, maps));
   };
   material.customProgramCacheKey = () => `${previousKey}|cover-relief-color-v2`;
   return uniforms;
@@ -256,28 +256,7 @@ export function bindingGeometry(width, height, thickness, segments = 96, relief 
 // Rounded board edges, with front/back UVs in the same coordinates as a cover.
 // The bevel stays inside the book dimensions so the shelf and flyout match.
 export function boardGeometry(width, height, depth, { shelf = false, overview = false } = {}) {
-  // A visibly rounded, slightly softened board edge, as covered board has.
-  const bevel = Math.min(depth * .4, height * .0035);
-  const x = -width / 2 + bevel, y = -height / 2 + bevel;
-  const w = width - bevel * 2, h = height - bevel * 2, r = height * .006;
-  const shape = new THREE.Shape();
-  shape.moveTo(x + r, y); shape.lineTo(x + w - r, y);
-  shape.quadraticCurveTo(x + w, y, x + w, y + r);
-  shape.lineTo(x + w, y + h - r); shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  shape.lineTo(x + r, y + h); shape.quadraticCurveTo(x, y + h, x, y + h - r);
-  shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y);
-  const g = new THREE.ExtrudeGeometry(shape, {
-    depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel,
-    bevelSize: bevel, bevelSegments: shelf || overview ? 1 : 3, steps: 1, curveSegments: overview ? 1 : shelf ? 2 : 5
-  });
-  g.translate(0, 0, -depth / 2 + bevel);
-  const positions = g.getAttribute('position'), uv = g.getAttribute('uv');
-  for (const face of g.groups.filter(item => item.materialIndex === 0)) {
-    for (let i = face.start; i < face.start + face.count; i++) {
-      uv.setXY(i, positions.getX(i) / width + .5, positions.getY(i) / height + .5);
-    }
-  }
-  return g;
+  return boardFrom(bookCase(width, height, depth, shelf, overview));
 }
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
@@ -506,25 +485,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // page block made the board cut through the pages instead of opening out.
   frontCover.position.set(-width / 2, 0, thickness / 2 - board / 2);
   group.add(frontCover);
-  const frontGeometry = boardGeometry(width, height, board, { shelf, overview });
+  // Both boards and both ends of the binding, each array built once.
+  const parts = bookCase(width, height, board, shelf, overview, thickness, bindingSegments, overview ? 0 : board * 1.1);
   // Inside of the board: the cloth turns in over its edges (this material)
   // and the endpaper is pasted down over the rest (the 'endpaper' mesh).
   const insideCover = new THREE.MeshStandardMaterial({ color:style.color, roughness:.9 });
   insideCover.visible = false;
-  const frontGroups = [...frontGeometry.groups];
-  frontGeometry.clearGroups();
-  for (const face of frontGroups) {
-    if (face.materialIndex !== 0) { frontGeometry.addGroup(face.start, face.count, face.materialIndex); continue; }
-    const normal = frontGeometry.getAttribute('normal');
-    let start = face.start, material = normal.getZ(start) < 0 ? 2 : 0;
-    for (let index = face.start + 3; index < face.start + face.count; index += 3) {
-      const nextMaterial = normal.getZ(index) < 0 ? 2 : 0;
-      if (nextMaterial !== material) {
-        frontGeometry.addGroup(start, index - start, material); start = index; material = nextMaterial;
-      }
-    }
-    frontGeometry.addGroup(start, face.start + face.count - start, material);
-  }
+  const frontGeometry = boardFrom(parts, true);
   const frontMaterials = [cover, cloth, insideCover];
   const frontBoard = new THREE.Mesh(frontGeometry, overview ? cover : frontMaterials);
   frontBoard.name = 'front-cover';
@@ -546,7 +513,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   pastedown.position.set(-width / 2 + joint + pasteWidth / 2, 0, -board * .54);
   frontBoard.add(pastedown);
   // One material for face and edges: a single draw call per back board.
-  const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf, overview }), cloth);
+  const backBoard = new THREE.Mesh(boardFrom(parts), cloth);
   backBoard.name = 'back-cover';
   backBoard.position.z = -thickness / 2 + board / 2;
   group.add(backBoard);
@@ -728,7 +695,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     applySpineCapFinish(material, book);
     applyBookReflectionSurface(material, { seed:`${surfaceSeed}|${y < 0 ? 'tail' : 'head'}`, strength:.01,
       uvScale:[1 / width, 1 / thickness] });
-    const mesh = new THREE.Mesh(capGeometry(width, thickness, bindingSegments, overview ? 0 : board * 1.1), material);
+    const mesh = new THREE.Mesh(capFrom(parts.cap), material);
     mesh.name = y < 0 ? 'binding-tail-cap' : 'binding-head-cap';
     capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
@@ -1183,6 +1150,8 @@ export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight
   return {left,top,width:right-left,height:bottom-top};
 }
 
+const SAMPLED_MAPS = ['map', 'roughnessMap', 'metalnessMap', 'bumpMap'];
+
 // Shelf snapshots share one context. One additional persistent context presents
 // the active flyout; both use the same meshes, textures and studio lighting.
 let presentationOwner = null;
@@ -1434,13 +1403,19 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const previousOwner=present ? null : presentationOwner;
     if (!present && presentationOwner === owner) { owner.suspend(); gpu.domElement.remove(); presentationOwner=null; }
     configureFrame(frame);
-    model.traverse(object => {
-      for (const material of [].concat(object.material || [])) {
-        for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) {
-          const map = material[key];
-          if (map) map.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy());
-        }
+    // Every frame re-applies the renderer's sampling quality to whatever maps the materials hold now,
+    // without allocating a list per object (the limit is read once, when a first map needs it).
+    let anisotropy;
+    const sample = material => {
+      for (const key of SAMPLED_MAPS) {
+        const map = material[key];
+        if (map) map.anisotropy = anisotropy ??= Math.min(16, gpu.capabilities.getMaxAnisotropy());
       }
+    };
+    model.traverse(object => {
+      const material = object.material;
+      if (Array.isArray(material)) for (const item of material) sample(item);
+      else if (material) sample(material);
     });
     withRendererPresentation(gpu,null,() => {
       gpu.render(scene, frame.camera);
