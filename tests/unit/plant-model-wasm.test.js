@@ -3,11 +3,11 @@
 // in creation order with its place, transform, role and geometry bytes, the boxes and the group of the foliage) for every
 // catalogue plant in every pot at several seeds and heights, the objects the host makes from it and their ownership.
 import {afterEach,describe,expect,it,vi} from 'vitest';
-const state=vi.hoisted(()=>({loaded:true,calls:0,randoms:0}));
+const state=vi.hoisted(()=>({loaded:true,calls:0,randoms:0,bakes:[]}));
 vi.mock('../../src/js/rust-shelf.js',async importOriginal=>{
  const actual=await importOriginal();
  const counted=new Proxy(actual.needRustShelf(),{get(target,name){
-  if(name==='plant_model')return(...args)=>{state.calls++;return target.plant_model(...args);};
+  if(name==='plant_bake_build')return(...args)=>{state.calls++;if(state.bakes.length<60)state.bakes.push(args);return target.plant_bake_build(...args);};
   if(name==='plant_random')return(...args)=>{state.randoms++;return target.plant_random(...args);};
   return target[name];}});
  return{...actual,needRustShelf:()=>{if(!state.loaded)throw new Error('El módulo de la estantería no está cargado.');return counted;}};
@@ -16,6 +16,14 @@ import {createShelfPlant,shelfPlantBakeRecord} from '../../src/js/shelf-plants.j
 import {createShelfPlant as original,shelfPlantBakeRecord as originalRecord} from './helpers/reference-shelf-plants.js';
 import {PLANT_CATALOG,POT_CATALOG} from '../../src/js/plant-catalog-data.js';
 import * as module from '../../src/wasm/shelf/inhouse_read_shelf.js';
+import {readPacket} from './helpers/geo-packet.js';
+// Frozen unpackBake of shelf-plants.js (1.7.325), before the packet was read in Rust (rust-ui/src/plant_build.rs).
+function unpackBake(bytes){
+ const packet=readPacket(bytes),{parts,objects}=packet.header;
+ return {parts,objects:objects.map(({geometry,rotation,...object})=>({...object,rotation:[...rotation,'XYZ'],
+  geometry:geometry?{type:geometry.type,attributes:Object.fromEntries(geometry.attributes.map(([name,size,kind,at,length])=>[name,[packet.copy(kind,at,length),size,false]])),
+   index:geometry.index&&packet.copy(geometry.index[0],geometry.index[1],geometry.index[2]),groups:geometry.groups,userData:geometry.userData,box:geometry.box}:null}))};
+}
 afterEach(()=>{state.loaded=true;});
 const bytes=array=>Buffer.from(array.buffer,array.byteOffset,array.byteLength);
 const typeOf=value=>Object.prototype.toString.call(value).slice(8,-1);
@@ -116,6 +124,24 @@ describe('shelf plants from the Rust shelf module',()=>{
     const record=shelfPlantBakeRecord().models.at(-1),other=originalRecord().models.at(-1);
     same(record[1],other[1],`seed ${JSON.stringify(seed)}`);
    }finally{a.userData.dispose();b.userData.dispose();}
+  }
+ });
+ it('reads every bake packet into the record the original unpacked, keys, arrays and buffers included',()=>{
+  expect(state.bakes.length).toBeGreaterThan(20);
+  for(const args of state.bakes){
+   const read=module.plant_bake_build(...args),expected=unpackBake(module.plant_model(...args));
+   const shape=value=>ArrayBuffer.isView(value)?`${typeOf(value)}(${value.length})`:Array.isArray(value)?value.map(shape):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,shape(v)])):value;
+   expect(shape(read)).toStrictEqual(shape(expected));
+   read.objects.forEach((object,i)=>{
+    expect(Object.keys(object)).toEqual(Object.keys(expected.objects[i]));
+    if(!object.geometry)return;
+    expect(Object.keys(object.geometry.attributes)).toEqual(Object.keys(expected.objects[i].geometry.attributes));
+    for(const [name,[array]] of Object.entries(object.geometry.attributes)){
+     same(array,expected.objects[i].geometry.attributes[name][0],`object ${i} ${name}`);
+     expect(array.buffer.byteLength).toBe(array.byteLength);
+    }
+    if(object.geometry.index)same(object.geometry.index,expected.objects[i].geometry.index,`object ${i} index`);
+   });
   }
  });
  it('serves a plant from its bake without drawing it again',()=>{

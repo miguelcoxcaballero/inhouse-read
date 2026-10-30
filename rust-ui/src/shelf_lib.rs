@@ -62,6 +62,8 @@ mod book_shaders;
 // a reader/catalog is opened. Share the kernels rather than wake that module.
 mod book_projection;
 mod foliage;
+mod packet_host;
+mod plant_build;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
