@@ -9,22 +9,13 @@ export { speechChunks } from './speech-text.js'
 // and stopped is rust-ui (voice_*.rs; its methods are answered by voice_methods.rs). The kit holds the engine, audio,
 // catalogue, text and timer doorways Rust calls back (the modules are read when a method needs them); the frozen
 // originals are tests/unit/helpers/reference-voice-*.js.
+// The join, start-wait, failed-synthesis and sleep timers are rust-ui voice_*_later (reader_assembly.rs).
 const kit={runtime,audio,catalog,speech,get clearTimeout(){return clearTimeout},get now(){return Date.now},get document(){return document},
  clearTimer:id=>clearTimeout(id),add:(a,b)=>a+b,sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),ignore:value=>Promise.resolve(value).catch(()=>{}),
- deviceLanguage:()=>navigator.language,always:()=>true,
- joinReady:(ui,owner,promise,generation,index)=>{void promise.then(()=>ui.voice_join_ready(owner,generation,index))},
- waitStarted:(ui,owner,id)=>setTimeout(()=>ui.voice_wait_started(owner,id),900),
- synthFailed:(owner,id)=>queueMicrotask(()=>owner.engineFailed({id,reason:'synth-failed'})),
- sleepTimer:(ui,owner,ms)=>setTimeout(()=>ui.voice_sleep_expired(owner),ms)}
+ deviceLanguage:()=>navigator.language,always:()=>true}
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
-  constructor(reader,onState=()=>{}) {
-    readerUI().voice_initialize(this,reader,onState)
-    window.InhouseReadAudioDiagnostics=session=>this.getDiagnosticState(session)
-    try{localStorage.removeItem('inhouse-read-neural-slow')}catch{/* obsolete preference */}
-    for(const type of ['inhouse-tts','inhouse-speech-layout','inhouse-speech-hold','inhouse-audio-control'])
-      window.addEventListener(type,event=>readerUI().voice_event(this,type,event.detail,audio.nativePcmBridge))
-  }
+  constructor(reader,onState=()=>{}) { const ui=readerUI(); ui.voice_construct(this,reader,onState,kit,ui) }
   get supported() { return Boolean(runtime.neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }
   useTransport(name) { this.transport = name }

@@ -13,7 +13,9 @@ test('a delayed Rust download holds the book until it arrives, then one voice se
   const observe=result=>{
    const instance=result.instance||result,actual=instance.exports;if(!actual.voice_initialize)return result
    window.voiceSessionProof.available=true
-   const exports={...actual,voice_initialize:(...args)=>{window.voiceSessionProof.initializations++;return actual.voice_initialize(...args)},voice_play:(...args)=>{window.voiceSessionProof.plays++;return actual.voice_play(...args)}}
+   const exports={...actual,voice_initialize:(...args)=>{window.voiceSessionProof.initializations++;return actual.voice_initialize(...args)},
+    // Since readers block 6 the session's constructor reaches voice_initialize inside Rust (voice_construct).
+    voice_construct:(...args)=>{window.voiceSessionProof.initializations++;return actual.voice_construct(...args)},voice_play:(...args)=>{window.voiceSessionProof.plays++;return actual.voice_play(...args)}}
    // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
    // dispatched member's name from the call and count it as the implementation it runs.
    const dispatched={"voice_method":{"play":"plays"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)window.voiceSessionProof[name]++;return actual[dispatch](...args)}

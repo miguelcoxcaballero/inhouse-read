@@ -122,3 +122,150 @@ pub fn reader_experience_step(host: &JsValue, direction: &JsValue, ui: &JsValue)
 pub fn reader_experience_step_run(host: &JsValue, direction: &JsValue, ui: &JsValue) -> R<JsValue> {
     method(&read(host, "voice")?, "continueFromPage", &[&bound(ui, "reader_experience_page_step", &[host, direction])?])
 }
+
+/// A bound export (see `bound`) as the function type the callee expects.
+pub(crate) fn bound_fn(ui: &JsValue, name: &str, args: &[&JsValue]) -> R<Function> { Ok(bound(ui, name, args)?.unchecked_into()) }
+/// A function that does nothing, for promise handlers that only mean "carry on".
+fn noop() -> JsValue {
+    thread_local! { static NOOP: JsValue = Closure::<dyn FnMut()>::new(|| {}).into_js_value(); }
+    NOOP.with(JsValue::clone)
+}
+/// `globalThis[name](...args)` with the global object as `this`, as a bare call of a global function.
+fn global_call(name: &str, args: &[&JsValue]) -> R<JsValue> {
+    let function: Function = read(&global(), name)?.dyn_into().map_err(|_| JsValue::from(js_sys::TypeError::new(&format!("{name} is not a function"))))?;
+    let list = Array::new();
+    for argument in args { list.push(argument); }
+    function.apply(&global(), &list)
+}
+
+// --- The natural-voice picker (neural-picker.js `NeuralVoicePicker`) -------------------------------------------------
+
+/// `new NeuralVoicePicker(host)`: its download and error records, its view over the panel, and the
+/// clicks of the list, the first-use offer and Reintentar.
+#[wasm_bindgen]
+pub fn picker_construct(owner: &JsValue, host: &JsValue, ui: &JsValue) -> R<()> {
+    set(owner, "host", host)?;
+    set(owner, "tasks", &js_sys::Map::new())?; // voice id -> AbortController of the download this page started
+    set(owner, "errors", &js_sys::Map::new())?; // voice id -> message of the last failed download
+    set(owner, "engine", &JsValue::NULL)?;
+    set(owner, "signature", &"".into())?;
+    set(owner, "frame", &0.into())?;
+    set(owner, "warmGeneration", &0.into())?;
+    set(owner, "warmHandle", &JsValue::NULL)?;
+    let panel = read(host, "panel")?;
+    let view: Function = read(ui, "RustNeuralView")?.dyn_into().map_err(|_| JsValue::from(js_sys::TypeError::new("RustNeuralView is not a constructor")))?;
+    set(owner, "view", &Reflect::construct(&view, &Array::of1(&panel))?)?;
+    set(owner, "block", &method(&panel, "querySelector", &[&"[data-neural]".into()])?)?;
+    set(owner, "offer", &method(&panel, "querySelector", &[&"[data-neural-offer]".into()])?)?;
+    for root in [read(owner, "block")?, read(owner, "offer")?] {
+        method(&root, "addEventListener", &[&"click".into(), &bound(ui, "picker_click_event", &[owner])?])?;
+    }
+    let retry = method(&panel, "querySelector", &[&"[data-neural-retry]".into()])?;
+    method(&retry, "addEventListener", &[&"click".into(), &bound(ui, "picker_retry", &[owner, host])?])?;
+    Ok(())
+}
+#[wasm_bindgen]
+pub fn picker_click_event(owner: &JsValue, event: &JsValue) -> R<JsValue> { method(owner, "click", &[event]) }
+/// Reintentar: give the natural voice another chance, play, and repaint the list.
+#[wasm_bindgen]
+pub fn picker_retry(owner: &JsValue, host: &JsValue) -> R<()> {
+    for name in ["retryNeural", "play"] {
+        let voice = read(host, "voice")?;
+        if !crate::host::absent(&read(&voice, name)?) { method(&voice, name, &[])?; }
+    }
+    method(owner, "render", &[])?;
+    Ok(())
+}
+/// The engine module is scheduled for an idle moment once a book opens (nothing loads at app start).
+#[wasm_bindgen]
+pub fn picker_schedule(ui: &JsValue, owner: &JsValue, context: &JsValue) -> R<JsValue> {
+    let run = bound(ui, "picker_warm_fire", &[owner, context])?;
+    let handle: JsValue = Object::new().into();
+    if get(&global(), "requestIdleCallback").is_function() {
+        let options: JsValue = Object::new().into();
+        set(&options, "timeout", &2500.into())?;
+        set(&handle, "idle", &JsValue::TRUE)?;
+        set(&handle, "id", &global_call("requestIdleCallback", &[&run, &options])?)?;
+    } else {
+        set(&handle, "idle", &JsValue::FALSE)?;
+        set(&handle, "id", &crate::host::set_timeout(&run, 800.0)?)?;
+    }
+    Ok(handle)
+}
+/// The engine module loaded (or not): the picker attaches to it if the request is still current.
+#[wasm_bindgen]
+pub fn picker_load(ui: &JsValue, kit: &JsValue, owner: &JsValue, context: &JsValue, value: &JsValue) -> R<JsValue> {
+    let loading = call(&crate::voice_methods::kit_value(kit, "runtime.loadNeural")?, "loadNeural", &[])?;
+    method(&loading, "then", &[&bound(ui, "picker_loaded", &[owner, context, value])?, &noop()])
+}
+/// The engine's change (installed set) and status (speaking) events.
+#[wasm_bindgen]
+pub fn picker_listen(ui: &JsValue, kit: &JsValue, owner: &JsValue, engine: &JsValue) -> R<()> {
+    method(engine, "addEventListener", &[&"change".into(), &bound(ui, "picker_changed_event", &[owner])?])?;
+    method(engine, "addEventListener", &[&"status".into(), &bound(ui, "picker_engine_status", &[owner, engine, &read(kit, "writeUsed")?])?])?;
+    Ok(())
+}
+#[wasm_bindgen]
+pub fn picker_changed_event(owner: &JsValue) -> R<JsValue> { method(owner, "changed", &[]) }
+/// Re-read what is installed (a failing refresh still lets the warm-up decide).
+#[wasm_bindgen]
+pub fn picker_engine_refresh(ui: &JsValue, owner: &JsValue, engine: &JsValue, context: &JsValue, value: &JsValue) -> R<JsValue> {
+    let refresh = read(engine, "refresh")?;
+    let refreshed = if crate::host::absent(&refresh) { JsValue::UNDEFINED } else { method(engine, "refresh", &[])? };
+    let settled = method(&js_sys::Promise::resolve(&refreshed), "catch", &[&noop()])?;
+    method(&settled, "then", &[&bound(ui, "picker_engine_refreshed", &[owner, context, value])?])
+}
+/// The check a warm-up hands the session: is this warm-up still the current one?
+#[wasm_bindgen]
+pub fn picker_warm_check_factory(ui: &JsValue, owner: &JsValue, context: &JsValue) -> R<JsValue> { bound(ui, "picker_warm_check", &[owner, context]) }
+#[wasm_bindgen]
+pub fn picker_warm_check(owner: &JsValue, context: &JsValue) -> R<JsValue> { method(owner, "isWarmCurrent", &[context]) }
+/// Download progress is painted on the next frame.
+#[wasm_bindgen]
+pub fn picker_frame(ui: &JsValue, owner: &JsValue) -> R<JsValue> { crate::host::request_frame(&bound(ui, "picker_paint_frame", &[owner])?) }
+
+// --- The audiobook session (reading-voice.js `ReadingVoice`) ---------------------------------------------------------
+
+/// `new ReadingVoice(reader, onState)`: the session's state, the page's audio diagnostics and the
+/// window events that steer it (TTS, relayout, hold to read, media controls).
+#[wasm_bindgen]
+pub fn voice_construct(owner: &JsValue, reader: &JsValue, on_state: &JsValue, kit: &JsValue, ui: &JsValue) -> R<()> {
+    crate::voice_session::voice_initialize(owner.clone(), reader.clone(), on_state.clone())?;
+    set(&window(), "InhouseReadAudioDiagnostics", &bound(ui, "voice_diagnostics", &[owner])?)?;
+    let _ = (|| -> R<JsValue> { method(&read(&global(), "localStorage")?, "removeItem", &[&"inhouse-read-neural-slow".into()]) })(); // obsolete preference
+    for kind in ["inhouse-tts", "inhouse-speech-layout", "inhouse-speech-hold", "inhouse-audio-control"] {
+        method(&window(), "addEventListener", &[&kind.into(), &bound(ui, "voice_window_event", &[owner, &kind.into(), kit])?])?;
+    }
+    Ok(())
+}
+#[wasm_bindgen]
+pub fn voice_diagnostics(owner: &JsValue, session: &JsValue) -> R<JsValue> { method(owner, "getDiagnosticState", &[session]) }
+#[wasm_bindgen]
+pub fn voice_window_event(owner: &JsValue, kind: String, kit: &JsValue, event: &JsValue) -> R<()> {
+    let pcm = crate::voice_methods::kit_value(kit, "audio.nativePcmBridge")?;
+    crate::voice_session::voice_event(owner.clone(), kind, read(event, "detail")?, pcm.unchecked_into())
+}
+/// A sentence joined across the page break is spoken once its next page is ready.
+#[wasm_bindgen]
+pub fn voice_join_later(ui: &JsValue, owner: &JsValue, promise: &JsValue, generation: &JsValue, index: &JsValue) -> R<()> {
+    method(promise, "then", &[&bound(ui, "voice_join_ready", &[owner, generation, index])?])?;
+    Ok(())
+}
+/// The engine has 900 ms to start an utterance.
+#[wasm_bindgen]
+pub fn voice_wait_later(ui: &JsValue, owner: &JsValue, id: &JsValue) -> R<JsValue> { crate::host::set_timeout(&bound(ui, "voice_wait_started", &[owner, id])?, 900.0) }
+/// A synthesis that could not start fails after the current task, like the engine's own failures.
+#[wasm_bindgen]
+pub fn voice_synth_failed_later(ui: &JsValue, owner: &JsValue, id: &JsValue) -> R<JsValue> { global_call("queueMicrotask", &[&bound(ui, "voice_synth_failed", &[owner, id])?]) }
+#[wasm_bindgen]
+pub fn voice_synth_failed(owner: &JsValue, id: &JsValue) -> R<JsValue> {
+    let failure: JsValue = Object::new().into();
+    set(&failure, "id", id)?;
+    set(&failure, "reason", &"synth-failed".into())?;
+    method(owner, "engineFailed", &[&failure])
+}
+/// The sleep timer.
+#[wasm_bindgen]
+pub fn voice_sleep_later(ui: &JsValue, owner: &JsValue, ms: &JsValue) -> R<JsValue> {
+    global_call("setTimeout", &[&bound(ui, "voice_sleep_expired", &[owner])?, ms])
+}

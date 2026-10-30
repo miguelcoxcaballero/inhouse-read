@@ -29,8 +29,6 @@ pub(crate) fn kit_value(kit: &JsValue, path: &str) -> Result<JsValue, JsValue> {
     Ok(value)
 }
 pub(crate) fn door(kit: &JsValue, path: &str) -> Result<Function, JsValue> { Ok(kit_value(kit, path)?.unchecked_into()) }
-/// A kit callback that takes the module first (`(ui, ...) => ...`), bound to it now.
-pub(crate) fn captured(kit: &JsValue, name: &str, ui: &JsValue) -> Result<Function, JsValue> { Ok(door(kit, name)?.bind1(&JsValue::NULL, ui)) }
 /// `(owner, value) => () => ui[name](owner, value)` without a new closure: `bind` bound to `ui[name]`,
 /// so `factory(owner, value)` is `ui[name].bind(null, owner, value)`.
 fn active_factory(ui: &JsValue, name: &str) -> Result<Function, JsValue> {
@@ -68,10 +66,10 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "getDiagnosticState" => voice_diagnostic(host, a(0), d("audio.nativeAudio")?, d("runtime.neuralEngine")?, kit_value(&kit, "document")?),
         "restartFromVisiblePage" => voice_restart_visible(host),
         "play" => voice_play(host, d("runtime.loadNeural")?, d("runtime.neuralEngine")?, d("runtime.unlockNeural")?, d("audio.nativeAudio")?).map(Into::into),
-        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, d("catalog.isNeuralId")?, d("now")?, captured(&kit, "joinReady", &ui)?)),
+        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, d("catalog.isNeuralId")?, d("now")?, crate::reader_assembly::bound_fn(&ui, "voice_join_later", &[&ui])?)),
         "voiceFor" => voice_for(host, a(0), d("runtime.neuralVoiceList")?, d("catalog.isNeuralId")?, d("catalog.declaredLanguage")?, d("catalog.langBase")?, d("catalog.resolveVoice")?, d("deviceLanguage")?),
         "speakNeural" => voice_speak_neural(host, a(0), a(1), a(2), d("runtime.neuralEngine")?, d("audio.nativeAudio")?, d("clearTimeout")?,
-            captured(&kit, "waitStarted", &ui)?, d("synthFailed")?).map(Into::into),
+            crate::reader_assembly::bound_fn(&ui, "voice_wait_later", &[&ui])?, crate::reader_assembly::bound_fn(&ui, "voice_synth_failed_later", &[&ui])?).map(Into::into),
         "upcomingFor" => voice_upcoming(host, a(0)),
         "audioItem" => voice_audio_item(a(0)),
         "needsPageJoin" => voice_needs_join(host, a(0), a(1)),
@@ -112,7 +110,7 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "pause" => done(voice_pause(host)),
         "stop" => done(voice_stop(host, d("clearTimer")?)),
         "fail" => done(voice_fail(host, a(0))),
-        "setSleep" => done(voice_set_sleep(host, a(0), d("clearTimeout")?, captured(&kit, "sleepTimer", &ui)?)),
+        "setSleep" => done(voice_set_sleep(host, a(0), d("clearTimeout")?, crate::reader_assembly::bound_fn(&ui, "voice_sleep_later", &[&ui])?)),
         _ => Err(js_sys::TypeError::new(&format!("ReadingVoice has no method {name}")).into()),
     }
 }

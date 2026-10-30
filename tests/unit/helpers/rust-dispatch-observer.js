@@ -18,8 +18,12 @@ export const MEMBER_EXPORTS={
   state:'picker_state',click:'picker_click',cancel:'picker_cancel',voiceName:'picker_voice_name',use:'picker_use',dismissed:'picker_dismissed',
   snoozed:'picker_snoozed',dismiss:'picker_dismiss',offerFor:'picker_offer_for',renderOffer:'picker_render_offer'}
 }
+// Since readers block 6 the audiobook session's constructor and its window events reach voice_initialize and
+// voice_event inside Rust (reader_assembly.rs voice_construct / voice_window_event): count those as the two.
+export const ASSEMBLY_EXPORTS={voice_construct:'voice_initialize',voice_window_event:'voice_event'}
 export function countDispatch(module,record){
  const copy={...module}
+ for(const [name,implementation] of Object.entries(ASSEMBLY_EXPORTS))if(module[name])copy[name]=(...args)=>{record(implementation);return module[name](...args)}
  for(const [dispatch,members] of Object.entries(MEMBER_EXPORTS))copy[dispatch]=(host,name,...rest)=>{
   if(members[name])record(members[name])
   return module[dispatch](host,name,...rest)
