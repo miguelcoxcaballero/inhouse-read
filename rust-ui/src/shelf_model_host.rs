@@ -203,3 +203,79 @@ fn request(k: &Keys, core: &JsValue, layout: &JsValue, spec: &JsValue, shelf_typ
 pub fn shelf_model_request(core: &JsValue, layout: &JsValue, spec: &JsValue, shelf_type: &JsValue, book_height: &JsValue) -> R<JsValue> {
     KEYS.with(|k| request(k, core, layout, spec, shelf_type, book_height))
 }
+
+thread_local! {
+    /// cos/sin of the light and foot-ring directions, from the host's Math, read once.
+    static ANGLES: Vec<f64> = crate::occlusion_table::occlusion_angles();
+}
+
+/// `Number.isFinite(value)`.
+fn finite(value: &JsValue) -> bool { value.as_f64().is_some_and(f64::is_finite) }
+
+/// The contact shadows of a cabinet (shelf-occlusion-wasm.js): positions and linear RGBA drawn by the numeric
+/// core's `shelf_occlusion` from the raw cabinet measures, shelf rows, feet and floor light, as
+/// `[positions, colours]`, each a Float32Array with its own buffer. The host makes the geometry.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn shelf_occlusion_request(core: &JsValue, width: &JsValue, height: &JsValue, depth: &JsValue, floor_y: &JsValue, bottoms: &JsValue,
+    footprints: &JsValue, floor_light: &JsValue) -> R<Array> {
+    // The feet that make a ring: finite numbers and a positive radius (`[f.x, f.z, f.radius].every(Number.isFinite)`).
+    let mut feet: Vec<[f64; 3]> = Vec::new();
+    for foot in Array::from(footprints).iter() {
+        if !truthy(&foot) {
+            continue;
+        }
+        let (x, z, radius) = (read(&foot, "x")?, read(&foot, "z")?, read(&foot, "radius")?);
+        if finite(&x) && finite(&z) && finite(&radius) && num(&read(&foot, "radius")?) > 0.0 {
+            feet.push([num(&x), num(&z), num(&radius)]);
+        }
+    }
+    let light: Option<Vec<f64>> = if Array::is_array(floor_light) {
+        let list: &Array = floor_light.unchecked_ref();
+        let values: Vec<JsValue> = list.iter().collect();
+        (list.length() == 4 && values.iter().all(finite)).then(|| values.iter().map(num).collect())
+    } else {
+        None
+    };
+    let rows: Vec<JsValue> = Array::from(bottoms).iter().collect();
+    let input_length = 90 + rows.len() + feet.len() * 3;
+    let most = rows.len() * 78 + 66 + if light.is_some() { 360 } else { 0 } + feet.len() * 300;
+    let length = input_length + (most * 7).div_ceil(2);
+    let pointer = invoke(core, "alloc_f64", &[number_value(length as f64)])?;
+    if !truthy(&pointer) {
+        return Err(js_sys::Error::new("El módulo numérico no pudo reservar memoria.").into());
+    }
+    let pointer = num(&pointer);
+    let drawn = (|| -> R<Array> {
+        let mut input = vec![0.0; input_length];
+        input[0] = number(width)?;
+        input[1] = number(height)?;
+        input[2] = number(depth)?;
+        input[3] = number(floor_y)?;
+        if let Some(light) = &light {
+            input[6..10].copy_from_slice(light);
+        }
+        for (index, value) in rows.iter().enumerate() {
+            input[10 + index] = number(value)?;
+        }
+        for (index, foot) in feet.iter().enumerate() {
+            let at = 10 + rows.len() + index * 3;
+            input[at..at + 3].copy_from_slice(foot);
+        }
+        ANGLES.with(|angles| input[input_length - 80..].copy_from_slice(angles));
+        view(&read(&read(core, "memory")?, "buffer")?, pointer, input_length as f64)?.copy_from(&input);
+        let output = pointer + (input_length * 8) as f64;
+        let vertices = invoke(core, "shelf_occlusion", &[number_value(pointer), number_value(rows.len() as f64), number_value(feet.len() as f64),
+            number_value(if light.is_some() { 1.0 } else { 0.0 }), number_value(output)])?;
+        if !truthy(&vertices) {
+            return Err(js_sys::Error::new("El módulo numérico no pudo calcular las sombras.").into());
+        }
+        let vertices = num(&vertices) as u32;
+        let class = Reflect::get(&js_sys::global(), &JsValue::from_str("Float32Array"))?;
+        let values: js_sys::Float32Array = Reflect::construct(class.unchecked_ref(),
+            &Array::of3(&read(&read(core, "memory")?, "buffer")?, &output.into(), &f64::from(vertices * 7).into()))?.unchecked_into();
+        Ok(Array::of2(&values.slice(0, vertices * 3), &values.slice(vertices * 3, vertices * 7)))
+    })();
+    invoke(core, "free_f64", &[number_value(pointer), number_value(length as f64)])?;
+    drawn
+}
