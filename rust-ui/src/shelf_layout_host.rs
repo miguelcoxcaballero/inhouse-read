@@ -273,12 +273,16 @@ pub fn shelf_spine_styles(host: &JsValue, books: &JsValue, options: &JsValue) ->
 
 /// `cfg.name(...args)`, a method call as `cfg.name?.(...)` makes it (the caller checked it is present).
 fn call_on(cfg: &JsValue, function: &JsValue, name: &str, args: &[&JsValue]) -> R<JsValue> {
-    let function: &Function = function.dyn_ref().ok_or_else(|| js_sys::TypeError::new(&format!("cfg.{name} is not a function")))?;
-    let list = Array::new();
-    for value in args {
-        list.push(value);
+    // `is_function` is the `typeof` check: a callable object without Function's prototype is still called.
+    if !function.is_function() {
+        return Err(js_sys::TypeError::new(&format!("cfg.{name} is not a function")).into());
     }
-    function.apply(cfg, &list)
+    let function: &Function = function.unchecked_ref();
+    match args {
+        [a] => function.call1(cfg, a),
+        [a, b] => function.call2(cfg, a, b),
+        _ => function.apply(cfg, &args.iter().copied().collect::<Array>()),
+    }
 }
 
 fn layout_shelves(k: &Keys, host: &Host, books: &JsValue, options: &JsValue, prepared: &JsValue) -> R<Array> {
