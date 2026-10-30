@@ -92,6 +92,6 @@ it('propagates getter errors unchanged and releases failed-join allocations',()=
  }
 })
 it('adopts a late join implementation without replacing source records',()=>{
- const {host,original}=setup(false,1),native={voice_join_sentence:vi.fn(ui.voice_join_sentence)}
- fixture.ui=native;joinVoiceSentence(host);expect(native.voice_join_sentence).toHaveBeenCalledOnce();expect(host.items.at(-1).unjoined).toBe(original)
+ const {host,original}=setup(false,1),native={voice_method:vi.fn(ui.voice_method)}
+ fixture.ui=native;joinVoiceSentence(host);expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'joinPageSentence']);expect(host.items.at(-1).unjoined).toBe(original)
 })

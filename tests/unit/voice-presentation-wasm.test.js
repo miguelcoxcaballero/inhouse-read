@@ -66,6 +66,6 @@ it('keeps a full sentence highlighted while following marks in the same source',
  expect(current.follow.mock.calls).toEqual([[0,50],[50,200]])
 })
 it('preserves source identity when presentation adopts a late native module',()=>{
- const {host,current}=setup(false,1);host.shown=null;const native={...ui,voice_present:vi.fn(ui.voice_present)};fixture.ui=native
- presentVoice(host);expect(native.voice_present).toHaveBeenCalledOnce();expect(host.shown.source).toBe(current)
+ const {host,current}=setup(false,1);host.shown=null;const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
+ presentVoice(host);expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'present']);expect(host.shown.source).toBe(current)
 })

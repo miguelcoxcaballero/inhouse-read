@@ -86,7 +86,7 @@ it('accepts only an explicitly valid detached page and catches stale getters',()
  expect(ui.voice_page_valid({get source(){throw Error('detached')}})).toBe(false)
 })
 it('adopts native preparation after a late module without moving the current source',async()=>{
- const {host,source}=setup(false,1);const native={...ui,voice_prepare_ahead:vi.fn(ui.voice_prepare_ahead)};fixture.ui=native
+ const {host,source}=setup(false,1);const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
  prepareVoiceAhead(host);await host.aheadPage.promise
- expect(native.voice_prepare_ahead).toHaveBeenCalledOnce();expect(host.source).toBe(source)
+ expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'prepareAhead']);expect(host.source).toBe(source)
 })

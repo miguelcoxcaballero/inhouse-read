@@ -71,6 +71,6 @@ it('rejects a cyclic location before modifying stop state or cancelling transpor
  expect(()=>host.stop()).toThrow();expect(events).toEqual([]);expect(host.generation).toBe(5);expect(host.utteranceId).toBe('active')
 })
 it('adopts a late pause implementation without replacing the active voice',()=>{
- const {host}=setup(false,1),native={voice_pause:vi.fn(ui.voice_pause)}
- fixture.ui=native;pauseReadingVoice(host);expect(native.voice_pause).toHaveBeenCalledWith(host);expect(host.state).toBe('paused')
+ const {host}=setup(false,1),native={voice_method:vi.fn(ui.voice_method)}
+ fixture.ui=native;pauseReadingVoice(host);expect(native.voice_method.mock.calls[0].slice(0,3)).toEqual([host,'pause',[]]);expect(host.state).toBe('paused')
 })

@@ -68,6 +68,6 @@ it('does not adopt a phrase after Stop invalidates its asynchronous preparation'
 })
 it('adopts a late native navigator without recreating the reader or its source',async()=>{
  const {host}=setup(false,33);host.state='playing';const source=host.source,reader=host.reader
- const native={...ui,voice_browse:vi.fn(ui.voice_browse)};fixture.ui=native;browseVoice(host)
- expect(native.voice_browse).toHaveBeenCalledOnce();expect(host.source).toBe(source);expect(host.reader).toBe(reader)
+ const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native;browseVoice(host)
+ expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'browse']);expect(host.source).toBe(source);expect(host.reader).toBe(reader)
 })

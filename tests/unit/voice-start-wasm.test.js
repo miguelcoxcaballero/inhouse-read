@@ -67,10 +67,10 @@ for(let round=0;round<2;round++){
 
 it('delegates every start and the visible-page decision to the Rust functions',async()=>{
  const {host}=setup(false,1);host.restartFromVisiblePage=()=>restartVisibleVoice(host)
- const native={voice_play:vi.fn(ui.voice_play),voice_restart_visible:vi.fn(ui.voice_restart_visible)};fixture.ui=native
+ const native={voice_method:vi.fn(ui.voice_method)};fixture.ui=native
  await playReadingVoice(host);expect(host.state).toBe('playing')
  host.state='paused';await playReadingVoice(host)
- expect(native.voice_play).toHaveBeenCalledTimes(2);expect(native.voice_restart_visible).toHaveBeenCalled();expect(host.state).toBe('playing')
+ const names=native.voice_method.mock.calls.map(call=>call[1]);expect(names.filter(name=>name==='play')).toHaveLength(2);expect(names).toContain('restartFromVisiblePage');expect(host.state).toBe('playing')
 })
 it('fails clearly without the core instead of starting through a second implementation',async()=>{
  const {host}=setup(false,1);fixture.ui=null

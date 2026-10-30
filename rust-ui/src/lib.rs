@@ -132,3 +132,12 @@ mod format_detect;
 
 #[cfg(feature = "shelf")]
 mod cozy_atlas;
+
+#[cfg(feature = "ui")]
+mod voice_methods;
+
+#[cfg(feature = "ui")]
+mod picker_methods;
+
+#[cfg(feature = "ui")]
+mod controller_methods;
