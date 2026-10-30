@@ -7,10 +7,12 @@ const packageInfo = JSON.parse(read('../../package.json'))
 describe('published application version', () => {
   it('shows the package version in the application', () => {
     // Read from package.json at build time, so every release shows its own number.
-    const app = read('../../src/js/app.js')
+    // app.js hands it to the shell (rust-ui/src/app_shell.rs), which writes the label.
+    const app = read('../../src/js/app.js'), shell = read('../../rust-ui/src/app_shell.rs')
     expect(app).toContain("import { version as APP_VERSION } from '../../package.json'")
-    expect(app).toContain('`Inhouse Read · v${APP_VERSION}`')
-    expect(app).not.toMatch(/Inhouse Read · v\d/)
+    expect(app).toMatch(/const shellHost = \{[^}]*\bAPP_VERSION\b/)
+    expect(shell).toContain('format!("Inhouse Read · v{}",crate::host::text_of(&read(host,"APP_VERSION")?))')
+    expect(app + shell).not.toMatch(/Inhouse Read · v\d/)
   })
 
   it('keeps both lockfile version fields aligned with the package', () => {

@@ -34,10 +34,10 @@ import { idleWork, shelfWorkReady, setShelfWorkActive } from './idle-startup.js'
 import { runAfterFirstFrame } from './idle-startup.js'
 import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
-import { needRustShelf, requireRustShelf } from './rust-shelf.js'
+import { getRustShelf, needRustShelf, requireRustShelf } from './rust-shelf.js'
 import { shelfBakesSettled } from './shelf-bake-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
-import { classifyTapZone, ZONE } from './gestures.js'
+import { classifyTapZone } from './gestures.js'
 import { markTiming } from './perf-marks.js'
 import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
 import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
@@ -129,10 +129,8 @@ let driveProfile = null
 let savedReaderPositionGuard = null
 const readerPositionGuard = () => savedReaderPositionGuard ||= new (bookDataModule().RustReaderPositionGuard)()
 let restoringProgress = false
-let shelfRefreshQueued = false
 let lengthStatusVersion = 0
 let shelfLengthStatusVersion = -1
-let lengthRefreshTimer = null
 let appDisposed = false
 let drivePollTimer = null, drivePollGeneration = 0
 let deployCheck = null
@@ -148,7 +146,6 @@ const cloudSync = new CloudSync(library, {
 })
 let cloudRoomChanged = false
 let backupTimer = null
-let roomRefreshRetry = null
 let roomCaptureTimer = null
 let roomCaptureBusy = false
 let roomCaptureAgain = false
@@ -169,14 +166,10 @@ const libraryBackup = new LibraryBackup(library, cloudSync, {
   onLiveApplied:scheduleLibraryBackup,
   onSettings:applyCloudSettings
 })
-function applyCloudSettings(keys) {
-    const room = keys.filter(key => key.startsWith('inhouse-read-shelf-'))
-    if (room.length) cloudRoomChanged = true
-    if (keys.includes('inhouse-read-theme')) initTheme()
-    if (keys.includes('inhouse-read-reading-preferences')) readingExperience.reloadPreferences()
-    if (keys.includes(STREAK_KEY)) readingStreak.reconcile()
-    refreshShelf()
-}
+// The shell (theme, screens, reader controls, Drive picker, deferred refreshes) is
+// rust-ui/src/app_shell.rs. Before the shelf module is in, its calls wait for it.
+const withShell = use => { const ready = getRustShelf(); return ready ? use(ready) : requireRustShelf().then(use) }
+function applyCloudSettings(keys) { return withShell(shell => shell.app_apply_cloud_settings(shellHost, keys)) }
 const roomCoordinationHost = {
   hasDriveSession, getRememberedDriveProfile, syncLibraryToDrive,
   captureRoom: account => libraryBackup.captureRoom(account),
@@ -212,15 +205,7 @@ globalThis.addEventListener('storage',e => {
   if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
 })
 globalThis.addEventListener('inhouse-library-changed', scheduleLibraryBackup)
-function scheduleLengthRefresh() {
-  if (appDisposed || document.hidden || !els.readerScreen.hidden || lengthRefreshTimer != null) return
-  lengthRefreshTimer = setTimeout(() => {
-    lengthRefreshTimer = null
-    if (!appDisposed && !document.hidden && els.readerScreen.hidden) {
-      refreshShelf().catch(error => console.warn('No se pudo actualizar la estantería:', error))
-    }
-  }, 80)
-}
+function scheduleLengthRefresh() { return withShell(shell => shell.app_schedule_length_refresh(shellHost)) }
 const wordCountQueue = createBookLengthQueue(library, {
   // The visible reader owns its own cached metrics. Detached library parsers
   // wait at page/section boundaries until Home is visible again.
@@ -265,46 +250,28 @@ const readingExperience = createLazyReaderExperience(reader, {
   }
 })
 
-// ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
-
-// The browser chrome (PWA/Chrome toolbar) takes the header's surface colour.
-function syncThemeColor(theme) {
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1c1c1c' : '#ffffff')
+const shellState = {
+  lengthRefreshTimer:null, roomRefreshRetry:null, shelfRefreshQueued:false, readerLoadGeneration:0,
+  get appDisposed() { return appDisposed }, get closingReader() { return closingReader },
+  get shelfRefreshDeferred() { return shelfRefreshDeferred }, get shelf() { return shelf },
+  get lengthStatusVersion() { return lengthStatusVersion }, get shelfLengthStatusVersion() { return shelfLengthStatusVersion },
+  get cloudRoomChanged() { return cloudRoomChanged }, set cloudRoomChanged(value) { cloudRoomChanged = value },
+  get pendingLocalReopenId() { return pendingLocalReopenId }, set pendingLocalReopenId(value) { pendingLocalReopenId = value },
+  get pendingReaderTransition() { return pendingReaderTransition }, set pendingReaderTransition(value) { pendingReaderTransition = value },
+  get driveProfile() { return driveProfile }
 }
-
-function initTheme() {
-  const saved = localStorage.getItem('inhouse-read-theme')
-  const preferred = saved ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-  document.documentElement.setAttribute('data-theme', preferred)
-  syncThemeColor(preferred)
+const shellHost = {
+  els, document, reader, library, cloudSync, preparedPages, readingStreak, STREAK_KEY, APP_VERSION, state:shellState,
+  authNotice:document.getElementById('drive-auth-notice'), authMessage:document.getElementById('drive-auth-message'),
+  authRetry:document.getElementById('drive-auth-retry'), authCancel:document.getElementById('drive-auth-cancel'),
+  get readingExperience() { return readingExperience },
+  notifyCloudSettingsChanged, setShelfWorkActive, classifyTapZone, isDriveConfigured, refreshShelf, hasDriveSession,
+  requestDriveAccess, loadDriveAccountProfile, listAllDriveBooks, syncLibraryToDrive, setDriveSyncStatus,
+  offerAvailableAndroidUpdate, normalizeBookTitle, openFile,
+  openFileContent: (file, options) => bookDataModule().app_open_file_content(fileContentHost, file, options)
 }
-
-els.themeToggle.addEventListener('click', () => {
-  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
-  document.documentElement.setAttribute('data-theme', next)
-  syncThemeColor(next)
-  localStorage.setItem('inhouse-read-theme', next)
-  notifyCloudSettingsChanged('inhouse-read-theme')
-  if (els.driveThemeToggle) els.driveThemeToggle.checked = next === 'dark'
-})
-
-// ---- Navegación entre pantallas ----
-
-function showScreen(name) {
-  if (name !== 'reader') {
-    document.body.classList.remove('is-reader-focus')
-    const header = document.querySelector('.app-header')
-    header.style.removeProperty('color-scheme')
-    delete header.dataset.readingTheme
-  }
-  document.body.classList.toggle('is-reading', name === 'reader')
-  els.homeScreen.hidden = name !== 'home'
-  els.readerScreen.hidden = name !== 'reader'
-  setShelfWorkActive(name === 'home')
-  shelf?.setPresentationActive?.(name === 'home')
-  if (name === 'home' && shelfRefreshDeferred && !closingReader) refreshShelf().catch(error => console.warn('Estantería pendiente:', error))
-  if (name === 'home' && shelfLengthStatusVersion !== lengthStatusVersion) scheduleLengthRefresh()
-}
+els.themeToggle.addEventListener('click', () => withShell(shell => shell.app_set_theme(shellHost, 'toggle')))
+function showScreen(name) { return withShell(shell => shell.app_show_screen(shellHost, name)) }
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && shelfLengthStatusVersion !== lengthStatusVersion) scheduleLengthRefresh()
@@ -319,14 +286,14 @@ addEventListener('pagehide', event => {
   readingStreak.destroy()
   nativeImportShelfGate.destroy()
   shelfRefreshQueue.dispose()
-  clearTimeout(lengthRefreshTimer)
-  lengthRefreshTimer = null
+  clearTimeout(shellState.lengthRefreshTimer)
+  shellState.lengthRefreshTimer = null
   wordCountQueue.dispose()
   clearTimeout(backupTimer)
   if (drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
   clearTimeout(roomCaptureTimer)
   savedReaderPositionGuard?.free(); savedReaderPositionGuard = null
-  clearTimeout(roomRefreshRetry)
+  clearTimeout(shellState.roomRefreshRetry)
   liveRoom.destroy()
 })
 
@@ -342,10 +309,7 @@ function refreshShelf(options) {
   return shelfRefreshQueue.request(options)
 }
 
-function retryRoomRefresh() {
-  if (roomRefreshRetry != null || appDisposed || document.hidden) return
-  roomRefreshRetry = setTimeout(() => { roomRefreshRetry = null; refreshShelf() }, 150)
-}
+const retryRoomRefresh = () => needRustShelf().app_retry_room_refresh(shellHost)
 async function performShelfRefresh({ immediate = false } = {}) {
   const firstRecords = takeFirstRawRecords()
   // A native import changes the library after the boot snapshot was taken.
@@ -358,19 +322,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
   shelfRefreshDeferred = false
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
-  if (document.querySelector('.ihr-flyout')) {
-    if (!shelfRefreshQueued) {
-      shelfRefreshQueued = true
-      const observer = new MutationObserver(() => {
-        if (document.querySelector('.ihr-flyout')) return
-        observer.disconnect()
-        shelfRefreshQueued = false
-        refreshShelf()
-      })
-      observer.observe(document.body, { childList: true, subtree: true })
-    }
-    return
-  }
+  if (document.querySelector('.ihr-flyout')) return void needRustShelf().app_refresh_after_flyout(shellHost)
   if (shelf?.isInteracting) { retryRoomRefresh(); return }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
   let storedBooks = await (firstRecords ?? library.listAll())
@@ -442,40 +394,7 @@ const shelfRefreshHost = {
   }
 }
 
-// Hiding the controls only hides them: the header and the toolbar keep their
-// margins (see reading.css), so the page never repaginates or refits. The
-// toolbar's own `hidden` attribute is left to the opening and closing flights.
-function setReaderChromeHidden(hidden) {
-  if (els.readerScreen.hidden || els.readerScreen.classList.contains('is-preparing') ||
-      els.readerScreen.classList.contains('is-opening-from-book')) return
-  const focus = Boolean(hidden)
-  document.body.classList.toggle('is-reader-focus', focus)
-  els.readerFocus.setAttribute('aria-pressed', String(focus))
-  els.readerFocus.setAttribute('aria-label', focus ? 'Mostrar controles' : 'Ocultar controles')
-  if (focus) els.readerViewport.focus({ preventScroll:true })
-}
-
-els.readerFocus.addEventListener('click', () => setReaderChromeHidden(true))
-// The blank margins left by hidden controls still take taps like the page does:
-// the edges turn pages and the centre brings the controls back. Their buttons
-// are invisible and unreachable, so only a tap on the margin itself lands here.
-for (const margin of [document.querySelector('.app-header'), els.readerToolbar]) {
-  margin.addEventListener('click', event => {
-    if (event.target !== margin || !document.body.classList.contains('is-reader-focus')) return
-    const bounds = margin.getBoundingClientRect()
-    const zone = classifyTapZone(event.clientX - bounds.left, bounds.width)
-    if (zone === ZONE.CENTER) return setReaderChromeHidden(false)
-    const forward = (zone === ZONE.NEXT) !== reader.rtl
-    readingExperience.step(forward ? 1 : -1)
-  })
-}
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && document.body.classList.contains('is-reader-focus') && !readingExperience.panel.open) {
-    setReaderChromeHidden(false)
-    els.readerFocus.focus({ preventScroll:true })
-    event.preventDefault()
-  }
-})
+function setReaderChromeHidden(hidden) { return needRustShelf().app_set_reader_chrome_hidden(shellHost, hidden) }
 
 
 function animateReaderPageFromBook(options) {
@@ -522,61 +441,12 @@ function pickLocalFile() {
 }
 
 els.addLocalBtn.addEventListener('click', pickLocalFile)
-els.addDriveBtn.addEventListener('click', openDriveModal)
-
-els.filePicker.addEventListener('change', async () => {
-  const file = els.filePicker.files?.[0]
-  els.filePicker.value = ''
-  if (!file) return
-
-  // Reabrir un libro ya conocido (el fallback de arriba): no hay que
-  // volver a guardarlo en la carpeta, solo abrirlo con el mismo id.
-  if (pendingLocalReopenId) {
-    const forcedId = pendingLocalReopenId
-    pendingLocalReopenId = null
-    const transition = pendingReaderTransition
-    pendingReaderTransition = null
-    try { await openFile(file, { forcedId, transition }) }
-    catch (error) { alert(error.message) }
-    return
-  }
-
-  // IndexedDB keeps the original bytes on this device without a folder picker
-  // or a Google connection. The folder path above only recovers legacy books.
-  try { await openFile(file, { restoreRemoved:true }) }
-  catch (error) { alert(error.message) }
-})
+els.addDriveBtn.addEventListener('click', () => withShell(shell => shell.app_open_drive_modal(shellHost)))
+els.filePicker.addEventListener('change', () => withShell(shell => shell.app_file_picked(shellHost)))
 
 // ---- Apertura y lectura ----
 
-let readerLoadGeneration = 0
-async function openFile(file, options = {}) {
-  const generation = ++readerLoadGeneration
-  const loading = document.getElementById('reader-loading')
-  const actions = document.querySelector('.reader-heading-actions')
-  els.readerToolbar.hidden = true
-  els.readerScreen.setAttribute('aria-busy', 'true')
-  actions.inert = true
-  loading.hidden = Boolean(options.transition) || Boolean(options.preparing)
-  try { return await openFileContent(file, options) }
-  finally {
-    if (generation === readerLoadGeneration) {
-      loading.hidden = true
-      actions.inert = false
-      els.readerScreen.setAttribute('aria-busy', 'false')
-    }
-  }
-}
-
-async function openFileContent(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady, reuseStoredContent = false } = {}) {
-  // A failed native download must remain reportable before Rust exists.
-  try { await readingExperience.ready() }
-  catch (error) { throw new Error('No se pudo cargar el lector. Comprueba la conexión e inténtalo de nuevo.', { cause:error }) }
-  return bookDataModule().app_open_file_content(fileContentHost, file, {
-    existingRecord, forcedId, folderFileName, transition, preparing,
-    restoreRemoved, onImportReady, reuseStoredContent
-  })
-}
+function openFile(file, options = {}) { return withShell(shell => shell.app_open_file(shellHost, file, options)) }
 const fileContentHost = {
   els, readingExperience, reader, library, wordCountQueue, preparedBooks, document, console,
   supersedePreparation, showScreen, storeBookFile, normalizeBookTitle, normalizeBookAuthor,
@@ -653,29 +523,6 @@ async function openingPageSnapshot(bookId, record) {
   return bookDataModule().app_opening_page_snapshot(readerPreparationHost, bookId, record)
 }
 
-// A resized window or a rotated phone changes the page's pixels and layout.
-globalThis.addEventListener('resize', () => preparedPages.invalidate('resize'))
-// Settings can change while a lifted book still owns the hidden reader.
-document.addEventListener('change', event => {
-  if (event.target.closest?.('.reading-panel [data-pref]')) preparedPages.invalidate('preferences')
-})
-document.addEventListener('click', event => {
-  if (event.target.closest?.('.reading-panel [data-theme], .reading-panel [data-size-step], .reading-panel [data-reset]')) {
-    preparedPages.invalidate('preferences')
-  }
-})
-new MutationObserver(() => preparedPages.invalidate('theme')).observe(document.documentElement,
-  { attributes:true, attributeFilter:['data-theme'] })
-if (typeof ResizeObserver === 'function') {
-  let viewportBox = null
-  new ResizeObserver(() => {
-    const box = els.readerViewport.getBoundingClientRect()
-    const key = `${box.width}x${box.height}`
-    if (viewportBox !== null && key !== viewportBox) preparedPages.invalidate('viewport')
-    viewportBox = key
-  }).observe(els.readerViewport)
-}
-
 async function revealPreparedReader() {
   showScreen('reader')
   els.readerScreen.classList.remove('is-preparing')
@@ -722,38 +569,23 @@ function syncLibraryToDrive(options = {}) {
   return withBookDataModule(module => module.app_drive_sync(driveActionsHost, options))
 }
 
-const authNotice = document.getElementById('drive-auth-notice')
-const authMessage = document.getElementById('drive-auth-message')
-const authRetry = document.getElementById('drive-auth-retry')
-const authCancel = document.getElementById('drive-auth-cancel')
-function showAuthNotice(message, { retry = false, pending = false } = {}) {
-  authMessage.textContent = message
-  authNotice.hidden = !message
-  authRetry.hidden = !retry
-  authCancel.hidden = !pending
-}
+function showAuthNotice(message, options) { return withShell(shell => shell.app_show_auth_notice(shellHost, message, options)) }
 
 function connectGoogleAccount() {
   return withBookDataModule(module => module.app_drive_connect(driveActionsHost))
 }
 
 els.driveConnectBtn.addEventListener('click', connectGoogleAccount)
-authRetry.addEventListener('click', connectGoogleAccount)
-authCancel.addEventListener('click', () => withBookDataModule(module => module.app_drive_cancel(driveActionsHost)))
-document.getElementById('drive-auth-dismiss').addEventListener('click', () => { authNotice.hidden = true })
+shellHost.authRetry.addEventListener('click', connectGoogleAccount)
+shellHost.authCancel.addEventListener('click', () => withBookDataModule(module => module.app_drive_cancel(driveActionsHost)))
+document.getElementById('drive-auth-dismiss').addEventListener('click', () => { shellHost.authNotice.hidden = true })
 globalThis.addEventListener('inhouse-drive-auth', event => withBookDataModule(module => module.app_drive_auth_event(driveActionsHost,event.detail)))
 
 function reportDriveConnectionError(error) {
   return withBookDataModule(module => module.app_drive_report_error(driveActionsHost, error))
 }
 
-els.driveThemeToggle.addEventListener('change', () => {
-  const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
-  document.documentElement.setAttribute('data-theme', theme)
-  syncThemeColor(theme)
-  localStorage.setItem('inhouse-read-theme', theme)
-  notifyCloudSettingsChanged('inhouse-read-theme')
-})
+els.driveThemeToggle.addEventListener('change', () => withShell(shell => shell.app_set_theme(shellHost, 'switch')))
 
 function closeProfileMenu() {
   profileView.closeMenu()
@@ -825,70 +657,17 @@ els.readerNext.addEventListener('click', () => readingExperience.step(1))
 
 // ---- Google Drive ----
 
-function openDriveModal() {
-  els.driveModal.hidden = false
-  loadDriveFiles()
-}
-
 els.driveClose.addEventListener('click', () => { els.driveModal.hidden = true })
-
-async function loadDriveFiles() {
-  els.driveStatus.textContent = 'Conectando con Drive…'
-  els.driveList.innerHTML = ''
-  try {
-    if (!hasDriveSession()) await requestDriveAccess()
-    await loadDriveAccountProfile()
-    const files = await listAllDriveBooks()
-    els.driveStatus.textContent = files.length ? '' : 'Sin libros en Drive.'
-    for (const f of files) {
-      const item = document.createElement('button')
-      item.type = 'button'
-      item.className = 'drive-item'
-      item.textContent = f.name
-      item.addEventListener('click', async () => {
-        els.driveModal.hidden = true
-        try {
-          const record = (await library.listAll()).find(book => book.driveFileId === f.id)
-            || await library.addOrTouch({ sourceType: 'drive', driveFileId: f.id, cloudAccountId: driveProfile?.id,
-              name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0,
-              driveContentChecksum:f.md5Checksum || null }, { restoreRemoved:true })
-          const file = await cloudSync.downloadForOffline(record)
-          if (!file) return
-          try { await cloudSync.syncBookProgress(record.id) }
-          catch (error) { console.warn('No se pudo recuperar el progreso de Drive; se abrirá la copia descargada:', error) }
-          const latest = await library.get(record.id)
-          if (!latest) return
-          await openFile(file, { existingRecord: latest, forcedId: latest.id, reuseStoredContent:true })
-        } catch (error) { alert(`No se pudo abrir el libro: ${error.message}`) }
-      })
-      els.driveList.append(item)
-    }
-    syncLibraryToDrive({ silent: true }).catch(error => {
-      setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`)
-      console.warn('No se pudieron sincronizar los libros pendientes:', error)
-    })
-  } catch (err) {
-    if (err?.code === 'ANDROID_SHELL_OUTDATED' && await offerAvailableAndroidUpdate()) {
-      els.driveModal.hidden = true
-    } else {
-      els.driveStatus.textContent = err?.code === 'ANDROID_SHELL_OUTDATED'
-        ? 'Drive aún no está disponible en Android. Usa la web.'
-        : `No se pudo conectar con Drive: ${err.message}`
-    }
-  }
-}
 
 // ---- Arranque ----
 
-initTheme()
-els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-// The published version, from package.json: it changes with every release.
-els.appVersion.textContent = `Inhouse Read · v${APP_VERSION}`
-els.addDriveBtn.disabled = !isDriveConfigured()
-els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
-showScreen('home')
+withShell(shell => {
+  shell.app_start_shell(shellHost)
+  shell.app_watch_reader_controls(shellHost)
+  shell.app_watch_prepared_pages(shellHost)
+})
 // A newer deploy found at launch reloads only a shelf nobody is using yet.
-deployCheck = initContentFreshnessChecks({ isIdle: () => !closingReader && !driveUploadsInFlight && !shelfRefreshQueued && !shelf?.isInteracting &&
+deployCheck = initContentFreshnessChecks({ isIdle: () => !closingReader && !driveUploadsInFlight && !shellState.shelfRefreshQueued && !shelf?.isInteracting &&
   !document.querySelector('.ihr-flyout') && els.readerScreen.hidden && els.driveModal.hidden &&
   document.getElementById('drive-auth-notice').hidden })
 refreshShelf({ immediate:true })

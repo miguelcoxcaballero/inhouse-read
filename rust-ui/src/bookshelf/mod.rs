@@ -23,4 +23,5 @@ mod screen_lifecycle;
 mod text_length;
 mod text_length_queue;
 mod screen_prefs;
+mod frame;
 pub use ctx::RustShelfCtx;
