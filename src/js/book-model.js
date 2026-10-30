@@ -67,54 +67,9 @@ export function bookCaseGeometries(width, height, board, thickness, { shelf = fa
   return needRustShelf().book_case_geometries(THREE, width, height, board, thickness, shelf, overview, segments, rim);
 }
 
-// Seen almost edge-on (the lifted book's front view), spine lettering shrinks
-// into bright slivers along the rolled edge. Only while the spine as a whole
-// faces away, the surface that turns from the viewer shows plain cloth; the
-// rules near the joint, which still face the viewer, keep their ink.
-// The shader text of this fade, the cover relief below and the reflection layer is the shelf module's
-// (rust-ui/src/book_shaders.rs), patched once per program variant.
-const spineFadePatches = new Map(), reliefPatches = new Map();
-function spineGrazingFade(material) {
-  const uniforms = { spineCloth:{ value:new THREE.Color() }, spineClothMetal:{ value:0 }, spineClothRough:{ value:.88 } };
-  material.onBeforeCompile = shader => {
-    Object.assign(shader.uniforms, uniforms);
-    const { vertexShader, fragmentShader } = shader;
-    const [vertex, fragment] = rememberedPatch(spineFadePatches, [vertexShader, fragmentShader],
-      () => needRustShelf().book_spine_fade_shaders(vertexShader, fragmentShader));
-    shader.vertexShader = vertex; shader.fragmentShader = fragment;
-  };
-  material.customProgramCacheKey = () => 'spine-grazing-fade';
-  return (book, style) => {
-    const finish = spineFinish(book.spineFinish);
-    uniforms.spineCloth.value.set(finish === 'matte' ? style.color : METAL_COLORS[finish]);
-    uniforms.spineClothMetal.value = finish === 'matte' ? 0 : 1;
-    uniforms.spineClothRough.value = SURFACE_FINISHES[surfaceFinish(book.spineSurfaceFinish, 'matte')].roughness;
-  };
-}
-
-/** Relief reaches the shader through the clearcoat normal map. The same
- * tangent-space normal also bends the base layer's normal, so the raised
- * zones read under a matte, satin or glossy laminate alike. Neutral
- * placeholder maps leave every pixel unchanged. */
-function installCoverRelief(material) {
-  const previousHook = material.onBeforeCompile, previousKey = material.customProgramCacheKey();
-  const uniforms = {
-    bookReliefBaseFinish:{ value:new THREE.Vector3() },
-    bookReliefStrength:{ value:0 }
-  };
-  // The physical chunk as it is when the relief is installed, patched once per chunk text.
-  const chunk = THREE.ShaderChunk.lights_physical_fragment;
-  const physical = rememberedPatch(reliefPatches, ['physical', chunk], () => needRustShelf().book_relief_physical(chunk));
-  material.onBeforeCompile = function(shader, renderer) {
-    previousHook.call(this, shader, renderer);
-    Object.assign(shader.uniforms, uniforms);
-    const { fragmentShader } = shader, maps = THREE.ShaderChunk.clearcoat_normal_fragment_maps;
-    shader.fragmentShader = rememberedPatch(reliefPatches, ['fragment', fragmentShader, physical, maps],
-      () => needRustShelf().book_cover_relief_fragment(fragmentShader, physical, maps));
-  };
-  material.customProgramCacheKey = () => `${previousKey}|cover-relief-color-v2`;
-  return uniforms;
-}
+// Seen almost edge-on, spine lettering would shrink into bright slivers along the rolled edge: the spine's
+// grazing fade and the cover relief's clearcoat-normal hook are the shelf module's (rust-ui/src/book_model_build.rs),
+// with their shader text (rust-ui/src/book_shaders.rs) patched once per program variant in the caches below.
 
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
@@ -357,7 +312,8 @@ function modelHost() {
   return modelHostObject ||= {
     three:THREE, rust:needRustShelf(), noop:() => {},
     finish:(value, fallback) => SURFACE_FINISHES[surfaceFinish(value, fallback)], surfaceFinish, normalizeRelief:normalizeCoverRelief,
-    reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFade:spineGrazingFade, installRelief:installCoverRelief,
+    reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFinish, metal:METAL_COLORS,
+    rememberedPatch, spineFadePatches:new Map(), reliefPatches:new Map(), constant:value => value,
     surfacePixels:kind => rustBookSurfacePixels(rustCore(), kind), notchPixels:(width, height) => rustRibbonNotchPixels(rustCore(), width, height),
     paperBuffers:(...args) => rustBookPaperBuffers(rustCore(), ...args),
     pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
@@ -444,25 +400,9 @@ export function projectBookPageBounds(page, camera, viewportWidth, viewportHeigh
   return planPageBounds(width, height, viewportWidth, viewportHeight, offset, page.matrixWorld.elements, camera);
 }
 
-/** Plan the handoff in the reader's flat plane without repainting the book. */
-export function planBookPageZoom(model, camera, {
-  viewportWidth, viewportHeight, centerX, centerY, origin,
-  offset = { left:0, top:0 }, target
-}) {
-  const rotation = model.rotation.clone();
-  let bounds;
-  try {
-    // Measuring the tilted preview leaves a small vertical compression in
-    // the final frame. Measure its final orientation, then restore the pose
-    // before the animation starts so the flattening itself stays continuous.
-    model.rotation.set(0, 0, 0);
-    bounds = projectBookPageBounds(model.userData.pageSurface, camera, viewportWidth, viewportHeight, offset);
-  } finally {
-    model.rotation.copy(rotation); model.updateMatrixWorld(true);
-  }
-  const zoom = bounds && planPageZoom(bounds, target, offset, centerX, centerY, origin);
-  if (!zoom) return null;
-  return { ...origin, x:zoom.x, y:zoom.y, scale:zoom.scale, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 };
+/** Plan the handoff in the reader's flat plane without repainting the book (rust-ui/src/book_view_host.rs). */
+export function planBookPageZoom(model, camera, options) {
+  return needRustShelf().book_view_page_zoom(viewHost(), model, camera, options);
 }
 
 /** Fit the whole open spread, rather than cropping its left board on phones. */
@@ -706,7 +646,7 @@ function viewHost() {
     renderer:getBookRenderer, presentationRenderer:getPresentationBookRenderer, plan:planBookView,
     light:lightBookScene, model:createBookModel, packet:createBookProjectionPacket, sampler:createBookMotionSampler,
     compilePrograms:compilePagePrograms, prepareUniforms:prepareProgramUniforms, compatibility:bookReturnCompatibility,
-    bookmarkFor, normalizeRelief:normalizeCoverRelief, projectPage:projectBookPageBounds, pageZoom:planBookPageZoom,
+    bookmarkFor, normalizeRelief:normalizeCoverRelief, projectPage:projectBookPageBounds, planZoom:planPageZoom,
     spread:(a, b, c) => ({ ...a, ...b, ...c }),
     lease:(gpu, callbacks, canvas, context) => createNativeRendererPresentation(gpu, { ...callbacks, canvas, context }),
     lazyExports, draw, capture:captureSnapshot, position:positionPresentation, compactBounds, positionModel, measure:measureModel,

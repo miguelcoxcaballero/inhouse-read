@@ -782,7 +782,31 @@ fn page_pose(v:&JsValue,target:&JsValue)->R<JsValue>{
  let plan=object(&[("viewportWidth",state(v,"viewportWidth")),("viewportHeight",state(v,"viewportHeight")),("centerX",state(v,"centerX")),
   ("centerY",state(v,"centerY")),("origin",origin),("offset",object(&[("left",read(&rect,"left")?),("top",read(&rect,"top")?)])?),
   ("target",object(&[("left",left),("top",top),("width",width),("height",height)])?)])?;
- call(&env(v),"pageZoom",&[&state(v,"model"),&state(v,"camera"),&plan])
+ book_view_page_zoom(&env(v),&state(v,"model"),&state(v,"camera"),&plan)
+}
+/// `planBookPageZoom(model, camera, { viewportWidth, viewportHeight, centerX, centerY, origin, offset = { left:0, top:0 }, target })`:
+/// the handoff planned in the reader's flat plane without repainting the book. Measuring the tilted preview
+/// leaves a small vertical compression in the final frame, so the page is measured in its final orientation
+/// and the pose restored before the animation starts (the flattening itself stays continuous).
+#[wasm_bindgen]
+pub fn book_view_page_zoom(environment:&JsValue,model:&JsValue,camera:&JsValue,options:&JsValue)->R<JsValue>{
+ let field=|key:&'static str|crate::host::read(options,k(key));
+ let (viewport_width,viewport_height,center_x,center_y,origin)=(field("viewportWidth")?,field("viewportHeight")?,field("centerX")?,field("centerY")?,field("origin")?);
+ let offset=or_default(field("offset")?,object(&[("left",n(0.0)),("top",n(0.0))])?);
+ let target=field("target")?;
+ let rotation=read(model,"rotation")?;let saved=call(&rotation,"clone",&[])?;
+ let measured=(||->R<JsValue>{
+  call(&read(model,"rotation")?,"set",&[&n(0.0),&n(0.0),&n(0.0)])?;
+  call(environment,"projectPage",&[&read(&user(model)?,"pageSurface")?,camera,&viewport_width,&viewport_height,&offset])
+ })();
+ call(&read(model,"rotation")?,"copy",&[&saved])?;call(model,"updateMatrixWorld",&[&JsValue::TRUE])?;
+ let bounds=measured?;
+ if !truthy(&bounds){return Ok(JsValue::NULL);}
+ let zoom=call(environment,"planZoom",&[&bounds,&target,&offset,&center_x,&center_y,&origin])?;
+ if !truthy(&zoom){return Ok(JsValue::NULL);}
+ let pose=object(&[("x",read(&zoom,"x")?),("y",read(&zoom,"y")?),("scale",read(&zoom,"scale")?),("angle",n(0.0)),("pitch",n(0.0)),
+  ("roll",n(0.0)),("coverOpen",n(1.0)),("bookmarkWithdraw",n(1.0))])?;
+ call(environment,"spread",&[&origin,&pose,&JsValue::UNDEFINED])
 }
 #[wasm_bindgen]
 pub fn book_view_align(v:&JsValue,target:&JsValue)->R<bool>{

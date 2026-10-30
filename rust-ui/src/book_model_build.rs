@@ -315,6 +315,68 @@ pub fn book_light_scene(three:&JsValue,scene:&JsValue,environment:&JsValue)->R<J
  Ok(scene.clone())
 }
 
+// ---- shader hooks: the spine's grazing fade and the cover relief ---------------------------------------
+// Their shader text is book_shaders.rs, patched once per program variant (the host's rememberedPatch caches).
+// The hooks and the fade's updater are this module's functions bound to their uniforms.
+fn patched(host:&JsValue,cache:&'static str,keys:&[&JsValue],patch:JsValue)->R<JsValue>{
+ crate::host::call(&read(host,"rememberedPatch")?,"rememberedPatch",&[&read(host,cache)?,&list(keys),&patch])
+}
+fn rust_export(host:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{bind(&read(&read(host,"rust")?,name)?,args)}
+fn constant(host:&JsValue,value:&JsValue)->R<JsValue>{bind(&read(host,"constant")?,&[value])}
+/// Seen almost edge-on (the lifted book's front view), spine lettering shrinks into bright slivers along the
+/// rolled edge. Only while the spine as a whole faces away, the surface that turns from the viewer shows plain
+/// cloth; the rules near the joint, which still face the viewer, keep their ink. Returns `(book, style) => …`.
+fn spine_fade(host:&JsValue,material:&JsValue)->R<JsValue>{
+ let three=read(host,"three")?;
+ let uniforms=object(&[("spineCloth",object(&[("value",make(&three,"Color",&[])?)])?),("spineClothMetal",object(&[("value",n(0.0))])?),
+  ("spineClothRough",object(&[("value",n(0.88))])?)])?;
+ put(material,"onBeforeCompile",&rust_export(host,"book_model_spine_fade_compile",&[host,&uniforms])?)?;
+ put(material,"customProgramCacheKey",&constant(host,&word("spine-grazing-fade"))?)?;
+ rust_export(host,"book_model_spine_fade_update",&[host,&uniforms])
+}
+#[wasm_bindgen]
+pub fn book_model_spine_fade_compile(host:&JsValue,uniforms:&JsValue,shader:&JsValue)->R<()>{
+ Object::assign(read(shader,"uniforms")?.unchecked_ref(),uniforms.unchecked_ref());
+ let (vertex,fragment)=(read(shader,"vertexShader")?,read(shader,"fragmentShader")?);
+ let sources=patched(host,"spineFadePatches",&[&vertex,&fragment],rust_export(host,"book_spine_fade_shaders",&[&vertex,&fragment])?)?;
+ put(shader,"vertexShader",&crate::host::get_at(&sources,0))?;put(shader,"fragmentShader",&crate::host::get_at(&sources,1))
+}
+#[wasm_bindgen]
+pub fn book_model_spine_fade_update(host:&JsValue,uniforms:&JsValue,book:&JsValue,style:&JsValue)->R<()>{
+ let finish=call(host,"spineFinish",&[&bread(book,"spineFinish")?])?;
+ let matte=finish.as_string().is_some_and(|value|value=="matte");
+ let color=if matte{bread(style,"color")?}else{crate::host::read(&read(host,"metal")?,&string(&finish))?};
+ call(&read(&read(uniforms,"spineCloth")?,"value")?,"set",&[&color])?;
+ putn(&read(uniforms,"spineClothMetal")?,"value",if matte{0.0}else{1.0})?;
+ let surface=finish_entry(host,&bread(book,"spineSurfaceFinish")?,&word("matte"))?;
+ put(&read(uniforms,"spineClothRough")?,"value",&read(&surface,"roughness")?)
+}
+fn finish_entry(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
+/// Relief reaches the shader through the clearcoat normal map. The same tangent-space normal also bends the
+/// base layer's normal, so the raised zones read under a matte, satin or glossy laminate alike. Neutral
+/// placeholder maps leave every pixel unchanged. Returns the relief's uniforms.
+fn install_relief(host:&JsValue,material:&JsValue)->R<JsValue>{
+ let (previous_hook,previous_key)=(read(material,"onBeforeCompile")?,call(material,"customProgramCacheKey",&[])?);
+ let three=read(host,"three")?;
+ let uniforms=object(&[("bookReliefBaseFinish",object(&[("value",make(&three,"Vector3",&[])?)])?),("bookReliefStrength",object(&[("value",n(0.0))])?)])?;
+ // The physical chunk as it is when the relief is installed, patched once per chunk text.
+ let chunk=read(&read(&three,"ShaderChunk")?,"lights_physical_fragment")?;
+ let physical=patched(host,"reliefPatches",&[&word("physical"),&chunk],rust_export(host,"book_relief_physical",&[&chunk])?)?;
+ put(material,"onBeforeCompile",&rust_export(host,"book_model_relief_compile",&[host,&uniforms,material,&previous_hook,&physical])?)?;
+ put(material,"customProgramCacheKey",&constant(host,&JsValue::from(format!("{}|cover-relief-color-v2",string(&previous_key))))?)?;
+ Ok(uniforms)
+}
+#[wasm_bindgen]
+pub fn book_model_relief_compile(host:&JsValue,uniforms:&JsValue,material:&JsValue,previous:&JsValue,physical:&JsValue,shader:&JsValue,renderer:&JsValue)->R<()>{
+ let previous=previous.dyn_ref::<Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new("previousHook.call is not a function")))?;
+ previous.call2(material,shader,renderer)?;
+ Object::assign(read(shader,"uniforms")?.unchecked_ref(),uniforms.unchecked_ref());
+ let fragment=read(shader,"fragmentShader")?;
+ let maps=read(&read(&read(host,"three")?,"ShaderChunk")?,"clearcoat_normal_fragment_maps")?;
+ let source=patched(host,"reliefPatches",&[&word("fragment"),&fragment,physical,&maps],rust_export(host,"book_cover_relief_fragment",&[&fragment,physical,&maps])?)?;
+ put(shader,"fragmentShader",&source)
+}
+
 // ---- the model's state and its methods ---------------------------------------------------------------
 
 /// `f.bind(null, ...args)`: the model's methods are the host's or this module's functions bound to its state.
@@ -812,7 +874,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  put(&options,"side",&read(&three,"DoubleSide")?)?;
  let binding=make(&three,"MeshPhysicalMaterial",&[&options])?;
  put(&s,"binding",&binding)?;
- let fade=if !truthy(shelf)&&!truthy(overview){call(host,"spineFade",&[&binding])?}else{JsValue::NULL};
+ let fade=if !truthy(shelf)&&!truthy(overview){spine_fade(host,&binding)?}else{JsValue::NULL};
  put(&s,"updateSpineFade",&fade)?;
  if !absent(&fade){crate::host::call(&fade,"updateSpineFade",&[book,style])?;}
  reflect(host,&binding,&[("seed",JsValue::from(format!("{surface_seed}|binding"))),("strength",n(0.014))])?;
@@ -827,7 +889,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  laminate(&s,&bread(book,"coverFinish")?)?;
  // Keep the broad studio reflection from washing out printed ink at an oblique angle.
  reflect(host,&cover,&[("seed",JsValue::from(format!("{surface_seed}|cover"))),("strength",n(0.018)),("environmentReflection",n(0.75))])?;
- put(&s,"reliefUniforms",&call(host,"installRelief",&[&cover])?)?;
+ put(&s,"reliefUniforms",&install_relief(host,&cover)?)?;
  relief_base_finish(&s)?;
  if armed{put(&s,"reliefArmed",&JsValue::FALSE)?;book_model_arm_relief(&s)?;}
  // 224 threads per board height: below ~3 device pixels a thread the weave fades to a quiet tooth.
