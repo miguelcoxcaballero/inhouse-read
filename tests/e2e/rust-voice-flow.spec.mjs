@@ -11,6 +11,9 @@ test('compiled reader keeps language selection and installed natural voice menus
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reader_populate_voices)return result
    window.voiceFlowProof.available=true;const exports={...actual}
    for(const name of ['reader_book_language','reader_choose_language','reader_voice_base','reader_populate_voices'])exports[name]=(...args)=>{window.voiceFlowProof.calls[name]=(window.voiceFlowProof.calls[name]||0)+1;return actual[name](...args)}
+   // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
+   // dispatched member's name from the call and count it as the implementation it runs.
+   const dispatched={"flow_method":{"bookLanguage":"reader_book_language","chooseLanguage":"reader_choose_language","voiceBase":"reader_voice_base","populateVoices":"reader_populate_voices"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)window.voiceFlowProof.calls[name]=(window.voiceFlowProof.calls[name]||0)+1;return actual[dispatch](...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}

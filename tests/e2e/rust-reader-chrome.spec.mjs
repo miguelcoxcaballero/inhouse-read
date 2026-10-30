@@ -11,6 +11,9 @@ test('compiled reader keeps audio controls and keyboard-aware panel geometry thr
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reader_create_chrome)return result
    window.chromeProof.available=true;const exports={...actual}
    for(const name of ['reader_create_chrome','reader_voice_state','reader_resize_panel','reader_reveal_field'])exports[name]=(...args)=>{window.chromeProof.calls[name]=(window.chromeProof.calls[name]||0)+1;return actual[name](...args)}
+   // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
+   // dispatched member's name from the call and count it as the implementation it runs.
+   const dispatched={"flow_method":{"voiceState":"reader_voice_state"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)window.chromeProof.calls[name]=(window.chromeProof.calls[name]||0)+1;return actual[dispatch](...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}

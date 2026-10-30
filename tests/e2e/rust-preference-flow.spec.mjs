@@ -6,6 +6,9 @@ test('compiled reader applies appearance and audio preferences through Rust with
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reader_set_preference)return result
    window.preferenceFlowProof.available=true;const exports={...actual}
    for(const name of ['reader_set_preference','reader_apply_preferences'])exports[name]=(...args)=>{window.preferenceFlowProof.calls[name]=(window.preferenceFlowProof.calls[name]||0)+1;return actual[name](...args)}
+   // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
+   // dispatched member's name from the call and count it as the implementation it runs.
+   const dispatched={"flow_method":{"set":"reader_set_preference","apply":"reader_apply_preferences"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)window.preferenceFlowProof.calls[name]=(window.preferenceFlowProof.calls[name]||0)+1;return actual[dispatch](...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
