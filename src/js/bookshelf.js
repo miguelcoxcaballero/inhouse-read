@@ -134,7 +134,6 @@ import { persistablePosition } from './readers/persistable-position.js';
 import { needRustShelf } from './rust-shelf.js';
 
 
-const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Estantería',
@@ -236,56 +235,6 @@ const shelfEnv = {
   get COLOR_RELIEF_IDS() { return COLOR_RELIEF_IDS; }
 };
 
-/* ------------------------------------------------------------------ *
- * Utilidades DOM
- * ------------------------------------------------------------------ */
-
-function el(tag, props = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (value == null || value === false) continue;
-    if (key === 'class') node.className = value;
-    else if (key === 'text') node.textContent = value;
-    else if (key === 'html') node.innerHTML = value;
-    else if (key === 'style') node.setAttribute('style', value);
-    else if (key.startsWith('on') && typeof value === 'function') {
-      node.addEventListener(key.slice(2).toLowerCase(), value);
-    } else node.setAttribute(key, value === true ? '' : String(value));
-  }
-  for (const child of [].concat(children)) {
-    if (child == null) continue;
-    node.append(child);
-  }
-  return node;
-}
-
-function svgIcon(paths, { viewBox = '0 0 24 24', className = 'ihr-icon' } = {}) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', viewBox);
-  svg.setAttribute('class', className);
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  for (const d of [].concat(paths)) {
-    const path = document.createElementNS(NS, 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('stroke-width', '2');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    svg.append(path);
-  }
-  return svg;
-}
-
-
-function prefersReducedMotion() {
-  return (
-    typeof matchMedia === 'function' &&
-    matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
-}
-
 function normalizeArgs(second, third) { return needRustShelf().shelf_normalize_args(second, third); }
 
 /* ------------------------------------------------------------------ *
@@ -319,31 +268,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const returnViews = createBookReturnCache();
   forgetBootPoster();
 
-  const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '', role:'region', tabindex:'0',
-    'aria-label':'Estantería', 'aria-keyshortcuts':'ArrowLeft ArrowRight',
-    'aria-description':'Desliza a la izquierda para ver la estantería de lado y a la derecha para volver a los lomos. También puedes usar las flechas al enfocar la estantería.' });
-  const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
   const hasBookTrash = typeof options.onBookRemove === 'function';
   const hasTrash = !opts.sections || hasBookTrash;
-  const trashNode = hasTrash ? el('div', {
-    class:'ihr-shelf-trash', role:'img',
-    'aria-label':'Papelera: arrastra un libro, una planta o una lámpara para retirarlos de la estantería',
-    title:'Retirar de la estantería'
-  }, [
-    el('span', { class:'ihr-shelf-trash__body', 'aria-hidden':'true' }),
-    el('span', { class:'ihr-shelf-trash__lid', 'aria-hidden':'true' }),
-    el('span', { class:'ihr-shelf-trash__label', text:'Retirar', 'aria-hidden':'true' })
-  ]) : null;
-  // Errors stay visible. A successful removal is only announced to assistive
-  // technology: the object leaving the shelf is its own confirmation.
-  const trashStatus = hasTrash ? el('div', { class:'ihr-trash-status', role:'status', 'aria-live':'polite' }) : null;
-  const trashAnnounce = hasTrash ? el('div', { class:'ihr-trash-announce visually-hidden', role:'status', 'aria-live':'polite' }) : null;
-  if (trashNode) {
-    trashNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
-    trashNode.inert = trashNode.hidden;
-  }
-  root.classList.toggle('has-trash', hasTrash);
-  root.append(scroller);
+  // The region, its scroller, the bin with its two status lines and the booklet: rust-ui/src/bookshelf/frame.rs.
+  const { root, scroller, trashNode, trashStatus, trashAnnounce, catalogNode } =
+    shelfNative.shelf_frame(hasTrash, !opts.sections, state.viewMode === 'isometric');
   const soundBindings={destroy:attachShelfSounds(root)};
   const shelfViewGesture = createShelfViewGesture({ root, scroller,
     getMode:() => state.viewMode, setMode:setViewMode,
@@ -368,15 +297,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   // the first open, after the camera flight. Hidden PMREM/shader work competes
   // with shelf redraws even when scheduled in an idle callback.
   function prepareCatalogWhenIdle(delay = 0) { if (shelfCtxLive) shelfLifecycle.prepareCatalogWhenIdle(delay); }
-  const catalogNode = !opts.sections ? el('button', {
-    type:'button', class:'ihr-shelf-catalog', hidden:'', tabindex:'-1',
-    'aria-label':'Abrir catálogo IKEA de plantas, estanterías e iluminación', title:'Catálogo · IKEA',
-    onClick:() => shelfLifecycle.openCatalog()
-  }, [el('span', { class:'ihr-shelf-catalog__brand', text:'IKEA', 'aria-hidden':'true' }),
-    el('span', { class:'ihr-shelf-catalog__title', text:'PLANTAS', 'aria-hidden':'true' }),
-    svgIcon(['M7 15h10l-1.5 7h-7L7 15Z', 'M12 15V4',
-      'M12 10C5 10 5 3 5 3c6 0 7 7 7 7Z', 'M12 8s0-6 7-7c0 6-7 7-7 7Z'],
-      { className:'ihr-shelf-catalog__drawing' })]) : null;
+  catalogNode?.addEventListener('click', () => shelfLifecycle.openCatalog());
   // La app monta hoy "añadir libro" y "Drive" en su propio header, así que la
   // barra de acciones de la estantería está apagada por defecto para no
   // duplicar controles. Se enciende con `showActions: true` (o sola, si se
@@ -412,7 +333,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   // Covers (their URLs, the reading of their colour and cloth, the refresh of the spines that show them) are the
   // shelf module's.
-  function maybeRefreshAppearanceStyles() { if (shelfCtxLive) shelfCtx.maybeRefreshAppearanceStyles(); }
 
   // The style of a shelf item, the CSS variables of a style and their update on a node are the shelf module's.
 
@@ -432,10 +352,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function addCatalogPlant(request, catalogOptions) {
     return shelfCtxLive ? shelfCtx.addCatalogPlant(request, catalogOptions) : Promise.reject(new Error('Espera a que termine la animación.'));
   }
-  function finishSpineDrag(event, node, cancelled = false, activateTouch = false) { if (shelfCtxLive) shelfCtx.finishSpineDrag(event, node, cancelled, activateTouch); }
-  function cancelTrashRemoval() { if (shelfCtxLive) shelfCtx.cancelTrashRemoval(); }
-  function clearPlacementPreview(drag) { if (shelfCtxLive) shelfCtx.clearPlacementPreview(drag); }
-  function shelfPadding() { return shelfCtx.shelfPadding(); }
 
 
 
@@ -445,7 +361,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
    * Ancho útil de balda. `options.shelfWidth` lo fija a mano, para montar la
    * estantería en un contenedor de ancho conocido (o en tests sin layout).
    */
-  function measure() { return shelfCtx.measure(); }
 
   /** Los lomos tienen su grosor real (15-45 mm) a la escala de la balda. */
 
@@ -456,7 +371,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function render() { if (shelfCtxLive) shelfCtx.render(); }
 
-  function scheduleRender() { if (shelfCtxLive) shelfCtx.scheduleRender(); }
 
   function prepareInitialAppearances() { if (shelfCtxLive) shelfCtx.prepareInitialAppearances(); }
 
@@ -499,11 +413,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (shelfCtxLive) shelfCtx.refresh(nextBooks, defer);
   }
 
-  function clearCompatibilityTapRefresh() { if (shelfCtxLive) shelfLifecycle.clearCompatibilityTapRefresh(); }
 
-  function deferCompatibilityTapRefresh() { if (shelfCtxLive) shelfLifecycle.deferCompatibilityTapRefresh(); }
 
-  function applyDeferredShelfUpdates() { if (shelfCtxLive) shelfLifecycle.applyDeferredShelfUpdates(); }
 
   // Non-WebGL pages: the white-paper variant sits under the reader's own canvas,
   // which fades over it (opacity 0 = white paper, 1 = the reading theme).
