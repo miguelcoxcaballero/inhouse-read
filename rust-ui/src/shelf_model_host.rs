@@ -47,11 +47,17 @@ thread_local! {
 
 /// `value[key]` for a cached key, throwing like the engine for null or undefined.
 fn take(value: &JsValue, key: &JsValue) -> R<JsValue> {
-    if absent(value) {
-        return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{}')", if value.is_null() { "null" } else { "undefined" },
-            key.as_string().unwrap_or_default())).into());
-    }
-    Reflect::get(&crate::host::boxed(value), key)
+    // An object answers the first read; only a failed read asks what the value was (each question crosses too).
+    Reflect::get(value, key).or_else(|error| {
+        if absent(value) {
+            return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{}')", if value.is_null() { "null" } else { "undefined" },
+                key.as_string().unwrap_or_default())).into());
+        }
+        if value.is_object() || value.is_function() {
+            return Err(error);
+        }
+        Reflect::get(&crate::host::boxed(value), key)
+    })
 }
 
 /// `engine.name(...args)`, its exception returned.

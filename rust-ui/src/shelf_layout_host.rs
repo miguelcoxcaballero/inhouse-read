@@ -37,16 +37,25 @@ thread_local! {
 
 /// `target[key]` for a cached key, throwing like the engine for null/undefined.
 fn take(target: &JsValue, key: &JsValue) -> R<JsValue> {
-    if absent(target) {
-        return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{}')", if target.is_null() { "null" } else { "undefined" },
-            key.as_string().unwrap_or_default())).into());
-    }
-    Reflect::get(&crate::host::boxed(target), key)
+    // An object answers the first read; only a failed read asks what the value was (each question crosses too).
+    Reflect::get(target, key).or_else(|error| {
+        if absent(target) {
+            return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{}')", if target.is_null() { "null" } else { "undefined" },
+                key.as_string().unwrap_or_default())).into());
+        }
+        if target.is_object() || target.is_function() {
+            return Err(error);
+        }
+        Reflect::get(&crate::host::boxed(target), key)
+    })
 }
 
 /// `target?.[key]` for a cached key.
 fn peek(target: &JsValue, key: &JsValue) -> JsValue {
-    if absent(target) { JsValue::UNDEFINED } else { Reflect::get(&crate::host::boxed(target), key).unwrap_or(JsValue::UNDEFINED) }
+    Reflect::get(target, key).unwrap_or_else(|_| {
+        if absent(target) || target.is_object() || target.is_function() { JsValue::UNDEFINED }
+        else { Reflect::get(&crate::host::boxed(target), key).unwrap_or(JsValue::UNDEFINED) }
+    })
 }
 
 /// One input region of a kernel arena.
