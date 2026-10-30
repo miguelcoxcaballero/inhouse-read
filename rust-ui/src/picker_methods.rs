@@ -4,15 +4,14 @@
 //! frame and timer doorways (read when the method is called); the callbacks that come back later
 //! take this module's exports `ui` first, bound here when the method is called, as the original
 //! arrow functions captured them. The frozen originals are tests/unit/helpers/reference-picker-*.js.
-use js_sys::{Array, Function};
+use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
 use crate::host::read;
 use crate::picker_actions::{picker_cancel, picker_click, picker_use, picker_voice_name};
 use crate::picker_policy::{picker_dismiss, picker_dismissed, picker_offer_for, picker_render_offer, picker_snoozed, picker_state};
 use crate::picker_warm::{picker_attach, picker_cancel_warm, picker_changed, picker_paint, picker_refresh, picker_used, picker_warm, picker_warm_context, picker_warm_current, picker_warm_up};
 
-fn door(kit: &JsValue, name: &str) -> Result<Function, JsValue> { Ok(read(kit, name)?.unchecked_into()) }
-fn captured(kit: &JsValue, name: &str, ui: &JsValue) -> Result<Function, JsValue> { Ok(door(kit, name)?.bind1(&JsValue::NULL, ui)) }
+use crate::voice_methods::{captured, door};
 
 /// `NeuralVoicePicker.prototype[name].apply(host, args)`.
 #[wasm_bindgen]
@@ -35,23 +34,23 @@ pub fn picker_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: J
         "attach" => {
             let warm = a(0);
             let warm = if warm.is_undefined() { JsValue::TRUE } else { warm };
-            done(picker_attach(host, warm, d("neuralEngine")?, captured(&kit, "listen", &ui)?, captured(&kit, "engineRefresh", &ui)?))
+            done(picker_attach(host, warm, d("runtime.neuralEngine")?, captured(&kit, "listen", &ui)?, captured(&kit, "engineRefresh", &ui)?))
         }
         "warmContext" => picker_warm_context(host).map(Into::into),
         "isWarmCurrent" => picker_warm_current(host, a(0)).map(Into::into),
         "cancelWarm" => done(picker_cancel_warm(host, read(&kit, "cancelIdle")?, d("clearTimeout")?)),
-        "warmUp" => done(picker_warm_up(host, d("neuralEngine")?, d("ignore")?, d("warmActive")?)),
-        "changed" => done(picker_changed(host, d("neuralEngine")?, captured(&kit, "frame", &ui)?)),
-        "paint" => done(picker_paint(host, d("neuralEngine")?)),
+        "warmUp" => done(picker_warm_up(host, d("runtime.neuralEngine")?, d("ignore")?, d("warmActive")?)),
+        "changed" => done(picker_changed(host, d("runtime.neuralEngine")?, captured(&kit, "frame", &ui)?)),
+        "paint" => done(picker_paint(host, d("runtime.neuralEngine")?)),
         "state" => picker_state(host, a(0), a(1), read(&kit, "messages")?).map(Into::into),
         "click" => done(picker_click(host, a(0))),
-        "cancel" => done(picker_cancel(host, a(0), d("neuralEngine")?)),
-        "voiceName" => picker_voice_name(a(0), d("neuralVoiceList")?),
-        "use" => done(picker_use(host, a(0), d("neuralEngine")?)),
+        "cancel" => done(picker_cancel(host, a(0), d("runtime.neuralEngine")?)),
+        "voiceName" => picker_voice_name(a(0), d("runtime.neuralVoiceList")?),
+        "use" => done(picker_use(host, a(0), d("runtime.neuralEngine")?)),
         "dismissed" => Ok(picker_dismissed(d("readOffer")?)),
         "snoozed" => picker_snoozed(host, a(0), d("now")?).map(Into::into),
-        "dismiss" => done(picker_dismiss(host, d("langBase")?, d("now")?, d("writeOffer")?)),
-        "offerFor" => picker_offer_for(host, a(0), a(1).unchecked_into(), d("langBase")?, d("recommendedNeuralFor")?, read(&kit, "device")?),
+        "dismiss" => done(picker_dismiss(host, d("catalog.langBase")?, d("now")?, d("writeOffer")?)),
+        "offerFor" => picker_offer_for(host, a(0), a(1).unchecked_into(), d("catalog.langBase")?, d("catalog.recommendedNeuralFor")?, read(&kit, "device")?),
         "renderOffer" => done(picker_render_offer(host, a(0), a(1))),
         _ => Err(js_sys::TypeError::new(&format!("NeuralVoicePicker has no method {name}")).into()),
     }

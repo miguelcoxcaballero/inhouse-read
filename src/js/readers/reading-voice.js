@@ -1,15 +1,15 @@
 import {readerUI,rustMethods} from './rust-ui-required.js'
-import {loadNeural,neuralEngine,neuralVoiceList,unlockNeural} from './neural-runtime.js'
-import {nativeAudio,nativePcmBridge} from './neural-voice/audio.js'
-import {declaredLanguage,detectLanguage,isNeuralId,langBase,resolveVoice} from './voice-catalog.js'
-import {firstCompleteSentenceOffset,planSpeech,speechChunks} from './speech-text.js'
+import * as runtime from './neural-runtime.js'
+import * as audio from './neural-voice/audio.js'
+import * as catalog from './voice-catalog.js'
+import * as speech from './speech-text.js'
 
-export { speechChunks }
+export { speechChunks } from './speech-text.js'
 // The audiobook's session: what is spoken next, prepared ahead, presented, joined across pages, navigated, paused
 // and stopped is rust-ui (voice_*.rs; its methods are answered by voice_methods.rs). The kit holds the engine, audio,
-// catalogue, text and timer doorways Rust calls back; the frozen originals are tests/unit/helpers/reference-voice-*.js.
-const kit={loadNeural,neuralEngine,neuralVoiceList,unlockNeural,nativeAudio,declaredLanguage,isNeuralId,langBase,resolveVoice,planSpeech,firstCompleteSentenceOffset,
- get clearTimeout(){return clearTimeout},get now(){return Date.now},get document(){return document},
+// catalogue, text and timer doorways Rust calls back (the modules are read when a method needs them); the frozen
+// originals are tests/unit/helpers/reference-voice-*.js.
+const kit={runtime,audio,catalog,speech,get clearTimeout(){return clearTimeout},get now(){return Date.now},get document(){return document},
  clearTimer:id=>clearTimeout(id),add:(a,b)=>a+b,sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),ignore:value=>Promise.resolve(value).catch(()=>{}),
  deviceLanguage:()=>navigator.language,always:()=>true,
  joinReady:(ui,owner,promise,generation,index)=>{void promise.then(()=>ui.voice_join_ready(owner,generation,index))},
@@ -23,13 +23,13 @@ export class ReadingVoice {
     window.InhouseReadAudioDiagnostics=session=>this.getDiagnosticState(session)
     try{localStorage.removeItem('inhouse-read-neural-slow')}catch{/* obsolete preference */}
     for(const type of ['inhouse-tts','inhouse-speech-layout','inhouse-speech-hold','inhouse-audio-control'])
-      window.addEventListener(type,event=>readerUI().voice_event(this,type,event.detail,nativePcmBridge))
+      window.addEventListener(type,event=>readerUI().voice_event(this,type,event.detail,audio.nativePcmBridge))
   }
-  get supported() { return Boolean(neuralEngine()) }
+  get supported() { return Boolean(runtime.neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }
   useTransport(name) { this.transport = name }
   detectLanguage(text) {
-    return detectLanguage(text, this.reader.language || navigator.language || 'en-US')
+    return catalog.detectLanguage(text, this.reader.language || navigator.language || 'en-US')
   }
 }
 // voiceFor ranks the installed natural voices (an explicit choice stays even when its files are missing, so the

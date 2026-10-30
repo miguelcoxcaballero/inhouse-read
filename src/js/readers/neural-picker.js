@@ -5,7 +5,9 @@
 // Its states, rows, offer, downloads and warm-up are rust-ui (picker_*, RustNeuralView); these methods hand Rust the
 // picker and the engine, storage, idle and frame doorways. The frozen originals are tests/unit/helpers/reference-picker-*.js.
 import { readerUI, rustMethods } from './rust-ui-required.js'
+import * as runtime from './neural-runtime.js'
 import {loadNeural,neuralEngine,neuralVoiceList} from './neural-runtime.js'
+import * as catalog from './voice-catalog.js'
 import {declaredLanguage,isNeuralId,langBase,languageName,orderNeuralVoices,recommendedNeuralFor} from './voice-catalog.js'
 
 // Texts of the natural-voice list that the Rust picker receives as plain data.
@@ -19,7 +21,7 @@ const OFFER='inhouse-read-neural-offer-dismissed',USED='inhouse-read-neural-used
 const readOffer=()=>localStorage.getItem(OFFER),writeOffer=value=>localStorage.setItem(OFFER,value),now=()=>Date.now()
 const readUsed=()=>localStorage.getItem(USED),writeUsed=()=>localStorage.setItem(USED,'1')
 const ignore=value=>Promise.resolve(value).catch(()=>{})
-const kit={neuralEngine,neuralVoiceList,langBase,recommendedNeuralFor,messages:DOWNLOAD_ERRORS,readOffer,writeOffer,now,readUsed,ignore,
+const kit={runtime,catalog,messages:DOWNLOAD_ERRORS,readOffer,writeOffer,now,readUsed,ignore,
  get clearTimeout(){return clearTimeout},get cancelIdle(){return typeof cancelIdleCallback==='function'?cancelIdleCallback:null},get device(){return navigator.language},
  schedule:(ui,owner,context)=>{const run=()=>ui.picker_warm_fire(owner,context);return typeof requestIdleCallback==='function'?{idle:true,id:requestIdleCallback(run,{timeout:2500})}:{idle:false,id:setTimeout(run,800)}},
  load:(ui,owner,context,value)=>loadNeural().then(()=>ui.picker_loaded(owner,context,value),()=>{}),
