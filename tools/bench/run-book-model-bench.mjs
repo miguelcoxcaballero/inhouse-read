@@ -49,13 +49,32 @@ if (args.includes('--page-compare')) {
   const otherCdp = await other.context().newCDPSession(other);
   await otherCdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
   for (let warm = 0; warm < 2; warm++) { await createRound(4, other); await createRound(4, page); }
+  // --cpu-time: the renderer main thread's CPU time (CDP Performance ThreadTime) around the creation alone, which
+  // other processes on a shared machine cannot inflate the way they inflate wall-clock rounds.
+  const cpuTime = args.includes('--cpu-time');
+  const sessions = new Map([[page, cdp], [other, otherCdp]]);
+  if (cpuTime) for (const session of sessions.values()) await session.send('Performance.enable');
+  const threadTime = async on => (await sessions.get(on).send('Performance.getMetrics')).metrics.find(m => m.name === 'ThreadTime').value;
+  const cpuRound = async (count, on) => {
+    await on.evaluate(() => new Promise(resolve => setTimeout(resolve, 30)));
+    const before = await threadTime(on);
+    await on.evaluate(async ([count, lifted, overview]) => {
+      const { model } = await window.benchReady;
+      window.benchMade = window.benchBooks(count).map(entry => model.createBookModel(entry.book, entry.style, entry.width, entry.height,
+        entry.thickness, null, lifted ? { eagerRelief: false } : overview ? { shelf: true, overview: true } : { shelf: true }));
+    }, [count, lifted, overview]);
+    const after = await threadTime(on);
+    await on.evaluate(() => { for (const group of window.benchMade) group.userData.dispose(); window.benchMade = null; });
+    return (after - before) * 1000;
+  };
+  const round = cpuTime ? cpuRound : createRound;
   const times = { js: [], rust: [] };
   for (let r = 0; r < rounds; r++) {
-    if (r % 2) { times.rust.push(await createRound(books, page)); times.js.push(await createRound(books, other)); }
-    else { times.js.push(await createRound(books, other)); times.rust.push(await createRound(books, page)); }
+    if (r % 2) { times.rust.push(await round(books, page)); times.js.push(await round(books, other)); }
+    else { times.js.push(await round(books, other)); times.rust.push(await round(books, page)); }
   }
   const mode = lifted ? 'lifted' : overview ? 'overview' : 'shelf';
-  console.log(JSON.stringify({ bench: `createBookModel(${mode}) one page per module`, cpu, books,
+  console.log(JSON.stringify({ bench: `createBookModel(${mode}) one page per module${cpuTime ? ', main-thread CPU ms' : ''}`, cpu, books,
     jsRoundsMs: times.js.map(t => +t.toFixed(1)), rustRoundsMs: times.rust.map(t => +t.toFixed(1)),
     jsMedianMs: +median(times.js).toFixed(1), rustMedianMs: +median(times.rust).toFixed(1),
     jsMinMs: +Math.min(...times.js).toFixed(1), rustMinMs: +Math.min(...times.rust).toFixed(1),
