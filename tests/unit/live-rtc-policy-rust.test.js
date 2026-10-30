@@ -13,7 +13,7 @@ function fixture(){
     stream:{queue:vi.fn(()=>true),next:vi.fn(),receive:vi.fn(),free:vi.fn()}};
   s.peers.set(p.id,p);
   const host={valid:vi.fn(owner=>owner===s),now:()=>1000,clock:()=>0,utf8:encode,decode,
-    failed:vi.fn(),armHealth:vi.fn(),motion:vi.fn(),cancelTimer:vi.fn(),disconnected:vi.fn(),
+    failed:vi.fn(),arm:vi.fn(),motion:vi.fn(),cancelTimer:vi.fn(),disconnected:vi.fn(),
     closePeer:vi.fn((owner,id)=>{owner.peers.delete(id)}),pending:vi.fn(),ice:vi.fn().mockResolvedValue(),
     encrypt:vi.fn().mockResolvedValue({iv:new Uint8Array([1]),data:new Uint8Array([2]).buffer}),encode:()=>'',write:vi.fn().mockResolvedValue(),
     decrypt:vi.fn((owner,cipher)=>Promise.resolve(encode(cipher.data))),readStateDetached:vi.fn()};
@@ -51,7 +51,7 @@ describe('Rust RTC channel policy',()=>{
     rust.live_transport_channel_event(s,p,c,'interactive','open',host);expect(s.native.connected).not.toHaveBeenCalled();
     const room=p.channel=channel('inhouse-read-room-v1');
     rust.live_transport_channel_event(s,p,room,'room','open',host);
-    expect(s.native.connected).toHaveBeenCalledWith('remote');expect(host.armHealth).toHaveBeenCalledWith(s,p,2000);
+    expect(s.native.connected).toHaveBeenCalledWith('remote');expect(host.arm).toHaveBeenCalledWith(s,2000,'health',p);
     s.peers.delete('remote');rust.live_transport_channel_event(s,p,room,'room','close',host);expect(host.failed).not.toHaveBeenCalled();
   });
   it('answers pings, ignores pongs and forwards motion except to its sender/origin',()=>{
