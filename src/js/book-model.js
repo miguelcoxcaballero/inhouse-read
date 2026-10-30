@@ -32,53 +32,9 @@ import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPre
 // The shelf renders only after requireRustCore() (app.js): every model is built with the core in.
 const rustCore = () => getRustCore() ?? loadedRustCore();
 
-// Procedural micro-detail shared by every book: generated once, uploaded once (book_shared_texture).
-// Models receive clones (same Source, own repeat); three.js keeps the GPU
-// texture until the last clone is disposed, so every model owns its copy.
-// The woven-cloth and printed-paper tooth, and the swallowtail cut, are produced by the numeric core.
-function tileNormals(kind) {
-  const data = rustBookSurfacePixels(rustCore(), kind);
-  if (!data) throw new Error('El módulo numérico no pudo generar la textura del libro.');
-  const texture = new THREE.DataTexture(data, 128, 128);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true; texture.needsUpdate = true;
-  return texture;
-}
-// Plain-weave book cloth: 16 × 16 threads per tile, with uneven slubs.
-const clothNormals = () => tileNormals('cloth');
-// Printed paper over board: the soft tooth that survives under a laminate.
-const paperNormals = () => tileNormals('paper');
-// Swallowtail cut, measured in ribbon widths from the tip (v = 0 at the tip):
-// a shallow V, a fifth of the width deep, as scissors leave it.
-const ribbonNotch = () => {
-  const w = 16, h = 64, data = rustRibbonNotchPixels(rustCore(), w, h);
-  if (!data) throw new Error('El módulo numérico no pudo generar la muesca de la cinta.');
-  const texture = new THREE.DataTexture(data, w, h);
-  texture.magFilter = texture.minFilter = THREE.LinearFilter; texture.needsUpdate = true;
-  return texture;
-};
-
-// Page edges: individual leaves, darker signature folds, a slight cockle and a silk headband.
-// u runs across the leaves (tiled by physical thickness); v .02–.46 is the fore-edge, .54–.98
-// head and tail (spine side at .98). Painted by the shelf module (rust-ui/src/book_paint.rs).
-function pageEdgeAtlas(size) {
-  const canvas = Object.assign(document.createElement('canvas'), { width:size, height:size });
-  needRustShelf().book_page_edges(canvas.getContext('2d'), size);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = THREE.RepeatWrapping;
-  return texture;
-}
-
-// Endpaper: a white wove stock with a faint speckle and a few long fibres.
-// White-based so the material colour tints it; every stroke wraps the tile.
-function endpaperTexture() {
-  const size = 256, canvas = Object.assign(document.createElement('canvas'), { width:size, height:size });
-  needRustShelf().book_endpaper(canvas.getContext('2d'));
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  return texture;
-}
+// Procedural micro-detail shared by every book: the woven-cloth and printed-paper tooth, the swallowtail cut,
+// the page edges and the endpaper are built once by the shelf module (rust-ui/src/book_model_build.rs,
+// book_shared_texture); the cloth/paper/notch pixels come from the numeric core through the model's host.
 
 // Numeric Rust meshes own their arrays; the shelf module installs them without another copy.
 const paperMeshGeometry = buffers => needRustShelf().book_paper_mesh(THREE, buffers);
@@ -402,7 +358,7 @@ function modelHost() {
     three:THREE, rust:needRustShelf(), noop:() => {},
     finish:(value, fallback) => SURFACE_FINISHES[surfaceFinish(value, fallback)], surfaceFinish, normalizeRelief:normalizeCoverRelief,
     reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFade:spineGrazingFade, installRelief:installCoverRelief,
-    clothNormals, paperNormals, endpaperTexture, pageEdgeAtlas, ribbonNotch,
+    surfacePixels:kind => rustBookSurfacePixels(rustCore(), kind), notchPixels:(width, height) => rustRibbonNotchPixels(rustCore(), width, height),
     paperBuffers:(...args) => rustBookPaperBuffers(rustCore(), ...args),
     pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
     silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, fit:fitCoverImage, paperTone, applyPageTheme,

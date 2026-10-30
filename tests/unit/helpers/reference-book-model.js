@@ -1,5 +1,5 @@
 // Frozen copy of src/js/book-model.js as of main 1.7.325 + ready/book-model-1 (the model was then assembled in
-// JavaScript). Only its import paths differ. The differential tests build models with this and with the
+// JavaScript). Only its import paths differ (and its shared-texture builders are exported at the end). The differential tests build models with this and with the
 // production module (whose construction now runs in rust-ui/src/book_model_build.rs) and compare them.
 import {createBookProjectionPacket,projectVisibleBookBounds} from '../../../src/js/book-projection.js';
 import {createBookMotionSampler} from '../../../src/js/book-motion.js';
@@ -25,7 +25,7 @@ import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from '../.
 import { displayBookTitle, normalizeBookAuthor } from '../../../src/js/book-title.js';
 import { pageRaster } from '../../../src/js/page-raster.js';
 import { bookmarkFor } from '../../../src/js/bookshelf-layout.js';
-import { applyBookReflectionSurface, rememberedPatch } from '../../../src/js/book-reflection-surface.js';
+import { applyBookReflectionSurface, rememberedPatch } from './reference-book-reflection-host.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from '../../../src/js/gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from '../../../src/js/cover-relief.js';
 import { runInSlices } from '../../../src/js/cover-appearance.js';
@@ -1761,3 +1761,5 @@ export function bookView(host, book, style, { width, height, thickness, viewport
 }
 
 export { sampleBookMotion } from '../../../src/js/book-motion.js';
+// Exported for tests/unit/book-model-textures-wasm.test.js only (the shared textures are now built by the shelf module).
+export { tileNormals as referenceTileNormals, ribbonNotch as referenceRibbonNotch, pageEdgeAtlas as referencePageEdgeAtlas, endpaperTexture as referenceEndpaperTexture };

@@ -95,7 +95,6 @@ fn make(three:&JsValue,class:&'static str,args:&[&JsValue])->R<JsValue>{
 fn object(fields:&[(&'static str,JsValue)])->R<JsValue>{let o:JsValue=Object::new().into();for(key,value)in fields{put(&o,key,value)?;}Ok(o)}
 fn set3(target:&JsValue,name:&'static str,x:f64,y:f64,z:f64)->R<()>{read(target,name)?.unchecked_into::<Triple>().set_triple(x,y,z)?;Ok(())}
 fn pixel_ratio()->JsValue{let ratio=crate::host::get(&crate::host::global(),"devicePixelRatio");if ratio.as_f64().is_some(){ratio}else{n(1.0)}}
-fn shared(key:JsValue,build:&JsValue)->R<JsValue>{crate::book_model_policy::book_shared_texture(key,build.unchecked_ref())}
 fn text_seed(text:&str)->f64{f64::from(crate::spine_surface::spine_text_seed(JsString::from(text)))}
 /// The surface finish table entry the host keeps for `value` (fallback as `surfaceFinish` takes it).
 fn finish(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
@@ -113,6 +112,67 @@ fn blank_page_map(three:&JsValue)->R<JsValue>{
  let map=make(three,"DataTexture",&[&Uint8Array::from(&[255u8,255,255,255][..]).into(),&n(1.0),&n(1.0)])?;
  put(&map,"colorSpace",&read(three,"SRGBColorSpace")?)?;put(&map,"minFilter",&read(three,"LinearFilter")?)?;
  put(&map,"generateMipmaps",&JsValue::FALSE)?;put(&map,"needsUpdate",&JsValue::TRUE)?;Ok(map)
+}
+
+// Procedural micro-detail shared by every book: generated once, uploaded once (book_shared_texture). Models
+// receive clones (same Source, own repeat); three.js keeps the GPU texture until the last clone is disposed.
+// The woven-cloth and printed-paper tooth and the swallowtail cut are produced by the numeric core (the host
+// hands their pixels over), the page edges and the endpaper are painted by book_paint.rs.
+fn shared_built(host:&JsValue,key:&'static str,build:impl FnOnce(&JsValue)->R<JsValue>)->R<JsValue>{
+ crate::book_model_policy::book_shared_texture_with(word(key),||build(host))
+}
+/// Plain-weave book cloth (16 × 16 threads per tile, with uneven slubs) or printed paper over board.
+#[wasm_bindgen]
+pub fn book_model_tile_normals(host:&JsValue,kind:&str)->R<JsValue>{
+ let three=read(host,"three")?;
+ let data=call(host,"surfacePixels",&[&JsValue::from_str(kind)])?;
+ if !truthy(&data){return Err(js_sys::Error::new("El módulo numérico no pudo generar la textura del libro.").into());}
+ let texture=make(&three,"DataTexture",&[&data,&n(128.0),&n(128.0)])?;
+ let repeat=read(&three,"RepeatWrapping")?;put(&texture,"wrapT",&repeat)?;put(&texture,"wrapS",&repeat)?;
+ put(&texture,"magFilter",&read(&three,"LinearFilter")?)?;put(&texture,"minFilter",&read(&three,"LinearMipmapLinearFilter")?)?;
+ put(&texture,"generateMipmaps",&JsValue::TRUE)?;put(&texture,"needsUpdate",&JsValue::TRUE)?;
+ Ok(texture)
+}
+/// The swallowtail cut, measured in ribbon widths from the tip (v = 0 at the tip): a shallow V, a fifth of
+/// the width deep, as scissors leave it.
+#[wasm_bindgen]
+pub fn book_model_ribbon_notch(host:&JsValue)->R<JsValue>{
+ let three=read(host,"three")?;
+ let data=call(host,"notchPixels",&[&n(16.0),&n(64.0)])?;
+ if !truthy(&data){return Err(js_sys::Error::new("El módulo numérico no pudo generar la muesca de la cinta.").into());}
+ let texture=make(&three,"DataTexture",&[&data,&n(16.0),&n(64.0)])?;
+ let linear=read(&three,"LinearFilter")?;put(&texture,"minFilter",&linear)?;put(&texture,"magFilter",&linear)?;
+ put(&texture,"needsUpdate",&JsValue::TRUE)?;
+ Ok(texture)
+}
+fn square_canvas(size:f64)->R<(JsValue,JsValue)>{
+ let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
+ putn(&canvas,"width",size)?;putn(&canvas,"height",size)?;
+ let context=call(&canvas,"getContext",&[&word("2d")])?;
+ Ok((canvas,context))
+}
+/// Page edges: individual leaves, darker signature folds, a slight cockle and a silk headband. u runs across
+/// the leaves (tiled by physical thickness); v .02–.46 is the fore-edge, .54–.98 head and tail.
+#[wasm_bindgen]
+pub fn book_model_page_edges(host:&JsValue,size:f64)->R<JsValue>{
+ let three=read(host,"three")?;
+ let (canvas,context)=square_canvas(size)?;
+ crate::book_paint::book_page_edges(context.unchecked_ref::<Canvas2d>(),size);
+ let texture=make(&three,"CanvasTexture",&[&canvas])?;
+ put(&texture,"colorSpace",&read(&three,"SRGBColorSpace")?)?;put(&texture,"wrapS",&read(&three,"RepeatWrapping")?)?;
+ Ok(texture)
+}
+/// Endpaper: a white wove stock with a faint speckle and a few long fibres. White-based so the material
+/// colour tints it; every stroke wraps the tile.
+#[wasm_bindgen]
+pub fn book_model_endpaper(host:&JsValue)->R<JsValue>{
+ let three=read(host,"three")?;
+ let (canvas,context)=square_canvas(256.0)?;
+ crate::book_paint::book_endpaper(context.unchecked_ref::<Canvas2d>());
+ let texture=make(&three,"CanvasTexture",&[&canvas])?;
+ put(&texture,"colorSpace",&read(&three,"SRGBColorSpace")?)?;
+ let repeat=read(&three,"RepeatWrapping")?;put(&texture,"wrapT",&repeat)?;put(&texture,"wrapS",&repeat)?;
+ Ok(texture)
 }
 
 /// A numeric Rust mesh (page block, leaves, endpaper, page paper): its own arrays, installed without a copy.
@@ -478,7 +538,7 @@ fn cover_grain(s:&JsValue,kind:&'static str)->R<()>{
  let (cover,host)=(state(s,"cover"),state(s,"host"));
  call_opt(&get(&cover,"normalMap"),"dispose",&[])?;
  let cloth=kind=="cloth";
- put(&cover,"normalMap",&shared(word(kind),&read(&host,if cloth{"clothNormals"}else{"paperNormals"})?)?)?;
+ put(&cover,"normalMap",&shared_built(&host,kind,|host|book_model_tile_normals(host,kind))?)?;
  let tiles=if cloth{14.0}else{5.0};
  call(&read(&read(&cover,"normalMap")?,"repeat")?,"set",&[&n(tiles*num(&state(s,"ratio"))),&n(tiles)])?;
  grain_strength(s)?;put(&cover,"needsUpdate",&JsValue::TRUE)
@@ -582,7 +642,7 @@ fn tint(s:&JsValue,material:&JsValue,silk:JsValue,shelf:bool)->R<()>{
 fn satin(s:&JsValue,finished:&JsValue,silk:JsValue,shelf:bool)->R<JsValue>{
  let three=state(s,"three");
  let options:JsValue=Object::assign(&Object::new(),crate::book_surface_policy::book_ribbon_material(truthy(finished),shelf)?.unchecked_ref()).into();
- put(&options,"alphaMap",&shared(word("ribbon-notch"),&read(&state(s,"host"),"ribbonNotch")?)?)?;
+ put(&options,"alphaMap",&shared_built(&state(s,"host"),"ribbon-notch",book_model_ribbon_notch)?)?;
  put(&options,"side",&read(&three,"DoubleSide")?)?;
  let material=make(&three,"MeshPhysicalMaterial",&[&options])?;
  tint(s,&material,silk,shelf)?;Ok(material)
@@ -774,7 +834,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  let weave=crate::book_surface_policy::book_weave_strength(h,pixel_ratio());
  putn(&s,"weaveStrength",weave)?;
  if detail||truthy(&inspection){
-  put(&cloth,"normalMap",&shared(word("cloth"),&read(host,"clothNormals")?)?)?;
+  put(&cloth,"normalMap",&shared_built(host,"cloth",|host|book_model_tile_normals(host,"cloth"))?)?;
   call(&read(&read(&cloth,"normalMap")?,"repeat")?,"set",&[&n(14.0*ratio),&n(14.0)])?;
   call(&read(&cloth,"normalScale")?,"setScalar",&[&n(0.5*weave)])?;
  }
@@ -802,7 +862,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  let paper_buffers=call(host,"paperBuffers",&[&n(paste_width),&n(paste_height),&n(w-h*0.009*2.0),&n(h-h*0.009*2.0),&n(h*0.009),overview])?;
  if !truthy(&paper_buffers){return Err(range("Medidas de guardas no válidas."));}
  let paste_geometry=book_paper_mesh(&three,&read(&paper_buffers,"pastedown")?)?;
- let endpaper_map=if truthy(overview){JsValue::NULL}else{shared(word("endpaper"),&read(host,"endpaperTexture")?)?};
+ let endpaper_map=if truthy(overview){JsValue::NULL}else{shared_built(host,"endpaper",book_model_endpaper)?};
  let endpaper=make(&three,"MeshStandardMaterial",&[&object(&[("color",word("#ffffff")),("roughness",n(1.0)),("vertexColors",JsValue::TRUE),("map",endpaper_map)])?])?;
  let endpaper_map=get(&endpaper,"map");
  if !absent(&endpaper_map){call(&read(&endpaper_map,"repeat")?,"set",&[&n(3.0*paste_width/paste_height),&n(3.0)])?;}
@@ -828,7 +888,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  }else{
   // One crescent-shaped block and one shared atlas: a single draw call.
   let size=if detail{512.0}else{256.0};
-  let map=shared(JsValue::from(format!("pages-{size}")),&bind(&read(host,"pageEdgeAtlas")?,&[&n(size)])?)?;
+  let map=crate::book_model_policy::book_shared_texture_with(JsValue::from(format!("pages-{size}")),||book_model_page_edges(host,size))?;
   let edges=make(&three,"MeshPhysicalMaterial",&[&object(&[("map",map),("roughness",n(1.0)),("vertexColors",JsValue::TRUE)])?])?;
   let geometry=call(host,"pageBlock",&[width,height,thickness,&object(&[("board",n(board)),("inset",n(inset)),("detail",b(detail))])?])?;
   let block=mesh(&three,&geometry,&list(&[&edges]))?;
@@ -881,7 +941,7 @@ pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsVal
  // smoother than the endpaper and, like the saved page beside it, skips tone mapping.
  let leaf_paper=if detail{
   let color=call(&make(&three,"Color",&[&n(f64::from(0xffffffu32))])?,"multiply",&[&read(host,"leafLight")?])?;
-  let fields=[("color",color),("roughness",n(0.93)),("vertexColors",JsValue::TRUE),("map",shared(word("endpaper"),&read(host,"endpaperTexture")?)?),("toneMapped",JsValue::FALSE)];
+  let fields=[("color",color),("roughness",n(0.93)),("vertexColors",JsValue::TRUE),("map",shared_built(host,"endpaper",book_model_endpaper)?),("toneMapped",JsValue::FALSE)];
   make(&three,"MeshStandardMaterial",&[&object(&fields)?])?
  }else{JsValue::NULL};
  put(&s,"leafPaper",&leaf_paper)?;
