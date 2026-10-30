@@ -10,7 +10,7 @@
 //! `parts.progress`).
 use js_sys::{Array, Function, Object, Reflect};
 use wasm_bindgen::{prelude::*, JsCast};
-use crate::host::{call, get, global, method, read, set};
+use crate::host::{call, get, global, method, read, set, text, truthy};
 
 type R<T> = Result<T, JsValue>;
 
@@ -269,3 +269,111 @@ pub fn voice_synth_failed(owner: &JsValue, id: &JsValue) -> R<JsValue> {
 pub fn voice_sleep_later(ui: &JsValue, owner: &JsValue, ms: &JsValue) -> R<JsValue> {
     global_call("setTimeout", &[&bound(ui, "voice_sleep_expired", &[owner])?, ms])
 }
+
+// --- The PDF reader (pdf-reader.js `PdfReader`) ---------------------------------------------------------------------
+
+/// The listeners the PDF reader's `open()` hands pdf_open (`hooks`): `scroll()` and `gestures()`
+/// install theirs when the document is in and return the function that removes them, `resize` is
+/// the observer's callback. `canSwipe`, `getMotionSurface` (every pointer move) and the wheel
+/// listener (every wheel event) stay arrows made by `kit`.
+#[wasm_bindgen]
+pub fn pdf_hooks(owner: &JsValue, s: &JsValue, container: &JsValue, options: &JsValue, kit: &JsValue, ui: &JsValue) -> R<JsValue> {
+    let navigation = if crate::host::absent(options) { JsValue::UNDEFINED } else { read(options, "onUserNavigation")? };
+    let chrome = if crate::host::absent(options) { JsValue::UNDEFINED } else { read(options, "onToggleChrome")? };
+    let hooks: JsValue = Object::new().into();
+    set(&hooks, "scroll", &bound(ui, "pdf_hook_scroll", &[s, container, &navigation, kit, ui])?)?;
+    set(&hooks, "gestures", &bound(ui, "pdf_hook_gestures", &[owner, s, container, &navigation, &chrome, kit, ui])?)?;
+    set(&hooks, "resize", &bound(ui, "pdf_resized", &[s])?)?;
+    Ok(hooks)
+}
+fn passive() -> R<JsValue> {
+    let options: JsValue = Object::new().into();
+    set(&options, "passive", &JsValue::TRUE)?;
+    Ok(options)
+}
+/// The container's scroll (a scrolled page reports where it is) and wheel (a manual navigation).
+#[wasm_bindgen]
+pub fn pdf_hook_scroll(s: &JsValue, container: &JsValue, navigation: &JsValue, kit: &JsValue, ui: &JsValue) -> R<JsValue> {
+    let on_scroll = bound(ui, "pdf_scrolled", &[s])?;
+    let on_wheel = call(&read(kit, "wheel")?, "wheel", &[navigation])?;
+    method(container, "addEventListener", &[&"scroll".into(), &on_scroll, &passive()?])?;
+    method(container, "addEventListener", &[&"wheel".into(), &on_wheel, &passive()?])?;
+    bound(ui, "pdf_unhook_scroll", &[container, &on_scroll, &on_wheel])
+}
+#[wasm_bindgen]
+pub fn pdf_unhook_scroll(container: &JsValue, on_scroll: &JsValue, on_wheel: &JsValue) -> R<()> {
+    method(container, "removeEventListener", &[&"scroll".into(), on_scroll])?;
+    method(container, "removeEventListener", &[&"wheel".into(), on_wheel])?;
+    Ok(())
+}
+/// The swipe/tap/double-tap gestures of the page. Enlarged PDFs must pan rather than accidentally
+/// turn a page: the browser supplies its touch momentum and long-press selection stays native.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn pdf_hook_gestures(owner: &JsValue, s: &JsValue, container: &JsValue, navigation: &JsValue, chrome: &JsValue, kit: &JsValue, ui: &JsValue) -> R<JsValue> {
+    let options: JsValue = Object::new().into();
+    let hold = call(&read(kit, "hold")?, "speechHold", &[&read(container, "ownerDocument")?])?;
+    Object::assign(options.unchecked_ref(), hold.unchecked_ref());
+    set(&options, "onNext", &bound(ui, "pdf_gesture", &[owner, &"next".into(), navigation])?)?;
+    set(&options, "onPrev", &bound(ui, "pdf_gesture", &[owner, &"prev".into(), navigation])?)?;
+    set(&options, "onManualPan", &bound(ui, "pdf_gesture", &[owner, &"pan".into(), navigation])?)?;
+    set(&options, "onToggleZoom", &bound(ui, "pdf_toggle_zoom_event", &[owner])?)?;
+    set(&options, "onToggleChrome", chrome)?;
+    set(&options, "canSwipe", &call(&read(kit, "canSwipe")?, "canSwipe", &[s])?)?;
+    set(&options, "getMotionSurface", &call(&read(kit, "motionSurface")?, "getMotionSurface", &[s])?)?;
+    call(&read(kit, "attach")?, "attachSwipeNavigation", &[container, &options])
+}
+/// A gesture that turns the page (`next`/`prev`) or pans it by hand (`pan`).
+#[wasm_bindgen]
+pub fn pdf_gesture(owner: &JsValue, which: &str, navigation: &JsValue) -> R<JsValue> {
+    let reported = crate::host::call_opt(navigation, "onUserNavigation", &[])?;
+    if which == "pan" { return Ok(reported); }
+    method(owner, which, &[])
+}
+#[wasm_bindgen]
+pub fn pdf_toggle_zoom_event(owner: &JsValue, x: &JsValue, y: &JsValue) -> R<JsValue> { method(owner, "toggleZoom", &[x, y]) }
+
+/// A spoken source of page `page`: the handlers the audiobook calls, over the speech state `q`
+/// they share (`{ source, current }`). Geometric paragraphs are real body text, including
+/// repeated dialogue: no marginal header is confirmed by page-local layout alone, so those
+/// paragraphs are kept even with the legacy header-skipping option on.
+pub(crate) fn pdf_make_source(s: &JsValue, page: &JsValue, first: &JsValue, layout: &JsValue) -> R<JsValue> {
+    let ui = crate::pdf_reader::dep(s, "ui");
+    let q = crate::pdf_speech::pdf_speech_begin(s, page, first)?;
+    let source: JsValue = Object::new().into();
+    set(&source, "text", &read(first, "text")?)?;
+    set(&source, "start", &0.into())?;
+    set(&source, "clear", &bound(&ui, "pdf_speech_clear", &[&q])?)?;
+    set(&source, "physicalPage", page)?;
+    set(&source, "offsetAtPoint", &bound(&ui, "pdf_speech_offset", &[s, &q])?)?;
+    let geometric = !crate::host::absent(layout) && truthy(&read(layout, "geometric")?);
+    if geometric || text(&read(&read(s, "preferences")?, "pdfMode")?, "text") {
+        set(&source, "headerRanges", &Object::freeze(&Array::new().into()))?;
+    }
+    set(&source, "highlight", &bound(&ui, "pdf_speech_highlight", &[s, &q])?)?;
+    set(&source, "follow", &bound(&ui, "pdf_speech_follow", &[s, &q, &source])?)?;
+    let made: JsValue = Object::new().into();
+    set(&made, "source", &source)?;
+    set(&made, "current", &bound(&ui, "pdf_speech_current", &[s, &q])?)?;
+    Ok(made)
+}
+/// The page prepared off screen becomes the visible one only when its voice starts.
+pub(crate) fn pdf_stage(s: &JsValue, source: &JsValue, q: &JsValue) -> R<()> {
+    let ui = crate::pdf_reader::dep(s, "ui");
+    set(source, "isValid", &bound(&ui, "pdf_source_valid", &[s, q])?)?;
+    set(source, "activate", &bound(&ui, "pdf_source_activate", &[s, q])?)?;
+    set(source, "clear", &bound(&ui, "pdf_source_clear", &[s, q])?)
+}
+/// A page read without showing it stays valid while its document is open and its caller active.
+pub(crate) fn pdf_detach(s: &JsValue, source: &JsValue, pdf: &JsValue, is_active: &JsValue) -> R<()> {
+    let ui = crate::pdf_reader::dep(s, "ui");
+    set(source, "isValid", &bound(&ui, "pdf_detached_valid", &[s, pdf, is_active])?)?;
+    set(source, "activate", &bound(&ui, "pdf_detached_activate", &[source])?)
+}
+#[wasm_bindgen]
+pub fn pdf_detached_valid(s: &JsValue, pdf: &JsValue, is_active: &JsValue) -> R<JsValue> {
+    if read(s, "doc")? != *pdf { return Ok(JsValue::FALSE); }
+    call(is_active, "isActive", &[])
+}
+#[wasm_bindgen]
+pub fn pdf_detached_activate(source: &JsValue) -> R<JsValue> { method(source, "isValid", &[]) }

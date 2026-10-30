@@ -33,39 +33,16 @@ import { readerUI, rustMethods } from './rust-ui-required.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-// A spoken source: the handlers the audiobook calls, over the state `q` they share.
-function makeSource(s, page, first, layout) {
-  const ui = readerUI(), q = ui.pdf_speech_begin(s, page, first)
-  const source = {
-    text:first.text, start:0, clear:() => ui.pdf_speech_clear(q), physicalPage:page,
-    offsetAtPoint:(tapped, x, y) => ui.pdf_speech_offset(s, q, tapped, x, y),
-    // Geometric paragraphs are real body text, including repeated dialogue.
-    // No marginal header is confirmed by page-local layout alone: preserve
-    // those paragraphs even when the legacy header-skipping option is on.
-    ...(layout?.geometric || s.preferences.pdfMode === 'text' ? { headerRanges:Object.freeze([]) } : {}),
-    highlight:(start, end) => ui.pdf_speech_highlight(s, q, start, end),
-    follow:(start, end) => ui.pdf_speech_follow(s, q, source, start, end)
-  }
-  return { source, current:() => ui.pdf_speech_current(s, q) }
-}
-// The page prepared off screen becomes the visible one only when its voice starts.
-function stage(s, source, q) {
-  const ui = readerUI()
-  source.isValid = () => ui.pdf_source_valid(s, q)
-  source.activate = () => ui.pdf_source_activate(s, q)
-  source.clear = () => ui.pdf_source_clear(s, q)
-}
-function detach(s, source, pdf, isActive) {
-  source.isValid = () => s.doc === pdf && isActive()
-  source.activate = () => source.isValid()
-}
-
 // What the Rust reader calls: PDF.js and the page pipelines, passed in rather than imported there.
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
   pdfImagePaths, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
   registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, pdfPlaceFigures, pdfImageRects, extractPDFText, mapPDFTextLayer,
-  lengthOptions:(s, pdf) => ({ isActive:() => s.doc === pdf }), makeSource, stage, detach
+  lengthOptions:(s, pdf) => ({ isActive:() => s.doc === pdf }), get ui() { return readerUI() },
+  // The open hooks (rust-ui pdf_hooks, reader_assembly.rs) keep arrows for what runs on every pointer move or wheel event.
+  attach:attachSwipeNavigation, hold:speechHold, wheel:onUserNavigation => event => { if (event.deltaX || event.deltaY) onUserNavigation?.() },
+  canSwipe:s => () => s.preferences.pdfMode === 'text' || !s.zoomed && s.preferences.zoom <= 100,
+  motionSurface:s => () => s.preferences.pdfMode === 'text' ? s.reflow : s.pageWrap
 }
 
 export class PdfReader {
@@ -78,32 +55,8 @@ export class PdfReader {
   }
 
   open(container, arrayBuffer, options) {
-    const s = this.s, ui = readerUI(), onUserNavigation = options?.onUserNavigation, onToggleChrome = options?.onToggleChrome
-    return ui.pdf_open(s, container, arrayBuffer, options, {
-      scroll:() => {
-        const onScroll = () => ui.pdf_scrolled(s)
-        const onWheel = event => { if (event.deltaX || event.deltaY) onUserNavigation?.() }
-        container.addEventListener('scroll', onScroll, { passive:true })
-        container.addEventListener('wheel', onWheel, { passive:true })
-        return () => {
-          container.removeEventListener('scroll', onScroll)
-          container.removeEventListener('wheel', onWheel)
-        }
-      },
-      gestures:() => attachSwipeNavigation(container, {
-        ...speechHold(container.ownerDocument),
-        onNext: () => { onUserNavigation?.(); return this.next() },
-        onPrev: () => { onUserNavigation?.(); return this.prev() },
-        onManualPan: () => onUserNavigation?.(),
-        onToggleZoom: (x, y) => this.toggleZoom(x, y),
-        onToggleChrome,
-        // Enlarged PDFs must pan, rather than accidentally turn a page. Let the
-        // browser supply its touch momentum and keep long-press selection native.
-        canSwipe: () => s.preferences.pdfMode === 'text' || !s.zoomed && s.preferences.zoom <= 100,
-        getMotionSurface: () => s.preferences.pdfMode === 'text' ? s.reflow : s.pageWrap
-      }),
-      resize:() => ui.pdf_resized(s)
-    })
+    const ui = readerUI()
+    return ui.pdf_open(this.s, container, arrayBuffer, options, ui.pdf_hooks(this, this.s, container, options, kit, ui))
   }
 
   get pageCount() { return this.s.doc?.numPages ?? 0 }

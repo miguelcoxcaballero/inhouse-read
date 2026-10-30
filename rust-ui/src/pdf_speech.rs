@@ -58,7 +58,7 @@ pub fn pdf_speech_source(s: JsValue, options: JsValue) -> Promise {
         }
         if !truthy(&get(&s, "doc")) { return Ok(JsValue::NULL); }
         let (pdf, number) = (get(&s, "doc"), get(&s, "pageNum"));
-        let made = invoke(&s, "makeSource", &[&s, &number, &speech_map(&s)?, &get(&get(&s, "renderState"), "textLayout")])?;
+        let made = crate::reader_assembly::pdf_make_source(&s, &number, &speech_map(&s)?, &get(&get(&s, "renderState"), "textLayout"))?;
         let source = get(&made, "source");
         if truthy(&get(&options, "completeSentences")) {
             set(&source, "start", &if text_mode(&s) { visible_offset(&s)? } else { 0.0 }.into())?;
@@ -240,9 +240,9 @@ fn next_detached(s: JsValue, is_active: JsValue, after: JsValue) -> Promise {
         if get(&s, "doc") != pdf || !truthy(&call(&is_active, "isActive", &[])?) { return Err(cancelled()); }
         let layout = invoke(&s, "extractPDFText", &[&content, &method(&page, "getViewport", &[&scale_one()?])?])?;
         if truthy(&method(&get(&layout, "text"), "trim", &[])?) {
-            let made = invoke(&s, "makeSource", &[&s, &number.into(), &plain(&[("text", get(&layout, "text")), ("spans", Array::new().into())])?, &layout])?;
+            let made = crate::reader_assembly::pdf_make_source(&s, &number.into(), &plain(&[("text", get(&layout, "text")), ("spans", Array::new().into())])?, &layout)?;
             let source = get(&made, "source");
-            invoke(&s, "detach", &[&s, &source, &pdf, &is_active])?;
+            crate::reader_assembly::pdf_detach(&s, &source, &pdf, &is_active)?;
             return Ok(source);
         }
         number += 1.0;
@@ -300,11 +300,11 @@ pub fn pdf_next_speech(s: JsValue, options: JsValue) -> Promise {
                     if truthy(&mapped) { mapped } else { invoke(&s, "mapTextLayer", &[&layer])? }
                 };
                 if !truthy(&method(&get(&first, "text"), "trim", &[])?) { return Err(js_sys::Error::new("No se pudo preparar el texto de la página siguiente.").into()); }
-                let made = invoke(&s, "makeSource", &[&s, &number.into(), &first, &get(&staged, "textLayout")])?;
+                let made = crate::reader_assembly::pdf_make_source(&s, &number.into(), &first, &get(&staged, "textLayout"))?;
                 let source = get(&made, "source");
                 let shared = plain(&[("staged", staged.clone()), ("pdf", pdf.clone()), ("number", number.into()), ("current", get(&made, "current")), ("clear", get(&source, "clear")),
                     ("source", source.clone()), ("activated", JsValue::FALSE)])?;
-                invoke(&s, "stage", &[&s, &source, &shared])?;
+                crate::reader_assembly::pdf_stage(&s, &source, &shared)?;
                 return Ok(source);
             }
             Err(js_sys::Error::new("Página siguiente sin texto legible.").into())
