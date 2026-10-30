@@ -136,6 +136,42 @@ async function session(create, seed) {
     canPin: () => true, isPlaced: () => false, requestPin: () => log.push(['pin'])
   }
   navigator.vibrate = pattern => { log.push(['vibrate', JSON.stringify(pattern)]); return true }
+  // A Web Audio context that logs every node, parameter and buffer (the noise by a hash of its samples).
+  if (rng() < 0.25) storage.setItem('inhouse-read-shelf-sounds', 'off')
+  const noise = random(seed * 977)
+  const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => noise())
+  let nodes = 0
+  const param = (name, value = 0) => ({
+    value,
+    setValueAtTime: (...args) => log.push([name, 'set', ...args]),
+    linearRampToValueAtTime: (...args) => log.push([name, 'linear', ...args]),
+    exponentialRampToValueAtTime: (...args) => log.push([name, 'exponential', ...args])
+  })
+  const node = kind => {
+    const name = `${kind}#${nodes++}`
+    const made = { name, connect: other => { log.push([name, 'connect', other.name]); return other }, start: at => log.push([name, 'start', at]), stop: at => log.push([name, 'stop', at]) }
+    if (kind === 'oscillator') made.frequency = param(`${name}.frequency`, 440)
+    if (kind === 'gain') made.gain = param(`${name}.gain`, 1)
+    if (kind === 'filter') { made.frequency = param(`${name}.frequency`, 350); made.Q = new Proxy(param(`${name}.Q`, 1), { set(target, key, value) { log.push([`${name}.Q`, key, value]); target[key] = value; return true } }) }
+    return new Proxy(made, { set(target, key, value) { log.push([name, 'property', key, value?.hash ?? value?.name ?? value]); target[key] = value; return true } })
+  }
+  const sampleRate = pick(rng, [44100, 48000, 22050])
+  globalThis.AudioContext = class {
+    constructor() { this.state = 'suspended'; this.destination = { name: 'destination' }; this.sampleRate = sampleRate; log.push(['audio context', sampleRate]) }
+    get currentTime() { return (clock - today.getTime()) / 1000 + 0.1 }
+    resume() { log.push(['resume']); this.state = 'running'; return Promise.resolve() }
+    suspend() { log.push(['suspend']); this.state = 'suspended'; return Promise.resolve() }
+    close() { log.push(['close']); return Promise.resolve() }
+    createOscillator() { return node('oscillator') }
+    createGain() { return node('gain') }
+    createBiquadFilter() { return node('filter') }
+    createBufferSource() { return node('source') }
+    createBuffer(channels, length, rate) {
+      log.push(['buffer', channels, length, rate])
+      const data = new Float32Array(length)
+      return { get hash() { let h = 0; for (let i = 0; i < data.length; i++) h = (h * 31 + Math.round(data[i] * 1e7)) | 0; return `noise ${data.length} ${h}` }, getChannelData: channel => { log.push(['channel', channel]); return data } }
+    }
+  }
   const snapshot = label => log.push([label, stable(document.body.innerHTML), JSON.stringify([...storage.values]), document.activeElement?.outerHTML?.slice(0, 80) || ''])
   const records = [{ id: 'b1', title: '  Un libro  ', cover: { size: 12 } }, { id: 'b2', title: '', cover: null }]
   const streak = create({
@@ -178,13 +214,15 @@ async function session(create, seed) {
   document.getElementById('widget-book-toggle').click(); await flush(); await step(10, 'toggled')
   streak.destroy()
   await step(5000, 'destroyed')
+  randomSpy.mockRestore()
+  delete globalThis.AudioContext
   return log
 }
 
 describe('reading streak controller', () => {
-  afterEach(() => { vi.useRealTimers(); delete globalThis.InhouseStreak; delete globalThis.matchMedia })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); delete globalThis.InhouseStreak; delete globalThis.matchMedia; delete globalThis.AudioContext })
   it('renders, counts, celebrates and syncs exactly like the original', async () => {
-    const seen = { celebration: 0, update: 0, book: 0, change: 0, vibrate: 0, lit: 0 }
+    const seen = { celebration: 0, update: 0, book: 0, change: 0, vibrate: 0, lit: 0, 'audio context': 0, resume: 0, suspend: 0, close: 0, buffer: 0 }
     for (let seed = 1; seed <= 10; seed++) {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame'] })
       const theirs = await session(createReferenceStreak, seed)

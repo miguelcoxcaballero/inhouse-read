@@ -4,8 +4,8 @@
 //! consecutive complete days up to today or, while today is still open, up to yesterday. Seconds are kept
 //! per local day (YYYY-MM-DD); two devices merge by taking each day's maximum, so the merge is idempotent.
 //!
-//! JavaScript keeps only host glue: the Web Audio/vibration feedback, the widget cover rasteriser and the
-//! callbacks of the app. Local days are computed with the proleptic Gregorian calendar for ordinary keys
+//! JavaScript keeps only the callbacks of the app: Web Audio, the vibration motor and the widget's canvas are
+//! driven from here. Local days are computed with the proleptic Gregorian calendar for ordinary keys
 //! (the same answer `new Date(y, m - 1, d, 12)` gives for every date that has a local noon) and with the
 //! engine's own `Date` for anything else, so odd keys keep the original's normalisation.
 #![allow(dead_code)]
@@ -517,6 +517,309 @@ fn celebration_markup(info:&Info,week:&[WeekDay],before:f64,title:&str,text:&str
 </div>"#,flame_svg("is-idle"),flame_svg("is-lit"),ntext(before))
 }
 
+// ---------------------------------------------------------------- the widget's book (streak-widget-book.js)
+// The last book on the home-screen widget: the minutes left and a PNG thumbnail of its cover (the stored
+// one, or one drawn with the title). The canvas is the browser's; the recipe is this one.
+const WORDS_PER_MINUTE:f64=230.0;
+// Up to 52×78 dp on the widget: 3× so it stays sharp on dense screens.
+const COVER_WIDTH:f64=156.0;
+const COVER_HEIGHT:f64=234.0;
+
+/// `Number(value)`, throwing like the engine for a Symbol.
+fn to_number(value:&JsValue)->R<f64>{
+ if let Some(number)=value.as_f64(){return Ok(number);}
+ Ok(num(&call(&get(&global(),"Number"),"Number",&[value])?))
+}
+/// `record?.[key]`.
+fn optional_field(record:&JsValue,key:&str)->R<JsValue>{if absent(record){Ok(undef())}else{read(record,key)}}
+
+/// Reading minutes left, or -1 when the book's length is unknown.
+fn minutes_left(record:&JsValue)->R<f64>{
+ let words=to_number(&optional_field(record,"wordCount")?)?;
+ if !(words>0.0){return Ok(-1.0);}
+ let fraction=to_number(&read(record,"progressFraction")?)?;
+ let fraction=jmin(1.0,jmax(0.0,or0(fraction)));
+ Ok(jround(words*(1.0-fraction)/WORDS_PER_MINUTE))
+}
+/// Rounded so the widget is not rewritten every page: by 5 min, by 10 above an hour.
+fn rounded_minutes(minutes:f64)->f64{
+ if minutes<0.0{return -1.0;}
+ if minutes<60.0{return (minutes/5.0).ceil()*5.0;}
+ jround(minutes/10.0)*10.0
+}
+#[wasm_bindgen]
+pub fn streak_minutes_left(record:JsValue)->R<f64>{minutes_left(&record)}
+#[wasm_bindgen]
+pub fn streak_rounded_minutes(minutes:f64)->f64{rounded_minutes(minutes)}
+
+/// The UTF-16 code units of `String(value)`.
+fn units(value:&JsValue)->Vec<u16>{let text:js_sys::JsString=string_value(value).unchecked_into();text.iter().collect()}
+fn from_units(units:&[u16])->JsValue{js_sys::JsString::from_char_code(units).into()}
+/// The hue of a title: a 31-hash over its code points (lone surrogates count as themselves).
+fn hue(units:&[u16])->f64{
+ let mut hash:i32=0;
+ let mut index=0;
+ while index<units.len(){
+  let unit=units[index];
+  let mut point=u32::from(unit);
+  if (0xD800..0xDC00).contains(&unit)&&index+1<units.len()&&(0xDC00..0xE000).contains(&units[index+1]){
+   point=0x10000+((point-0xD800)<<10)+(u32::from(units[index+1])-0xDC00);index+=1;
+  }
+  hash=hash.wrapping_mul(31).wrapping_add(point as i32);
+  index+=1;
+ }
+ (i64::from(hash).abs()%360) as f64
+}
+/// `\s` of a JavaScript regular expression.
+fn js_space(unit:u16)->bool{
+ matches!(unit,0x09..=0x0D|0x20|0xA0|0x1680|0x2000..=0x200A|0x2028|0x2029|0x202F|0x205F|0x3000|0xFEFF)
+}
+/// `text.split(/\s+/)`.
+fn split_words(units:&[u16])->Vec<Vec<u16>>{
+ let mut words=vec![Vec::new()];
+ let mut index=0;
+ while index<units.len(){
+  if js_space(units[index]){
+   while index<units.len()&&js_space(units[index]){index+=1;}
+   words.push(Vec::new());
+  }else{words.last_mut().unwrap().push(units[index]);index+=1;}
+ }
+ words
+}
+fn rounded_rect(context:&JsValue,x:f64,y:f64,width:f64,height:f64,radius:f64)->R{
+ method(context,"beginPath",&[])?;
+ method(context,"moveTo",&[&f(x+radius),&f(y)])?;
+ method(context,"arcTo",&[&f(x+width),&f(y),&f(x+width),&f(y+height),&f(radius)])?;
+ method(context,"arcTo",&[&f(x+width),&f(y+height),&f(x),&f(y+height),&f(radius)])?;
+ method(context,"arcTo",&[&f(x),&f(y+height),&f(x),&f(y),&f(radius)])?;
+ method(context,"arcTo",&[&f(x),&f(y),&f(x+width),&f(y),&f(radius)])?;
+ method(context,"closePath",&[])?;
+ Ok(())
+}
+fn draw_title_cover(context:&JsValue,title:&JsValue)->R{
+ let text=units(title);
+ let base=ntext(hue(&text));
+ let gradient=method(context,"createLinearGradient",&[&f(0.0),&f(0.0),&f(0.0),&f(COVER_HEIGHT)])?;
+ method(&gradient,"addColorStop",&[&f(0.0),&s(&format!("hsl({base} 42% 42%)"))])?;
+ method(&gradient,"addColorStop",&[&f(1.0),&s(&format!("hsl({base} 46% 30%)"))])?;
+ js_sys::Reflect::set(context,&s("fillStyle"),&gradient)?;
+ method(context,"fillRect",&[&f(0.0),&f(0.0),&f(COVER_WIDTH),&f(COVER_HEIGHT)])?;
+ js_sys::Reflect::set(context,&s("fillStyle"),&s("rgba(255,255,255,.18)"))?;
+ method(context,"fillRect",&[&f(12.0),&f(0.0),&f(4.0),&f(COVER_HEIGHT)])?;
+ js_sys::Reflect::set(context,&s("fillStyle"),&s("#fff"))?;
+ js_sys::Reflect::set(context,&s("textAlign"),&s("center"))?;
+ js_sys::Reflect::set(context,&s("font"),&s("600 22px Georgia, serif"))?;
+ let mut lines:Vec<Vec<u16>>=Vec::new();
+ let mut line:Vec<u16>=Vec::new();
+ for word in split_words(&text){
+  let next=if line.is_empty(){word.clone()}else{let mut joined=line.clone();joined.push(0x20);joined.extend_from_slice(&word);joined};
+  let width=num(&read(&method(context,"measureText",&[&from_units(&next)])?,"width")?);
+  if width>COVER_WIDTH-32.0&&!line.is_empty(){lines.push(std::mem::replace(&mut line,word));}else{line=next;}
+  if lines.len()==4{break;}
+ }
+ if !line.is_empty()&&lines.len()<4{lines.push(line);}
+ let top=COVER_HEIGHT/2.0-(lines.len() as f64-1.0)*13.0;
+ for (index,text) in lines.iter().enumerate(){
+  method(context,"fillText",&[&from_units(text),&f(COVER_WIDTH/2.0+4.0),&f(top+index as f64*26.0),&f(COVER_WIDTH-28.0)])?;
+ }
+ Ok(())
+}
+/// Draws the stored cover filling the thumbnail (cropped like a printed cover). Any failure leaves it undrawn.
+async fn draw_stored_cover(context:&JsValue,record:&JsValue)->R<bool>{
+ let cover=optional_field(record,"cover")?;
+ // `cover instanceof Blob`, throwing like the engine when Blob is not a constructor.
+ let blob=get(&global(),"Blob");
+ let blob=blob.dyn_ref::<js_sys::Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new("Right-hand side of 'instanceof' is not callable")))?;
+ let is_blob=cover.is_object()&&{
+  let prototype=read(blob,"prototype")?;
+  prototype.dyn_ref::<Object>().ok_or_else(||JsValue::from(js_sys::TypeError::new("Function has non-object prototype in instanceof check")))?.is_prototype_of(&cover)
+ };
+ if !is_blob||!get(&global(),"createImageBitmap").is_function(){return Ok(false);}
+ let attempt=async{
+  let pending=call(&get(&global(),"createImageBitmap"),"createImageBitmap",&[&read(record,"cover")?])?;
+  let image=settle(pending).await?;
+  let scale=jmax(COVER_WIDTH/num(&read(&image,"width")?),COVER_HEIGHT/num(&read(&image,"height")?));
+  let width=num(&read(&image,"width")?)*scale;
+  let height=num(&read(&image,"height")?)*scale;
+  method(context,"drawImage",&[&image,&f((COVER_WIDTH-width)/2.0),&f((COVER_HEIGHT-height)/2.0),&f(width),&f(height)])?;
+  method_opt(&image,"close",&[])?;
+  Ok::<bool,JsValue>(true)
+ };
+ Ok(attempt.await.unwrap_or(false))
+}
+async fn cover_png(record:JsValue,title:JsValue)->R<JsValue>{
+ let canvas=method(&read(&global(),"document")?,"createElement",&[&s("canvas")])?;
+ js_sys::Reflect::set(&canvas,&s("width"),&f(COVER_WIDTH))?;
+ js_sys::Reflect::set(&canvas,&s("height"),&f(COVER_HEIGHT))?;
+ let context=method(&canvas,"getContext",&[&s("2d")])?;
+ rounded_rect(&context,0.0,0.0,COVER_WIDTH,COVER_HEIGHT,12.0)?;
+ method(&context,"clip",&[])?;
+ if !draw_stored_cover(&context,&record).await?{draw_title_cover(&context,&title)?;}
+ js_sys::Reflect::set(&context,&s("strokeStyle"),&s("rgba(0,0,0,.14)"))?;
+ js_sys::Reflect::set(&context,&s("lineWidth"),&f(3.0))?;
+ rounded_rect(&context,1.0,1.0,COVER_WIDTH-2.0,COVER_HEIGHT-2.0,11.0)?;
+ method(&context,"stroke",&[])?;
+ let url=method(&canvas,"toDataURL",&[&s("image/png")])?;
+ let data=js_sys::Reflect::get(&method(&url,"split",&[&s(",")])?,&f(1.0))?;
+ Ok(if truthy(&data){data}else{s("")})
+}
+/// PNG in base64 (without the data-URL prefix) of the cover with rounded corners.
+#[wasm_bindgen]
+pub fn streak_cover_png(record:JsValue,title:JsValue)->js_sys::Promise{run(cover_png(record,title)).unchecked_into()}
+
+// ---------------------------------------------------------------- sound and vibration
+// Sounds synthesised on the spot (no recordings): a rising breath as the flame lights, a bright chord,
+// little taps while counting and a "pop". Web Audio and the vibration motor are the browser's.
+const SOUNDS_KEY:&str="inhouse-read-shelf-sounds";
+struct Tone{at:f64,freq:f64,to:f64,kind:&'static str,dur:f64,gain:f64}
+impl Tone{fn new(freq:f64)->Tone{Tone{at:0.0,freq,to:freq,kind:"sine",dur:0.2,gain:0.2}}}
+const ATTACK:f64=0.006;
+
+struct FeedbackCore{
+ storage:JsValue,context:RefCell<JsValue>,wanted:RefCell<Option<Box<dyn Fn()->bool>>>,rest:RefCell<JsValue>,unlock:RefCell<JsValue>,rest_fn:RefCell<JsValue>,
+}
+type Feedback=Rc<FeedbackCore>;
+fn noop()->JsValue{js_sys::Function::new_no_args("").into()}
+fn listener_options(capture:bool,passive:Option<bool>)->JsValue{
+ let object=Object::new();
+ let _=js_sys::Reflect::set(&object,&s("capture"),&b(capture));
+ if let Some(passive)=passive{let _=js_sys::Reflect::set(&object,&s("passive"),&b(passive));}
+ object.into()
+}
+impl FeedbackCore{
+ fn enabled(&self)->bool{
+  match method(&self.storage,"getItem",&[&s(SOUNDS_KEY)]){Ok(value)=>value.as_string().as_deref()!=Some("off"),Err(_)=>true}
+ }
+ /// The audio context, made (and woken) when sounds are on; nothing when the browser has none.
+ fn audio(&self)->R<JsValue>{
+  if !self.enabled(){return Ok(JsValue::NULL);}
+  let constructor=util::or(get(&global(),"AudioContext"),get(&global(),"webkitAudioContext"));
+  if !truthy(&constructor){return Ok(JsValue::NULL);}
+  if !truthy(&self.context.borrow()){
+   let made=constructor.dyn_ref::<js_sys::Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new("Context is not a constructor")))
+    .and_then(|constructor|js_sys::Reflect::construct(constructor,&Array::new()));
+   match made{Ok(context)=>*self.context.borrow_mut()=context,Err(_)=>return Ok(JsValue::NULL)}
+  }
+  let context=self.context.borrow().clone();
+  if read(&context,"state")?.as_string().as_deref()==Some("suspended"){
+   method(&method(&context,"resume",&[])?,"catch",&[&noop()])?;
+  }
+  Ok(context)
+ }
+ fn state_is(&self,state:&str)->bool{
+  let context=self.context.borrow().clone();
+  !absent(&context)&&get(&context,"state").as_string().as_deref()==Some(state)
+ }
+ fn sleep_soon(&self)->R{
+  call(&get(&global(),"clearTimeout"),"clearTimeout",&[&self.rest.borrow()])?;
+  let rest=call(&get(&global(),"setTimeout"),"setTimeout",&[&self.rest_fn.borrow(),&f(3000.0)])?;
+  *self.rest.borrow_mut()=rest;
+  Ok(())
+ }
+ fn vibrate(pattern:&[f64]){
+  let navigator=get(&global(),"navigator");
+  if absent(&navigator){return;}
+  let value=if pattern.len()==1{f(pattern[0])}else{let list=Array::new();for item in pattern{list.push(&f(*item));}list.into()};
+  let _=method_opt(&navigator,"vibrate",&[&value]);
+ }
+}
+fn tone(ctx:&JsValue,tone:&Tone)->R{
+ let start=num(&read(ctx,"currentTime")?)+tone.at;
+ let osc=method(ctx,"createOscillator",&[])?;let amp=method(ctx,"createGain",&[])?;
+ js_sys::Reflect::set(&osc,&s("type"),&s(tone.kind))?;
+ method(&read(&osc,"frequency")?,"setValueAtTime",&[&f(tone.freq),&f(start)])?;
+ if tone.to!=tone.freq{method(&read(&osc,"frequency")?,"exponentialRampToValueAtTime",&[&f(tone.to),&f(start+tone.dur*0.8)])?;}
+ method(&read(&amp,"gain")?,"setValueAtTime",&[&f(0.0),&f(start)])?;
+ method(&read(&amp,"gain")?,"linearRampToValueAtTime",&[&f(tone.gain),&f(start+ATTACK)])?;
+ method(&read(&amp,"gain")?,"exponentialRampToValueAtTime",&[&f(0.0001),&f(start+tone.dur)])?;
+ method(&method(&osc,"connect",&[&amp])?,"connect",&[&read(ctx,"destination")?])?;
+ method(&osc,"start",&[&f(start)])?;method(&osc,"stop",&[&f(start+tone.dur+0.02)])?;
+ Ok(())
+}
+fn whoosh(ctx:&JsValue,at:f64,dur:f64)->R{
+ let start=num(&read(ctx,"currentTime")?)+at;
+ let length=(num(&read(ctx,"sampleRate")?)*dur).ceil();
+ let buffer=method(ctx,"createBuffer",&[&f(1.0),&f(length),&read(ctx,"sampleRate")?])?;
+ let data:js_sys::Float32Array=method(&buffer,"getChannelData",&[&f(0.0)])?.unchecked_into();
+ // One draw per sample asked for, as the original loop; the buffer keeps what it has room for.
+ let count=data.length() as usize;
+ let draws=if length>0.0{length as usize}else{0};
+ let mut noise=Vec::with_capacity(draws.min(count));
+ for index in 0..draws{let value=(js_sys::Math::random()*2.0-1.0) as f32;if index<count{noise.push(value);}}
+ data.subarray(0,noise.len() as u32).copy_from(&noise);
+ let source=method(ctx,"createBufferSource",&[])?;let filter=method(ctx,"createBiquadFilter",&[])?;let amp=method(ctx,"createGain",&[])?;
+ js_sys::Reflect::set(&source,&s("buffer"),&buffer)?;
+ js_sys::Reflect::set(&filter,&s("type"),&s("bandpass"))?;
+ js_sys::Reflect::set(&read(&filter,"Q")?,&s("value"),&f(1.4))?;
+ method(&read(&filter,"frequency")?,"setValueAtTime",&[&f(380.0),&f(start)])?;
+ method(&read(&filter,"frequency")?,"exponentialRampToValueAtTime",&[&f(3200.0),&f(start+dur)])?;
+ method(&read(&amp,"gain")?,"setValueAtTime",&[&f(0.0),&f(start)])?;
+ method(&read(&amp,"gain")?,"linearRampToValueAtTime",&[&f(0.16),&f(start+dur*0.7)])?;
+ method(&read(&amp,"gain")?,"exponentialRampToValueAtTime",&[&f(0.0001),&f(start+dur)])?;
+ method(&method(&method(&source,"connect",&[&filter])?,"connect",&[&amp])?,"connect",&[&read(ctx,"destination")?])?;
+ method(&source,"start",&[&f(start)])?;method(&source,"stop",&[&f(start+dur+0.02)])?;
+ Ok(())
+}
+fn new_feedback(storage:&JsValue)->R<Feedback>{
+ let me=Rc::new(FeedbackCore{storage:storage.clone(),context:RefCell::new(JsValue::NULL),wanted:RefCell::new(None),rest:RefCell::new(f(0.0)),unlock:RefCell::new(undef()),rest_fn:RefCell::new(undef())});
+ // Three seconds after the celebration the context sleeps until the next sound.
+ let owner=Rc::downgrade(&me);
+ let rest=Closure::wrap(Box::new(move||{
+  let Some(me)=owner.upgrade() else{return};
+  if me.state_is("running"){
+   let context=me.context.borrow().clone();
+   if let Err(error)=method(&context,"suspend",&[]).and_then(|pending|method(&pending,"catch",&[&noop()])){wasm_bindgen::throw_val(error)}
+  }
+ })as Box<dyn Fn()>).into_js_value();
+ *me.rest_fn.borrow_mut()=rest;
+ // Android and Chrome only let audio start inside a touch: when the goal is near, the context is made on
+ // the next touch, so it is ready when the celebration sounds without anyone touching anything.
+ let owner=Rc::downgrade(&me);
+ let unlock=Closure::wrap(Box::new(move|_:JsValue|{
+  let Some(me)=owner.upgrade() else{return};
+  let wanted=||me.wanted.borrow().as_ref().is_some_and(|test|test());
+  if me.state_is("suspended")||(!truthy(&me.context.borrow())&&wanted()){if let Err(error)=me.audio(){wasm_bindgen::throw_val(error)}}
+ })as Box<dyn Fn(JsValue)>).into_js_value();
+ method(&global(),"addEventListener",&[&s("pointerdown"),&unlock,&listener_options(true,Some(true))])?;
+ *me.unlock.borrow_mut()=unlock;
+ Ok(me)
+}
+fn feedback_run(me:&Feedback,name:&str)->R{
+ match name{
+  "ignite"=>{
+   FeedbackCore::vibrate(&[28.0,50.0,18.0,40.0,70.0]);
+   let ctx=me.audio()?;if !truthy(&ctx){return Ok(());}
+   whoosh(&ctx,0.0,0.34)?;
+   // A quick major arpeggio with an octave sparkle.
+   for (index,(freq,at)) in [(659.3,0.26),(830.6,0.32),(987.8,0.38),(1318.5,0.46)].into_iter().enumerate(){
+    tone(&ctx,&Tone{at,kind:"triangle",dur:0.55+index as f64*0.08,gain:0.13,..Tone::new(freq)})?;
+    tone(&ctx,&Tone{at:at+0.004,kind:"sine",dur:0.3,gain:0.035,..Tone::new(freq*2.0)})?;
+   }
+  }
+  "tick"=>{
+   FeedbackCore::vibrate(&[9.0]);
+   let ctx=me.audio()?;if truthy(&ctx){tone(&ctx,&Tone{to:1240.0,dur:0.07,gain:0.07,..Tone::new(1480.0)})?;}
+  }
+  "pop"=>{
+   FeedbackCore::vibrate(&[16.0,30.0,10.0]);
+   let ctx=me.audio()?;if !truthy(&ctx){return Ok(());}
+   tone(&ctx,&Tone{to:520.0,dur:0.12,gain:0.16,..Tone::new(880.0)})?;
+   tone(&ctx,&Tone{at:0.05,kind:"triangle",dur:0.18,gain:0.05,..Tone::new(1760.0)})?;
+  }
+  "tap"=>FeedbackCore::vibrate(&[10.0]),
+  "rest"=>me.sleep_soon()?,
+  "destroy"=>{
+   call(&get(&global(),"clearTimeout"),"clearTimeout",&[&me.rest.borrow()])?;
+   method(&global(),"removeEventListener",&[&s("pointerdown"),&me.unlock.borrow(),&listener_options(true,None)])?;
+   let context=me.context.borrow().clone();
+   if let Some(pending)=method_opt(&context,"close",&[])?{method_opt(&pending,"catch",&[&noop()])?;}
+  }
+  _=>{}
+ }
+ Ok(())
+}
+
+
 // ---------------------------------------------------------------- the controller
 /// A function value for the host, collected with whatever holds it (as the original's arrow functions were).
 /// Handlers are `Fn`: an event they dispatch may re-enter them, as in the browser.
@@ -529,7 +832,7 @@ struct Celebration{timers:Vec<Timer>}
 
 struct Core{
  document:JsValue,body:JsValue,storage:JsValue,
- on_change:JsValue,now:JsValue,latest_book:JsValue,book_title:JsValue,feedback:JsValue,cover_png:JsValue,minutes_left:JsValue,rounded_minutes:JsValue,
+ on_change:JsValue,now:JsValue,latest_book:JsValue,book_title:JsValue,feedback:Feedback,
  state:RefCell<Streak>,today:RefCell<String>,
  dirty:Cell<bool>,last_save:Cell<f64>,last_tick:Cell<f64>,last_activity:Cell<f64>,
  timer:RefCell<JsValue>,clock_timer:RefCell<Option<Timer>>,book_start:RefCell<Option<Timer>>,reading_session:Cell<bool>,
@@ -548,7 +851,7 @@ impl Core{
  fn write(&self,key:&str,value:&str)->bool{method(&self.storage,"setItem",&[&s(key),&s(value)]).is_ok()}
  fn now(&self)->R<f64>{Ok(num(&call(&self.now,"now",&[])?))}
  fn today(&self)->String{self.today.borrow().clone()}
- fn fb(&self,name:&str)->R{method(&self.feedback,name,&[])?;Ok(())}
+ fn fb(&self,name:&str)->R{feedback_run(&self.feedback,name)}
  fn current_info(&self)->Info{
   let mut info=match self.info_cache.get(){Some(info)=>info,None=>{let fresh=info(&self.state.borrow(),&self.today());self.info_cache.set(Some(fresh));fresh}};
   let seconds=jmin(or0(self.state.borrow().get(&self.today())),GOAL);
@@ -670,8 +973,7 @@ async fn widget_book_job(me:Me,bridge:JsValue)->R<JsValue>{
  let named=if truthy(&named){named}else{let title=read(&record,"title")?;if truthy(&title){title}else{s("")}};
  let title=method(&string_value(&named),"trim",&[])?;
  let title=if truthy(&title){title}else{s("Libro")};
- let left=call(&me.minutes_left,"minutesLeft",&[&record])?;
- let minutes=call(&me.rounded_minutes,"roundedMinutes",&[&left])?;
+ let minutes=f(rounded_minutes(minutes_left(&record)?));
  let id=read(&record,"id")?;
  let key=join_strings(&[string_value(&id),s("|"),title.clone(),s("|"),string_value(&minutes)]);
  let size=get(&get(&record,"cover"),"size");
@@ -679,7 +981,7 @@ async fn widget_book_job(me:Me,bridge:JsValue)->R<JsValue>{
  if key==*me.book_sent.borrow()&&cover==*me.cover_sent.borrow(){return Ok(undef());}
  let payload=obj(&[("title",&title),("minutes",&minutes)]);
  if cover!=*me.cover_sent.borrow(){
-  let png=settle(call(&me.cover_png,"coverPng",&[&record,&title])?).await?;
+  let png=settle(streak_cover_png(record.clone(),title.clone()).into()).await?;
   put(&payload,"cover",&png);
  }else{put(&payload,"keepCover",&JsValue::TRUE);}
  *me.book_sent.borrow_mut()=key;*me.cover_sent.borrow_mut()=cover;
@@ -931,7 +1233,7 @@ fn finish_celebration(me:&Me,layer:&JsValue,previous:&JsValue,reduced:bool,open_
 }
 
 /// The reading streak of one document: header counters, reading timer, calendar panel, celebration and
-/// widget. `host` carries the app's callbacks and the JavaScript feedback (sound and vibration).
+/// widget. `host` carries the app's callbacks.
 #[wasm_bindgen]
 pub struct ReadingStreak{core:Me}
 
@@ -940,11 +1242,11 @@ impl ReadingStreak{
  #[wasm_bindgen(constructor)]
  pub fn new(document:JsValue,storage:JsValue,host:JsValue)->R<ReadingStreak>{
   let body=read(&document,"body")?;
+  let feedback=new_feedback(&storage)?;
   let pick=|name:&str|get(&host,name);
   let core=Rc::new(Core{
    document:document.clone(),body,storage,
-   on_change:pick("onChange"),now:pick("now"),latest_book:pick("latestBook"),book_title:pick("bookTitle"),feedback:pick("feedback"),
-   cover_png:pick("coverPng"),minutes_left:pick("minutesLeft"),rounded_minutes:pick("roundedMinutes"),
+   on_change:pick("onChange"),now:pick("now"),latest_book:pick("latestBook"),book_title:pick("bookTitle"),feedback,
    state:RefCell::new(Streak::default()),today:RefCell::new(String::new()),
    dirty:Cell::new(false),last_save:Cell::new(0.0),last_tick:Cell::new(0.0),last_activity:Cell::new(0.0),
    timer:RefCell::new(f(0.0)),clock_timer:RefCell::new(None),book_start:RefCell::new(None),reading_session:Cell::new(false),
@@ -962,9 +1264,10 @@ impl ReadingStreak{
   *me.state.borrow_mut()=merge(&[synced,local]);
   *me.today.borrow_mut()=day_at(me.now()?)?;
   me.last_save.set(me.now()?);
-  {let owner=me.clone();method(&me.feedback,"prepareWhen",&[&Closure::wrap(Box::new(move||->bool{
+  {let owner=Rc::downgrade(me);*me.feedback.wanted.borrow_mut()=Some(Box::new(move||->bool{
+   let Some(owner)=owner.upgrade() else{return false};
    owner.reading()&&{let info=info(&owner.state.borrow(),&owner.today());!info.done_today&&info.remaining<=120.0}
-  })as Box<dyn FnMut()->bool>).into_js_value()])?;}
+  }));}
 
   // ---- header counters
   *me.chips.borrow_mut()=qsa(&document,"[data-streak-chip]");
