@@ -36,10 +36,35 @@ export function rememberedPatch(cache, keys, patch) {
  * uvScale converts unnormalized cap UVs into one wave field per surface.
  * userData.bookReflectionSurface.setStrength(0) provides a uniform-only A/B;
  * it does not rebuild materials, programs, textures, geometry or shadows.
- * The controls and the hook are the shelf module's functions bound to the layer's state (book_reflection.rs). */
-export function applyBookReflectionSurface(material, options) {
-  return needRustShelf().book_reflection_apply(reflectionHost(), material, options);
+ * Every number (profile, slope, environment share, UV scale) comes from one call to the shelf module
+ * (rust-ui/src/book_reflection.rs, reflection_setup); the controls and the hook are its functions bound to
+ * the layer's state. A shelf installs five layers per book: only the three objects are made here. */
+export function applyBookReflectionSurface(material, { seed = '', strength = .018, uvScale = [1, 1], environmentReflection = 1 } = {}) {
+  if (!material?.isMeshStandardMaterial) return material;
+  const host = reflectionHost(), existing = host.installed.get(material);
+  if (existing) {
+    existing.setSeed(seed); existing.setStrength(strength); existing.setUvScale(uvScale); existing.setEnvironmentReflection(environmentReflection);
+    return material;
+  }
+  const rust = host.rust, n = host.numbers;
+  rust.reflection_setup(n, seed, strength, environmentReflection, uvScale);
+  const uniforms = { bookReflectionPhase:{ value:new Vector3(n[0], n[1], n[2]) }, bookReflectionStrength:{ value:n[4] * n[3] },
+    bookReflectionUvScale:{ value:new Vector2(n[6], n[7]) }, bookEnvironmentReflection:{ value:n[5] } };
+  const r = { uniforms, amplitude:n[3], slope:n[4], three:host.three };
+  const controls = { uniforms, setEnvironmentReflection:rust.book_reflection_set_environment.bind(null, r),
+    setStrength:rust.book_reflection_set_strength.bind(null, r), setSeed:rust.book_reflection_set_seed.bind(null, r),
+    setUvScale:rust.book_reflection_set_uv_scale.bind(null, r) };
+  host.installed.set(material, controls);
+  material.userData.bookReflectionSurface = controls;
+  // Capture the prior key before replacing onBeforeCompile: Three's default
+  // cache key is the hook's source. Book phases/strength are only uniforms,
+  // so hundreds of books still share a shader program for a material variant.
+  const before = material.onBeforeCompile, key = `${material.customProgramCacheKey()}|book-reflection-surface-v2`;
+  material.onBeforeCompile = rust.book_reflection_compile.bind(null, host, r, material, before);
+  material.customProgramCacheKey = () => key;
+  material.needsUpdate = true;
+  return material;
 }
 let reflectionHostObject;
 const reflectionHost = () => reflectionHostObject ||= { rust:needRustShelf(), three:{ Vector2, Vector3 }, installed:new WeakMap(),
-  patches:new Map(), rememberedPatch, physicalChunk, mapsChunk, constant:value => value };
+  patches:new Map(), rememberedPatch, physicalChunk, mapsChunk, numbers:new Float64Array(8) };

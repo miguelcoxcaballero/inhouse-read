@@ -7,9 +7,8 @@
 //! read the same state.
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::f64::consts::PI;
 use wasm_bindgen::{prelude::*,JsCast};
-use js_sys::{Array,Float32Array,Function,JsString,Object,Promise,Reflect,Set,Uint8Array};
+use js_sys::{Array,Function,JsString,Object,Promise,Reflect,Set,Uint8Array};
 use crate::host::{absent,jmax,jmin,num,truthy};
 use crate::book_paint::Canvas2d;
 
@@ -65,7 +64,6 @@ fn bget(v:&JsValue,name:&'static str)->JsValue{crate::host::get(v,k(name))}
 fn word(t:&'static str)->JsValue{JsValue::from_str(k(t))}
 fn n(x:f64)->JsValue{JsValue::from_f64(x)}
 fn b(x:bool)->JsValue{JsValue::from_bool(x)}
-fn range(message:&str)->JsValue{js_sys::RangeError::new(message).into()}
 /// `String(value)`.
 fn string(v:&JsValue)->String{crate::host::text_of(v)}
 /// `a ?? b`.
@@ -94,7 +92,6 @@ fn make(three:&JsValue,class:&'static str,args:&[&JsValue])->R<JsValue>{
 }
 fn object(fields:&[(&'static str,JsValue)])->R<JsValue>{let o:JsValue=Object::new().into();for(key,value)in fields{put(&o,key,value)?;}Ok(o)}
 fn set3(target:&JsValue,name:&'static str,x:f64,y:f64,z:f64)->R<()>{read(target,name)?.unchecked_into::<Triple>().set_triple(x,y,z)?;Ok(())}
-fn pixel_ratio()->JsValue{let ratio=crate::host::get(&crate::host::global(),"devicePixelRatio");if ratio.as_f64().is_some(){ratio}else{n(1.0)}}
 fn text_seed(text:&str)->f64{f64::from(crate::spine_surface::spine_text_seed(JsString::from(text)))}
 /// The surface finish table entry the host keeps for `value` (fallback as `surfaceFinish` takes it).
 fn finish(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
@@ -175,88 +172,6 @@ pub fn book_model_endpaper(host:&JsValue)->R<JsValue>{
  Ok(texture)
 }
 
-/// A numeric Rust mesh (page block, leaves, endpaper, page paper): its own arrays, installed without a copy.
-#[wasm_bindgen]
-pub fn book_paper_mesh(three:&JsValue,buffers:&JsValue)->R<JsValue>{
- if !truthy(buffers){return Ok(JsValue::NULL);}
- let geometry=make(three,"BufferGeometry",&[])?;
- for(name,key,size)in[("position","positions",3.0),("normal","normals",3.0),("uv","uvs",2.0),("color","colors",3.0)]{
-  let attribute=make(three,"BufferAttribute",&[&read(buffers,key)?,&n(size)])?;
-  call(&geometry,"setAttribute",&[&word(name),&attribute])?;
- }
- call(&geometry,"setIndex",&[&make(three,"BufferAttribute",&[&read(buffers,"indices")?,&n(1.0)])?])?;
- for group in js_sys::try_iter(&read(buffers,"groups")?)?.ok_or_else(||JsValue::from(js_sys::TypeError::new("groups is not iterable")))?{
-  let group=group?;
-  call(&geometry,"addGroup",&[&read(&group,"start")?,&read(&group,"count")?,&read(&group,"materialIndex")?])?;
- }
- Ok(geometry)
-}
-
-/// Both boards and both binding ends, as bookCase cut book_case_geometry's buffer.
-struct Case{data:Vec<f32>,groups:[f32;6],front:(usize,usize),board:[(usize,usize);3],cap:Option<[(usize,usize);4]>}
-fn finite_positive(v:&JsValue)->bool{v.as_f64().is_some_and(|x|x.is_finite()&&x>0.0)}
-#[allow(clippy::too_many_arguments)]
-fn case_parts(width:&JsValue,height:&JsValue,depth:f64,shelf:bool,overview:bool,thickness:&JsValue,segments:f64,rim:f64)->R<Case>{
- if !(finite_positive(width)&&finite_positive(height)&&depth.is_finite()&&depth>0.0)
-  ||(segments!=0.0&&!segments.is_nan()&&!finite_positive(thickness)){return Err(range("Medidas de tapas no válidas."));}
- // `segments` reaches the core as the engine's ToUint32 would pass it to a u32 parameter.
- let data=crate::book_case::book_case_geometry(num(width),num(height),depth,shelf,overview,num(thickness),segments as u32,rim);
- let head=|i:usize|data[i] as usize;
- let (vertices,fronts,cap_vertices,cap_indices)=(head(0),head(5),head(6),head(7));
- let groups=[data[1],data[2],0.0,data[3],data[4],1.0];
- let mut at=8usize;let mut take=|length:usize|{let span=(at,at+length);at+=length;span};
- let front=take(fronts*3);
- let board=[take(vertices*3),take(vertices*2),take(vertices*3)];
- let cap=if cap_vertices!=0{Some([take(cap_vertices*3),take(cap_vertices*3),take(cap_vertices*2),take(cap_indices)])}else{None};
- Ok(Case{data,groups,front,board,cap})
-}
-impl Case{
- fn slice(&self,(from,to):(usize,usize))->JsValue{Float32Array::from(&self.data[from..to]).into()}
- /// An ExtrudeGeometry's own attributes and groups (its order: position, uv, normal).
- fn board(&self,three:&JsValue,front:bool)->R<JsValue>{
-  let geometry=make(three,"BufferGeometry",&[])?;
-  put(&geometry,"type",&word("ExtrudeGeometry"))?;
-  for(name,span,size)in[("position",self.board[0],3.0),("uv",self.board[1],2.0),("normal",self.board[2],3.0)]{
-   call(&geometry,"setAttribute",&[&word(name),&make(three,"Float32BufferAttribute",&[&self.slice(span),&n(size)])?])?;
-  }
-  let groups:Vec<f32>=if front{self.data[self.front.0..self.front.1].to_vec()}else{self.groups.to_vec()};
-  for group in groups.chunks(3){call(&geometry,"addGroup",&[&n(f64::from(group[0])),&n(f64::from(group[1])),&n(f64::from(group[2]))])?;}
-  Ok(geometry)
- }
- /// A ShapeGeometry's: the index as setIndex(array) makes it, then position, normal, uv.
- fn cap(&self,three:&JsValue)->R<JsValue>{
-  let cap=self.cap.ok_or_else(||JsValue::from(js_sys::TypeError::new("Cannot destructure the cap of a case without one")))?;
-  let geometry=make(three,"BufferGeometry",&[])?;
-  put(&geometry,"type",&word("ShapeGeometry"))?;
-  let wide=self.data[cap[3].0..cap[3].1].iter().any(|&value|value>=65535.0);
-  let index=make(three,if wide{"Uint32BufferAttribute"}else{"Uint16BufferAttribute"},&[&self.slice(cap[3]),&n(1.0)])?;
-  call(&geometry,"setIndex",&[&index])?;
-  for(name,span,size)in[("position",cap[0],3.0),("normal",cap[1],3.0),("uv",cap[2],2.0)]{
-   call(&geometry,"setAttribute",&[&word(name),&make(three,"Float32BufferAttribute",&[&self.slice(span),&n(size)])?])?;
-  }
-  Ok(geometry)
- }
-}
-
-/// A board on its own (boardGeometry): rounded edges, cover UVs on the faces.
-#[wasm_bindgen]
-pub fn book_board_geometry(three:&JsValue,width:&JsValue,height:&JsValue,depth:&JsValue,shelf:&JsValue,overview:&JsValue)->R<JsValue>{
- if !finite_positive(depth){return Err(range("Medidas de tapas no válidas."));}
- case_parts(width,height,num(depth),truthy(shelf),truthy(overview),&n(0.0),0.0,0.0)?.board(three,false)
-}
-/// The case of a model on its own (bookCaseGeometries): front board with its outside/inside groups,
-/// back board, and the tail and head ends of the binding.
-#[wasm_bindgen]
-#[allow(clippy::too_many_arguments)]
-pub fn book_case_geometries(three:&JsValue,width:&JsValue,height:&JsValue,board:&JsValue,thickness:&JsValue,shelf:&JsValue,overview:&JsValue,segments:&JsValue,rim:&JsValue)->R<JsValue>{
- if !finite_positive(board){return Err(range("Medidas de tapas no válidas."));}
- let segments_value=if segments.is_undefined(){0.0}else{num(segments)};
- let parts=case_parts(width,height,num(board),truthy(shelf),truthy(overview),thickness,segments_value,num(rim))?;
- let (front,back)=(parts.board(three,true)?,parts.board(three,false)?);
- let caps=Array::new();caps.push(&parts.cap(three)?);caps.push(&parts.cap(three)?);
- object(&[("front",front),("back",back),("caps",caps.into())])
-}
-
 /// The generated cloth case of a book with no jacket (or while its jacket downloads).
 fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,texture_height:f64,max_dimension:f64,level:&JsValue)->R<JsValue>{
  let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
@@ -321,19 +236,11 @@ pub fn book_light_scene(three:&JsValue,scene:&JsValue,environment:&JsValue)->R<J
 fn patched(host:&JsValue,cache:&'static str,keys:&[&JsValue],patch:JsValue)->R<JsValue>{
  crate::host::call(&read(host,"rememberedPatch")?,"rememberedPatch",&[&read(host,cache)?,&list(keys),&patch])
 }
+fn list(items:&[&JsValue])->JsValue{let a=Array::new();for item in items{a.push(item);}a.into()}
 fn rust_export(host:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{bind(&read(&read(host,"rust")?,name)?,args)}
-fn constant(host:&JsValue,value:&JsValue)->R<JsValue>{bind(&read(host,"constant")?,&[value])}
-/// Seen almost edge-on (the lifted book's front view), spine lettering shrinks into bright slivers along the
-/// rolled edge. Only while the spine as a whole faces away, the surface that turns from the viewer shows plain
-/// cloth; the rules near the joint, which still face the viewer, keep their ink. Returns `(book, style) => …`.
-fn spine_fade(host:&JsValue,material:&JsValue)->R<JsValue>{
- let three=read(host,"three")?;
- let uniforms=object(&[("spineCloth",object(&[("value",make(&three,"Color",&[])?)])?),("spineClothMetal",object(&[("value",n(0.0))])?),
-  ("spineClothRough",object(&[("value",n(0.88))])?)])?;
- put(material,"onBeforeCompile",&rust_export(host,"book_model_spine_fade_compile",&[host,&uniforms])?)?;
- put(material,"customProgramCacheKey",&constant(host,&word("spine-grazing-fade"))?)?;
- rust_export(host,"book_model_spine_fade_update",&[host,&uniforms])
-}
+/// The spine's grazing fade, installed by the host (spineGrazingFade): seen almost edge-on (the lifted book's
+/// front view), spine lettering shrinks into bright slivers along the rolled edge. Only while the spine as a
+/// whole faces away, the surface that turns from the viewer shows plain cloth.
 #[wasm_bindgen]
 pub fn book_model_spine_fade_compile(host:&JsValue,uniforms:&JsValue,shader:&JsValue)->R<()>{
  Object::assign(read(shader,"uniforms")?.unchecked_ref(),uniforms.unchecked_ref());
@@ -352,20 +259,9 @@ pub fn book_model_spine_fade_update(host:&JsValue,uniforms:&JsValue,book:&JsValu
  put(&read(uniforms,"spineClothRough")?,"value",&read(&surface,"roughness")?)
 }
 fn finish_entry(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
-/// Relief reaches the shader through the clearcoat normal map. The same tangent-space normal also bends the
-/// base layer's normal, so the raised zones read under a matte, satin or glossy laminate alike. Neutral
-/// placeholder maps leave every pixel unchanged. Returns the relief's uniforms.
-fn install_relief(host:&JsValue,material:&JsValue)->R<JsValue>{
- let (previous_hook,previous_key)=(read(material,"onBeforeCompile")?,call(material,"customProgramCacheKey",&[])?);
- let three=read(host,"three")?;
- let uniforms=object(&[("bookReliefBaseFinish",object(&[("value",make(&three,"Vector3",&[])?)])?),("bookReliefStrength",object(&[("value",n(0.0))])?)])?;
- // The physical chunk as it is when the relief is installed, patched once per chunk text.
- let chunk=read(&read(&three,"ShaderChunk")?,"lights_physical_fragment")?;
- let physical=patched(host,"reliefPatches",&[&word("physical"),&chunk],rust_export(host,"book_relief_physical",&[&chunk])?)?;
- put(material,"onBeforeCompile",&rust_export(host,"book_model_relief_compile",&[host,&uniforms,material,&previous_hook,&physical])?)?;
- put(material,"customProgramCacheKey",&constant(host,&JsValue::from(format!("{}|cover-relief-color-v2",string(&previous_key))))?)?;
- Ok(uniforms)
-}
+/// The cover relief's hook, installed by the host (installCoverRelief): relief reaches the shader through the
+/// clearcoat normal map. The same tangent-space normal also bends the base layer's normal, so the raised zones
+/// read under a matte, satin or glossy laminate alike.
 #[wasm_bindgen]
 pub fn book_model_relief_compile(host:&JsValue,uniforms:&JsValue,material:&JsValue,previous:&JsValue,physical:&JsValue,shader:&JsValue,renderer:&JsValue)->R<()>{
  let previous=previous.dyn_ref::<Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new("previousHook.call is not a function")))?;
@@ -387,7 +283,6 @@ fn bind(function:&JsValue,args:&[&JsValue])->R<JsValue>{
 fn own(s:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{
  let mut all=vec![s];all.extend_from_slice(args);bind(&read(&read(&state(s,"host"),"rust")?,name)?,&all)
 }
-fn hosted(s:&JsValue,name:&'static str)->R<JsValue>{bind(&read(&state(s,"host"),name)?,&[s])}
 fn state(s:&JsValue,name:&'static str)->JsValue{get(s,name)}
 fn invalidate(s:&JsValue)->R<()>{call_opt(&get(&state(s,"group"),"userData"),"invalidate",&[])}
 fn bump(s:&JsValue,name:&'static str)->R<f64>{let next=num(&state(s,name))+1.0;putn(s,name,next)?;Ok(next)}
@@ -828,240 +723,17 @@ pub fn book_model_edge_appearance(s:&JsValue,book:&JsValue)->R<()>{
 }
 
 // ---- construction ------------------------------------------------------------------------------------
+// createBookModel (src/js/book-model.js) makes and wires three's objects in one pass over `s`; the module
+// adds the parts it keeps for later updates.
 
-fn mesh(three:&JsValue,geometry:&JsValue,material:&JsValue)->R<JsValue>{make(three,"Mesh",&[geometry,material])}
-fn named(target:&JsValue,name:&'static str)->R<()>{put(target,"name",&word(name))}
-fn add(parent:&JsValue,child:&JsValue)->R<()>{call(parent,"add",&[child])?;Ok(())}
-fn list(items:&[&JsValue])->JsValue{let a=Array::new();for item in items{a.push(item);}a.into()}
-fn reflect(host:&JsValue,material:&JsValue,fields:&[(&'static str,JsValue)])->R<()>{call(host,"reflect",&[material,&object(fields)?])?;Ok(())}
-
-/// Build one book. `shelf`, `overview`, `inspectionResolution` and `eagerRelief` are the options as the host
-/// destructured them; width, height and thickness are passed on to the host exactly as given.
+/// The reading ribbon of a model whose book has a bookmark (`s.bookmark`), added to its group.
 #[wasm_bindgen]
-#[allow(clippy::too_many_arguments)]
-pub fn book_model_create(host:&JsValue,book:&JsValue,style:&JsValue,width:&JsValue,height:&JsValue,thickness:&JsValue,
- cover_url:&JsValue,shelf:&JsValue,overview:&JsValue,inspection:&JsValue,eager:&JsValue)->R<JsValue>{
- let three=read(host,"three")?;
- let (w,h,t)=(num(width),num(height),num(thickness));
- let s:JsValue=Object::new().into();
- let group=make(&three,"Group",&[])?;
- let quality=crate::book_model_policy::book_model_plan(h,truthy(shelf),truthy(overview),num(inspection),pixel_ratio())?;
- let inspection=read(&quality,"inspectionResolution")?;
- let user=read(&group,"userData")?;
- put(&user,"inspectionResolution",&inspection)?;
- put(&user,"isOverview",&b(truthy(overview)))?;put(&user,"overview",&b(truthy(overview)))?;
- put(&user,"detailLevel",&read(&quality,"detailLevel")?)?;
- let texture_height=read(&quality,"textureHeight")?;let max_texture=read(&quality,"maxTextureDimension")?;
- let binding_segments=read(&quality,"bindingSegments")?;let relief_rows=read(&quality,"reliefRows")?;
- let ribbon_segments=read(&quality,"ribbonSegments")?;let detail=truthy(&read(&quality,"detail")?);
- let id=||or(opt(book,"shelfVisualId"),||or(opt(book,"id"),||word("")));
- let seed=text_seed(&format!("ribbon|{}|{}",string(&id()),string(&or(opt(book,"title"),||word("")))));
- let ribbon_seed=if seed==0.0||seed.is_nan(){1.0}else{seed};
- let level=read(&user,"detailLevel")?;let ratio=w/h;
- let surface_seed=string(&or(opt(book,"shelfVisualId"),||or(opt(book,"id"),||or(opt(book,"path"),||or(opt(book,"title"),||word("book"))))));
- for(key,value)in[("host",host.clone()),("three",three.clone()),("group",group.clone()),("book",book.clone()),("style",style.clone()),
-  ("width",width.clone()),("height",height.clone()),("thickness",thickness.clone()),("coverUrl",cover_url.clone()),
-  ("shelf",shelf.clone()),("overview",overview.clone()),("inspectionResolution",inspection.clone()),("detail",b(detail)),
-  ("level",level.clone()),("ratio",n(ratio)),("textureHeight",texture_height),("maxTextureDimension",max_texture),
-  ("bindingSegments",binding_segments.clone()),("reliefRows",relief_rows.clone()),("ribbonSegments",ribbon_segments),
-  ("ribbonSeed",n(ribbon_seed)),("disposed",JsValue::FALSE)]{put(&s,key,&value)?;}
- let cloth=make(&three,"MeshStandardMaterial",&[&object(&[("color",bread(style,"color")?),("roughness",n(0.86))])?])?;
- put(&s,"cloth",&cloth)?;
- reflect(host,&cloth,&[("seed",JsValue::from(format!("{surface_seed}|back"))),("strength",n(0.018))])?;
- let surface=call(host,"spine",&[book,style,height,thickness,shelf,overview,&inspection])?;
- put(&s,"surface",&surface)?;
- let options:JsValue=Object::assign(&Object::new(),&Object::from(read(&surface,"material")?)).into();
- put(&options,"side",&read(&three,"DoubleSide")?)?;
- let binding=make(&three,"MeshPhysicalMaterial",&[&options])?;
- put(&s,"binding",&binding)?;
- let fade=if !truthy(shelf)&&!truthy(overview){spine_fade(host,&binding)?}else{JsValue::NULL};
- put(&s,"updateSpineFade",&fade)?;
- if !absent(&fade){crate::host::call(&fade,"updateSpineFade",&[book,style])?;}
- reflect(host,&binding,&[("seed",JsValue::from(format!("{surface_seed}|binding"))),("strength",n(0.014))])?;
- // Painted once, by the cover source below (or as the placeholder while a download is pending).
- let cover=make(&three,"MeshPhysicalMaterial",&[&object(&[("map",JsValue::NULL)])?])?;
- put(&s,"cover",&cover)?;
- // The clearcoat + relief program is costly to shade: views that only fly a book skip it unless the cover
- // already has a relief; shelf books keep cheap materials until a relief is selected.
- let armed=((detail||truthy(&inspection))&&truthy(eager))||truthy(&bread(book,"coverRelief")?);
- put(&s,"reliefArmed",&b(armed))?;
- put(&s,"coverFinishValue",&bread(book,"coverFinish")?)?;
- laminate(&s,&bread(book,"coverFinish")?)?;
- // Keep the broad studio reflection from washing out printed ink at an oblique angle.
- reflect(host,&cover,&[("seed",JsValue::from(format!("{surface_seed}|cover"))),("strength",n(0.018)),("environmentReflection",n(0.75))])?;
- put(&s,"reliefUniforms",&install_relief(host,&cover)?)?;
- relief_base_finish(&s)?;
- if armed{put(&s,"reliefArmed",&JsValue::FALSE)?;book_model_arm_relief(&s)?;}
- // 224 threads per board height: below ~3 device pixels a thread the weave fades to a quiet tooth.
- let weave=crate::book_surface_policy::book_weave_strength(h,pixel_ratio());
- putn(&s,"weaveStrength",weave)?;
- if detail||truthy(&inspection){
-  put(&cloth,"normalMap",&shared_built(host,"cloth",|host|book_model_tile_normals(host,"cloth"))?)?;
-  call(&read(&read(&cloth,"normalMap")?,"repeat")?,"set",&[&n(14.0*ratio),&n(14.0)])?;
-  call(&read(&cloth,"normalScale")?,"setScalar",&[&n(0.5*weave)])?;
- }
- put(&s,"coverGrain",&JsValue::NULL)?;
- put(&s,"coverSurfaceFinish",&call(host,"surfaceFinish",&[&bread(book,"coverFinish")?])?)?;
- let board=h*0.007;putn(&s,"board",board)?;
- let front_cover=make(&three,"Group",&[])?;
- named(&front_cover,"front-cover-hinge")?;
- // Rotate around the board's binding edge, not the page block's centre.
- set3(&front_cover,"position",-w/2.0,0.0,t/2.0-board/2.0)?;
- add(&group,&front_cover)?;put(&s,"frontCover",&front_cover)?;
- // Both boards and both ends of the binding, each array built once.
- let parts=case_parts(width,height,board,truthy(shelf),truthy(overview),thickness,num(&binding_segments),if truthy(overview){0.0}else{board*1.1})?;
- // Inside of the board: the cloth turns in over its edges, the endpaper is pasted down over the rest.
- let inside=make(&three,"MeshStandardMaterial",&[&object(&[("color",bread(style,"color")?),("roughness",n(0.9))])?])?;
- put(&inside,"visible",&JsValue::FALSE)?;put(&s,"insideCover",&inside)?;
- let front_geometry=parts.board(&three,true)?;
- let front_materials=list(&[&cover,&cloth,&inside]);put(&s,"frontMaterials",&front_materials)?;
- let front_board=mesh(&three,&front_geometry,if truthy(overview){&cover}else{&front_materials})?;
- named(&front_board,"front-cover")?;set3(&front_board,"position",w/2.0,0.0,0.0)?;
- add(&front_cover,&front_board)?;put(&s,"frontBoard",&front_board)?;
- // Pastedown: wove endpaper inside the cloth turn-ins, darker where it bends into the joint.
- let (turn_in,joint)=(h*0.028,h*0.004);
- let (paste_width,paste_height)=(w-turn_in-joint,h-turn_in*2.0);
- let paper_buffers=call(host,"paperBuffers",&[&n(paste_width),&n(paste_height),&n(w-h*0.009*2.0),&n(h-h*0.009*2.0),&n(h*0.009),overview])?;
- if !truthy(&paper_buffers){return Err(range("Medidas de guardas no válidas."));}
- let paste_geometry=book_paper_mesh(&three,&read(&paper_buffers,"pastedown")?)?;
- let endpaper_map=if truthy(overview){JsValue::NULL}else{shared_built(host,"endpaper",book_model_endpaper)?};
- let endpaper=make(&three,"MeshStandardMaterial",&[&object(&[("color",word("#ffffff")),("roughness",n(1.0)),("vertexColors",JsValue::TRUE),("map",endpaper_map)])?])?;
- let endpaper_map=get(&endpaper,"map");
- if !absent(&endpaper_map){call(&read(&endpaper_map,"repeat")?,"set",&[&n(3.0*paste_width/paste_height),&n(3.0)])?;}
- let pastedown=mesh(&three,&paste_geometry,&endpaper)?;
- named(&pastedown,"endpaper")?;putn(&read(&pastedown,"rotation")?,"y",PI)?;put(&pastedown,"visible",&JsValue::FALSE)?;
- set3(&pastedown,"position",-w/2.0+joint+paste_width/2.0,0.0,-board*0.54)?;
- add(&front_board,&pastedown)?;put(&s,"pastedown",&pastedown)?;
- // One material for face and edges: a single draw call per back board.
- let back_board=mesh(&three,&parts.board(&three,false)?,&cloth)?;
- named(&back_board,"back-cover")?;putn(&read(&back_board,"position")?,"z",-t/2.0+board/2.0)?;
- add(&group,&back_board)?;
- let inset=h*0.009;putn(&s,"inset",inset)?;
- let (edges,page_block)=if truthy(overview){
-  // A thumbnail keeps a plain block and one tiny owned raster.
-  let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
-  putn(&canvas,"height",32.0)?;putn(&canvas,"width",32.0)?;
-  crate::book_paint::book_thumbnail_pages(call(&canvas,"getContext",&[&word("2d")])?.unchecked_ref::<Canvas2d>());
-  let map=make(&three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(&three,"SRGBColorSpace")?)?;
-  let edges=make(&three,"MeshPhysicalMaterial",&[&object(&[("map",map),("roughness",n(1.0))])?])?;
-  let block=mesh(&three,&make(&three,"BoxGeometry",&[&n(w-inset*2.0),&n(h-inset*2.0),&n(t-board*2.4)])?,&edges)?;
-  set3(&block,"position",inset*0.3,0.0,0.0)?;add(&group,&block)?;
-  (edges,block)
- }else{
-  // One crescent-shaped block and one shared atlas: a single draw call.
-  let size=if detail{512.0}else{256.0};
-  let map=crate::book_model_policy::book_shared_texture_with(JsValue::from(format!("pages-{size}")),||book_model_page_edges(host,size))?;
-  let edges=make(&three,"MeshPhysicalMaterial",&[&object(&[("map",map),("roughness",n(1.0)),("vertexColors",JsValue::TRUE)])?])?;
-  let geometry=call(host,"pageBlock",&[width,height,thickness,&object(&[("board",n(board)),("inset",n(inset)),("detail",b(detail))])?])?;
-  let block=mesh(&three,&geometry,&list(&[&edges]))?;
-  add(&group,&block)?;
-  (edges,block)
- };
- put(&s,"edges",&edges)?;
- apply_finish(&edges,finish(host,&bread(book,"pageEdgeFinish")?,&word("satin"))?,"paper",false)?;
- named(&page_block,"page-block")?;
- let (page_width,page_height)=(w-inset*2.0,h-inset*2.0);
- putn(&s,"pageWidth",page_width)?;putn(&s,"pageHeight",page_height)?;
- let page_front=t/2.0-board*1.2+board*0.03;
- // The paper runs on into the joint, where the leaf bends down into shade.
- let paper_geometry=book_paper_mesh(&three,&read(&paper_buffers,"paper")?)?;
- let page_paper=mesh(&three,&paper_geometry,&make(&three,"MeshBasicMaterial",&[&object(&[("color",word("#ffffff")),("toneMapped",JsValue::FALSE),("vertexColors",JsValue::TRUE)])?])?)?;
- set3(&page_paper,"position",inset*0.3-inset/2.0,0.0,page_front)?;
- // Fill depth with the opaque paper before shading the case beneath it.
- putn(&page_paper,"renderOrder",-2.0)?;put(&page_paper,"visible",&JsValue::FALSE)?;
- named(&page_paper,"reading-page-paper")?;add(&group,&page_paper)?;put(&s,"pagePaper",&page_paper)?;
- // The saved rasters stay resident for reopening, hidden behind the closed board by their common parent.
- let page_print=make(&three,"Group",&[])?;
- named(&page_print,"reading-page-print")?;put(&page_print,"visible",&JsValue::FALSE)?;add(&group,&page_print)?;
- put(&s,"pagePrint",&page_print)?;
- let page_material=make(&three,"MeshBasicMaterial",&[&object(&[("color",n(f64::from(0xffffffu32))),("toneMapped",JsValue::FALSE),("map",blank_page_map(&three)?),("transparent",JsValue::TRUE)])?])?;
- let page_image=mesh(&three,&make(&three,"PlaneGeometry",&[&n(page_width),&n(page_height)])?,&page_material)?;
- named(&page_image,"reading-page")?;
- set3(&page_image,"position",inset*0.3,0.0,page_front+board*0.02)?;
- put(&page_image,"visible",&JsValue::FALSE)?;add(&page_print,&page_image)?;
- put(&user,"pageSurface",&page_image)?;
- put(&s,"pageMaterial",&page_material)?;put(&s,"pageImage",&page_image)?;
- // The same page on white stock just behind the reader's own: the book opens and closes on white paper
- // and the reading theme fades over it (pageTheme 0 = white stock, 1 = the reader's theme).
- let stock_material=make(&three,"MeshBasicMaterial",&[&object(&[("color",n(f64::from(0xffffffu32))),("toneMapped",JsValue::FALSE),("map",blank_page_map(&three)?)])?])?;
- let stock_image=mesh(&three,&make(&three,"PlaneGeometry",&[&n(page_width),&n(page_height)])?,&stock_material)?;
- named(&stock_image,"reading-page-stock")?;
- set3(&stock_image,"position",inset*0.3,0.0,page_front+board*0.01)?;
- putn(&stock_image,"renderOrder",-1.0)?;put(&stock_image,"visible",&JsValue::FALSE)?;add(&page_print,&stock_image)?;
- put(&s,"stockMaterial",&stock_material)?;put(&s,"stockImage",&stock_image)?;
- for(key,value)in[("pageTheme",n(1.0)),("themeTone",JsValue::NULL),("stockTone",JsValue::NULL),("installedRaster",JsValue::NULL),
-  ("paperScratch",make(&three,"Color",&[])?)]{put(&s,key,&value)?;}
- put(&user,"setPageTheme",&hosted(&s,"pageTheme")?)?;
- put(&user,"getPageTheme",&hosted(&s,"getPageTheme")?)?;
- put(&user,"getPageTextures",&own(&s,"book_model_page_textures",&[])?)?;
- put(&user,"setPageSnapshot",&own(&s,"book_model_page_snapshot",&[])?)?;
- let bookmark=call(host,"bookmarkFor",&[book])?;
- for(key,value)in[("bookmark",bookmark.clone()),("ribbonMaterial",JsValue::NULL),("ribbonMesh",JsValue::NULL),("coverOpening",n(0.0)),
-  ("bookmarkWithdraw",n(0.0)),("clothColor",bread(style,"color")?)]{put(&s,key,&value)?;}
- if truthy(&bookmark){ribbon_mesh(&s)?;}
- // Lifted copies only: the leaves already read turn over with the board. Text paper is cooler and
- // smoother than the endpaper and, like the saved page beside it, skips tone mapping.
- let leaf_paper=if detail{
-  let color=call(&make(&three,"Color",&[&n(f64::from(0xffffffu32))])?,"multiply",&[&read(host,"leafLight")?])?;
-  let fields=[("color",color),("roughness",n(0.93)),("vertexColors",JsValue::TRUE),("map",shared_built(host,"endpaper",book_model_endpaper)?),("toneMapped",JsValue::FALSE)];
-  make(&three,"MeshStandardMaterial",&[&object(&fields)?])?
- }else{JsValue::NULL};
- put(&s,"leafPaper",&leaf_paper)?;
- // Finer than the endpaper: the fibres shrink into the grain of a book paper.
- if !absent(&leaf_paper){call(&read(&read(&leaf_paper,"map")?,"repeat")?,"set",&[&n(6.0*w/h),&n(6.0)])?;}
- let read_leaves=if detail{
-  let geometry=call(host,"leafStack",&[width,height,&n(leaf_depth(&s)?),&leaf_options(&s)?])?;
-  mesh(&three,&geometry,&list(&[&leaf_paper,&edges]))?
- }else{JsValue::NULL};
- put(&s,"readLeaves",&read_leaves)?;
- if truthy(&read_leaves){named(&read_leaves,"read-leaves")?;put(&read_leaves,"visible",&JsValue::FALSE)?;add(&front_cover,&read_leaves)?;}
- // The joint grooves are pressed into the board artwork: no raised strips on the covers.
- let binding_geometry=call(host,"binding",&[width,height,thickness,&binding_segments,&read(&surface,"relief")?,&relief_rows])?;
- let binding_mesh=mesh(&three,&binding_geometry,&binding)?;
- named(&binding_mesh,"binding")?;add(&group,&binding_mesh)?;put(&s,"bindingMesh",&binding_mesh)?;
- let cap_materials=Array::new();put(&s,"capMaterials",&cap_materials)?;
- for y in[-h/2.0,h/2.0]{
-  let material=make(&three,"MeshPhysicalMaterial",&[&object(&[("color",bread(style,"color")?),("side",read(&three,"DoubleSide")?)])?])?;
-  cap_finish(&s,&material,book)?;
-  let end=if y<0.0{"tail"}else{"head"};
-  reflect(host,&material,&[("seed",JsValue::from(format!("{surface_seed}|{end}"))),("strength",n(0.01)),("uvScale",list(&[&n(1.0/w),&n(1.0/t)]))])?;
-  let cap=mesh(&three,&parts.cap(&three)?,&material)?;
-  named(&cap,if y<0.0{"binding-tail-cap"}else{"binding-head-cap"})?;
-  cap_materials.push(&read(&cap,"material")?);
-  putn(&read(&cap,"rotation")?,"x",PI/2.0)?;putn(&read(&cap,"position")?,"y",y)?;add(&group,&cap)?;
- }
- let noop=read(host,"noop")?;
- for(key,value)in[("coverRevision",n(0.0)),("currentCoverUrl",JsValue::UNDEFINED),("releaseImage",noop.clone()),("resolveCoverReady",noop),
-  ("coverImageBounds",JsValue::NULL),("coverMaskSource",JsValue::NULL),("wantedRelief",JsValue::NULL),("reliefRevision",n(0.0)),
-  ("reliefMaps",JsValue::NULL),("reliefOwned",Set::new(&JsValue::UNDEFINED).into()),("reliefController",JsValue::NULL),
-  ("materialRevision",n(0.0))]{put(&s,key,&value)?;}
- // ---- cover relief: only the portable colour/tolerance/strength choice is saved; maps swap into slots
- // the cover material already compiled with, so selecting a relief links no program.
- put(&user,"coverRelief",&hosted(&s,"coverRelief")?)?;
- put(&user,"supportsCoverRelief",&JsValue::TRUE)?;
- put(&user,"prepareCoverRelief",&own(&s,"book_model_prepare_relief",&[])?)?;
- put(&user,"setCoverRelief",&hosted(&s,"setCoverRelief")?)?;
- put(&user,"updateCoverSource",&own(&s,"book_model_cover_source",&[])?)?;
- book_model_cover_source(&s,cover_url,&JsValue::UNDEFINED,&JsValue::UNDEFINED,&JsValue::UNDEFINED)?;
- if truthy(&bread(book,"coverRelief")?){call(&user,"setCoverRelief",&[&bread(book,"coverRelief")?])?;}
- // Only a download still in flight (or one that already failed) needs the generated case meanwhile.
- if !truthy(&get(&cover,"map")){
-  put(&cover,"map",&cover_texture(host,&three,book,style,num(&state(&s,"textureHeight")),num(&state(&s,"maxTextureDimension")),&level)?)?;
-  put(&cover,"needsUpdate",&JsValue::TRUE)?;
- }
- put(&user,"dispose",&own(&s,"book_model_dispose",&[])?)?;
- put(&user,"updateSpineAppearance",&own(&s,"book_model_spine_appearance",&[])?)?;
- put(&user,"updateCoverAppearance",&own(&s,"book_model_cover_appearance",&[])?)?;
- putn(&s,"ribbonBatch",0.0)?;put(&s,"ribbonDirty",&JsValue::FALSE)?;
- put(&user,"setCoverOpen",&hosted(&s,"coverOpen")?)?;
- put(&user,"setBookmarkWithdraw",&hosted(&s,"bookmarkWithdraw")?)?;
- put(&user,"setMotionPose",&hosted(&s,"motionPose")?)?;
- put(&user,"hasBookmark",&b(truthy(&bookmark)))?;
- put(&user,"updateBookmark",&own(&s,"book_model_update_bookmark",&[])?)?;
- put(&user,"updateEdgeAppearance",&own(&s,"book_model_edge_appearance",&[])?)?;
- if truthy(shelf)&&!truthy(overview){
-  put(&user,"preparePresentation",&hosted(&s,"preparePresentation")?)?;
-  put(&user,"prepareDetailPresentation",&hosted(&s,"prepareDetailPresentation")?)?;
- }
- Ok(group)
+pub fn book_model_ribbon(s:&JsValue)->R<()>{ribbon_mesh(s)}
+/// The generated case while a jacket is still downloading (or failed): installed as the cover's map.
+#[wasm_bindgen]
+pub fn book_model_cover_placeholder(s:&JsValue)->R<()>{
+ let cover=state(s,"cover");
+ put(&cover,"map",&cover_texture(&state(s,"host"),&state(s,"three"),&state(s,"book"),&state(s,"style"),num(&state(s,"textureHeight")),
+  num(&state(s,"maxTextureDimension")),&state(s,"level"))?)?;
+ put(&cover,"needsUpdate",&JsValue::TRUE)
 }

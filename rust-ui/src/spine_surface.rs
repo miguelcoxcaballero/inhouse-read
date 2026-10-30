@@ -114,12 +114,9 @@ fn with_built_stops<S:AsRef<str>>(gradient:JsValue,stops:&[(f64,S)])->R<JsValue>
 fn linear(c:&JsValue,x0:f64,y0:f64,x1:f64,y1:f64)->R<JsValue>{ctx(c).create_linear_gradient(x0,y0,x1,y1)}
 /// `context.setTransform?.(a, b, c, d, e, f)`.
 fn transform(context:&JsValue,a:f64,d:f64)->R<()>{optional(context,"setTransform",&[&val(a),&val(0.0),&val(0.0),&val(d),&val(0.0),&val(0.0)])?;Ok(())}
+/// FNV-1a over the string's UTF-16 units: one crossing for the whole text (book_reflection.rs, utf16_fnv).
 #[inline(never)]
-fn text_seed(text:&JsString)->u32{
- let mut h=2166136261u32;
- for i in 0..text.length(){h=(h^(text.char_code_at(i) as i64 as u32)).wrapping_mul(16777619);}
- h
-}
+fn text_seed(text:&JsString)->u32{crate::book_reflection::utf16_fnv(text,2166136261u32)}
 #[inline(never)]
 fn joined(parts:&[&JsValue])->JsString{let mut out=JsString::from("");for part in parts{out=out.concat(&string_of(part).into());}out}
 /// The small deterministic stream of `seededRandom`.
