@@ -2,8 +2,8 @@
 //! the ones Rust decides (reader_experience_policy.rs) get the experience (`host`) and the doorways
 //! of `kit`; the rest hand the call to the part of the experience that owns it (its lifecycle,
 //! preference and voice flows, actions, view and navigation queue), with the defaults the
-//! JavaScript methods had. The constructor, and the methods that close over a navigation step, stay
-//! with the class.
+//! JavaScript methods had. The constructor, the methods that close over a navigation step and the
+//! layout syncs its resize observers call (possibly every frame of a resize) stay with the class.
 use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
 use crate::host::{get, method, read, set};
@@ -55,8 +55,6 @@ pub fn experience_method(host: JsValue, name: &str, args: Array, kit: JsValue, u
         "closeVoice" => done(crate::reader_lifecycle::reader_close_voice(host, k("runtime.neuralEngine")?.unchecked_into())),
         "reset" => part(&host, "lifecycle", "reset", &[]),
         "show" => part(&host, "lifecycle", "show", &[&a(0)]),
-        "syncMiniPlayerLayout" => quiet(part(&host, "view", "syncMiniPlayerLayout", &[])),
-        "syncReturnLayout" => quiet(part(&host, "view", "syncReturnLayout", &[])),
         "setSleepChoice" => quiet(part(&host, "view", "setSleepChoice", &[&a(0)])),
         // setPreference(key, value, {restart = true} = {})
         "setPreference" => {

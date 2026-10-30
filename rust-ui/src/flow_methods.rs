@@ -5,8 +5,8 @@
 use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
 use crate::host::{absent, num, read, text_value};
-
 use crate::voice_methods::{door, kit_value};
+
 /// How a `bool` parameter of a generated binding reads a value: ToInt32, then non-zero.
 fn int32_flag(value: &JsValue) -> bool {
     if let Some(flag) = value.as_bool() { return flag; }

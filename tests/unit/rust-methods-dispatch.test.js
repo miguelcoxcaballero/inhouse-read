@@ -19,7 +19,7 @@ import {VoiceFlow} from '../../src/js/readers/voice-flow.js'
 import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 afterEach(()=>{fixture.ui=null})
-const classes=[[ReadingVoice,'voice_method',41],[NeuralVoicePicker,'picker_method',20],[ReaderController,'controller_method',27],[PdfReader,'pdf_method',17],[ReaderExperience,'experience_method',38],
+const classes=[[ReadingVoice,'voice_method',40],[NeuralVoicePicker,'picker_method',20],[ReaderController,'controller_method',27],[PdfReader,'pdf_method',17],[ReaderExperience,'experience_method',36],
  [ReaderLifecycle,'flow_method',5],[PreferenceFlow,'flow_method',2],[VoiceFlow,'flow_method',4],[ReaderChrome,'flow_method',1]]
 it('dispatches only members its Rust dispatcher knows',async()=>{
  // Timers a member might start on the fixture host never run.

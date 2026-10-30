@@ -10,7 +10,6 @@ use crate::host::read;
 use crate::picker_actions::{picker_cancel, picker_click, picker_use, picker_voice_name};
 use crate::picker_policy::{picker_dismiss, picker_dismissed, picker_offer_for, picker_render_offer, picker_snoozed, picker_state};
 use crate::picker_warm::{picker_attach, picker_cancel_warm, picker_changed, picker_paint, picker_refresh, picker_used, picker_warm, picker_warm_context, picker_warm_current, picker_warm_up};
-
 use crate::voice_methods::{captured, door};
 
 /// `NeuralVoicePicker.prototype[name].apply(host, args)`.

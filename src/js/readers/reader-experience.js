@@ -77,6 +77,8 @@ export class ReaderExperience {
     window.addEventListener('resize', resize)
     this.resizePanel = resize
   }
+  syncMiniPlayerLayout() { this.view.syncMiniPlayerLayout() }
+  syncReturnLayout() { this.view.syncReturnLayout() }
   jump(place, target) {
     return this.queueNavigation(current => this.actions.jump(place,target,current))
   }
@@ -89,6 +91,6 @@ export class ReaderExperience {
 // the lifecycle, preference and voice flows, actions, view and navigation queue that own the rest.
 rustMethods(ReaderExperience,'experience_method',`resetAppearance ~rotateReading open relocate readingMetrics updateReadingMetrics label
  showTab showPlaceTab updateMiniPlayer updateBookmarkButton queueNavigation returnToReading ~shareBook formatSize renderPlaces renderToc
- updateReturnButton refreshNames closeVoice reset show syncMiniPlayerLayout syncReturnLayout setSleepChoice setPreference applyPreferences bookLanguage
+ updateReturnButton refreshNames closeVoice reset show setSleepChoice setPreference applyPreferences bookLanguage
  chooseLanguage voiceBase populateVoices error savePlaces cancelNavigation addBookmark addQuote search endSearch`,
  {experience:experienceKit,runtime,preferences,state,places})
