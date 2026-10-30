@@ -124,6 +124,10 @@ mod cabinet;
 #[cfg(feature="app")]
 mod catalogue;
 #[cfg(feature="app")]
+mod supertonic_catalog;
+#[cfg(feature="app")]
+mod voice_catalogue;
+#[cfg(feature="app")]
 mod shelf_layout;
 #[cfg(feature="decor")]
 mod plant_catalogue;

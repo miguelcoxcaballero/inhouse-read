@@ -1,12 +1,12 @@
 // Adapted from Supertone's MIT-licensed web/helper.js inference recipe.
 // Copyright (c) 2025 Supertone Inc. See /licenses/supertonic-sdk-MIT.txt.
 // The model weights have the separate OpenRAIL-M licence.
-import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
 import { speedUpSpeech } from './synth-flow.js';
 import { loadedRustVoiceUI as voice } from '../../rust-voice-ui.js';
 import { supertonicNoise } from './supertonic-plan.js';
 import { yieldToMessages as yieldTask } from './task-yield.js';
-const KIT={languages:SUPERTONIC_LANGUAGES,styles:SUPERTONIC_STYLES,legacy:SUPERTONIC_LEGACY_STYLES,noise:supertonicNoise,speedUp:speedUpSpeech,always:()=>true,noop:()=>{}};
+// The languages and profiles it accepts are the voice module's own (rust-core supertonic_catalog.rs).
+const KIT={noise:supertonicNoise,speedUp:speedUpSpeech,always:()=>true,noop:()=>{}};
 // Six steps preserved the tested Dutch/Spanish/English intelligibility at
 // <1 RTF in the recorded single-thread desktop WASM benchmark, unlike FP32/8.
 export const SUPERTONIC_STEPS = 6;

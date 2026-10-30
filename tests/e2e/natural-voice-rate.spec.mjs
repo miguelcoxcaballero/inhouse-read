@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { extname,join,resolve,sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
-import { SUPERTONIC_ASSETS,SUPERTONIC_BYTES,SUPERTONIC_REVISION,SUPERTONIC_STYLES } from '../../src/js/readers/neural-voice/supertonic-catalog.js';
+import { SUPERTONIC_ASSETS,SUPERTONIC_BYTES,SUPERTONIC_REVISION,SUPERTONIC_STYLES } from '../unit/helpers/reference-supertonic-catalog.js';
 import { verifyAsset } from '../../scripts/prepare-supertonic-fixtures.mjs';
 
 const ROOT=resolve(fileURLToPath(new URL('../..',import.meta.url)));

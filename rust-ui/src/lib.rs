@@ -133,6 +133,9 @@ mod reading_streak;
 #[cfg(feature = "shelf")]
 mod native_room_shaders;
 
+#[cfg(any(feature = "ui", feature = "voice"))]
+mod voice_dictionary;
+
 #[cfg(feature = "voice")]
 include!("voice_lib.rs");
 

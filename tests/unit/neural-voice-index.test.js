@@ -62,8 +62,9 @@ describe('the contract (index.js)', () => {
       const imports = [...text.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
       expect(imports).toEqual(file === 'catalog.js' ? ['./supertonic-catalog.js'] : [])
     }
+    // The catalogue's tables come from the app core the page already compiled for the shelf: only its loader, no engine.
     const sharedData=readFileSync(new URL('../../src/js/readers/neural-voice/supertonic-catalog.js',import.meta.url),'utf8')
-    expect([...sharedData.matchAll(/^import .* from '([^']+)'/gm)]).toEqual([])
+    expect([...sharedData.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])).toEqual(['../../rust-core.js', '../../core-tables.js'])
   })
 
   it('loads the engine on first use: speak() before it is ready is delivered, in order, once it is', async () => {

@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
-import {neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
+import {neuralVoices} from '../unit/helpers/reference-neural-catalog.js'
 import {pickLanguage,selectedOption} from './helpers/audio-menus.mjs'
 const LESSAC='piper:en_US-lessac-medium',DAVEFX='piper:es_ES-davefx-medium'
 test('compiled audiobook selects the installed language and builds lookahead through Rust',async({page},info)=>{

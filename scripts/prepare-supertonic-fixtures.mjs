@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
-import { SUPERTONIC_ASSETS, SUPERTONIC_BASE, SUPERTONIC_REVISION } from '../src/js/readers/neural-voice/supertonic-catalog.js';
+import { SUPERTONIC_ASSETS, SUPERTONIC_BASE, SUPERTONIC_REVISION } from '../tests/unit/helpers/reference-supertonic-catalog.js';
 
 export async function verifyAsset(file, asset) {
   const { size } = await stat(file);
