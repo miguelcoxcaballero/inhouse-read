@@ -268,10 +268,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // Both shelf types are exact 600 x 250 x 1160 mm units (shelf-types.js).
   const specDepth = () => SHELF_SPECS[shelfType].depth * unitWidth / SHELF_SPECS[shelfType].width;
   let depth = specDepth();
-  // `plant:`/`lamp:` and the object id, or `book:` and the book's id (rust-ui/src/scene_host.rs).
-  const entryKey = (entry, index) => rust.scene_entry_key(entry, index);
-  // A new entry at rest with empty per-frame DOM caches (rust-ui/src/scene_host.rs).
-  const freshEntry = (entry, index) => rust.scene_fresh_entry(entry, index, new THREE.Object3D(), NO_FLAGS);
+  const entryKey = (entry, index) => entry.kind === 'plant' || entry.kind === 'lamp'
+    ? `${entry.kind}:${entry.node?.dataset.objectId ?? entry.key ?? index}`
+    : `book:${String(entry.book?.id ?? entry.node?.dataset.bookId ?? entry.book?.path ?? entry.book?.title ?? index)}`;
+  const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
+  const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
+    lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, hitRect:null, insertion:null,
+    overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
+    // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
+    classText:null, flags:NO_FLAGS, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
+    written:null, seen:0, domDirty:true });
   // The camera framing, the turn between the views, the inspection zoom and pan and the drop guide's place
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
@@ -369,8 +375,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     furniture.add(cabinet);
     // Its boards and panels stop the lamps' light (shelf-light-occlusion.js).
     occluderCabinet = cabinet; occluderDescription = shelfOccluders(cabinet);
-    // Geometry determines the shared floor: the lowest of the cabinet's local bounds (rust-ui/src/scene_host.rs).
-    floorY = rust.scene_local_bounds(cabinet)[1];
+    // Geometry determines the shared floor: long upright ends or the last
+    // shelf board can be the cabinet's lowest physical surface.
+    const localBounds = new THREE.Box3();
+    const measureLocal = (object, parentMatrix) => {
+      object.updateMatrix();
+      const matrix = parentMatrix.clone().multiply(object.matrix);
+      if (object.geometry) {
+        object.geometry.computeBoundingBox();
+        localBounds.union(object.geometry.boundingBox.clone().applyMatrix4(matrix));
+      }
+      for (const child of object.children) measureLocal(child, matrix);
+    };
+    measureLocal(cabinet, new THREE.Matrix4());
+    floorY = localBounds.min.y;
     floor.geometry.dispose();
     const room = roomPlan();
     floor.geometry = new THREE.BoxGeometry(room[2], 2, room[3]);
@@ -702,16 +720,31 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const insertedIds = [], exclusionRects = [];
   let exclusionsReady = false;
 
-  // What a book's materials, a plant's or a lamp's model are compared by (rust-ui/src/scene_dom.rs).
-  function materialKeys(entry) { return rust.scene_material_keys(entry, bookmarkFor); }
+  // What a book's materials are compared by, per book and record (JavaScript: through Rust it measured
+  // about 14 times slower, 10 ms for 300 books). A plant's or a lamp's model key: rust-ui/src/scene_dom.rs.
+  function materialKeys(entry) {
+    const { book, style, coverUrl } = entry;
+    return {
+      spine:JSON.stringify([style, book.spineTitleOverride, book.title, book.author, book.spineFontSize,
+        book.spineAuthorFontSize, book.spineFinish, book.spineSurfaceFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
+      cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.spineTitleOverride, book.title, book.author, book.format, style.fontFamily]]),
+      coverFinish:book.coverFinish,
+      coverRelief:JSON.stringify(book.coverRelief ?? null),
+      edgeFinish:book.pageEdgeFinish,
+      bookmark:JSON.stringify(bookmarkFor(book))
+    };
+  }
+
   const plantKeys = entry => rust.scene_model_key(entry, 0);
+  const plantShapeKeys = entry => rust.scene_model_key(entry, 1);
   const lampKeys = entry => rust.scene_model_key(entry, 2);
 
   // A selected book's slot is already painted empty. Its decoded lettering,
   // jacket and final ribbon can change while reading without changing that
   // image or its shadow casters. The live class matters: flags may still
   // describe the previous frame when a returning book is restored.
-  const hiddenBookMaterial = entry => rust.scene_hidden_material(entry);
+  const hiddenBookMaterial = entry => entry.kind !== 'plant' && entry.kind !== 'lamp' &&
+    !entry.insertion && !entry.trashDrop && Boolean(entry.node?.classList.contains('is-away'));
   const invalidateBookMaterial = entry => {
     if (!hiddenBookMaterial(entry)) settledInvalidate(true, 'quality', entry);
   };
@@ -724,7 +757,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const STARTUP_SETTLE_MS = 2500;
   let startupSettle = { until:0, timer:0, held:false };
   // Other books still decoding their first cover (the caller has just settled).
-  const coversPending = caller => rust.scene_covers_pending(bookEntries, caller);
+  const coversPending = caller => bookEntries.some(entry => entry !== caller && entry.kind !== 'plant' && entry.kind !== 'lamp' &&
+    entry.model?.visible && entry.model.userData.coverLoaded === undefined);
   const fontsPending = () => document.fonts?.status === 'loading';
   function settledInvalidate(preserveInspectionOverview, source, caller = null) {
     const gate = startupSettle;
@@ -759,7 +793,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Loading a font changes canvas pixels without changing material keys.
     // Repaint the retained models, including a quality replacement awaiting
     // its cover, without replacing the projected buttons or the room layout.
-    rust.scene_refresh_fonts(bookEntries);
+    for (const entry of bookEntries) {
+      if (entry.kind === 'plant' || entry.kind === 'lamp') continue;
+      for (const model of new Set([entry.model, entry.replacement])) {
+        if (!model) continue;
+        const redraw = model.userData.invalidate;
+        model.userData.invalidate = null;
+        try {
+          model.userData.updateSpineAppearance?.(entry.book, entry.style);
+          // Printed cover images have no generated lettering to refresh.
+          if (!entry.coverUrl) model.userData.updateCoverSource?.(null, entry.book, entry.style);
+        } finally { model.userData.invalidate = redraw; }
+      }
+    }
     settledInvalidate(false, 'fonts-ready');
   }
 
@@ -770,10 +816,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
     model.userData.invalidate = () => rust.scene_quality_invalidate(entry,model,qualityHost);
-    // Its maps' anisotropy, its entry and the meshes' shadow flags (rust-ui/src/scene_dom.rs).
-    // Fixtures own their casting: clear glass, opal diffusers and glowing bulb
-    // envelopes transmit the source placed inside them.
-    rust.scene_prepare_model(model, entry, renderer.capabilities);
+    model.traverse(object => {
+      for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
+        for (const key of ['map','normalMap','bumpMap','roughnessMap'])
+          if (material[key]) material[key].anisotropy = Math.min(16,renderer.capabilities.getMaxAnisotropy());
+    });
+    model.userData.entry = entry;
+    model.traverse(object => {
+      if (object.isMesh) {
+        // Fixtures own their shadow flags: clear glass, opal diffusers and
+        // glowing bulb envelopes transmit the source placed inside them.
+        // Making the shaded LED opaque here would extinguish its entire cone.
+        if (entry.kind !== 'lamp') object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
     if (entry.kind === 'lamp') { model.userData.shelfLampKeys = lampKeys(entry); model.userData.shownTint = lampTint(entry.kelvin).join(); }
     else if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
     else {
@@ -785,14 +842,27 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return model;
   }
 
-  // A candidate model is released once; an entry leaving the scene releases its replacement, model,
-  // lamp silhouette, plant touch surface and diagnostics (rust-ui/src/scene_host.rs).
-  function releaseCandidate(model) { rust.scene_release_candidate(model, releasedCandidates); }
-  function cancelReplacement(entry) { rust.scene_cancel_replacement(entry, releasedCandidates); }
+  function releaseCandidate(model) {
+    if (!model || releasedCandidates.has(model)) return;
+    releasedCandidates.add(model); model.userData.dispose?.();
+  }
+
+  function cancelReplacement(entry) {
+    entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
+    releaseCandidate(entry.replacement);
+    entry.replacement = null;
+    entry.qualityReplacement = false; entry.replacementReady = false;
+  }
+
   function releaseEntry(entry) {
     cancelInsertion(entry);
     cancelTrashDrop(entry, false);
-    if (rust.scene_release_entry(entry, semanticFoliage, releasedCandidates)) casterListDirty = true;
+    cancelReplacement(entry);
+    if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+    entry.lampHull?.free(); entry.lampHull = null;
+    const foliage = semanticFoliage.get(entry.node);
+    if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
+    clearPlantDiagnostics(entry.node);
   }
 
   // The drop's promise, the model's place at its pose and the drop's diagnostics (rust-ui/src/scene_host.rs).
@@ -996,17 +1066,55 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   };
 
-  // Each changed material key updates its part of the shown model in place (rust-ui/src/scene_dom.rs).
-  function updateMaterials(entry) { rust.scene_update_materials(entry, bookmarkFor, replaceWhenReady); }
+  // Each changed material key updates its part of the shown model in place.
+  function updateMaterials(entry) {
+    const model = entry.model;
+    if (!model || entry.kind === 'plant' || entry.kind === 'lamp') return;
+    const previous = model.userData.shelfKeys || {}, next = materialKeys(entry);
+    if (previous.spine !== next.spine) model.userData.updateSpineAppearance?.(entry.book, entry.style);
+    if (previous.cover !== next.cover) model.userData.updateCoverSource?.(entry.coverUrl, entry.book, entry.style);
+    if (previous.coverFinish !== next.coverFinish || previous.coverRelief !== next.coverRelief) model.userData.updateCoverAppearance?.(entry.book);
+    if (previous.edgeFinish !== next.edgeFinish) model.userData.updateEdgeAppearance?.(entry.book);
+    if (previous.bookmark !== next.bookmark) {
+      if (model.userData.updateBookmark) model.userData.updateBookmark(entry.book);
+      else { replaceWhenReady(entry); return; }
+    }
+    model.userData.shelfKeys = next;
+  }
 
-  // A book's newer record: its size follows its style, fitted to its shelf unless the layout dictated it,
-  // its model is replaced or updated in place, and saving metadata or an equivalent analysis does not
-  // repaint the room: only real shape, position and shown material changes do (rust-ui/src/scene_host.rs).
-  const recordHost = { bookmarkFor, place:placeBoxes, replace:replaceWhenReady, get rows() { return rows; },
-    get usableDepth() { return SHELF_SPECS[shelfType].usableDepth; }, get baggeboScale() { return unitWidth / BAGGEBO_SPEC.width; },
-    identity() { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); } };
+
+  const recordIo = new Float64Array(20);
   function updateRecord(entry, book, style, coverUrl, dimensions = null) {
-    return rust.scene_update_record(entry, book, style, coverUrl, dimensions, recordHost);
+    const previousKeys = entry.model?.userData.shelfKeys || materialKeys(entry);
+    const oldDimensions = [entry.width, entry.height, entry.thickness];
+    const oldPosition = [entry.x, entry.y, entry.depthInset, entry.shelf];
+    // The record's size follows its style, fitted to its shelf unless the layout dictated it (Rust).
+    const row = rows[entry.shelf];
+    recordIo.set([entry.y, entry.height, entry.width, entry.thickness, entry.style.heightRatio, style.heightRatio, style.coverRatio, style.width,
+      dimensions ? 1 : 0, row ? 1 : 0, row?.top, row?.bottom, SHELF_SPECS[shelfType].usableDepth, unitWidth / BAGGEBO_SPEC.width]);
+    rust.scene_record_dimensions(recordIo);
+    [entry.y, entry.height, entry.width, entry.thickness] = recordIo.subarray(14, 18);
+    if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
+    const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
+    entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
+    if (identityChanged) { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); }
+    placeBoxes(entry);
+    if (entry.model) {
+      const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
+      if (changedShape || entry.replacement) replaceWhenReady(entry);
+      else updateMaterials(entry);
+    }
+    const nextKeys = materialKeys(entry);
+    // Saving metadata or completing an equivalent analysis does not alter
+    // the painted room. Retain the latest record without shading and copying
+    // that same room again; real shape, position and material changes redraw.
+    const geometryChanged = oldDimensions.some((value,index) =>
+      value !== [entry.width, entry.height, entry.thickness][index]) || oldPosition.some((value,index) =>
+      value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]);
+    // Shape and slot changes still invalidate while hidden; they change the
+    // docking projection. A pending replacement keeps its existing lifecycle.
+    return geometryChanged || Boolean(entry.replacement) || (!hiddenBookMaterial(entry) &&
+      Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]));
   }
 
   function updateWoodTheme() {
@@ -2372,9 +2480,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       !paintedModalView || paintedModalView.progress !== sceneView.progress ||
       paintedModalView.inspectionZoom !== sceneView.zoom || paintedModalView.panX !== sceneView.panX || paintedModalView.panY !== sceneView.panY ||
       modalViewportChanged()) return false;
-    // Nothing moves, fades or tints, and every other entry's lift is the one its classes ask for: the
-    // selected book's pressure lift is no longer visible in the painted slot (rust-ui/src/scene_host.rs).
-    return rust.scene_modal_rest(bookEntries, selected, performance.now());
+    const now = performance.now();
+    for (const entry of bookEntries) {
+      if (entry.insertion || entry.trashDrop || entry.landing || entry.preview.active) return false;
+      if (entry.lampTint?.moving()) return false;
+      if (entry.lampPower && (entry.lampPower.value !== entry.lampPower.target ||
+        entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return false;
+      // Its pressure lift is no longer visible in the already painted slot.
+      // Every other entry retains its actual lift/drag frames and endpoint.
+      if (entry !== selected) {
+        const target = entry.node?.matches('.is-dragging, .is-lifted') ? 1
+          : entry.node?.classList.contains('is-pressed') && !entry.node.classList.contains('is-press-pending') ? .22 : 0;
+        if (entry.lift.value !== target) return false;
+      }
+    }
+    return true;
   }
 
   function modalViewportChanged() {
@@ -2581,10 +2701,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // A second finger changes a tentative book tap into navigation. Cancel
       // only the tiny pressure feedback; held books, returns, previews and
       // lamp fades keep their actual physics and demand frames.
-      // 0 while anything moves, 1 at rest, 2 at rest under a press's lift (rust-ui/src/scene_host.rs).
-      const rest = rust.scene_inspection_rest(bookEntries, now);
-      if (!rest) return;
-      if (rest === 2) inspectionSnapshot = null;
+      const stationary = bookEntries.every(entry => !entry.insertion && !entry.trashDrop && !entry.landing &&
+        !entry.preview.active && !entry.node?.matches('.is-pressed, .is-lifted, .is-dragging') &&
+        [entry.lift.value, entry.lift.from, entry.lift.target].every(value => Math.abs(value) <= .220001) &&
+        !entry.lampTint?.moving() &&
+        !(entry.lampPower?.duration && entry.lampPower.from !== entry.lampPower.target &&
+          now < entry.lampPower.started + entry.lampPower.duration));
+      if (!stationary) return;
+      const pressure = bookEntries.some(entry => entry.lift.value || entry.lift.from || entry.lift.target);
+      if (pressure) inspectionSnapshot = null;
       for (const entry of bookEntries) {
         Object.assign(entry.lift, { value:0, from:0, target:0, started:now });
         entry.state = stateFor(entry);
@@ -2816,9 +2941,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (drawPending || viewportChanged()) return false;
       const owner = currentNativeRendererPresentation(renderer);
       if (owner && owner !== nativeRoomLease) return false;
-      // One record per shown book, nothing under way and every previous record still shown as it was:
-      // the whole batch is validated before any record is assigned (rust-ui/src/scene_host.rs).
-      if (!rust.scene_adopt_records(bookEntries, previous, records, byNode, stateFor, canAdoptShelfMetadata)) return false;
+      const books = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp');
+      if (!Array.isArray(records) || records.length !== books.length ||
+          bookEntries.some(entry => entry.replacement || entry.plantQuality || entry.insertion || entry.trashDrop || entry.preview.active || entry.landing))
+        return false;
+      const byId = new Map(books.map(entry => [String(entry.book?.id), entry]));
+      if (byId.size !== books.length || !canAdoptShelfMetadata(previous, records)) return false;
+      for (const book of previous) {
+        const entry = byId.get(String(book.id));
+        if (!entry || entry.book !== book || !entry.node?.isConnected || byNode.get(entry.node) !== entry || stateFor(entry) !== entry.state)
+          return false;
+      }
+      // Validation of the entire batch precedes every reference assignment.
+      for (const book of records) byId.get(String(book.id)).book = book;
       acknowledgeRoom(roomCheckpoint);
       return true;
     },
@@ -2839,13 +2974,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // old solver otherwise interprets rounded CSS anchors as forces and
       // settles the same shared room differently on every screen.
       const resized = next.width !== width || next.height !== height || (next.unitWidth || next.width) !== unitWidth;
-      const samePlacements = resized && next.entries.length === bookEntries.length && rust.scene_same_placements(oldEntries, next.entries);
+      const samePlacements = resized && next.entries.length === bookEntries.length && next.entries.every((data,index) => {
+        const old = oldEntries.get(entryKey(data,index));
+        return old && old.shelf === data.shelf && (!data.book ||
+          JSON.stringify(old.book?.shelfPosition) === JSON.stringify(data.book.shelfPosition));
+      });
       if (!next.cloudRoom && resized && samePlacements && !motionGesture && !physicsInteracted &&
           !lastLocalSceneMoving && roomCheckpoint && normalizeShelfType(next.shelfType) === shelfType)
         pendingCloudPhysics = roomCheckpoint;
       if(next.cloudRoom){
         const ppm=unitWidth/SHELF_SPECS[shelfType].width*1000;
-        const painted=rust.scene_painted_poses(bookEntries,motionKey,width,ppm);
+        const painted=bookEntries.filter(e=>motionKey(e)).map(e=>{
+          const p=e.pose.position,q=e.pose.quaternion;
+          return [motionKey(e),(p.x+width/2)/ppm,p.y/ppm,p.z/ppm,q.x,q.y,q.z,q.w,e.pose.scale.x];
+        });
         if(reducedMotion.matches)roomTransition.clear();else roomTransition.begin(painted,performance.now());
         pendingCloudPhysics=rust.room_physics_with_local(localStorage.getItem(physicsStorageKey),roomCheckpoint,roomRecords())||'';
       }
@@ -2910,10 +3052,53 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (catalogNode && !catalog) { catalog = createShelfCatalog(); furniture.add(catalog); }
         else if (!catalogNode && catalog) { catalog.removeFromParent(); catalog.userData.dispose(); catalog = null; }
       }
-      // Each incoming entry takes over its old one by key, or starts fresh, with a resting preview (the layout
-      // already committed its destination) and its DOM written again: the old tree was just restored (rust-ui/src/scene_host.rs).
-      const retained = rust.scene_rebind_entries(next.entries, oldEntries, { foliage:semanticFoliage, styles:originalStyles,
-        release:releaseEntry, place:placeBoxes, fresh:freshEntry, record:(entry, data) => updateRecord(entry, data.book, data.style, data.coverUrl, data) });
+      const retained = [];
+      for (let index = 0; index < next.entries.length; index++) {
+        const data = next.entries[index], key = entryKey(data, index);
+        let entry = oldEntries.get(key);
+        if (entry) {
+          oldEntries.delete(key);
+          if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
+          if (data.kind === 'plant' || data.kind === 'lamp') {
+            const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
+            let retainModel = !changed;
+            if (changed) {
+              const recolored = data.kind === 'plant' && plantShapeKeys(entry) === plantShapeKeys(data) &&
+                entry.model?.userData.updatePotColor?.(data.potColorId);
+              if (!recolored) releaseEntry(entry);
+              else {
+                // The model cancelled maps painted with the former color.
+                // Clear the scene's handle too, so detail still required by
+                // the current inspection can be prepared again this draw.
+                entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
+                entry.model.userData.shelfPlantKeys = plantKeys(data); retainModel = true;
+              }
+            }
+            if (retainModel && entry.node !== data.node) {
+              const native = semanticFoliage.get(entry.node);
+              if (native && data.node) {
+                semanticFoliage.delete(entry.node);
+                // The outgoing node's hit target ceases to exist: a clone of its projected triangles and
+                // cache moves to the new button, without reprojecting leaves (rust-ui/src/scene_host.rs).
+                semanticFoliage.set(data.node,rust.scene_rebind_foliage(native,data.node));
+              }
+            }
+            if (entry.node !== data.node) clearPlantDiagnostics(entry.node);
+            Object.assign(entry, data); placeBoxes(entry);
+          } else { entry.node = data.node; updateRecord(entry, data.book, data.style, data.coverUrl, data); }
+        } else { entry = freshEntry(data, index); placeBoxes(entry); }
+        // The new layout has already committed the preview's destination.
+        // Retaining that offset would apply it twice; captured projected rects
+        // are handed to animateFromRects for the remaining release movement.
+        entry.preview = freshPreview();
+        entry.landing = null;
+        // The outgoing DOM was just restored and the new one may be a fresh tree:
+        // write every inline value of the projected nodes again and reread its state.
+        entry.written = null; entry.leanNode = null; entry.domDirty = true;
+        entry.key = key;
+        retained.push(entry);
+        if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
+      }
       for (const entry of oldEntries.values()) releaseEntry(entry);
       bookEntries = retained; casterIds = new Float64Array(bookEntries.length); casterListDirty = true; byNode.clear();
       // Lamp fixtures are structural scene data. Rebuild their cached list and
@@ -2943,11 +3128,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     animateFromRects(oldRects, { draggedKey } = {}) {
       if (reducedMotion.matches) return;
-      // Each entry that moved more than a pixel, and the dragged one among them (rust-ui/src/scene_dom.rs).
-      const stageRect = stage.getBoundingClientRect();
-      const [items, dragged] = rust.scene_reorder_items(bookEntries, oldRects, stageRect.left, stageRect.top, draggedKey);
+      const stageRect = stage.getBoundingClientRect(), items = [];
+      for (const entry of bookEntries) {
+        const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
+          oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
+        const targetRect = entry.tapRect || entry.hitRect || entry.rect;
+        if (!old || !targetRect) continue;
+        const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
+        if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });
+      }
       const started = performance.now();
       reorderItems = items; sceneView.beginReorder(started);
+      const dragged = draggedKey == null ? null : items.find(item =>
+        String(item.entry.node?.dataset.objectId ?? item.entry.key) === String(draggedKey))?.entry;
       if (dragged && dragged.lift.value > 0) {
         dragged.landing = { from:dragged.lift.value, started, duration:520 };
       }

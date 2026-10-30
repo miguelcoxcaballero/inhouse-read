@@ -95,7 +95,8 @@ function model(log,i){
   if((i>>name.length%5)&1||name==='updateSpineAppearance')data[name]=function(...args){log.push([name,this===data,...args.map(a=>a?.id??a)]);};
  return {userData:data};
 }
-it('updates shown materials and retains pending replacements with the same calls',()=>{
+// The in-place material update went back to JavaScript (scene-frame-5): both sides prepare with it.
+it('retains pending replacements with the same calls',()=>{
  let calls=0,kept=0,replaced=0;
  for(let i=0;i<120;i++){
   const logs=[[],[]],states=[];
@@ -104,7 +105,7 @@ it('updates shown materials and retains pending replacements with the same calls
    if(e.model&&i%2)e.model.userData.shelfKeys=(side?rust.scene_material_keys(e,bookmarkFor):keys(e,bookmarkFor));
    if(i%4===1)e.book={...e.book,progressFraction:.9};
    const replace=next=>log.push(['replace',next===e]);
-   if(side)rust.scene_update_materials(e,bookmarkFor,replace);else update(e,bookmarkFor,replace);
+   reference.updateMaterials(e,bookmarkFor,replace);
    e.replacement=i%5?model(log,i+1):null;e.qualityReplacement=i%13===0;
    if(e.replacement)e.replacement.userData.shelfReplacementTarget=i%3?{geometry:side?rust.scene_replacement_target(e,bookmarkFor).geometry:reference.replacementTarget(e,bookmarkFor).geometry,
     materials:{...(side?rust.scene_material_keys(e,bookmarkFor):keys(e,bookmarkFor)),bookmark:i%2?'old':undefined}}:undefined;
@@ -130,42 +131,10 @@ function scene3d(log,seed){
  };
  const root=make(0,seed);root.userData={};return root;
 }
-const shape=object=>JSON.stringify(object,(key,value)=>typeof value==='function'?undefined:key==='entry'?value.kind??'book':value);
-it('prepares and releases models with the same walks',()=>{
- for(let seed=0;seed<12;seed++)for(const kind of ['lamp','plant',undefined]){
-  const logs=[[],[]],[a,b]=[scene3d(logs[0],seed),scene3d(logs[1],seed)],entry={kind};
-  let calls=0;const renderer={capabilities:{getMaxAnisotropy(){calls++;return seed%2?8:32;}}};
-  reference.prepareModel(a,entry,renderer);const before=calls;rust.scene_prepare_model(b,entry,renderer.capabilities);
-  expect(shape(b)).toBe(shape(a));expect(b.userData.entry).toBe(entry);expect(calls-before).toBe(before);
+it('releases models with the same walk',()=>{
+ for(let seed=0;seed<12;seed++){
+  const logs=[[],[]],[a,b]=[scene3d(logs[0],seed),scene3d(logs[1],seed)];
   reference.releaseObject(a);rust.scene_release_object(b);
   expect(logs[1]).toEqual(logs[0]);
- }
-});
-it('repaints fonts and reorders entries as before',()=>{
- const logs=[[],[]];
- const entries=side=>Array.from({length:14},(_,i)=>{
-  const model=k=>({userData:{invalidate:`redraw${k}`,...(k%3?{updateSpineAppearance(...args){logs[side].push(['spine',k,this.invalidate,...args.map(a=>a?.id??a)]);}}:{}),
-   ...(k%2?{updateCoverSource(...args){logs[side].push(['cover',k,this.invalidate,...args.map(a=>a?.id??a)]);}}:{})}});
-  const shown=i%5?model(i):null;
-  return {kind:i%7===3?'plant':i%6===4?'lamp':'book',book:{id:`b${i}`},style:{id:`s${i}`},coverUrl:i%4?'':'blob:x',model:shown,replacement:i%3?model(i+20):i%2?shown:null};
- });
- const [a,b]=[entries(0),entries(1)];reference.refreshFonts(a);rust.scene_refresh_fonts(b);
- expect(logs[1]).toEqual(logs[0]);expect(logs[0].length).toBeGreaterThan(8);
- expect(b.map(e=>[e.model?.userData.invalidate,e.replacement?.userData.invalidate])).toEqual(a.map(e=>[e.model?.userData.invalidate,e.replacement?.userData.invalidate]));
- const rect=(left,top)=>({left,top,right:left+10,bottom:top+10,width:10,height:10});
- for(let seed=0;seed<20;seed++){
-  const list=Array.from({length:16},(_,i)=>{
-   const node=i%5?document.createElement('button'):null;
-   if(node&&(i+seed)%3)node.dataset.objectId=`o${i}`;if(node&&(i+seed)%4===1)node.dataset.bookId=`b${i}`;
-   return {key:`k${i}`,node,book:i%2?{id:`b${i}`}:undefined,tapRect:(i+seed)%3?rect(i*7,seed):undefined,hitRect:(i+seed)%5?rect(i*7+.25,seed):undefined,rect:rect(i,i)};
-  });
-  const old=new Map();
-  for(let i=0;i<16;i++)if((i*seed)%7!==3)old.set([`o${i}`,`b${i}`,`k${i}`][(i+seed)%3],rect(i*7+(i%4)*.4+seed%3,seed+(i%3)*.5));
-  const stage={left:seed%4*.5,top:-seed};
-  for(const dragged of [undefined,null,`o${seed%16}`,`k${seed%16}`,seed%16]){
-   const [items,entry]=reference.reorderItems(list,old,stage,dragged),[nativeItems,nativeEntry]=rust.scene_reorder_items(list,old,stage.left,stage.top,dragged);
-   expect(nativeItems.map(item=>[item.entry,item.x,item.y])).toEqual(items.map(item=>[item.entry,item.x,item.y]));
-   expect(nativeEntry??null).toBe(entry??null);
-  }
  }
 });

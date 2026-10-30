@@ -2,8 +2,6 @@
 // (bookshelf-scene.js before the move). The closure's variables are parameters here; the bodies are
 // unchanged. tests/unit/scene-host-wasm.test.js runs each against its Rust port on equal inputs.
 import * as THREE from 'three';
-import { clearPlantDiagnostics, lampKeys, plantKeys, plantShapeKeys, materialKeys as referenceMaterialKeys,
-  updateMaterials as referenceUpdateMaterials } from './reference-scene-dom.js';
 
 export function trashFootprint(bin) {
   const position = bin.position.clone(), rotation = bin.rotation.clone(), scale = bin.scale.clone();
@@ -37,42 +35,6 @@ export function woodTheme(dark, wood, backWood, darkWood, occlusionMaterial, roo
   wood.color.set(tones.wood); backWood.color.set(tones.back); darkWood.color.set(tones.trim);
   occlusionMaterial.opacity = tones === WOOD_TONES.dark ? 1 : .8;
   roomWallMaterial.color.set(darkPage() ? '#353434' : '#f0f1ed');
-}
-
-export const entryKey = (entry, index) => entry.kind === 'plant' || entry.kind === 'lamp'
-  ? `${entry.kind}:${entry.node?.dataset.objectId ?? entry.key ?? index}`
-  : `book:${String(entry.book?.id ?? entry.node?.dataset.bookId ?? entry.book?.path ?? entry.book?.title ?? index)}`;
-
-// rebuildFurniture's floor measurement; floorY was its min.y.
-export function localBounds(cabinet) {
-  const localBounds = new THREE.Box3();
-  const measureLocal = (object, parentMatrix) => {
-    object.updateMatrix();
-    const matrix = parentMatrix.clone().multiply(object.matrix);
-    if (object.geometry) {
-      object.geometry.computeBoundingBox();
-      localBounds.union(object.geometry.boundingBox.clone().applyMatrix4(matrix));
-    }
-    for (const child of object.children) measureLocal(child, matrix);
-  };
-  measureLocal(cabinet, new THREE.Matrix4());
-  return localBounds;
-}
-
-// updateLayout's check, after `resized && next.entries.length === bookEntries.length`.
-export function samePlacements(oldEntries, nextEntries) {
-  return nextEntries.every((data,index) => {
-    const old = oldEntries.get(entryKey(data,index));
-    return old && old.shelf === data.shelf && (!data.book ||
-      JSON.stringify(old.book?.shelfPosition) === JSON.stringify(data.book.shelfPosition));
-  });
-}
-
-export function paintedPoses(bookEntries, motionKey, width, ppm) {
-  return bookEntries.filter(e=>motionKey(e)).map(e=>{
-    const p=e.pose.position,q=e.pose.quaternion;
-    return [motionKey(e),(p.x+width/2)/ppm,p.y/ppm,p.z/ppm,q.x,q.y,q.z,q.w,e.pose.scale.x];
-  });
 }
 
 // updateLayout's rebinding of a retained plant's native foliage to `node` (data.node).
@@ -121,56 +83,10 @@ export function plantDiagnostics(model, node) {
   Object.assign(node.dataset, model.userData.shelfPlantDiagnostics);
 }
 
-// beginInspectionGesture's two scans: 0 not stationary, 1 stationary, 2 stationary with pressure.
-export function inspectionRest(bookEntries, now) {
-  const stationary = bookEntries.every(entry => !entry.insertion && !entry.trashDrop && !entry.landing &&
-    !entry.preview.active && !entry.node?.matches('.is-pressed, .is-lifted, .is-dragging') &&
-    [entry.lift.value, entry.lift.from, entry.lift.target].every(value => Math.abs(value) <= .220001) &&
-    !entry.lampTint?.moving() &&
-    !(entry.lampPower?.duration && entry.lampPower.from !== entry.lampPower.target &&
-      now < entry.lampPower.started + entry.lampPower.duration));
-  if (!stationary) return 0;
-  const pressure = bookEntries.some(entry => entry.lift.value || entry.lift.from || entry.lift.target);
-  return pressure ? 2 : 1;
-}
-
-// canDeferModalPaint's final scan of the entries.
-export function modalRest(bookEntries, selected, now) {
-  for (const entry of bookEntries) {
-    if (entry.insertion || entry.trashDrop || entry.landing || entry.preview.active) return false;
-    if (entry.lampTint?.moving()) return false;
-    if (entry.lampPower && (entry.lampPower.value !== entry.lampPower.target ||
-      entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return false;
-    if (entry !== selected) {
-      const target = entry.node?.matches('.is-dragging, .is-lifted') ? 1
-        : entry.node?.classList.contains('is-pressed') && !entry.node.classList.contains('is-press-pending') ? .22 : 0;
-      if (entry.lift.value !== target) return false;
-    }
-  }
-  return true;
-}
-
 // setMode's bin node when the view leaves the isometric room.
 export function hideTrashNode(trashNode) {
   trashNode.hidden = true; trashNode.inert = true; trashNode.tabIndex = -1;
   trashNode.setAttribute('aria-hidden', 'true'); trashNode.style.pointerEvents = 'none';
-}
-
-// adoptMetadataRecords after its scene-wide guards, up to the assignment of the records.
-export function adoptRecords(bookEntries, previous, records, byNode, stateFor, canAdoptShelfMetadata) {
-  const books = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp');
-  if (!Array.isArray(records) || records.length !== books.length ||
-      bookEntries.some(entry => entry.replacement || entry.plantQuality || entry.insertion || entry.trashDrop || entry.preview.active || entry.landing))
-    return false;
-  const byId = new Map(books.map(entry => [String(entry.book?.id), entry]));
-  if (byId.size !== books.length || !canAdoptShelfMetadata(previous, records)) return false;
-  for (const book of previous) {
-    const entry = byId.get(String(book.id));
-    if (!entry || entry.book !== book || !entry.node?.isConnected || byNode.get(entry.node) !== entry || stateFor(entry) !== entry.state)
-      return false;
-  }
-  for (const book of records) byId.get(String(book.id)).book = book;
-  return true;
 }
 
 // setLampPower's new fade; `animate` is `animate && !reducedMotion.matches`.
@@ -182,9 +98,6 @@ export function lampSwitch(entry, isOn, animate) {
     duration:animate ? 220 : 0 };
 }
 
-export const coversPending = (bookEntries, caller) => bookEntries.some(entry => entry !== caller && entry.kind !== 'plant' && entry.kind !== 'lamp' &&
-  entry.model?.visible && entry.model.userData.coverLoaded === undefined);
-
 // captureNativeInspection's reuse of the other tile's capture.
 export function sharedCapture(captured, overview, frame, raw, sourceFrame, sourceContext, sourceRevision, sourceMaterialized) {
   return Boolean(captured && captured.overview!==overview && captured.frame===frame && sourceFrame===frame &&
@@ -193,120 +106,3 @@ export function sharedCapture(captured, overview, frame, raw, sourceFrame, sourc
     raw.canvas.width===captured.width && raw.canvas.height===captured.height &&
     sourceContext.canvas.width===captured.width && sourceContext.canvas.height===captured.height);
 }
-
-// updateLayout's rebinding loop; the closure's maps and functions come in `host`, and the record keys are
-// the frozen originals of reference-scene-dom.js.
-export function rebindEntries(nextEntries, oldEntries, host) {
-  const { foliage:semanticFoliage, styles:originalStyles, release:releaseEntry, place:placeBoxes, fresh:freshEntry } = host;
-  const updateRecord = (entry, book, style, coverUrl, data) => host.record(entry, data);
-  const next = { entries:nextEntries };
-  const retained = [];
-  for (let index = 0; index < next.entries.length; index++) {
-    const data = next.entries[index], key = entryKey(data, index);
-    let entry = oldEntries.get(key);
-    if (entry) {
-      oldEntries.delete(key);
-      if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
-      if (data.kind === 'plant' || data.kind === 'lamp') {
-        const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
-        let retainModel = !changed;
-        if (changed) {
-          const recolored = data.kind === 'plant' && plantShapeKeys(entry) === plantShapeKeys(data) &&
-            entry.model?.userData.updatePotColor?.(data.potColorId);
-          if (!recolored) releaseEntry(entry);
-          else {
-            entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
-            entry.model.userData.shelfPlantKeys = plantKeys(data); retainModel = true;
-          }
-        }
-        if (retainModel && entry.node !== data.node) {
-          const native = semanticFoliage.get(entry.node);
-          if (native && data.node) {
-            semanticFoliage.delete(entry.node);
-            const svg = native.svg.cloneNode(true);
-            native.svg.remove();
-            const rebound = { ...native,svg,path:svg.querySelector(':scope > path'),
-              exclusions:svg.querySelector('clipPath path') };
-            data.node.append(svg); semanticFoliage.set(data.node,rebound);
-          }
-        }
-        if (entry.node !== data.node) clearPlantDiagnostics(entry.node);
-        Object.assign(entry, data); placeBoxes(entry);
-      } else { entry.node = data.node; updateRecord(entry, data.book, data.style, data.coverUrl, data); }
-    } else { entry = freshEntry(data, index); placeBoxes(entry); }
-    entry.preview = freshPreview();
-    entry.landing = null;
-    entry.written = null; entry.leanNode = null; entry.domDirty = true;
-    entry.key = key;
-    retained.push(entry);
-    if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
-  }
-  return retained;
-}
-
-export const hiddenBookMaterial = entry => entry.kind !== 'plant' && entry.kind !== 'lamp' &&
-  !entry.insertion && !entry.trashDrop && Boolean(entry.node?.classList.contains('is-away'));
-
-// updateRecord; the closure comes in `host` (as the scene's recordHost, plus the native dimensions step
-// the original called), the keys and the in-place update are the frozen originals of reference-scene-dom.js.
-export function updateRecord(entry, book, style, coverUrl, dimensions = null, host) {
-  const { bookmarkFor, place:placeBoxes, replace:replaceWhenReady, rows } = host;
-  const materialKeys = entry => referenceMaterialKeys(entry, bookmarkFor);
-  const updateMaterials = entry => referenceUpdateMaterials(entry, bookmarkFor, replaceWhenReady);
-  const recordIo = new Float64Array(20);
-  const previousKeys = entry.model?.userData.shelfKeys || materialKeys(entry);
-  const oldDimensions = [entry.width, entry.height, entry.thickness];
-  const oldPosition = [entry.x, entry.y, entry.depthInset, entry.shelf];
-  const row = rows[entry.shelf];
-  recordIo.set([entry.y, entry.height, entry.width, entry.thickness, entry.style.heightRatio, style.heightRatio, style.coverRatio, style.width,
-    dimensions ? 1 : 0, row ? 1 : 0, row?.top, row?.bottom, host.usableDepth, host.baggeboScale]);
-  host.recordDimensions(recordIo);
-  [entry.y, entry.height, entry.width, entry.thickness] = recordIo.subarray(14, 18);
-  if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
-  const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
-  entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
-  if (identityChanged) host.identity();
-  placeBoxes(entry);
-  if (entry.model) {
-    const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
-    if (changedShape || entry.replacement) replaceWhenReady(entry);
-    else updateMaterials(entry);
-  }
-  const nextKeys = materialKeys(entry);
-  const geometryChanged = oldDimensions.some((value,index) =>
-    value !== [entry.width, entry.height, entry.thickness][index]) || oldPosition.some((value,index) =>
-    value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]);
-  return geometryChanged || Boolean(entry.replacement) || (!hiddenBookMaterial(entry) &&
-    Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]));
-}
-
-// releaseCandidate, cancelReplacement and releaseEntry after its cancelInsertion/cancelTrashDrop;
-// `releasedCandidates` and `semanticFoliage` are parameters, and the result is casterListDirty's change.
-export function releaseCandidate(model, releasedCandidates) {
-  if (!model || releasedCandidates.has(model)) return;
-  releasedCandidates.add(model); model.userData.dispose?.();
-}
-export function cancelReplacement(entry, releasedCandidates) {
-  entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
-  releaseCandidate(entry.replacement, releasedCandidates);
-  entry.replacement = null;
-  entry.qualityReplacement = false; entry.replacementReady = false;
-}
-export function releaseEntry(entry, semanticFoliage, releasedCandidates) {
-  let casterListDirty = false;
-  cancelReplacement(entry, releasedCandidates);
-  if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
-  entry.lampHull?.free(); entry.lampHull = null;
-  const foliage = semanticFoliage.get(entry.node);
-  if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
-  clearPlantDiagnostics(entry.node);
-  return casterListDirty;
-}
-
-const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
-export const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
-export const freshEntry = (entry, index, pose = new THREE.Object3D(), flags = NO_FLAGS) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose,
-  lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, hitRect:null, insertion:null,
-  overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
-  classText:null, flags, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
-  written:null, seen:0, domDirty:true });

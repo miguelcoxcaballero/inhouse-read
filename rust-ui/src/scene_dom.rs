@@ -7,7 +7,7 @@
 use std::cell::Cell;
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Map,Object,Reflect,JSON};
-use crate::host::{absent,get_at,global,jmin,method,method_opt,num,read,set,text_value,truthy};
+use crate::host::{absent,get_at,global,method,method_opt,num,read,set,truthy};
 type R<T=()> = Result<T,JsValue>;
 
 fn st(text:&str)->JsValue{JsValue::from_str(text)}
@@ -193,29 +193,6 @@ pub fn scene_retain_replacement(entry:&JsValue,target:&JsValue)->R<bool>{
  Ok(true)
 }
 
-/// A shown book's materials follow its record: each changed key updates its part in place; a
-/// changed ribbon without an in-place update asks `replace` for a new model instead.
-#[wasm_bindgen]
-pub fn scene_update_materials(entry:&JsValue,bookmark_for:&js_sys::Function,replace:&js_sys::Function)->R{
- let model=read(entry,"model")?;
- let kind=read(entry,"kind")?;
- if !truthy(&model)||kind==st("plant")||kind==st("lamp"){return Ok(());}
- let data=read(&model,"userData")?;
- let saved=read(&data,"shelfKeys")?;
- let previous=if truthy(&saved){saved}else{Object::new().into()};
- let next=scene_material_keys(entry,bookmark_for)?;
- let differs=|key:&str|->R<bool>{Ok(read(&previous,key)?!=read(&next,key)?)};
- if differs("spine")?{method_opt(&data,"updateSpineAppearance",&[&read(entry,"book")?,&read(entry,"style")?])?;}
- if differs("cover")?{method_opt(&data,"updateCoverSource",&[&read(entry,"coverUrl")?,&read(entry,"book")?,&read(entry,"style")?])?;}
- if differs("coverFinish")?||differs("coverRelief")?{method_opt(&data,"updateCoverAppearance",&[&read(entry,"book")?])?;}
- if differs("edgeFinish")?{method_opt(&data,"updateEdgeAppearance",&[&read(entry,"book")?])?;}
- if differs("bookmark")?{
-  if truthy(&read(&data,"updateBookmark")?){method(&data,"updateBookmark",&[&read(entry,"book")?])?;}
-  else{replace.call1(&JsValue::UNDEFINED,entry)?;return Ok(());}
- }
- set(&data,"shelfKeys",&next)
-}
-
 /// Three's `Object3D#traverse` order: the object, then each child's subtree.
 fn traverse(object:&JsValue,visit:&mut dyn FnMut(&JsValue)->R)->R{
  visit(object)?;
@@ -230,30 +207,6 @@ fn materials(object:&JsValue)->R<Vec<JsValue>>{
  Ok(if Array::is_array(&material){material.unchecked_into::<Array>().iter().collect()}else if truthy(&material){vec![material]}else{Vec::new()})
 }
 
-/// A new model's finishing touches: every map filters at the renderer's anisotropy (at most 16),
-/// the model knows its entry, and every mesh receives shadows and, outside a lamp, casts them.
-#[wasm_bindgen]
-pub fn scene_prepare_model(model:&JsValue,entry:&JsValue,capabilities:&JsValue)->R{
- traverse(model,&mut |object|{
-  for material in materials(object)?{
-   for key in ["map","normalMap","bumpMap","roughnessMap"]{
-    let map=read(&material,key)?;
-    if truthy(&map){set(&map,"anisotropy",&JsValue::from_f64(jmin(16.0,num(&method(capabilities,"getMaxAnisotropy",&[])?))))?;}
-   }
-  }
-  Ok(())
- })?;
- set(&read(model,"userData")?,"entry",entry)?;
- let lamp=read(entry,"kind")?==st("lamp");
- traverse(model,&mut |object|{
-  if truthy(&read(object,"isMesh")?){
-   if !lamp{set(object,"castShadow",&JsValue::TRUE)?;}
-   set(object,"receiveShadow",&JsValue::TRUE)?;
-  }
-  Ok(())
- })
-}
-
 /// Releases every geometry and, once each, every material under `object`.
 #[wasm_bindgen]
 pub fn scene_release_object(object:&JsValue)->R{
@@ -265,69 +218,4 @@ pub fn scene_release_object(object:&JsValue)->R{
  })?;
  for material in seen.values(){method(&material?,"dispose",&[])?;}
  Ok(())
-}
-
-/// Loading a font repaints each book's retained models (its shown model and any pending
-/// replacement, once each) without their invalidation callback: the spine, and the generated
-/// cover where there is no printed image.
-#[wasm_bindgen]
-pub fn scene_refresh_fonts(entries:&Array)->R{
- for entry in entries.iter(){
-  let kind=read(&entry,"kind")?;
-  if kind==st("plant")||kind==st("lamp"){continue;}
-  let (model,replacement)=(read(&entry,"model")?,read(&entry,"replacement")?);
-  let models=if replacement==model{vec![model]}else{vec![model,replacement]};
-  for model in models{
-   if !truthy(&model){continue;}
-   let data=read(&model,"userData")?;
-   let redraw=read(&data,"invalidate")?;
-   set(&data,"invalidate",&JsValue::NULL)?;
-   let painted=(||->R{
-    method_opt(&read(&model,"userData")?,"updateSpineAppearance",&[&read(&entry,"book")?,&read(&entry,"style")?])?;
-    if !truthy(&read(&entry,"coverUrl")?){method_opt(&read(&model,"userData")?,"updateCoverSource",&[&JsValue::NULL,&read(&entry,"book")?,&read(&entry,"style")?])?;}
-    Ok(())
-   })();
-   set(&read(&model,"userData")?,"invalidate",&redraw)?;
-   painted?;
-  }
- }
- Ok(())
-}
-
-/// The release movement of a layout change: every entry whose old rectangle (by object id, book
-/// id, button's book id or key) lies more than a pixel away from its new target, as
-/// `{entry, x, y}`, then the dragged entry among them (`dragged_key`, by object id or key) or null.
-#[wasm_bindgen]
-pub fn scene_reorder_items(entries:&Array,old_rects:&Map,stage_left:f64,stage_top:f64,dragged_key:&JsValue)->R<Array>{
- let items=Array::new();let mut dragged=JsValue::NULL;
- for entry in entries.iter(){
-  let node=read(&entry,"node")?;
-  let dataset=if absent(&node){JsValue::UNDEFINED}else{read(&node,"dataset")?};
-  let data=|key:&str|->R<JsValue>{Ok(if absent(&dataset){JsValue::UNDEFINED}else{read(&dataset,key)?})};
-  let book=read(&entry,"book")?;
-  let mut old=old_rects.get(&data("objectId")?);
-  if !truthy(&old){old=old_rects.get(&if absent(&book){JsValue::UNDEFINED}else{read(&book,"id")?});}
-  if !truthy(&old){old=old_rects.get(&data("bookId")?);}
-  if !truthy(&old){old=old_rects.get(&read(&entry,"key")?);}
-  let mut target=read(&entry,"tapRect")?;
-  if !truthy(&target){target=read(&entry,"hitRect")?;}
-  if !truthy(&target){target=read(&entry,"rect")?;}
-  if !truthy(&old)||!truthy(&target){continue;}
-  let x=num(&read(&old,"left")?)-(num(&read(&target,"left")?)+stage_left);
-  let y=num(&read(&old,"top")?)-(num(&read(&target,"top")?)+stage_top);
-  if x.abs()+y.abs()>1.0{
-   let item:JsValue=Object::new().into();
-   set(&item,"entry",&entry)?;set(&item,"x",&JsValue::from_f64(x))?;set(&item,"y",&JsValue::from_f64(y))?;
-   items.push(&item);
-  }
- }
- if !absent(dragged_key){
-  let wanted=text_value(dragged_key);
-  for item in items.iter(){
-   let entry=read(&item,"entry")?;let node=read(&entry,"node")?;
-   let object_id=if absent(&node){JsValue::UNDEFINED}else{read(&read(&node,"dataset")?,"objectId")?};
-   if text_value(&if absent(&object_id){read(&entry,"key")?}else{object_id})==wanted{dragged=entry;break;}
-  }
- }
- Ok(Array::of2(&items,&dragged))
 }
