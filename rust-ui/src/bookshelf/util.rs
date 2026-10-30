@@ -327,7 +327,9 @@ pub fn fun(body:impl Fn(JsValue,JsValue)->R<JsValue>+'static)->Fun{
 }
 /// What a callback handed to the host answers once its owner is gone, as the original's stale checks did.
 #[derive(Clone,Copy)]
-pub enum Stale{Undefined,False,Promise,PromiseFalse}
+/// What a withdrawn callback answers. `Busy` is a rejected promise, as the shelf's catalogue adds refused
+/// after the shelf was gone.
+pub enum Stale{Undefined,False,Promise,PromiseFalse,Busy}
 type Handler=Rc<dyn Fn(JsValue,JsValue)->R<JsValue>>;
 /// One dispatcher for the whole module: the functions handed to host code are plain JavaScript closures over an
 /// id, so they cost no handle in this module and stay callable (answering `Stale`) after their owner is gone.
@@ -341,7 +343,8 @@ impl Dispatch{
    let handler=shared.borrow().get(&(id as u32)).cloned();
    match handler{
     Some(handler)=>match handler(a,b){Ok(value)=>value,Err(error)=>wasm_bindgen::throw_val(error)},
-    None=>match stale as u32{0=>undef(),1=>JsValue::FALSE,2=>Promise::resolve(&undef()).into(),_=>Promise::resolve(&JsValue::FALSE).into()},
+    None=>match stale as u32{0=>undef(),1=>JsValue::FALSE,2=>Promise::resolve(&undef()).into(),3=>Promise::resolve(&JsValue::FALSE).into(),
+     _=>Promise::reject(&js_sys::Error::new("Espera a que termine la animación.").into()).into()},
    }
   })as Box<dyn Fn(f64,f64,JsValue,JsValue)->JsValue>);
   let make=Function::new_with_args("dispatch","return function(id, stale){ return function(a, b){ return dispatch(id, stale, a, b); }; }");
@@ -360,7 +363,7 @@ impl Callbacks{
    let id=dispatch.next.get().wrapping_add(1);dispatch.next.set(id);
    dispatch.table.borrow_mut().insert(id,Rc::new(body));
    self.0.borrow_mut().push(id);
-   let kind=match stale{Stale::Undefined=>0.0,Stale::False=>1.0,Stale::Promise=>2.0,Stale::PromiseFalse=>3.0};
+   let kind=match stale{Stale::Undefined=>0.0,Stale::False=>1.0,Stale::Promise=>2.0,Stale::PromiseFalse=>3.0,Stale::Busy=>4.0};
    call(&dispatch.factory,"factory",&[&f(id as f64),&f(kind)]).unwrap_or(JsValue::UNDEFINED)
   })
  }

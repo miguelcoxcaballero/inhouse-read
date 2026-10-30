@@ -77,6 +77,141 @@ async function lengthScript(implementation, seed) {
   return { results, log:w.log, app:{ ...w.app, lengthRefreshTimer:w.app.lengthRefreshTimer === null ? null : 'set' } }
 }
 
+// The length queue's `onChange`: the same seeded hosts, records with and without a Drive file.
+const changes = [null, undefined, {}, { id:'a' }, { id:'b', driveFileId:'drive' }, { id:'c', driveFileId:'' }]
+async function changeScript(implementation, seed) {
+  const w = world(seed), results = []
+  for (let step = 0; step < 6; step++) {
+    if (w.chance(.1)) w.app.appDisposed = !w.app.appDisposed
+    if (w.chance(.2)) w.host.els.readerScreen.hidden = !w.host.els.readerScreen.hidden
+    results.push(await outcome(() => implementation(w, changes[Math.floor(w.pick() * changes.length)])))
+    if (w.chance(.5)) { await vi.advanceTimersByTimeAsync(100); await flush() }
+    w.log.push(['timer', w.app.lengthRefreshTimer === null ? null : 'set', w.app.lengthStatusVersion])
+  }
+  await vi.advanceTimersByTimeAsync(200); await flush()
+  return { results, log:w.log, app:{ ...w.app, lengthRefreshTimer:w.app.lengthRefreshTimer === null ? null : 'set' } }
+}
+
+// The Android import's `onFile`: an open shelf whose close resolves, rejects or throws, a pending
+// progress write that resolves or rejects, and an openFile that answers, rejects or throws.
+async function importScript(implementation, seed) {
+  const w = world(seed), results = []
+  const settle = (name, value) => {
+    const roll = w.pick()
+    if (roll < .1) throw new Error(`${name} threw`)
+    if (roll < .2) return Promise.reject(new Error(`${name} rejected`))
+    return roll < .6 ? Promise.resolve(value) : value
+  }
+  const writes = new Map()
+  w.host.progressWrites = { get:id => { w.log.push(['write', id]); return writes.get(id) } }
+  w.host.openFile = (file, options) => { w.log.push(['open', file, options]); return settle('open', { opened:file }) }
+  for (let step = 0; step < 5; step++) {
+    w.app.shelf = w.chance(.25) ? null : { close:() => { w.log.push(['close']); return settle('close', undefined) } }
+    w.app.currentBookId = w.chance(.3) ? null : `book-${step}`
+    writes.clear()
+    // A failed write the import never reaches must not count as an unhandled rejection.
+    const failed = () => { const write = Promise.reject(new Error('write failed')); write.catch(() => {}); return write }
+    if (w.chance(.6)) writes.set(w.app.currentBookId, w.chance(.4) ? failed() : Promise.resolve({ saved:true }))
+    results.push(await outcome(() => implementation(w, `file-${step}`)))
+  }
+  return { results, log:w.log }
+}
+
+// The listeners app.js hands over: pagehide (persisted or not, every disposer able to throw, a pending
+// Drive poll), the first visibilitychange's length refresh, a room setting change and a storage event.
+async function listenerScript(implementation, seed) {
+  const w = world(seed), results = [], { pick, chance, log, app, host } = w
+  const disposer = name => ({ [name === 'queue' ? 'dispose' : 'destroy']:() => { log.push([name]); if (chance(.05)) throw new Error(`${name} failed`) } })
+  Object.assign(host, {
+    profileView:disposer('profile'), readingStreak:disposer('streak'), nativeImportShelfGate:disposer('gate'),
+    shelfRefreshQueue:{ dispose:() => { log.push(['refreshQueue']); if (chance(.05)) throw new Error('refreshQueue failed') } },
+    wordCountQueue:{ ...host.wordCountQueue, dispose:() => { log.push(['wordQueue']) } },
+    liveRoom:disposer('live'),
+    releaseShelfSoundPreference:() => { log.push(['sound']) },
+    releasePositionGuard:() => { log.push(['guardFree']) },
+    libraryBackup:{ markSettingChanged:(account, detail) => { log.push(['mark', account, detail]); if (chance(.05)) throw new Error('mark failed'); return chance(.6) } },
+    scheduleRoomCapture:(...args) => { log.push(['capture', args]) },
+    applyCloudSettings:keys => { log.push(['settings', keys]) }
+  })
+  host.driveActions = { state:app, document:host.document, online:() => chance(.8), hasDriveSession:() => chance(.5),
+    getRememberedDriveProfile:() => null, cancelDrivePoll:timer => { log.push(['cancelPoll', timer === null ? null : typeof timer]); clearTimeout(timer) },
+    armDrivePoll:(generation, delay) => { log.push(['armPoll', generation, delay]); return setTimeout(() => {}, delay) } }
+  w.env.bookDataModule = () => rustShelf
+  Object.assign(w.env, { profileView:host.profileView, releaseShelfSoundPreference:host.releaseShelfSoundPreference, readingStreak:host.readingStreak,
+    nativeImportShelfGate:host.nativeImportShelfGate, shelfRefreshQueue:host.shelfRefreshQueue, wordCountQueue:host.wordCountQueue,
+    driveActionsHost:host.driveActions, releasePositionGuard:host.releasePositionGuard, liveRoom:host.liveRoom, document:host.document,
+    libraryBackup:host.libraryBackup, scheduleRoomCapture:host.scheduleRoomCapture, applyCloudSettings:host.applyCloudSettings })
+  for (const timer of ['backupTimer', 'roomCaptureTimer', 'roomRefreshRetry']) app[timer] = chance(.5) ? setTimeout(() => log.push(['fired', timer]), 50) : null
+  app.drivePollTimer = chance(.4) ? setTimeout(() => log.push(['fired', 'poll']), 50) : null
+  app.drivePollGeneration = 3
+  app.lengthRefreshTimer = chance(.5) ? setTimeout(() => log.push(['fired', 'length']), 50) : null
+  app.shelfLengthStatusVersion = Math.floor(pick() * 3)
+  const profiles = [null, {}, { id:'' }, { id:'account' }]
+  const events = [{}, { key:null, storageArea:localStorage }, { key:'inhouse-read-shelf-plants', storageArea:localStorage },
+    { key:'inhouse-read-shelf-lamps', storageArea:sessionStorage }, { key:'other', storageArea:localStorage }, { key:'inhouse-read-shelf-', storageArea:null }]
+  for (let step = 0; step < 8; step++) {
+    const roll = pick()
+    if (roll < .3) results.push(await outcome(() => implementation.length(w)))
+    else if (roll < .5) { app.driveProfile = profiles[Math.floor(pick() * profiles.length)]; results.push(await outcome(() => implementation.setting(w, { detail:{ key:`k${step}` } }))) }
+    else if (roll < .7) results.push(await outcome(() => implementation.storage(w, events[Math.floor(pick() * events.length)])))
+    else if (roll < .8) host.document.hidden = !host.document.hidden
+    else results.push(await outcome(() => implementation.hide(w, { persisted:chance(.3) })))
+    log.push(['state', app.appDisposed, app.lengthRefreshTimer === null ? null : 'set', app.drivePollTimer === null ? null : 'set', app.drivePollGeneration])
+  }
+  await vi.advanceTimersByTimeAsync(200); await flush()
+  return { results, log }
+}
+// The end of a shelf refresh, the launch frame's idle test and the cloud sync's change: shelves that are
+// missing, interacting or not, with or without the cloud update, deploy checks that reload or throw, a
+// native import gate that defers, and the real app_refresh_after_load on an empty library.
+async function refreshScript(implementation, seed) {
+  const w = world(seed), results = [], { pick, chance, log, app, host } = w
+  const shelf = () => chance(.25) ? null : {
+    get isInteracting() { log.push(['interacting']); return chance(.3) },
+    ...(chance(.8) ? { updateCloudRecord:record => { log.push(['cloudRecord', record]); if (chance(.05)) throw new Error('cloud record failed') } } : {}),
+    update:books => log.push(['update', books.length]), queueRefresh:books => log.push(['queue', books.length])
+  }
+  Object.assign(host, {
+    recentFirst:books => { log.push(['sort', books.length]); return [...books].reverse() },
+    retryRoomRefresh:() => { log.push(['retry']) },
+    nativeImportShelfGate:{ deferRefresh:() => { log.push(['defer']); return chance(.15) } },
+    libraryHost:{}, warnPreparation:() => {}, createShelf:books => { log.push(['create', books.length]); return shelf() },
+    refreshShelf:() => { log.push(['refresh']); return chance(.2) ? Promise.reject(new Error('refresh failed')) : Promise.resolve('refreshed') }
+  })
+  w.env = { ...w.env, recentFirst:host.recentFirst, nativeImportShelfGate:host.nativeImportShelfGate, retryRoomRefresh:host.retryRoomRefresh,
+    refreshAfterLoad:(...args) => rustShelf.app_refresh_after_load(host, ...args), els:host.els, refreshShelf:host.refreshShelf }
+  Object.assign(app, { shelfRecords:null, cloudRoomChanged:false, closingReader:false })
+  for (let step = 0; step < 8; step++) {
+    app.shelf = shelf()
+    if (chance(.2)) app.closingReader = !app.closingReader
+    if (chance(.2)) host.els.readerScreen.hidden = !host.els.readerScreen.hidden
+    const deploy = [undefined, null, { reloading:() => { log.push(['reloading']); return chance(.2) } }, { reloading:() => { throw new Error('reloading failed') } }][Math.floor(pick() * 4)]
+    host.deployCheck = deploy; w.env.deployCheck = deploy
+    const roll = pick()
+    if (roll < .5) results.push(await outcome(() => implementation.loaded(w, [], chance(.5), chance(.5) ? 'account' : undefined, chance(.5))))
+    else if (roll < .75) results.push(await outcome(() => implementation.idle(w)))
+    else results.push(await outcome(() => implementation.cloud(w, [null, undefined, { id:'r' }, 0][Math.floor(pick() * 4)])))
+    log.push(['state', app.shelf === null ? null : typeof app.shelf, app.shelfRecords?.length ?? null])
+  }
+  return { results, log }
+}
+const referenceRefresh = {
+  loaded:(w, ...args) => reference.refreshLoaded(w.env, ...args), idle:w => reference.launchIdle(w.env), cloud:(w, record) => reference.cloudChanged(w.env, record)
+}
+const rustRefresh = {
+  loaded:(w, books, first, ...args) => rustShelf.app_refresh_loaded(w.host, books, first, ...args), idle:w => rustShelf.app_launch_idle(w.host),
+  cloud:(w, record) => rustShelf.app_cloud_changed(w.host, record)
+}
+
+const referenceListeners = {
+  length:w => reference.lengthVisibility(w.env), setting:(w, e) => reference.roomSettingChanged(w.env, e),
+  storage:(w, e) => reference.storageChanged(w.env, e), hide:(w, e) => reference.pageHide(w.env, e)
+}
+const rustListeners = {
+  length:w => rustShelf.app_length_visibility(w.host), setting:(w, e) => rustShelf.app_room_setting_changed(w.host, e.detail),
+  storage:(w, e) => rustShelf.app_storage_changed(w.host, e), hide:(w, e) => rustShelf.app_page_hide(w.host, e)
+}
+
 beforeEach(() => { vi.useFakeTimers(); vi.spyOn(console, 'warn').mockImplementation(() => {}) })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -92,7 +227,53 @@ describe('app.js decisions in rust-ui/src/app_controller.rs against the frozen J
       const actual = await lengthScript((w, ...args) => rustShelf.app_length_metadata(w.host, ...args), seed)
       expect(actual).toEqual(expected)
     })
+    it(`length queue change, seeded host ${seed}`, async () => {
+      const expected = await changeScript((w, record) => reference.onLengthChange(w.env, record), seed)
+      const actual = await changeScript((w, record) => rustShelf.app_length_change(w.host, record), seed)
+      expect(actual).toEqual(expected)
+    })
+    it(`pagehide, visibility, room setting and storage listeners, seeded host ${seed}`, async () => {
+      const expected = await listenerScript(referenceListeners, seed)
+      const actual = await listenerScript(rustListeners, seed)
+      expect(actual).toEqual(expected)
+    })
+    it(`refresh end, launch idle test and cloud change, seeded host ${seed}`, async () => {
+      const expected = await refreshScript(referenceRefresh, seed)
+      const actual = await refreshScript(rustRefresh, seed)
+      expect(actual).toEqual(expected)
+    })
+    it(`Android file import, seeded host ${seed}`, async () => {
+      const expected = await importScript((w, file) => reference.importFile({ app:w.app, progressWrites:w.host.progressWrites, openFile:w.host.openFile }, file), seed)
+      const actual = await importScript((w, file) => rustShelf.app_import_file(w.host, file), seed)
+      expect(actual).toEqual(expected)
+    })
   }
+  it('covers changes, imports and their failures', async () => {
+    const log = [], results = []
+    for (let seed = 1; seed <= 40; seed++) {
+      log.push(...(await changeScript((w, record) => reference.onLengthChange(w.env, record), seed)).log)
+      const run = await importScript((w, file) => reference.importFile({ app:w.app, progressWrites:w.host.progressWrites, openFile:w.host.openFile }, file), seed)
+      log.push(...run.log); results.push(...run.results)
+    }
+    for (const kind of ['cloud', 'backup', 'refresh', 'close', 'write', 'open']) expect(log.some(entry => entry[0] === kind)).toBe(true)
+    for (const message of ['close threw', 'close rejected', 'open threw', 'open rejected']) expect(results.some(([, value]) => value === message)).toBe(true)
+    expect(results.some(([kind]) => kind === 'ok')).toBe(true)
+  })
+  it('covers every refresh-end, idle and cloud branch', async () => {
+    const log = [], results = []
+    for (let seed = 1; seed <= 40; seed++) { const run = await refreshScript(referenceRefresh, seed); log.push(...run.log); results.push(...run.results) }
+    for (const kind of ['sort', 'reloading', 'defer', 'create', 'update', 'queue', 'retry', 'cloudRecord', 'refresh', 'interacting'])
+      expect(log.some(entry => entry[0] === kind), kind).toBe(true)
+    for (const value of [true, false, 'refreshed']) expect(results.some(([kind, answer]) => kind === 'ok' && answer === value), String(value)).toBe(true)
+    for (const message of ['reloading failed', 'refresh failed']) expect(results.some(([, answer]) => answer === message), message).toBe(true)
+  })
+  it('covers every listener branch', async () => {
+    const log = []
+    for (let seed = 1; seed <= 40; seed++) log.push(...(await listenerScript(referenceListeners, seed)).log)
+    for (const kind of ['profile', 'sound', 'streak', 'gate', 'refreshQueue', 'wordQueue', 'guardFree', 'live', 'cancelPoll', 'mark', 'capture', 'settings', 'refresh'])
+      expect(log.some(entry => entry[0] === kind), kind).toBe(true)
+    expect(log.some(entry => entry[0] === 'settings' && entry[1][0] === 'inhouse-read-shelf-plants')).toBe(true)
+  })
   it('covers patches, cancellations, cloud schedules and refreshes', async () => {
     const all = []
     for (let seed = 1; seed <= 40; seed++) all.push(...(await lengthScript((w, ...args) => reference.onLengthMetadata(w.env, ...args), seed)).log)

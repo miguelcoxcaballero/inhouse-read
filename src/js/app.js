@@ -131,7 +131,7 @@ const nativeImportShelfGate = createNativeImportShelfGate({
 })
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
-  onChange: record => { if (record) app.shelf?.updateCloudRecord?.(record); return refreshShelf() }
+  onChange: record => withShell(shell => shell.app_cloud_changed(shellHost, record))
 })
 const liveRoom = new LiveRoom({
   enabled:()=>!app.appDisposed&&!document.hidden&&Boolean(app.driveProfile?.id),
@@ -174,12 +174,9 @@ function localRoomBookChanged(id,fields) {
   return withBookDataModule(module => module.app_room_book_changed(roomCoordinationHost,id,fields))
 }
 globalThis.addEventListener('inhouse-room-book-changed',e=>localRoomBookChanged(e.detail?.id,e.detail?.fields||[]))
-globalThis.addEventListener('inhouse-room-setting-changed', e => {
-  if (app.driveProfile?.id && libraryBackup.markSettingChanged(app.driveProfile.id,e.detail)) scheduleRoomCapture()
-})
-globalThis.addEventListener('storage',e => {
-  if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
-})
+// A room setting changed here, or a shelf setting in another tab (rust-ui/src/app_controller.rs).
+globalThis.addEventListener('inhouse-room-setting-changed', e => withShell(shell => shell.app_room_setting_changed(shellHost, e.detail)))
+globalThis.addEventListener('storage', e => withShell(shell => shell.app_storage_changed(shellHost, e)))
 globalThis.addEventListener('inhouse-library-changed', scheduleLibraryBackup)
 function scheduleLengthRefresh() { return withShell(shell => shell.app_schedule_length_refresh(shellHost)) }
 const wordCountQueue = createBookLengthQueue(library, {
@@ -189,14 +186,8 @@ const wordCountQueue = createBookLengthQueue(library, {
     await new Promise(resolve => setTimeout(resolve, 0))
     await shelfWorkReady()
   },
-  onChange: record => {
-    if (app.appDisposed) return
-    app.lengthStatusVersion += 1
-    // Batch short books: rebuilding the shelf once per completed chapter or
-    // library record would spend far more time drawing than counting text.
-    scheduleLengthRefresh()
-    if (record?.driveFileId && hasDriveSession()) { cloudSync.scheduleProgress(record.id); scheduleLibraryBackup() }
-  },
+  // The batched shelf refresh and the Drive follow-up of a new count (rust-ui/src/app_controller.rs).
+  onChange: record => withShell(shell => shell.app_length_change(shellHost, record)),
   onError: error => console.warn('No se pudo contar el texto del libro:', error)
 })
 function persistBookState(bookId, fields) {
@@ -212,42 +203,26 @@ const readingExperience = createLazyReaderExperience(reader, {
 })
 
 const shellHost = {
-  els, document, reader, library, cloudSync, preparedPages, readingStreak, STREAK_KEY, APP_VERSION, state:app,
+  els, document, reader, library, cloudSync, preparedPages, progressWrites, readingStreak, STREAK_KEY, APP_VERSION, state:app,
   wordCountQueue, scheduleLibraryBackup, readerPositionGuard, onLocalBookChange:localRoomBookChanged,
   authNotice:document.getElementById('drive-auth-notice'), authMessage:document.getElementById('drive-auth-message'),
   authRetry:document.getElementById('drive-auth-retry'), authCancel:document.getElementById('drive-auth-cancel'),
   get readingExperience() { return readingExperience },
   notifyCloudSettingsChanged, setShelfWorkActive, classifyTapZone, isDriveConfigured, refreshShelf, hasDriveSession,
   requestDriveAccess, loadDriveAccountProfile, listAllDriveBooks, syncLibraryToDrive, setDriveSyncStatus,
-  offerAvailableAndroidUpdate, normalizeBookTitle, openFile,
+  offerAvailableAndroidUpdate, normalizeBookTitle, openFile, applyCloudSettings, scheduleRoomCapture,
+  libraryBackup, liveRoom, profileView, releaseShelfSoundPreference, nativeImportShelfGate, shelfRefreshQueue,
+  releasePositionGuard: () => { savedReaderPositionGuard?.free(); savedReaderPositionGuard = null },
+  get driveActions() { return driveActionsHost },
   openFileContent: (file, options) => bookDataModule().app_open_file_content(fileContentHost, file, options)
 }
 els.themeToggle.addEventListener('click', () => withShell(shell => shell.app_set_theme(shellHost, 'toggle')))
 function showScreen(name) { return withShell(shell => shell.app_show_screen(shellHost, name)) }
 
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && app.shelfLengthStatusVersion !== app.lengthStatusVersion) scheduleLengthRefresh()
-})
-// A discarded page has no shelf to update. Keep the queue alive for bfcache
-// restores, but cancel callbacks for a document that is actually leaving.
-addEventListener('pagehide', event => {
-  if (event.persisted) return
-  app.appDisposed = true
-  profileView.destroy()
-  releaseShelfSoundPreference()
-  readingStreak.destroy()
-  nativeImportShelfGate.destroy()
-  shelfRefreshQueue.dispose()
-  clearTimeout(app.lengthRefreshTimer)
-  app.lengthRefreshTimer = null
-  wordCountQueue.dispose()
-  clearTimeout(app.backupTimer)
-  if (app.drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
-  clearTimeout(app.roomCaptureTimer)
-  savedReaderPositionGuard?.free(); savedReaderPositionGuard = null
-  clearTimeout(app.roomRefreshRetry)
-  liveRoom.destroy()
-})
+// A count finished while the page was hidden; a page that is leaving for good withdraws its callbacks
+// (rust-ui/src/app_controller.rs).
+document.addEventListener('visibilitychange', () => withShell(shell => shell.app_length_visibility(shellHost)))
+addEventListener('pagehide', event => withShell(shell => shell.app_page_hide(shellHost, event)))
 
 function isAndroidShell() {
   return /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '')
@@ -277,19 +252,16 @@ async function performShelfRefresh({ immediate = false } = {}) {
   if (document.querySelector('.ihr-flyout')) return void needRustShelf().app_refresh_after_flyout(shellHost)
   if (app.shelf?.isInteracting) { retryRoomRefresh(); return }
   const accountId = (app.driveProfile || getRememberedDriveProfile())?.id
-  let storedBooks = await (firstRecords ?? library.listAll())
+  const storedBooks = await (firstRecords ?? library.listAll())
   // Saved plant meshes and plant/lamp paint are read in parallel. A late read
   // must not hold the shelf back for long: they are generated instead.
   // Layout, lighting and the pointer controllers of the live shelf are Rust-only: the render waits
   // for their modules, fetched with the page head and already compiled by now in practice,
   // alongside the baked reads.
   await Promise.all([shelfBakesSettled(120), requireRustShelf(), requireRustCore()])
-  if (firstRecords) storedBooks = recentFirst(storedBooks)
-  // The page is being replaced by a newer deploy: building this shelf would only hold that up.
-  if (app.appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
-  const result = await needRustShelf().app_refresh_after_load(shelfRefreshHost, storedBooks, accountId, immediate)
-  if (app.shelf?.isInteracting) retryRoomRefresh()
-  return result
+  // Sorting the start-up read, giving way to a newer deploy or a native import, the rebuild and its room
+  // retry: rust-ui/src/app_controller.rs.
+  return needRustShelf().app_refresh_loaded(shelfRefreshHost, storedBooks, Boolean(firstRecords), accountId, immediate)
 }
 
 function createShelfForRecords(books) {
@@ -327,6 +299,7 @@ const shelfRefreshHost = {
   removedPreparationCleanup: (book, generation) => () => bookDataModule().app_finish_removed_preparation(shelfRefreshHost, book, generation),
   warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
   createShelf: createShelfForRecords,
+  recentFirst, retryRoomRefresh, get deployCheck() { return deployCheck },
   placementMapper: () => row => bookDataModule().app_placement_record(shelfRefreshHost, row),
   orderMapper: () => row => bookDataModule().app_order_record(shelfRefreshHost, row),
   warnPreparation: error => console.warn('Preparación del grosor:', error),
@@ -578,7 +551,7 @@ initAndroidUpdateChecks()
 // for them (see idle-startup.js).
 runAfterFirstFrame([
   () => rememberLaunchFrames(els.bookshelfRoot, { books:() => library.listRaw(), idle:idleWork, shelfModule:needRustShelf,
-    isIdle:() => !app.appDisposed && els.readerScreen.hidden && !app.shelf?.isInteracting && !app.closingReader }),
+    isIdle:() => needRustShelf().app_launch_idle(shellHost) }),
   () => { void loadRustCore(); void loadRustDecorCore(); profileView.warm() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),
@@ -588,13 +561,7 @@ initReadingDisplay()
 initAndroidFileImports({
   onActivity: active => nativeImportShelfGate.setActive(active),
   canImport: () => !app.closingReader && !els.readerScreen.classList.contains('is-preparing'),
-  onFile: async file => {
-    await app.shelf?.close()
-    await progressWrites.get(app.currentBookId)?.catch(() => {})
-    // Resolve the import after the loading wrapper has released its controls.
-    // Its successful result already guarantees committed original bytes.
-    return openFile(file, { restoreRemoved:true })
-  },
+  onFile: file => withShell(shell => shell.app_import_file(shellHost, file)),
   onError: error => alert(`No se pudo importar el libro: ${error.message}`)
 })
 if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
