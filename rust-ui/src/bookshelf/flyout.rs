@@ -459,7 +459,16 @@ impl Flyout{
    .child(&icon(&READ)?).child(&El::new("span").text(&open_label).done()).done();
   let edit_button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button").flag("disabled")
    .attr("aria-expanded","false").attr("aria-label","Editar").attr("title","Editar").child(&icon(&BRUSH)?).done();
-  *self.action_buttons.borrow_mut()=vec![open_button.clone(),cloud_action.clone(),edit_button.clone()];
+  // "Compartir": the book file itself, to the system share sheet.
+  let can_share=truthy(&get(book,"content"))||truthy(&get(book,"driveFileId"));
+  let share_button=if can_share{
+   let mut button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__share-action")
+    .attr("title","Compartir").attr("aria-label","Compartir el libro");
+   if !has_action{button=button.flag("disabled");}
+   let button=button.child(&icon(&SHARE)?).done();
+   self.wire_cloud_button(&button,"share")?;button
+  }else{null()};
+  *self.action_buttons.borrow_mut()=vec![open_button.clone(),cloud_action.clone(),edit_button.clone(),share_button.clone()];
   {let weak=self.weak();on(&self.keep,&open_button,"click",move|_|{if let Some(flyout)=weak.upgrade(){flyout.expand_cover();}Ok(())})?;}
   {let weak=self.weak();on(&self.keep,&edit_button,"click",move|_|{
    let Some(flyout)=weak.upgrade()else{return Ok(())};
@@ -473,7 +482,7 @@ impl Flyout{
    book:book.clone(),item:self.item.clone(),view:self.view.clone(),session:self.session.clone(),book_node:self.book_node.clone(),flyout:self.flyout.clone(),
    meta:self.meta.clone(),cover_target:self.cover_target.clone(),edit_button:edit_button.clone(),cover_url:self.cover_url.clone(),style:style_value.clone(),
    geo:self.geo,pick_layer:pick.layer,pick_message:pick.message,pick_cancel:pick.cancel,pick_handle:pick.handle,host})?;
-  let actions=El::new("div").class("ihr-flyout__actions").children(&[open_button,cloud_action,edit_button]).done();
+  let actions=El::new("div").class("ihr-flyout__actions").children(&[open_button,cloud_action,share_button,edit_button]).done();
   append(&self.meta,&actions);
   append(&self.meta,&editor.panel_node());
   *self.editor.borrow_mut()=Some(editor);

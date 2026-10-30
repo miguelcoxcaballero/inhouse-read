@@ -553,6 +553,7 @@ const driveActionsHost = {
 }
 
 function handleCoverAction(action, book, button) {
+  if (action === 'share') return withBookDataModule(module => module.app_book_share(driveActionsHost, book, button))
   return withBookDataModule(module => module.app_drive_cover_action(driveActionsHost, action, book, button))
 }
 

@@ -204,6 +204,65 @@ class ReadingFocusTest(unittest.TestCase):
         self.assertIn("trustedPage()", java)
 
 
+class BookShareTest(unittest.TestCase):
+    REPO = Path(__file__).resolve().parents[2]
+    JAVA = (REPO / "android/book-share/BookShare.java").read_text(encoding="utf-8")
+
+    def project(self, temp):
+        from register_book_share import BRIDGE_JAVA
+        root = Path(temp) / "android/app/src/main"
+        java_dir = root / "java" / Path(*PACKAGE.split("."))
+        java_dir.mkdir(parents=True)
+        (java_dir / "MainActivity.java").write_text(f"class MainActivity {{\n    void bridges() {{\n        {BRIDGE_JAVA}\n    }}\n}}\n", encoding="utf-8")
+        (root / "res/xml").mkdir(parents=True)
+        (root / "res/xml/file_paths.xml").write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n<paths xmlns:android="http://schemas.android.com/apk/res/android">\n'
+            '    <cache-path name="updates" path="updates/" />\n</paths>\n', encoding="utf-8")
+        return root, java_dir
+
+    def test_registers_the_bridge_once_and_serves_cache_shared_through_the_app_provider(self):
+        from register_book_share import SHARE_JAVA, register_book_share
+        with tempfile.TemporaryDirectory() as temp:
+            root, java_dir = self.project(temp)
+            for _ in range(2):
+                register_book_share(Path(temp), PACKAGE, self.REPO)
+            activity = (java_dir / "MainActivity.java").read_text(encoding="utf-8")
+            self.assertEqual(activity.count(SHARE_JAVA), 1)
+            self.assertIn('"InhouseBookShare"', activity)
+            share = (java_dir / "BookShare.java").read_text(encoding="utf-8")
+            self.assertTrue(share.startswith(f"package {PACKAGE};"))
+            paths = (root / "res/xml/file_paths.xml").read_text(encoding="utf-8")
+            self.assertEqual(paths.count('<cache-path name="shared" path="shared/" />'), 1)
+            self.assertIn('<cache-path name="updates" path="updates/" />', paths)
+            ElementTree = __import__("xml.etree.ElementTree", fromlist=["parse"])
+            ElementTree.parse(root / "res/xml/file_paths.xml")
+
+    def test_the_streak_widget_writes_the_anchor_it_follows(self):
+        from register_book_share import BRIDGE_JAVA
+        streak = (self.REPO / ".github/scripts/register_streak_widget.py").read_text(encoding="utf-8")
+        self.assertIn(BRIDGE_JAVA.removeprefix("webView.addJavascriptInterface(").rstrip(");"), streak)
+
+    def test_shares_the_file_with_the_system_chooser_from_the_trusted_page_only(self):
+        for begin_or_finish in ("public String begin(", "public boolean finish("):
+            with self.subTest(method=begin_or_finish):
+                body = self.JAVA.split(begin_or_finish)[1].split("@JavascriptInterface")[0]
+                self.assertIn("trustedPage()", body)
+        for piece in ("Intent.ACTION_SEND", "Intent.EXTRA_STREAM", "Intent.FLAG_GRANT_READ_URI_PERMISSION",
+                      "Intent.createChooser(", "Intent.EXTRA_EXCLUDE_COMPONENTS", 'getPackageName() + ".fileprovider"',
+                      'new File(activity.getCacheDir(), "shared")', "Base64.decode(", 'startsWith("/inhouse-read/")'):
+            with self.subTest(piece=piece):
+                self.assertIn(piece, self.JAVA)
+        # Pieces and the chooser belong to the session begin() returned: two shares never mix.
+        for method in ("public boolean append(String id, String base64)", "public boolean finish(String id)"):
+            with self.subTest(method=method):
+                self.assertIn("current(id)", self.JAVA.split(method)[1].split("@JavascriptInterface")[0])
+        # The frozen updater keeps its own provider; sharing never uses it.
+        self.assertNotIn("update-provider", self.JAVA)
+        self.assertNotIn("UpdateFileProvider", self.JAVA)
+        self.assertEqual(self.JAVA.count("{"), self.JAVA.count("}"))
+        self.assertEqual(self.JAVA.count("("), self.JAVA.count(")"))
+
+
 class StreakWidgetTest(unittest.TestCase):
     ROOT = Path(__file__).resolve().parents[2] / "android/streak-widget"
 
