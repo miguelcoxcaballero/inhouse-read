@@ -3,7 +3,7 @@ import { createSceneCountFrame } from './scene-count-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
-import { createSceneEntryFrame, ENTRY_INPUT, ENTRY_OUTPUT } from './scene-entry-frame.js';
+import { createSceneEntryFrame, ENTRY_INPUT, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -747,7 +747,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
   const shadowBounds = new THREE.Box3(), shadowOut = new Float64Array(6), captureOut = new Float64Array(4), countOut = new Float64Array(8);
   let casterIds = new Float64Array(entries.length), casterListDirty = true, casterTrashVisible = null, casterSignature = 0;
-  const projectedMatrix = new THREE.Matrix4();
   const rendererSize = new THREE.Vector2();
   const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
   const framedScratch = new THREE.Box3(), framedTrash = new THREE.Box3(), transformRects = { unscaled:{}, framed:{}, bounds:{}, world:{} };
@@ -1410,10 +1409,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'catalog3d', 'true'); setData(canvas, 'catalogVisible', String(visible));
   }
 
-  const projectionFrame = createSceneProjectionFrame(rust), hitIo = projectionFrame.hitOutput, entryFrame = createSceneEntryFrame(rust);
+  const projectionFrame = createSceneProjectionFrame(rust), entryFrame = createSceneEntryFrame(rust);
   const lampIo = new Float64Array(8), stepIo = new Float64Array(40);
   let stepBatch = new Float64Array(0), stepBatchViews = [];
-  const insertionIo = new Float64Array(4), surfaceBox = new Float64Array(6), inverseTurn = new Float64Array(4);
+  const insertionIo = new Float64Array(4), inverseTurn = new Float64Array(4);
   function advanceLampPower(entry, now) {
     const target = entry.isOn === false ? 0 : 1;
     const power = entry.lampPower ||= { value:target, from:target, target, started:now, duration:0 };
@@ -1576,8 +1575,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
       const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
-      const away = entry.flags.away, kind = plant ? 1 : lamp ? 2 : 0;
-      const insertion = entry.insertion, trashDrop = entry.trashDrop, pose = entry.pose;
+      const away = entry.flags.away, insertion = entry.insertion, trashDrop = entry.trashDrop, pose = entry.pose;
       // Native work below (models, quality, hits) may grow the memory: the views follow it.
       entryFrame.refresh();
       const live = entryFrame.output, at = entryIndex * ENTRY_OUTPUT, liveFlags = live[at];
@@ -1592,9 +1590,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         pose.quaternion.set(live[at+21],live[at+22],live[at+23],live[at+24]);pose.scale.setScalar(live[at+25]);
         if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(pose.quaternion,'ZYX').z);
       }
-      // Object3D#updateMatrix and the room's multiply, already taken natively.
+      // Object3D#updateMatrix, already taken natively (the room's multiply stays in the arena for the hits).
       pose.matrix.fromArray(live, at + 26); pose.matrixWorldNeedsUpdate = true;
-      projectedMatrix.fromArray(live, at + 42);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
       const rect = entry.rect || (entry.rect = {});
       rect.left = live[at + 58]; rect.right = live[at + 59]; rect.top = live[at + 60]; rect.bottom = live[at + 61];
@@ -1642,6 +1639,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (!decorative && (!away || insertion)) activeBooks++;
       }
       if (lamp) moving = advanceLampPower(entry, now) || moving;
+      // The button's hit surface is read now, as the frame's models stand; its target is taken below.
+      entryFrame.refresh();
+      const hits = entryFrame.hitInput, h = entryIndex * HIT_INPUT;
       if (node) {
         // A whole-model bounding rectangle includes empty space around plants
         // and most of an isometric book's cover. Give each semantic button a
@@ -1649,82 +1649,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const surface = hitSurface(entry, plant ? 'ceramic-pot' : lamp
           ? undershelf ? 'warm-opal-diffuser' : entry.lampId === 'tripod' ? 'woven-linen-drum-shade' : 'lamp-base'
           : 'binding');
-        const hitRect = entry.hitRect || (entry.hitRect = {});
-        let hitBox, hitMatrix;
+        let placed = 32;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
           surface.updateWorldMatrix(true, false);
           const { min, max } = surface.geometry.boundingBox;
-          surfaceBox[0] = min.x; surfaceBox[1] = min.y; surfaceBox[2] = min.z; surfaceBox[3] = max.x; surfaceBox[4] = max.y; surfaceBox[5] = max.z;
-          hitBox = surfaceBox; hitMatrix = surface.matrixWorld;
-        } else { hitBox = fallbackBox(entry, lamp); hitMatrix = projectedMatrix; }
-        // The button covers the hit surface, but a real-scale spine is only 5-13 px
-        // thick: a book's button is padded to the minimum tap width around the
-        // spine's centre (hitRect keeps the drawn surface). A lamp's switch is
-        // padded to a finger-sized square around its light: a MITTLED puck is
-        // a few pixels tall and often sits behind a board. Plants are not thin,
-        // so their button is the hit surface itself.
-        let written = entry.written;
-        const resetHit = written?.node !== node;
-        if (resetHit) written = entry.written = { node };
-        const dirtyStyle = projectionFrame.hit(sceneView, entryIndex, kind, undershelf, entry.bits, node.disabled || node.inert,
-          rect, hitBox, hitMatrix, resetHit, !plant && !semanticCovers.has(node));
-        hitRect.left = hitIo[33]; hitRect.right = hitIo[34]; hitRect.top = hitIo[35]; hitRect.bottom = hitIo[36];
-        hitRect.width = hitIo[37]; hitRect.height = hitIo[38]; hitRect.closest = hitIo[39];
-        const tapLeft = hitIo[40], tapTop = hitIo[41], tapWidth = hitIo[42], tapHeight = hitIo[43];
-        if (!plant) {
-          const tapRect = entry.tapRect || (entry.tapRect = {});
-          tapRect.left = tapLeft; tapRect.top = tapTop; tapRect.width = tapWidth; tapRect.height = tapHeight;
-        }
-        // A frame that moves nothing restyles nothing: only numbers that differ
-        // from the last written ones reach the DOM, in the same order as a first write.
-        // The style objects are fetched only when something is written to them.
-        if (usePhysics && lamp && !undershelf && entry.model) {
-          entry.model.updateMatrixWorld(true);
-          // Rebuilt in Rust only when a mesh, its matrix or the tap corner moved; undefined is "as before".
-          const clip = (entry.lampHull ||= new rust.RustLampHull()).outline(entry.model, tapLeft, tapTop, written.clip === undefined);
-          if (clip !== undefined && clip !== written.clip) node.style.clipPath = written.clip = clip;
-        }
-        if (dirtyStyle & 63) {
-          const style = node.style;
-          if (dirtyStyle & 1) style.position = 'absolute';
-          if (dirtyStyle & 2) style.left = `${tapLeft}px`;
-          if (dirtyStyle & 4) style.top = `${tapTop}px`;
-          if (dirtyStyle & 8) style.width = `${tapWidth}px`;
-          if (dirtyStyle & 16) style.height = `${tapHeight}px`;
-          if (dirtyStyle & 1) style.margin = '0';
-          if (dirtyStyle & 32) style.zIndex = String(hitIo[44]);
-        }
-        if (dirtyStyle & 1) {
-          node.dataset.sceneProjected = 'true';
-          node.dataset.sceneHitSurface = plant ? 'pot' : lamp ? undershelf ? 'ceiling-lamp' : 'lamp' : 'spine';
-          if (lamp) {
-            node.dataset.lampModelId = entry.lampId;
-            node.dataset.lampMount = undershelf ? 'undershelf' : 'standing';
-          }
-        }
-        if (!decorative || lamp) {
-          let coverHit = semanticCovers.get(node);
-          if (!coverHit) {
-            coverHit = document.createElement('span'); coverHit.setAttribute('aria-hidden', 'true');
-            coverHit.dataset[lamp ? 'shelfLampHit' : 'shelfCoverHit'] = 'true'; semanticCovers.set(node, coverHit); node.append(coverHit);
-          }
-          // Keep tapping the exposed cover available without moving the
-          // button's own focus/click centre away from its neighboring spine.
-          // The existing handlers still raycast the true visible geometry.
-          if (dirtyStyle & 8128) {
-            const coverStyle = coverHit.style;
-            if (dirtyStyle & 64) coverStyle.position = 'absolute';
-            if (dirtyStyle & 128) coverStyle.left = `${hitIo[45]}px`;
-            if (dirtyStyle & 256) coverStyle.top = `${hitIo[46]}px`;
-            if (dirtyStyle & 512) coverStyle.width = `${rect.width}px`;
-            if (dirtyStyle & 1024) coverStyle.height = `${rect.height}px`;
-            if (dirtyStyle & 2048) coverStyle.display = hitIo[47] ? 'block' : 'none';
-            if (dirtyStyle & 64) coverStyle.background = 'transparent';
-            if (dirtyStyle & 4096) coverStyle.pointerEvents = hitIo[48] ? 'inherit' : 'none';
-          }
-        }
-      }
+          hits[h + 2] = min.x; hits[h + 3] = min.y; hits[h + 4] = min.z; hits[h + 5] = max.x; hits[h + 6] = max.y; hits[h + 7] = max.z;
+          hits.set(surface.matrixWorld.elements, h + 8); placed = 0;
+        } else hits.set(fallbackBox(entry, lamp), h + 2);
+        const resetHit = entry.written?.node !== node;
+        if (resetHit) entry.written = { node };
+        // Without a surface the stand-in box goes under the entry's own placed matrix (32).
+        hits[h] = 1 | (undershelf ? 2 : 0) | (node.disabled || node.inert ? 4 : 0) | (resetHit ? 8 : 0) |
+          (!plant && !semanticCovers.has(node) ? 16 : 0) | placed;
+        hits[h + 1] = entry.bits;
+      } else hits[h] = 0;
       if (entry.insertion) {
         insertedIds.push(String(entry.book?.id ?? ''));
         overlaying ||= Boolean(entry.insertion.overlayCanvas);
@@ -1732,6 +1671,79 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Before the first frame the driver links each new model's programs
       // while the next models are still being built.
       if (created?.visible && programsReady !== true) prelinkPrograms(renderer, scene, camera, [created]);
+    }
+    // Every button's hit target and the style writes it needs, in one native call (scene-entry-frame.js).
+    entryFrame.hits(projectionFrame.native, sceneView);
+    for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
+      const entry = bookEntries[entryIndex], node = entry.node;
+      if (!node) continue;
+      const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
+      const rect = entry.rect, written = entry.written;
+      entryFrame.refresh();
+      const hit = entryFrame.hitOutput, h = entryIndex * HIT_OUTPUT, dirtyStyle = hit[h];
+      const hitRect = entry.hitRect || (entry.hitRect = {});
+      hitRect.left = hit[h + 1]; hitRect.right = hit[h + 2]; hitRect.top = hit[h + 3]; hitRect.bottom = hit[h + 4];
+      hitRect.width = hit[h + 5]; hitRect.height = hit[h + 6]; hitRect.closest = hit[h + 7];
+      const tapLeft = hit[h + 8], tapTop = hit[h + 9], tapWidth = hit[h + 10], tapHeight = hit[h + 11];
+      const zIndex = hit[h + 12], coverLeft = hit[h + 13], coverTop = hit[h + 14], coverShown = hit[h + 15], coverEvents = hit[h + 16];
+      // The button covers the hit surface, but a real-scale spine is only 5-13 px
+      // thick: a book's button is padded to the minimum tap width around the
+      // spine's centre (hitRect keeps the drawn surface). A lamp's switch is
+      // padded to a finger-sized square around its light: a MITTLED puck is
+      // a few pixels tall and often sits behind a board. Plants are not thin,
+      // so their button is the hit surface itself.
+      if (!plant) {
+        const tapRect = entry.tapRect || (entry.tapRect = {});
+        tapRect.left = tapLeft; tapRect.top = tapTop; tapRect.width = tapWidth; tapRect.height = tapHeight;
+      }
+      // A frame that moves nothing restyles nothing: only numbers that differ
+      // from the last written ones reach the DOM, in the same order as a first write.
+      // The style objects are fetched only when something is written to them.
+      if (usePhysics && lamp && !undershelf && entry.model) {
+        entry.model.updateMatrixWorld(true);
+        // Rebuilt in Rust only when a mesh, its matrix or the tap corner moved; undefined is "as before".
+        const clip = (entry.lampHull ||= new rust.RustLampHull()).outline(entry.model, tapLeft, tapTop, written.clip === undefined);
+        if (clip !== undefined && clip !== written.clip) node.style.clipPath = written.clip = clip;
+      }
+      if (dirtyStyle & 63) {
+        const style = node.style;
+        if (dirtyStyle & 1) style.position = 'absolute';
+        if (dirtyStyle & 2) style.left = `${tapLeft}px`;
+        if (dirtyStyle & 4) style.top = `${tapTop}px`;
+        if (dirtyStyle & 8) style.width = `${tapWidth}px`;
+        if (dirtyStyle & 16) style.height = `${tapHeight}px`;
+        if (dirtyStyle & 1) style.margin = '0';
+        if (dirtyStyle & 32) style.zIndex = String(zIndex);
+      }
+      if (dirtyStyle & 1) {
+        node.dataset.sceneProjected = 'true';
+        node.dataset.sceneHitSurface = plant ? 'pot' : lamp ? undershelf ? 'ceiling-lamp' : 'lamp' : 'spine';
+        if (lamp) {
+          node.dataset.lampModelId = entry.lampId;
+          node.dataset.lampMount = undershelf ? 'undershelf' : 'standing';
+        }
+      }
+      if (!plant) {
+        let coverHit = semanticCovers.get(node);
+        if (!coverHit) {
+          coverHit = document.createElement('span'); coverHit.setAttribute('aria-hidden', 'true');
+          coverHit.dataset[lamp ? 'shelfLampHit' : 'shelfCoverHit'] = 'true'; semanticCovers.set(node, coverHit); node.append(coverHit);
+        }
+        // Keep tapping the exposed cover available without moving the
+        // button's own focus/click centre away from its neighboring spine.
+        // The existing handlers still raycast the true visible geometry.
+        if (dirtyStyle & 8128) {
+          const coverStyle = coverHit.style;
+          if (dirtyStyle & 64) coverStyle.position = 'absolute';
+          if (dirtyStyle & 128) coverStyle.left = `${coverLeft}px`;
+          if (dirtyStyle & 256) coverStyle.top = `${coverTop}px`;
+          if (dirtyStyle & 512) coverStyle.width = `${rect.width}px`;
+          if (dirtyStyle & 1024) coverStyle.height = `${rect.height}px`;
+          if (dirtyStyle & 2048) coverStyle.display = coverShown ? 'block' : 'none';
+          if (dirtyStyle & 64) coverStyle.background = 'transparent';
+          if (dirtyStyle & 4096) coverStyle.pointerEvents = coverEvents ? 'inherit' : 'none';
+        }
+      }
     }
     // Bind native hit surfaces only after all semantic book rectangles are
     // projected, so an overlapping leaf cannot steal a neighboring spine tap.
@@ -1819,16 +1831,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   }
 
-  const previewIo = new Float64Array(13), previewTarget = new Float64Array(2);
-  function previewOffset(entry, x, y, now) {
-    const preview = entry.preview;
-    previewIo.set([preview.x, preview.y, preview.fromX, preview.fromY, preview.targetX, preview.targetY, preview.started, preview.active ? 1 : 0,
-      x, y, now, reducedMotion.matches ? 1 : 0]);
-    rust.scene_preview_offset(previewIo);
-    [preview.x, preview.y, preview.fromX, preview.fromY, preview.targetX, preview.targetY, preview.started] = previewIo;
-    preview.active = previewIo[7] !== 0;
-    return previewIo[12] !== 0;
-  }
+  // Placement previews: 18 numbers per entry, advanced for every entry in one native call.
+  let previewBatch = new Float64Array(0);
 
   function updateDropMarker() {
     if (!dropMarker) return;
@@ -3032,21 +3036,30 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     previewPlacements(objects, draggedKey) {
       if (disposed) return;
       const placements = new Map((Array.isArray(objects) ? objects : []).map(object => [String(object.key), object]));
-      const now = performance.now();
-      let changed = false;
-      for (const entry of bookEntries) {
+      const now = performance.now(), count = bookEntries.length;
+      if (previewBatch.length !== count * 18) previewBatch = new Float64Array(count * 18);
+      const io = previewBatch;
+      for (let index = 0; index < count; index++) {
+        const entry = bookEntries[index], at = index * 18, preview = entry.preview;
         const objectKey = String(entry.node?.dataset.objectId ?? entry.key);
         const placement = objectKey !== String(draggedKey) ? placements.get(objectKey) : null;
         const row = placement && rows[placement.shelf];
         const center = Number(placement?.center);
-        let x = 0, y = 0;
+        io[at] = 0;
         if (row && Number.isFinite(center)) {
           const undershelf = entry.kind === 'lamp' && entry.mount === 'undershelf';
-          rust.scene_preview_target(row.left || 0, undershelf ? row.ceiling ?? row.top : 0, row.bottom, center, entry.x, entry.y, entry.height,
-            undershelf, previewTarget);
-          x = previewTarget[0]; y = previewTarget[1];
+          io[at] = 1; io[at + 1] = row.left || 0; io[at + 2] = undershelf ? row.ceiling ?? row.top : 0; io[at + 3] = row.bottom;
+          io[at + 4] = center; io[at + 5] = entry.x; io[at + 6] = entry.y; io[at + 7] = entry.height; io[at + 8] = undershelf ? 1 : 0;
         }
-        changed = previewOffset(entry, x, y, now) || changed;
+        io[at + 9] = preview.x; io[at + 10] = preview.y; io[at + 11] = preview.fromX; io[at + 12] = preview.fromY;
+        io[at + 13] = preview.targetX; io[at + 14] = preview.targetY; io[at + 15] = preview.started; io[at + 16] = preview.active ? 1 : 0;
+      }
+      // The target of each placed object and every offset's easing, in Rust (scene_preview_entries).
+      const changed = rust.scene_preview_entries(io, now, reducedMotion.matches);
+      for (let index = 0; index < count; index++) {
+        const preview = bookEntries[index].preview, at = index * 18 + 9;
+        preview.x = io[at]; preview.y = io[at + 1]; preview.fromX = io[at + 2]; preview.fromY = io[at + 3];
+        preview.targetX = io[at + 4]; preview.targetY = io[at + 5]; preview.started = io[at + 6]; preview.active = io[at + 7] !== 0;
       }
       if (changed) invalidate();
     },

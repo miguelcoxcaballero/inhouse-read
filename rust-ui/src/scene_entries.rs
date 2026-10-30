@@ -114,6 +114,27 @@ pub fn scene_preview_target(row_left:f64,row_top:f64,row_bottom:f64,center:f64,x
  out[1]=y-if undershelf{row_top}else{row_bottom-height/2.0};
 }
 
+/// One placement preview for every entry, in order, in one call (the former host loop crossed twice per
+/// entry). Per entry, 18 numbers: `placed, row left, row top, row bottom, centre, x, y, height,
+/// under-shelf` (`scene_preview_target`'s inputs, read only when placed), then the offset's state
+/// `x, y, from x, from y, target x, target y, started, active` and, out, whether it changed. A placed
+/// entry heads for its row's target and every other one back to rest; each offset then advances as
+/// `scene_preview_offset`. Returns whether any offset changed.
+#[wasm_bindgen]
+pub fn scene_preview_entries(io:&mut [f64],now:f64,reduced:bool)->bool{
+ let mut changed=false;
+ for entry in io.chunks_exact_mut(18){
+  let mut goal=[0.0;2];
+  if entry[0]!=0.0{scene_preview_target(entry[1],entry[2],entry[3],entry[4],entry[5],entry[6],entry[7],entry[8]!=0.0,&mut goal);}
+  let mut offset=[0.0;13];
+  offset[..8].copy_from_slice(&entry[9..17]);offset[8]=goal[0];offset[9]=goal[1];offset[10]=now;offset[11]=if reduced{1.0}else{0.0};
+  scene_preview_offset(&mut offset);
+  entry[9..17].copy_from_slice(&offset[..8]);entry[17]=offset[12];
+  changed|=offset[12]!=0.0;
+ }
+ changed
+}
+
 /// The previews' easing; `state` is `[x, y, from x, from y, target x, target y, started, active]`.
 fn advance_preview(state:&mut [f64],now:f64,reduced:bool)->bool{
  if state[7]==0.0{return false;}
