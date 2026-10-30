@@ -161,6 +161,48 @@ async function listenerScript(implementation, seed) {
   await vi.advanceTimersByTimeAsync(200); await flush()
   return { results, log }
 }
+// The end of a shelf refresh, the launch frame's idle test and the cloud sync's change: shelves that are
+// missing, interacting or not, with or without the cloud update, deploy checks that reload or throw, a
+// native import gate that defers, and the real app_refresh_after_load on an empty library.
+async function refreshScript(implementation, seed) {
+  const w = world(seed), results = [], { pick, chance, log, app, host } = w
+  const shelf = () => chance(.25) ? null : {
+    get isInteracting() { log.push(['interacting']); return chance(.3) },
+    ...(chance(.8) ? { updateCloudRecord:record => { log.push(['cloudRecord', record]); if (chance(.05)) throw new Error('cloud record failed') } } : {}),
+    update:books => log.push(['update', books.length]), queueRefresh:books => log.push(['queue', books.length])
+  }
+  Object.assign(host, {
+    recentFirst:books => { log.push(['sort', books.length]); return [...books].reverse() },
+    retryRoomRefresh:() => { log.push(['retry']) },
+    nativeImportShelfGate:{ deferRefresh:() => { log.push(['defer']); return chance(.15) } },
+    libraryHost:{}, warnPreparation:() => {}, createShelf:books => { log.push(['create', books.length]); return shelf() },
+    refreshShelf:() => { log.push(['refresh']); return chance(.2) ? Promise.reject(new Error('refresh failed')) : Promise.resolve('refreshed') }
+  })
+  w.env = { ...w.env, recentFirst:host.recentFirst, nativeImportShelfGate:host.nativeImportShelfGate, retryRoomRefresh:host.retryRoomRefresh,
+    refreshAfterLoad:(...args) => rustShelf.app_refresh_after_load(host, ...args), els:host.els, refreshShelf:host.refreshShelf }
+  Object.assign(app, { shelfRecords:null, cloudRoomChanged:false, closingReader:false })
+  for (let step = 0; step < 8; step++) {
+    app.shelf = shelf()
+    if (chance(.2)) app.closingReader = !app.closingReader
+    if (chance(.2)) host.els.readerScreen.hidden = !host.els.readerScreen.hidden
+    const deploy = [undefined, null, { reloading:() => { log.push(['reloading']); return chance(.2) } }, { reloading:() => { throw new Error('reloading failed') } }][Math.floor(pick() * 4)]
+    host.deployCheck = deploy; w.env.deployCheck = deploy
+    const roll = pick()
+    if (roll < .5) results.push(await outcome(() => implementation.loaded(w, [], chance(.5), chance(.5) ? 'account' : undefined, chance(.5))))
+    else if (roll < .75) results.push(await outcome(() => implementation.idle(w)))
+    else results.push(await outcome(() => implementation.cloud(w, [null, undefined, { id:'r' }, 0][Math.floor(pick() * 4)])))
+    log.push(['state', app.shelf === null ? null : typeof app.shelf, app.shelfRecords?.length ?? null])
+  }
+  return { results, log }
+}
+const referenceRefresh = {
+  loaded:(w, ...args) => reference.refreshLoaded(w.env, ...args), idle:w => reference.launchIdle(w.env), cloud:(w, record) => reference.cloudChanged(w.env, record)
+}
+const rustRefresh = {
+  loaded:(w, books, first, ...args) => rustShelf.app_refresh_loaded(w.host, books, first, ...args), idle:w => rustShelf.app_launch_idle(w.host),
+  cloud:(w, record) => rustShelf.app_cloud_changed(w.host, record)
+}
+
 const referenceListeners = {
   length:w => reference.lengthVisibility(w.env), setting:(w, e) => reference.roomSettingChanged(w.env, e),
   storage:(w, e) => reference.storageChanged(w.env, e), hide:(w, e) => reference.pageHide(w.env, e)
@@ -195,6 +237,11 @@ describe('app.js decisions in rust-ui/src/app_controller.rs against the frozen J
       const actual = await listenerScript(rustListeners, seed)
       expect(actual).toEqual(expected)
     })
+    it(`refresh end, launch idle test and cloud change, seeded host ${seed}`, async () => {
+      const expected = await refreshScript(referenceRefresh, seed)
+      const actual = await refreshScript(rustRefresh, seed)
+      expect(actual).toEqual(expected)
+    })
     it(`Android file import, seeded host ${seed}`, async () => {
       const expected = await importScript((w, file) => reference.importFile({ app:w.app, progressWrites:w.host.progressWrites, openFile:w.host.openFile }, file), seed)
       const actual = await importScript((w, file) => rustShelf.app_import_file(w.host, file), seed)
@@ -211,6 +258,14 @@ describe('app.js decisions in rust-ui/src/app_controller.rs against the frozen J
     for (const kind of ['cloud', 'backup', 'refresh', 'close', 'write', 'open']) expect(log.some(entry => entry[0] === kind)).toBe(true)
     for (const message of ['close threw', 'close rejected', 'open threw', 'open rejected']) expect(results.some(([, value]) => value === message)).toBe(true)
     expect(results.some(([kind]) => kind === 'ok')).toBe(true)
+  })
+  it('covers every refresh-end, idle and cloud branch', async () => {
+    const log = [], results = []
+    for (let seed = 1; seed <= 40; seed++) { const run = await refreshScript(referenceRefresh, seed); log.push(...run.log); results.push(...run.results) }
+    for (const kind of ['sort', 'reloading', 'defer', 'create', 'update', 'queue', 'retry', 'cloudRecord', 'refresh', 'interacting'])
+      expect(log.some(entry => entry[0] === kind), kind).toBe(true)
+    for (const value of [true, false, 'refreshed']) expect(results.some(([kind, answer]) => kind === 'ok' && answer === value), String(value)).toBe(true)
+    for (const message of ['reloading failed', 'refresh failed']) expect(results.some(([, answer]) => answer === message), message).toBe(true)
   })
   it('covers every listener branch', async () => {
     const log = []

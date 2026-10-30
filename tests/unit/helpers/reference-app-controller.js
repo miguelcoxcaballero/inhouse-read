@@ -88,3 +88,26 @@ export function storageChanged(env, e) {
   const { applyCloudSettings } = env
   if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
 }
+
+// The end of app.js's performShelfRefresh, its launch-frame `isIdle` and the cloud sync's `onChange`, frozen
+// before they moved to rust-ui/src/app_controller.rs. `env.refreshAfterLoad` stands for
+// `needRustShelf().app_refresh_after_load(shelfRefreshHost, ...)`.
+export async function refreshLoaded(env, storedBooks, firstRecords, accountId, immediate) {
+  const { app, recentFirst, deployCheck, nativeImportShelfGate, refreshAfterLoad, retryRoomRefresh } = env
+  if (firstRecords) storedBooks = recentFirst(storedBooks)
+  // The page is being replaced by a newer deploy: building this shelf would only hold that up.
+  if (app.appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
+  const result = await refreshAfterLoad(storedBooks, accountId, immediate)
+  if (app.shelf?.isInteracting) retryRoomRefresh()
+  return result
+}
+
+export function launchIdle(env) {
+  const { app, els } = env
+  return !app.appDisposed && els.readerScreen.hidden && !app.shelf?.isInteracting && !app.closingReader
+}
+
+export function cloudChanged(env, record) {
+  const { app, refreshShelf } = env
+  if (record) app.shelf?.updateCloudRecord?.(record); return refreshShelf()
+}

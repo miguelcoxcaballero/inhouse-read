@@ -1,6 +1,8 @@
-//! What app.js still decided between its hosts: the adoption of the reader's own word count and the
-//! follow-up of a saved reading position. app.js keeps the objects these act on (library, queues, cloud
-//! sync) and calls in here; every call is the one it made, in the same order.
+//! What app.js still decided between its hosts: the adoption of the reader's own word count, the
+//! follow-up of a saved reading position, the length queue's changes, the Android import, the page's
+//! lifecycle listeners, the end of a shelf refresh and the launch frame's idle test. app.js keeps the
+//! objects these act on (library, queues, cloud sync) and calls in here; every call is the one it made,
+//! in the same order.
 use wasm_bindgen::{prelude::*,JsCast};
 use wasm_bindgen_futures::JsFuture;
 use js_sys::{Function,Object,Promise};
@@ -9,6 +11,39 @@ use crate::cloud_host::start;
 type R<T=()>=Result<T,JsValue>;
 
 fn state(host:&JsValue)->R<JsValue>{read(host,"state")}
+/// `app.shelf?.isInteracting`.
+fn interacting(state:&JsValue)->R<bool>{let shelf=read(state,"shelf")?;Ok(!absent(&shelf)&&truthy(&read(&shelf,"isInteracting")?))}
+
+/// The end of a shelf refresh, once the library, the bakes and the shelf and numeric modules are in: sort
+/// the start-up read, give way to a newer deploy or a native import, rebuild the shelf, and retry a room
+/// refresh that an interaction held back.
+#[wasm_bindgen]
+pub fn app_refresh_loaded(host:JsValue,stored:JsValue,first_read:bool,account:JsValue,immediate:JsValue)->Promise{start(async move{
+ let stored=if first_read{method(&host,"recentFirst",&[&stored])?}else{stored};
+ let state=state(&host)?;
+ // The page is being replaced by a newer deploy: building this shelf would only hold that up.
+ let deploy=read(&host,"deployCheck")?;
+ if truthy(&read(&state,"appDisposed")?)||(!absent(&deploy)&&truthy(&method(&deploy,"reloading",&[])?))
+  ||truthy(&method(&read(&host,"nativeImportShelfGate")?,"deferRefresh",&[])?){return Ok(JsValue::UNDEFINED)}
+ let result=JsFuture::from(crate::app_refresh::app_refresh_after_load(host.clone(),stored,account,immediate)).await?;
+ if interacting(&state)?{method(&host,"retryRoomRefresh",&[])?;}
+ Ok(result)
+})}
+
+/// Whether the settled shelf may be saved as the next launch's first paint: nobody is using it.
+#[wasm_bindgen]
+pub fn app_launch_idle(host:JsValue)->R<bool>{
+ let state=state(&host)?;
+ Ok(!truthy(&read(&state,"appDisposed")?)&&truthy(&read(&read(&read(&host,"els")?,"readerScreen")?,"hidden")?)
+  &&!interacting(&state)?&&!truthy(&read(&state,"closingReader")?))
+}
+
+/// Drive sync changed a record (or the whole library): update the shelf's copy, then refresh the shelf.
+#[wasm_bindgen]
+pub fn app_cloud_changed(host:JsValue,record:JsValue)->R<JsValue>{
+ if truthy(&record){crate::host::method_opt(&read(&state(&host)?,"shelf")?,"updateCloudRecord",&[&record])?;}
+ method(&host,"refreshShelf",&[])
+}
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let value:JsValue=Object::new().into();for (key,field) in fields{set(&value,key,field)?;}Ok(value)}
 /// A JS function owned by the garbage collector, like an arrow function in an options object.
 fn function<F:?Sized+wasm_bindgen::closure::WasmClosure>(closure:Closure<F>)->JsValue{closure.into_js_value()}

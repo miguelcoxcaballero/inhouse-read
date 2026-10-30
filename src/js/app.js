@@ -131,7 +131,7 @@ const nativeImportShelfGate = createNativeImportShelfGate({
 })
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
-  onChange: record => { if (record) app.shelf?.updateCloudRecord?.(record); return refreshShelf() }
+  onChange: record => withShell(shell => shell.app_cloud_changed(shellHost, record))
 })
 const liveRoom = new LiveRoom({
   enabled:()=>!app.appDisposed&&!document.hidden&&Boolean(app.driveProfile?.id),
@@ -252,19 +252,16 @@ async function performShelfRefresh({ immediate = false } = {}) {
   if (document.querySelector('.ihr-flyout')) return void needRustShelf().app_refresh_after_flyout(shellHost)
   if (app.shelf?.isInteracting) { retryRoomRefresh(); return }
   const accountId = (app.driveProfile || getRememberedDriveProfile())?.id
-  let storedBooks = await (firstRecords ?? library.listAll())
+  const storedBooks = await (firstRecords ?? library.listAll())
   // Saved plant meshes and plant/lamp paint are read in parallel. A late read
   // must not hold the shelf back for long: they are generated instead.
   // Layout, lighting and the pointer controllers of the live shelf are Rust-only: the render waits
   // for their modules, fetched with the page head and already compiled by now in practice,
   // alongside the baked reads.
   await Promise.all([shelfBakesSettled(120), requireRustShelf(), requireRustCore()])
-  if (firstRecords) storedBooks = recentFirst(storedBooks)
-  // The page is being replaced by a newer deploy: building this shelf would only hold that up.
-  if (app.appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
-  const result = await needRustShelf().app_refresh_after_load(shelfRefreshHost, storedBooks, accountId, immediate)
-  if (app.shelf?.isInteracting) retryRoomRefresh()
-  return result
+  // Sorting the start-up read, giving way to a newer deploy or a native import, the rebuild and its room
+  // retry: rust-ui/src/app_controller.rs.
+  return needRustShelf().app_refresh_loaded(shelfRefreshHost, storedBooks, Boolean(firstRecords), accountId, immediate)
 }
 
 function createShelfForRecords(books) {
@@ -302,6 +299,7 @@ const shelfRefreshHost = {
   removedPreparationCleanup: (book, generation) => () => bookDataModule().app_finish_removed_preparation(shelfRefreshHost, book, generation),
   warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
   createShelf: createShelfForRecords,
+  recentFirst, retryRoomRefresh, get deployCheck() { return deployCheck },
   placementMapper: () => row => bookDataModule().app_placement_record(shelfRefreshHost, row),
   orderMapper: () => row => bookDataModule().app_order_record(shelfRefreshHost, row),
   warnPreparation: error => console.warn('Preparación del grosor:', error),
@@ -553,7 +551,7 @@ initAndroidUpdateChecks()
 // for them (see idle-startup.js).
 runAfterFirstFrame([
   () => rememberLaunchFrames(els.bookshelfRoot, { books:() => library.listRaw(), idle:idleWork, shelfModule:needRustShelf,
-    isIdle:() => !app.appDisposed && els.readerScreen.hidden && !app.shelf?.isInteracting && !app.closingReader }),
+    isIdle:() => needRustShelf().app_launch_idle(shellHost) }),
   () => { void loadRustCore(); void loadRustDecorCore(); profileView.warm() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),
