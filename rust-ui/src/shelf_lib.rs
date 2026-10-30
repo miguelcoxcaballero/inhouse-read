@@ -60,10 +60,8 @@ mod book_paint;
 // a reader/catalog is opened. Share the kernels rather than wake that module.
 mod book_projection;
 mod foliage;
-mod three_host;
-mod decor_build;
+mod packet_host;
 mod plant_build;
-mod studio_build;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

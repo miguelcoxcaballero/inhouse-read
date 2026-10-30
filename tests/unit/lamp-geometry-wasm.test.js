@@ -7,7 +7,7 @@ const state=vi.hoisted(()=>({loaded:true,calls:0}));
 vi.mock('../../src/js/rust-shelf.js',async importOriginal=>{
  const actual=await importOriginal();
  const counted=new Proxy(actual.needRustShelf(),{get(target,name){
-  if(name==='lamp_geometry_build')return(...args)=>{state.calls++;return target.lamp_geometry_build(...args);};
+  if(name==='lamp_geometry')return(...args)=>{state.calls++;return target.lamp_geometry(...args);};
   return target[name];}});
  return{...actual,needRustShelf:()=>{if(!state.loaded)throw new Error('El módulo de la estantería no está cargado.');return counted;}};
 });

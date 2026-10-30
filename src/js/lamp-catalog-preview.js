@@ -49,13 +49,49 @@ export function createLampCatalogPreview(host) {
       const model = createShelfLamp({ lampId:lamp.id,width:lamp.dimensions.width,quality:'high',kelvin:tint.state.kelvin });
       shownTint = '';
       model.userData.invalidate = invalidate;
-      // Filtering, glass shadows, the fixture's own light, the stand, the camera and the centring:
-      // rust-ui/src/studio_build.rs. A filament lamp's strips come from the shelf's light pool.
-      const dressed = studio.shelf.studio_lamp_dress(THREE, host, model, display, presentation, camera, renderer, lamp, surfaces,
-        () => { filamentLighting = createShelfLampLighting(studio.parts.scene, { maxLights:1, filamentAreas:true }); });
-      if (dressed.fixture) fixture = dressed.fixture;
-      if (dressed.target) target = dressed.target;
-      size = dressed.size;
+      model.traverse(object => {
+        if (!object.isMesh) return;
+        // Glass keeps the model's transparent shadow behaviour, so the
+        // chimney cannot cast an opaque silhouette over its own LED filament.
+        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        if (objectMaterials.some(material => material.transparent || material.transmission > 0)) object.castShadow = false;
+        for (const material of objectMaterials) {
+          for (const name of ['map','bumpMap','roughnessMap']) {
+            if (material[name]) material[name].anisotropy = Math.min(8,renderer.capabilities.getMaxAnisotropy());
+          }
+        }
+      });
+      display.add(model);
+      const emitter = model.userData.lightEmitter;
+      const stage = studio.shelf.studio_lamp_stage(lamp.mount === 'undershelf', lamp.dimensions.width);
+      if (emitter?.filaments) {
+        emitter.intensity *= stage.filament;
+        filamentLighting = createShelfLampLighting(studio.parts.scene, { maxLights:1, filamentAreas:true });
+      } else if (emitter) {
+        fixture = emitter.direction
+          ? new THREE.SpotLight(emitter.color,emitter.intensity * stage.cone,emitter.distance,emitter.angle,emitter.penumbra,emitter.decay)
+          : new THREE.PointLight(emitter.color,emitter.intensity * stage.bulb,emitter.distance,emitter.decay);
+        fixture.position.fromArray(emitter.position); display.add(fixture);
+        if (emitter.direction) {
+          target = new THREE.Object3D(); target.position.copy(fixture.position).add(new THREE.Vector3().fromArray(emitter.direction));
+          display.add(target); fixture.target = target;
+        }
+      }
+      for (const { kind, size:[a, b, c], color, y, cast } of stage.surfaces) {
+        const mesh = new THREE.Mesh(kind === 'box' ? new THREE.BoxGeometry(a, b, c) : new THREE.CircleGeometry(a, b),
+          new THREE.MeshStandardMaterial({ color, roughness:.86 }));
+        mesh.receiveShadow = true; surfaces.push(mesh); presentation.add(mesh);
+        if (kind === 'circle') mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = y;
+        if (cast) mesh.castShadow = true;
+      }
+      camera.position.set(...stage.camera);
+      const bounds = new THREE.Box3().setFromObject(display);
+      size = bounds.getSize(new THREE.Vector3()); display.position.sub(bounds.getCenter(new THREE.Vector3()));
+      camera.lookAt(0,0,0);
+      host.dataset.lightEmitter = emitter ? 'warm-physical' : 'none';
+      // Its light must exist before linking: every lit program depends on it.
+      display.updateMatrixWorld(true);
       applyTint(model);
       filaments(model);
       return model;

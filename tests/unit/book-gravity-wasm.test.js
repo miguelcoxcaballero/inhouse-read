@@ -4,7 +4,7 @@ import {plantGeometrySpec,lampGeometrySpec} from '../../src/js/decor-geometry-sp
 import {expect,it} from 'vitest'
 import {rustShelf} from './helpers/rust-shelf-ready.js'
 import {readGeometry} from './helpers/geo-packet.js'
-import {openPacket,geometryOf} from './helpers/reference-geo-packet.js'
+import {openPacket,geometryOf} from '../../src/js/geo-packet.js'
 function fixture(rows,metal=false,animated=false){
  const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,metal,false,0);
  let clock=0;const previous=new Map();

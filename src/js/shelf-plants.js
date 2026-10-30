@@ -62,9 +62,41 @@ const cactusMaterial = () => new THREE.MeshStandardMaterial({ color:0xffffff, ve
 const needleMaterial = () => new THREE.LineBasicMaterial({ color:'#d9cda9', transparent:true, opacity:.8 });
 
 // A bake is the finished plant content as plain data: every object in its
-// creation order, its parent and place among siblings, transform, material
-// role and geometry arrays. The Rust shelf module draws it and rebuilds the
-// three.js objects from it, fresh or saved (rust-ui/src/plant_build.rs).
+// creation order (ids decide the draw order of equal sort keys), its parent
+// and place among siblings, transform, material role and geometry arrays.
+// The Rust shelf module draws it and reads its packet into this record
+// (rust-ui/src/plant_model.rs, plant_build.rs); a saved one is read back the same way.
+
+function restoreGeometry(baked) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.type = baked.type;
+  for (const [name, [array, itemSize, normalized]] of Object.entries(baked.attributes))
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, itemSize, normalized));
+  if (baked.index) geometry.setIndex(new THREE.BufferAttribute(baked.index, 1));
+  for (const [start, count, materialIndex] of baked.groups) geometry.addGroup(start, count, materialIndex);
+  geometry.userData = JSON.parse(JSON.stringify(baked.userData ?? {}));
+  if (baked.box) geometry.boundingBox = new THREE.Box3(new THREE.Vector3().fromArray(baked.box), new THREE.Vector3().fromArray(baked.box, 3));
+  return geometry;
+}
+
+function restoreContent(bake, content, materialFor, track) {
+  const objects = bake.objects.map(baked => {
+    const object = baked.kind === 'group' ? new THREE.Group() : new (baked.kind === 'lines' ? THREE.LineSegments : THREE.Mesh)(restoreGeometry(baked.geometry), materialFor(baked.role));
+    object.name = baked.name;
+    object.position.fromArray(baked.position); object.scale.fromArray(baked.scale);
+    // Euler and quaternion each follow whichever of them was set last.
+    object.quaternion.fromArray(baked.quaternion);
+    const [x, y, z, rotationOrder] = baked.rotation;
+    if (object.rotation.x !== x || object.rotation.y !== y || object.rotation.z !== z || object.rotation.order !== rotationOrder) object.rotation.set(x, y, z, rotationOrder);
+    object.castShadow = baked.castShadow; object.receiveShadow = baked.receiveShadow;
+    object.userData = JSON.parse(JSON.stringify(baked.userData ?? {}));
+    if (baked.kind !== 'group') track(object);
+    return object;
+  });
+  const children = bake.objects.map((baked, index) => [baked.parent, baked.place, objects[index]]).sort((a, b) => a[1] - b[1]);
+  for (const [parent, , object] of children) (parent === -1 ? content : objects[parent]).add(object);
+  return [...bake.parts];
+}
 
 // Keep the latest twelve shelf bakes, validate late disk records and collect
 // only completed surface images. Those decisions share the Rust queue state.
@@ -124,7 +156,7 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   const roleMaterials = { clay, soil, leaf:leafMaterial, stem:stemMaterial, mineral, green, needles };
   const bake = baked ? baked.bake : shelf.plant_bake_build(units, appearance.skip, variant, potId ?? '', potModelId ?? '', Boolean(catalogPlant), detailed,
     [width, radius, potHeight, soilFraction, real.foliageHeight * unit, real.referenceHeight * unit, height]);
-  const parts = shelf.plant_restore(THREE, bake, content, roleMaterials, geometries, materials);
+  const parts = restoreContent(bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
   // Each shelf plant keeps its bake and its level-1 surfaces for the next launch.
   const levelOneSurfaces = () => shelf.plant_surface_keys(potKey(1),detailed,variant,soilKind);
   let shelfEntry = baked;
