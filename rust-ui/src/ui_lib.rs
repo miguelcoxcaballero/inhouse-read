@@ -78,6 +78,7 @@ mod page_snapshot;
 mod page_box;
 mod promises;
 mod foliate_reader;
+mod foliate_open;
 mod pdf_reader;
 mod pdf_speech;
 mod reader_controller;
