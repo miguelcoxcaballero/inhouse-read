@@ -2,7 +2,7 @@
 //! `ui` holds the reader and catalogue components, loaded with the reader chunk; `shelf` holds
 //! the pointer state machines of the live shelf (view swipe, pinch zoom), small enough to be
 //! fetched with the page head and ready before the first shelf frame.
-#[cfg(any(feature = "ui", feature = "shelf"))]
+#[cfg(any(feature = "ui", feature = "shelf", feature = "voice"))]
 mod host;
 #[cfg(feature = "ui")]
 include!("ui_lib.rs");
@@ -123,3 +123,6 @@ mod reader_experience_policy;
 
 #[cfg(feature = "ui")]
 mod reader_lazy_policy;
+
+#[cfg(feature = "voice")]
+include!("voice_lib.rs");
