@@ -135,11 +135,13 @@ async function run(module, options, script) {
 async function compare(options, script, name) {
   const time = clock();
   const reference = await import('./helpers/reference-book-model.js');
-  // The cover raster cache outlives a module reload: one warm-up run leaves both compared runs the same cache.
+  // The cover raster cache outlives a module reload and each module keeps its renderers: a warm-up run of
+  // each module leaves both compared runs the same caches.
   await run(reference, options, (view, step, stage) => script(view, step, stage, time));
   const expected = await run(reference, options, (view, step, stage) => script(view, step, stage, time));
   vi.resetModules(); gpu.log.length = 0;
   const production = await import('../../src/js/book-model.js');
+  await run(production, options, (view, step, stage) => script(view, step, stage, time));
   const actual = await run(production, options, (view, step, stage) => script(view, step, stage, time));
   expect(actual.length, name).toBe(expected.length);
   for (let i = 0; i < expected.length; i++) {
