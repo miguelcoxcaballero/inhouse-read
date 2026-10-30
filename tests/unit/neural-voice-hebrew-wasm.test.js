@@ -89,25 +89,22 @@ it('reports the first broken head, in the order the original checked them', () =
   }
 })
 
-it('keeps memory bounded across repeated complete calls', () => {
+it('keeps memory bounded across repeated complete calls', async () => {
   const text = 'שָׁלוֹם עוֹלָם '.repeat(40)
-  state.core = core
+  // The voice module of this realm (the setup loaded it): initSync hands back the instance already made.
+  const voice = (await import('../../src/wasm/voice/inhouse_read_voice_ui.js')).initSync({ module:process.__inhouseVoiceUIModule })
   hebrewToIpa(text); nakdimonInputIds(text)
-  const capacity = core.memory.buffer.byteLength
+  const capacity = voice.memory.buffer.byteLength
   for (let i = 0; i < 200; i++) { hebrewToIpa(text); nakdimonInputIds(text) }
-  expect(core.memory.buffer.byteLength).toBe(capacity)
+  expect(voice.memory.buffer.byteLength).toBe(capacity)
 })
 
-it('frees its arena exactly once when the core declines a call, and says so', () => {
-  const text = 'שָׁלוֹם עוֹלָם '.repeat(10)
-  for (const hebrew_ipa_words of [() => -1, () => { throw new Error('trap') }]) {
-    let live = 0
-    state.core = { ...core, alloc_f64(n) { const p = core.alloc_f64(n); if (p) live += n; return p }, free_f64(p, n) { core.free_f64(p, n); live -= n }, hebrew_ipa_words }
-    expect(() => hebrewToIpa(text)).toThrow()
-    expect(live).toBe(0)
-  }
-  state.core = { ...core, alloc_f64: () => 0 }
-  expect(() => hebrewToIpa(text)).toThrow(/memory/)
+it('says so when the voice module is not loaded, instead of answering without the rules', () => {
+  const slot = Symbol.for('inhouse-read.voice-ui'), loaded = globalThis[slot]
+  delete globalThis[slot]
+  try {
+    for (const run of [() => hebrewToIpa('שָׁלוֹם'), () => nakdimonInputIds('שלום'), () => mergeNiqqud(['ש'], {})]) expect(run).toThrow('El módulo de voz no está cargado.')
+  } finally { globalThis[slot] = loaded }
 })
 
 it('is the voice domain: no imports, and the synthesis kernels beside the rules', () => {

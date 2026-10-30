@@ -15,6 +15,13 @@ const NVCC:&str="no_NO-nvcc-medium";
 fn error(message:&str)->JsValue{js_sys::Error::new(message).into()}
 fn n(value:f64)->JsValue{JsValue::from_f64(value)}
 fn len(value:&JsValue)->f64{num(&get(value,"length"))}
+/// ToNumber as a typed array store or a wasm `f64` argument applies it: like `Number(value)`, except that a BigInt or a
+/// Symbol is a TypeError.
+fn to_number(value:&JsValue)->R<f64>{
+ if value.is_bigint(){return Err(js_sys::TypeError::new("Cannot convert a BigInt value to a number").into());}
+ if value.is_symbol(){return Err(js_sys::TypeError::new("Cannot convert a Symbol value to a number").into());}
+ Ok(num(value))
+}
 fn units(text:&JsValue)->Vec<u16>{text.unchecked_ref::<JsString>().iter().collect()}
 /// `String.fromCharCode` in bounded slices: any code unit, a lone surrogate included.
 fn from_units(units:&[u16])->JsString{let mut out=JsString::from("");for part in units.chunks(8192){out=out.concat(&JsString::from_char_code(part));}out}
@@ -49,7 +56,7 @@ fn ids_of(ids:&JsValue)->Vec<u32>{Uint32Array::new(ids).to_vec()}
 fn id_array(ids:&[u32])->Array{Array::from(&Uint32Array::from(ids).into())}
 
 #[wasm_bindgen]
-pub fn voice_host_length_scale(base:JsValue,rate:JsValue)->f64{crate::synth_flow::voice_length_scale(num(&base),num(&rate))}
+pub fn voice_host_length_scale(base:JsValue,rate:JsValue)->R<f64>{Ok(crate::synth_flow::voice_length_scale(to_number(&base)?,num(&rate)))}
 #[wasm_bindgen]
 pub fn voice_host_synthesis_rate(rate:JsValue)->f64{crate::synth_flow::voice_synthesis_rate(num(&rate))}
 #[wasm_bindgen]
@@ -58,8 +65,8 @@ pub fn voice_host_tempo_speed(rate:JsValue)->f64{crate::synth_flow::voice_tempo_
 /// The float32 `scales` of one Piper run at the speaking `rate`: the config's inference values, else the model defaults.
 #[wasm_bindgen]
 pub fn voice_host_piper_scales(inference:JsValue,rate:JsValue)->R<Float32Array>{
- let field=|key:&str|{let value=get(&inference,key);(num(&value),u32::from(absent(&value)))};
- let ((noise,no_noise),(length,no_length),(width,no_width))=(field("noise_scale"),field("length_scale"),field("noise_w"));
+ let field=|key:&str|->R<(f64,u32)>{let value=get(&inference,key);Ok((to_number(&value)?,u32::from(absent(&value))))};
+ let ((noise,no_noise),(length,no_length),(width,no_width))=(field("noise_scale")?,field("length_scale")?,field("noise_w")?);
  let mut out=[0f32;3];
  status(unsafe{crate::synth_flow::voice_piper_scales(noise,no_noise,length,no_length,width,no_width,num(&rate),out.as_mut_ptr())})?;
  Ok(Float32Array::from(&out[..]))
@@ -92,14 +99,14 @@ pub fn voice_host_split_segments(ids:JsValue)->R<Array>{
 #[wasm_bindgen]
 pub fn voice_host_finish_piper(raw:Vec<f32>,durations:Option<Vec<f32>>,points:JsValue,text:JsValue,options:JsValue)->R{
  let mut raw=raw;
- let sample_rate=num(&get(&options,"sampleRate"));
+ let sample_rate=to_number(&get(&options,"sampleRate"))?;
  let nvcc=get(&options,"model").as_string().is_some_and(|model|model==NVCC);
- let config=[sample_rate,if nvcc{1.0}else{0.0},num(&get(&options,"rate")),num(&get(&options,"base")),num(&get(&options,"count")),
-  if get(&options,"last").is_truthy(){1.0}else{0.0},if get(&options,"first").is_truthy(){0.0}else{1.0}];
  let marks=len(&points) as usize;
- let phonemes:Vec<f64>=(0..marks).map(|i|num(&get(&get_at(&points,i as u32),"phoneme"))).collect();
- let text=units(&text);let durations=durations.unwrap_or_default();
  let room=capacity(raw.len(),sample_rate)?;
+ let phonemes=(0..marks).map(|i|to_number(&get(&get_at(&points,i as u32),"phoneme"))).collect::<R<Vec<f64>>>()?;
+ let config=[sample_rate,if nvcc{1.0}else{0.0},num(&get(&options,"rate")),to_number(&get(&options,"base"))?,to_number(&get(&options,"count"))?,
+  if get(&options,"last").is_truthy(){1.0}else{0.0},if get(&options,"first").is_truthy(){0.0}else{1.0}];
+ let text=units(&text);let durations=durations.unwrap_or_default();
  let (mut pcm,mut records,mut meta)=(vec![0f32;room],vec![0f64;marks*2],[0f64;2]);
  status(unsafe{crate::synth_flow::voice_finish_piper(raw.as_mut_ptr(),raw.len(),durations.as_ptr(),durations.len(),phonemes.as_ptr(),marks,
   text.as_ptr(),text.len(),config.as_ptr(),pcm.as_mut_ptr(),room,records.as_mut_ptr(),meta.as_mut_ptr())})?;
@@ -115,10 +122,10 @@ pub fn voice_host_finish_piper(raw:Vec<f32>,durations:Option<Vec<f32>>,points:Js
 #[wasm_bindgen]
 pub fn voice_host_finish_supertonic(raw:Vec<f32>,text:JsValue,timeline:JsValue,options:JsValue)->R{
  let mut raw=raw;
- let sample_rate=num(&get(&options,"sampleRate"));let config=[sample_rate,num(&get(&options,"rate"))];
+ let sample_rate=to_number(&get(&options,"sampleRate"))?;let room=capacity(raw.len(),sample_rate)?;
  let text=units(&text);let marks=len(&timeline) as usize;
- let samples:Vec<f64>=(0..marks).map(|i|num(&get(&get_at(&timeline,i as u32),"sample"))).collect();
- let room=capacity(raw.len(),sample_rate)?;
+ let samples=(0..marks).map(|i|to_number(&get(&get_at(&timeline,i as u32),"sample"))).collect::<R<Vec<f64>>>()?;
+ let config=[sample_rate,num(&get(&options,"rate"))];
  let (mut pcm,mut records,mut meta)=(vec![0f32;room],vec![0f64;marks*2],[0f64;2]);
  let code=unsafe{crate::synth_flow::voice_finish_supertonic(raw.as_mut_ptr(),raw.len(),text.as_ptr(),text.len(),samples.as_ptr(),marks,
   config.as_ptr(),pcm.as_mut_ptr(),room,records.as_mut_ptr(),meta.as_mut_ptr())};
@@ -138,7 +145,7 @@ pub fn voice_host_speed_up(pcm:JsValue,sample_rate:JsValue,rate:JsValue,marks:Js
  let speech=speech.to_vec();let found=len(&marks) as usize;
  let samples:Vec<f64>=(0..found).map(|i|{let value=get(&get_at(&marks,i as u32),"sample");
   match value.as_f64(){Some(x) if x.is_finite()&&x.fract()==0.0=>x,_=>f64::NAN}}).collect();
- let config=[num(&sample_rate),rate];
+ let config=[to_number(&sample_rate)?,rate];
  let (mut out,mut records,mut meta)=(vec![0f32;speech.len()],vec![0f64;found*2],[0f64;2]);
  let written=unsafe{crate::synth_flow::voice_speed_up(speech.as_ptr(),speech.len(),samples.as_ptr(),found,config.as_ptr(),out.as_mut_ptr(),records.as_mut_ptr(),meta.as_mut_ptr())};
  if written<0{status(written)?;}
