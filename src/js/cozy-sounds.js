@@ -32,16 +32,9 @@ const host={
 export const shelfSoundsEnabled=()=>state?engine().cozy_transport_enabled(host,state):false;
 /** The level an event is rendered at: soft under 0.33, medium under 0.66, otherwise hard. */
 export const shelfSoundLevel=strength=>engine().cozy_transport_level(strength);
+// rust-ui cozy_atlas.rs; the frozen original is tests/unit/helpers/reference-cozy-sounds.js.
 /** Index the atlas as groups of takes (`book_set_wood_t0`… belong to `book_set_wood`), keeping only valid clips. */
-export function indexShelfSoundAtlas(index,samples){
- const found=new Map();
- for(const [name,clip] of Object.entries(index&&typeof index==='object'?index:{})){
-  const offset=clip?.offset,length=clip?.length,rate=clip?.rate??24000;
-  if(!Number.isInteger(offset)||!Number.isInteger(length)||offset<0||length<2||offset+length>samples||!(rate>=8000&&rate<=96000))continue;
-  const group=name.replace(/_t\d+$/,'');if(!found.has(group))found.set(group,[]);found.get(group).push({name,offset,length,rate});
- }
- return found;
-}
+export const indexShelfSoundAtlas=(index,samples)=>engine().cozy_atlas_index(index,samples);
 function loadAtlas(){
  if(atlasState==='loading'||atlasState==='ready'||atlasState==='failed'&&Date.now()<atlasRetry||typeof fetch!=='function')return;
  atlasState='loading';

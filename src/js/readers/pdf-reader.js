@@ -29,7 +29,7 @@ import { speechHold } from './speech-hold.js'
 import { pdfPlaceFigures } from './pdf-figures-wasm.js'
 import { pdfImageRects } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
-import { readerUI } from './rust-ui-required.js'
+import { readerUI, rustMethods } from './rust-ui-required.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -108,23 +108,7 @@ export class PdfReader {
 
   get pageCount() { return this.s.doc?.numPages ?? 0 }
   get currentPage() { return this.s.pageNum }
-
-  goToPage(n, options) { return readerUI().pdf_go_to_page(this.s, n, options) }
-  next(options) { return readerUI().pdf_next(this.s, options) }
-  prev() { return readerUI().pdf_prev(this.s) }
-  getLengthMetadata() { return readerUI().pdf_length(this.s) }
-  toggleZoom(clientX, clientY) { return readerUI().pdf_toggle_zoom(this.s, clientX, clientY) }
-  getSpeechText() { return readerUI().pdf_speech_text(this.s) }
-  getSpeechSource(options) { return readerUI().pdf_speech_source(this.s, options) }
-  browseSpeech() { readerUI().pdf_speech_browse(this.s) }
-  stopSpeech() { readerUI().pdf_speech_stop(this.s) }
-  returnToSpeech() { return readerUI().pdf_speech_return(this.s) }
-  getNextSpeechSource(options) { return readerUI().pdf_next_speech(this.s, options) }
-  getPageSnapshot(options) { return readerUI().pdf_snapshot(this.s, options) }
-  search(query) { return readerUI().pdf_search(this.s, query) }
-  getSelection() { return readerUI().pdf_selection() }
-  applyPreferences(preferences) { return readerUI().pdf_apply_preferences(this.s, preferences) }
-  /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
-  getCoverBlob(options) { return readerUI().pdf_cover(this.s, options) }
-  close() { readerUI().pdf_close(this.s) }
 }
+// Methods answered by rust-ui pdf_method (controller_methods.rs) over `this.s`; getCoverBlob is page 1's thumbnail.
+rustMethods(PdfReader,'pdf_method',`goToPage next prev getLengthMetadata toggleZoom getSpeechText getSpeechSource browseSpeech stopSpeech
+ returnToSpeech getNextSpeechSource getPageSnapshot search getSelection applyPreferences getCoverBlob close`)

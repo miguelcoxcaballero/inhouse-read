@@ -10,6 +10,9 @@ test('Rust keeps manual browsing separate from listening and seeks only after a 
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.voice_browse)return result
    window.voiceNavigationProof.available=true;const exports={...actual}
    for(const name of ['voice_browse','voice_return_audio','voice_seek_point'])exports[name]=(...args)=>{window.voiceNavigationProof.calls[name]=(window.voiceNavigationProof.calls[name]||0)+1;return actual[name](...args)}
+   // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
+   // dispatched member's name from the call and count it as the implementation it runs.
+   const dispatched={"voice_method":{"browse":"voice_browse","returnToAudio":"voice_return_audio","seekToPoint":"voice_seek_point"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)window.voiceNavigationProof.calls[name]=(window.voiceNavigationProof.calls[name]||0)+1;return actual[dispatch](...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}

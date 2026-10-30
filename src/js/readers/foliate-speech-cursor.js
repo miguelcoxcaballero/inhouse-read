@@ -8,7 +8,7 @@ import { Overlayer } from 'foliate-js/overlayer.js'
 import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange } from './speech-highlight.js'
-import { readerUI } from './rust-ui-required.js'
+import { readerUI, rustMethods } from './rust-ui-required.js'
 
 export class FoliateSpeechCursor {
   constructor(view, { env = document, onRelocate = () => {}, theme = () => 'light' } = {}) {
@@ -25,7 +25,6 @@ export class FoliateSpeechCursor {
   }
   get detached() { return Boolean(this.current?.detached) }
   get active() { return Boolean(this.current) }
-  valid() { return readerUI().cursor_valid(this) }
   reset() { ++this.epoch; this.current = null; this.browsing = false }
   browse() { this.browsing = true }
   async returnToSpeech() { this.browsing = false; await this.reveal() }
@@ -42,8 +41,6 @@ export class FoliateSpeechCursor {
     source.clear = () => ui.cursor_clear(state, clear)
     return source
   }
-
-  remember(state, start, end) { readerUI().cursor_remember(this, state, start, end) }
 
   async next({ isActive = () => true } = {}) {
     const ui = readerUI(), found = await ui.cursor_next(this, isActive, mapSpeechText)
@@ -81,8 +78,6 @@ export class FoliateSpeechCursor {
     const state = this.current
     return state ? { ...state.source, start:state.offset } : null
   }
-
-  // Only the most recent audible CFI is shown. No timers, page animation or
-  // rendering promise is used as a prerequisite for synthesis/playback.
-  reveal() { return readerUI().cursor_reveal(this, Overlayer.highlight) }
 }
+// valid, remember and reveal (only the most recent audible CFI is shown): rust-ui foliate_cursor.rs via foliate_method.
+rustMethods(FoliateSpeechCursor,'foliate_method','valid remember reveal',{get Overlayer(){return Overlayer}})

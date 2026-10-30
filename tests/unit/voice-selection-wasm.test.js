@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {LegacyVoiceSelection} from './helpers/reference-voice-selection.js'
-import {selectReadingVoice} from '../../src/js/readers/voice-selection.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const selectReadingVoice=method('voiceFor')
 import {declaredLanguage,isNeuralId,langBase,resolveVoice} from '../../src/js/readers/voice-catalog.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({catalog:()=>[],ui:null}))
@@ -76,8 +79,8 @@ it('preserves exact UTF-16 packet text and propagates a mark getter error unchan
 })
 it('selects through the Rust function while retaining the same installed voice records',()=>{
  const {host,voices}=setup(false,7);const before=host.voiceFor('Hello')
- const native={voice_for:vi.fn(ui.voice_for)};fixture.ui=native;const after=selectReadingVoice(host,'Hello')
- expect(native.voice_for).toHaveBeenCalledOnce();expect(after).toEqual(before)
+ const native={voice_method:vi.fn(ui.voice_method)};fixture.ui=native;const after=selectReadingVoice(host,'Hello')
+ expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,3)).toEqual([host,'voiceFor',['Hello']]);expect(after).toEqual(before)
  if(after.voice)expect(voices).toContain(after.voice)
 })
 it('fails clearly without the core instead of choosing a voice another way',()=>{

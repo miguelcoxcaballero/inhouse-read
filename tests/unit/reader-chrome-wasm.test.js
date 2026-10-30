@@ -74,9 +74,10 @@ for(let round=0;round<2;round++){const before=core.memory.buffer.byteLength;for(
 
 it('delegates every voice state to the Rust function without recreating the open reader',()=>{
  const {host}=setup(false,1),chrome=new ReaderChrome(host),panel=host.panel
- const native={reader_voice_state:vi.fn(ui.reader_voice_state)};runtime.ui=native
+ // voiceState reaches reader_voice_state through the Rust dispatcher of the reader's parts.
+ const native={flow_method:vi.fn(ui.flow_method)};runtime.ui=native
  chrome.voiceState('playing','First');chrome.voiceState('paused','Second')
- expect(native.reader_voice_state).toHaveBeenCalledTimes(2);expect(host.panel).toBe(panel)
+ expect(native.flow_method.mock.calls.map(call=>call.slice(0,3))).toEqual([[chrome,'voiceState',['playing','First']],[chrome,'voiceState',['paused','Second']]]);expect(host.panel).toBe(panel)
  expect(panel.querySelector('.reading-audio-status').textContent).toBe('Second')
 })
 it('schedules no focus scrolling for closed panels and ignores closure before a pending frame',()=>{

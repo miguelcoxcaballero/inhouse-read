@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {LegacyVoiceStop} from './helpers/reference-voice-stop.js'
-import {pauseReadingVoice} from '../../src/js/readers/voice-stop.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const pauseReadingVoice=method('pause')
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({deps:{},ui:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.deps.engine()}))
@@ -68,6 +71,6 @@ it('rejects a cyclic location before modifying stop state or cancelling transpor
  expect(()=>host.stop()).toThrow();expect(events).toEqual([]);expect(host.generation).toBe(5);expect(host.utteranceId).toBe('active')
 })
 it('adopts a late pause implementation without replacing the active voice',()=>{
- const {host}=setup(false,1),native={voice_pause:vi.fn(ui.voice_pause)}
- fixture.ui=native;pauseReadingVoice(host);expect(native.voice_pause).toHaveBeenCalledWith(host);expect(host.state).toBe('paused')
+ const {host}=setup(false,1),native={voice_method:vi.fn(ui.voice_method)}
+ fixture.ui=native;pauseReadingVoice(host);expect(native.voice_method.mock.calls[0].slice(0,3)).toEqual([host,'pause',[]]);expect(host.state).toBe('paused')
 })

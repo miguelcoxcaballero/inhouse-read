@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {LegacyVoiceJoin} from './helpers/reference-voice-join.js'
-import {joinVoiceSentence} from '../../src/js/readers/voice-join.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const joinVoiceSentence=method('joinPageSentence')
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
@@ -89,6 +92,6 @@ it('propagates getter errors unchanged and releases failed-join allocations',()=
  }
 })
 it('adopts a late join implementation without replacing source records',()=>{
- const {host,original}=setup(false,1),native={voice_join_sentence:vi.fn(ui.voice_join_sentence)}
- fixture.ui=native;joinVoiceSentence(host);expect(native.voice_join_sentence).toHaveBeenCalledOnce();expect(host.items.at(-1).unjoined).toBe(original)
+ const {host,original}=setup(false,1),native={voice_method:vi.fn(ui.voice_method)}
+ fixture.ui=native;joinVoiceSentence(host);expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'joinPageSentence']);expect(host.items.at(-1).unjoined).toBe(original)
 })

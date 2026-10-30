@@ -24,7 +24,7 @@ import { speechPageBreaks } from './speech-page-breaks.js'
 import { speechHold } from './speech-hold.js'
 import { FoliateSpeechCursor } from './foliate-speech-cursor.js'
 import { measureBookLength } from '../book-length.js'
-import { readerUI } from './rust-ui-required.js'
+import { readerUI, rustMethods } from './rust-ui-required.js'
 
 // Tells the audiobook that pages broke anew (see ReadingVoice.refreshPageBreaks),
 // once the paginator has laid the chapter out again.
@@ -165,11 +165,7 @@ export class FoliateReader {
     return s.speechCursor?.wrap(source, map, content.index) || source
   }
 
-  /** Snapshot the current paginated column/scroll viewport after CFI restore. */
-  getPageSnapshot() { return readerUI().foliate_snapshot(this.s, snapshotKit) }
-  search(query) { return readerUI().foliate_search(this.s, query) }
   clearSearch() { this.s.view?.clearSearch?.() }
-  getSelection() { return readerUI().foliate_selection(this.s) }
   addQuoteAnnotation(quote) { if (quote?.locator?.kind === 'cfi') this.s.view?.addAnnotation?.({ value:quote.locator.value, color:quote.color }) }
   removeQuoteAnnotation(quote) { if (quote?.locator?.kind === 'cfi') this.s.view?.deleteAnnotation?.({ value:quote.locator.value }) }
   async applyPreferences(preferences) {
@@ -178,5 +174,6 @@ export class FoliateReader {
     this.#styles()
   }
 
-  close() { readerUI().foliate_close(this.s) }
 }
+// The page snapshot, search, selection and closing: rust-ui foliate_method (controller_methods.rs) over `this.s`.
+rustMethods(FoliateReader,'foliate_method','getPageSnapshot search getSelection close',{snapshot:snapshotKit})

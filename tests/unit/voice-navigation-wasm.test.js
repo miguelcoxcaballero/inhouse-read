@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {it,expect,vi,afterEach} from 'vitest'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {browseVoice,returnVoiceAudio,seekVoicePoint} from '../../src/js/readers/voice-navigation.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const browseVoice=method('browse')
+const returnVoiceAudio=method('returnToAudio')
+const seekVoicePoint=method('seekToPoint')
 const fixture=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 afterEach(()=>{fixture.ui=null})
@@ -63,6 +68,6 @@ it('does not adopt a phrase after Stop invalidates its asynchronous preparation'
 })
 it('adopts a late native navigator without recreating the reader or its source',async()=>{
  const {host}=setup(false,33);host.state='playing';const source=host.source,reader=host.reader
- const native={...ui,voice_browse:vi.fn(ui.voice_browse)};fixture.ui=native;browseVoice(host)
- expect(native.voice_browse).toHaveBeenCalledOnce();expect(host.source).toBe(source);expect(host.reader).toBe(reader)
+ const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native;browseVoice(host)
+ expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'browse']);expect(host.source).toBe(source);expect(host.reader).toBe(reader)
 })

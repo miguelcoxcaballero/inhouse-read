@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {it,expect,vi,afterEach} from 'vitest'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {prepareVoiceAhead} from '../../src/js/readers/voice-ahead.js'
+// The session's methods (reading-voice.js) called on the fixture host, as the former wrapper modules did.
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
+const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
+const prepareVoiceAhead=method('prepareAhead')
 const fixture=vi.hoisted(()=>({ui:null,engine:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine}))
@@ -83,7 +86,7 @@ it('accepts only an explicitly valid detached page and catches stale getters',()
  expect(ui.voice_page_valid({get source(){throw Error('detached')}})).toBe(false)
 })
 it('adopts native preparation after a late module without moving the current source',async()=>{
- const {host,source}=setup(false,1);const native={...ui,voice_prepare_ahead:vi.fn(ui.voice_prepare_ahead)};fixture.ui=native
+ const {host,source}=setup(false,1);const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
  prepareVoiceAhead(host);await host.aheadPage.promise
- expect(native.voice_prepare_ahead).toHaveBeenCalledOnce();expect(host.source).toBe(source)
+ expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'prepareAhead']);expect(host.source).toBe(source)
 })

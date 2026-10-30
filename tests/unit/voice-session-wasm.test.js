@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {it,expect,vi,afterEach} from 'vitest'
-import {initializeVoiceSession,voiceSessionEvent,diagnosticVoice,prepareVoiceText} from '../../src/js/readers/voice-session.js'
+import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
 const fixture=vi.hoisted(()=>({ui:null,native:()=>null,engine:()=>null,pcm:()=>false}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine()}))
@@ -62,13 +62,16 @@ assert.equal(ui.ui_live_handles(),before);assert.equal(core.memory.buffer.byteLe
 })
 
 it('uses the compiled session adapters without changing reader or callback identity',()=>{
- fixture.ui=ui;const host={};initializeVoiceSession(host,reader,onState)
+ // The session's constructor and window listeners (reading-voice.js), as the former voice-session.js adapters drove them.
+ fixture.ui=ui;const host=new ReadingVoice(reader,onState)
  expect(host.reader).toBe(reader);expect(host.onState).toBe(onState)
  host.state='playing';host.utteranceId='current';host.engineStarted=vi.fn()
- voiceSessionEvent(host,'inhouse-tts',{id:'old',type:'start'})
+ window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{id:'old',type:'start'}}))
  expect(host.engineStarted).not.toHaveBeenCalled()
- voiceSessionEvent(host,'inhouse-tts',{id:'current',type:'start'})
+ window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{id:'current',type:'start'}}))
  expect(host.engineStarted).toHaveBeenCalledExactlyOnceWith('current')
- expect(prepareVoiceText(host,'Words [1].')).toBe('Words .')
- expect(diagnosticVoice(host,'old')).toBeNull()
+ expect(host.prepareText('Words [1].')).toBe('Words .')
+ expect(host.getDiagnosticState('old')).toBeNull()
+ expect(window.InhouseReadAudioDiagnostics('old')).toBeNull()
+ host.state='stopped'
 })

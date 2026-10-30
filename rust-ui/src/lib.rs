@@ -132,3 +132,27 @@ mod native_room_shaders;
 
 #[cfg(feature = "voice")]
 include!("voice_lib.rs");
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod core_bridge;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod format_detect;
+
+#[cfg(feature = "shelf")]
+mod cozy_atlas;
+
+#[cfg(feature = "ui")]
+mod voice_methods;
+
+#[cfg(feature = "ui")]
+mod picker_methods;
+
+#[cfg(feature = "ui")]
+mod controller_methods;
+
+#[cfg(feature = "ui")]
+mod experience_methods;
+
+#[cfg(feature = "ui")]
+mod flow_methods;
