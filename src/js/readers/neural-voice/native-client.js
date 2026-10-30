@@ -16,7 +16,7 @@ const kit={createSupertonicRuntime,createHebrewPhonemizer,exposePiperDurations,p
 export class NativeSynthClient {
   constructor({store,phonBase,env=globalThis,createOrt=createNativeOrt,createPhon=createPhonemizer}={}) {
     Object.assign(this,{store,phonBase,env,createOrt,createPhon})
-    this.plan=new VoiceClientPlan(()=>failure('Voice released'));this.jobs=new Map();this.loading=null;this.loaded=null;this.config=null;this.ort=null
+    this.plan=new VoiceClientPlan(()=>failure('Voice released'),{},true);this.jobs=new Map();this.loading=null;this.loaded=null;this.config=null;this.ort=null
     this.chain=Promise.resolve();this.preparationChain=Promise.resolve()
   }
   get alive(){return !!this.ort}

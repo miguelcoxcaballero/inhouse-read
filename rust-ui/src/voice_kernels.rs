@@ -19,7 +19,7 @@ fn units(text:&JsValue)->Vec<u16>{text.unchecked_ref::<JsString>().iter().collec
 /// `String.fromCharCode` in bounded slices: any code unit, a lone surrogate included.
 fn from_units(units:&[u16])->JsString{let mut out=JsString::from("");for part in units.chunks(8192){out=out.concat(&JsString::from_char_code(part));}out}
 /// `String.fromCodePoint` in bounded slices (lone surrogates stay as they are).
-fn from_points(points:&[u32])->R<JsString>{let mut out=JsString::from("");for part in points.chunks(4096){out=out.concat(&JsString::from_code_point(part)?);}Ok(out)}
+fn from_points(points:&[u32])->R<JsString>{let mut out=JsString::from("");for part in points.chunks(4096){out=out.concat(&JsString::from_code_point(part)?.into());}Ok(out)}
 /// A typed array's element as the raw core stored it: a number, else NaN.
 fn number_or_nan(value:&JsValue)->f64{value.as_f64().unwrap_or(f64::NAN)}
 /// The UTF-16 code points of `units`: a surrogate pair is one, a lone surrogate is itself.
@@ -167,24 +167,24 @@ pub fn voice_host_supertonic_frames(seconds:f64,sample_rate:f64,chunk:f64)->f64{
 #[wasm_bindgen]
 pub fn voice_host_supertonic_mark_sample(length:f64,before:f64,after:f64)->f64{crate::supertonic_runtime::supertonic_mark_sample(length,before,after)}
 
-/// The model's text ids: the code points of `text` through the host-owned `indexer` table (-1 when unknown).
+/// The model's text ids: `BigInt(indexer[point] ?? -1)` for the code points of `text`, through the host-owned table.
 #[wasm_bindgen]
 pub fn voice_host_supertonic_ids(text:JsValue,indexer:JsValue)->R<BigInt64Array>{
- let points=points(&units(&text));let out=BigInt64Array::new_with_length(points.len() as u32);
- let mut fast=Vec::with_capacity(points.len());
- for &point in &points{
+ let units=units(&text);let mut found=vec![0u32;units.len()];
+ let count=unsafe{crate::supertonic_runtime::supertonic_text_points(units.as_ptr(),units.len(),found.as_mut_ptr())};
+ let (mut ids,mut converted)=(Vec::with_capacity(count),Vec::new());
+ for (index,&point) in found[..count].iter().enumerate(){
   let value=get_at(&indexer,point);
   match value.as_f64(){
-   Some(x) if x.fract()==0.0&&x.abs()<9.2e18=>fast.push(x as i64),
-   _ if absent(&value)=>fast.push(-1),
-   // `BigInt(value)` for anything else: its own conversion or its own error.
-   _=>{let big=js_sys::BigInt::new(&value).map_err(JsValue::from)?;fast.push(0);js_sys::Reflect::set(&out,&n((fast.len()-1) as f64),&big)?;}
+   Some(x) if x.fract()==0.0&&x.abs()<9.2e18=>ids.push(x as i64),
+   _ if absent(&value)=>ids.push(-1),
+   // Anything else gets `BigInt(value)`'s own conversion or its own error, stored as the typed array stores it.
+   _=>{converted.push((index,js_sys::BigInt::new(&value).map_err(JsValue::from)?));ids.push(0);}
   }
  }
- // Only the plain entries are copied at once; a converted one was already stored in its slot.
- let copy=BigInt64Array::from(&fast[..]);
- for (i,&point) in points.iter().enumerate(){let value=get_at(&indexer,point);if value.as_f64().is_some_and(|x|x.fract()==0.0&&x.abs()<9.2e18)||absent(&value){continue;}copy.set_index(i as u32,0);let _=point;js_sys::Reflect::set(&copy,&n(i as f64),&js_sys::Reflect::get(&out,&n(i as f64))?)?;}
- Ok(copy)
+ let out=BigInt64Array::from(&ids[..]);
+ for (index,big) in converted{js_sys::Reflect::set(&out,&n(index as f64),&big)?;}
+ Ok(out)
 }
 
 /// The boundaries of one chunk `[start, end)`, relative to its start.

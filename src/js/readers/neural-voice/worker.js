@@ -27,7 +27,7 @@ import { VoiceClientPlan } from './client-plan.js'
 import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, piperScales } from './synth-flow.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
-const plan = new VoiceClientPlan(() => new Error('voice runtime was released'))
+const plan = new VoiceClientPlan(() => new Error('voice runtime was released'), {}, true)
 const jobs = new Map() // Host message handles; admission, FIFO and cancellation are Rust.
 let drainDone = Promise.resolve()
 let durationOutput = null
