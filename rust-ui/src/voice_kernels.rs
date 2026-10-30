@@ -202,17 +202,22 @@ pub fn voice_host_supertonic_local_marks(marks:JsValue,start:f64,end:f64)->Array
  let count=unsafe{crate::supertonic_runtime::supertonic_local_marks(values.as_ptr(),values.len(),start,end,out.as_mut_ptr())};
  Array::from(&Float64Array::from(&out[..count]).into())
 }
-/// A block of uniforms (two per sample) becomes the arguments of the host's Math.log and Math.cos, in place.
+/// The uniforms (two per sample) become the arguments of the host's Math.log and Math.cos, in place, block by block as
+/// the core takes them (each sample is computed on its own, so the blocks only bound the core's calls).
 #[wasm_bindgen]
 pub fn voice_host_noise_plan(pairs:&mut [f64])->R<()>{
- if unsafe{crate::supertonic_runtime::supertonic_noise_plan(pairs.as_mut_ptr(),pairs.len()/2)}!=1{return Err(error("Plan de ruido inválido"));}
+ for block in pairs.chunks_mut(512){
+  if unsafe{crate::supertonic_runtime::supertonic_noise_plan(block.as_mut_ptr(),block.len()/2)}!=1{return Err(error("Plan de ruido inválido"));}
+ }
  Ok(())
 }
-/// The float32 Gaussian samples of a block whose logarithms and cosines the host resolved.
+/// The float32 Gaussian samples of the uniforms whose logarithms and cosines the host resolved.
 #[wasm_bindgen]
 pub fn voice_host_noise_finish(pairs:&[f64])->R<Float32Array>{
  let mut out=vec![0f32;pairs.len()/2];
- if unsafe{crate::supertonic_runtime::supertonic_noise_finish(pairs.as_ptr(),out.len(),out.as_mut_ptr())}!=1{return Err(error("Ruido de voz inválido"));}
+ for (block,target) in pairs.chunks(512).zip(out.chunks_mut(256)){
+  if unsafe{crate::supertonic_runtime::supertonic_noise_finish(block.as_ptr(),target.len(),target.as_mut_ptr())}!=1{return Err(error("Ruido de voz inválido"));}
+ }
  Ok(Float32Array::from(&out[..]))
 }
 /// Every value a number and the shape `[1, a, b]` holding exactly that many.
@@ -347,6 +352,8 @@ pub fn voice_host_phoneme_marks(text:JsValue,marks:JsValue,ids:JsValue,phonemize
 
 thread_local!{
  static PATTERNS:RefCell<Option<[RegExp;4]>>=const{RefCell::new(None)};
+ static COMBINING:RefCell<std::collections::HashMap<u32,bool>>=RefCell::new(std::collections::HashMap::new());
+ static DECIMAL:RefCell<std::collections::HashMap<u32,bool>>=RefCell::new(std::collections::HashMap::new());
 }
 /// TAAMIM (global), PYTHON_WHITESPACE, \p{M}, \p{Decimal_Number}: the browser's Unicode tables.
 fn pattern(index:usize)->RegExp{
@@ -365,11 +372,25 @@ fn nfd_units(text:&JsString)->Vec<u16>{text.normalize("NFD").iter().collect()}
 /// past a class-1 or class-240 sentinel identifies every nonzero class.
 fn combining(code:u32)->bool{
  if hebrew_mark(code){return true;}
+ // The browser's answer for a code point never changes: ask it once per code point.
+ if let Some(known)=COMBINING.with(|cache|cache.borrow().get(&code).copied()){return known;}
+ let answer=combining_class(code);
+ COMBINING.with(|cache|{let mut cache=cache.borrow_mut();if cache.len()<4096{cache.insert(code,answer);}});
+ answer
+}
+fn combining_class(code:u32)->bool{
  let letter=letter_of(code);
  if !pattern(2).test(&String::from(letter.clone())){return false;}
  let own:Vec<u16>=letter.iter().collect();
  nfd_units(&letter.concat(&JsString::from("\u{334}").into())).first()==Some(&0x334)
   ||nfd_units(&JsString::from("\u{345}").concat(&letter.into())).starts_with(&own)
+}
+/// `\p{Decimal_Number}` for one code point, asked of the browser once per code point.
+fn decimal_number(code:u32)->bool{
+ if let Some(known)=DECIMAL.with(|cache|cache.borrow().get(&code).copied()){return known;}
+ let answer=pattern(3).test(&String::from(letter_of(code)));
+ DECIMAL.with(|cache|{let mut cache=cache.borrow_mut();if cache.len()<4096{cache.insert(code,answer);}});
+ answer
 }
 const WORD_BREAK:u32=0xfffffffe;
 /// The IPA of a Hebrew text with niqqud: words joined by a space, as upstream does.
@@ -402,7 +423,7 @@ pub fn voice_host_hebrew_ipa(text:JsValue)->R<JsString>{
 pub fn voice_host_nakdimon_ids(text:JsValue)->R<Float32Array>{
  let codes=points(&units(&crate::host::text_value(&text)));
  if codes.is_empty(){return Ok(Float32Array::new_with_length(0));}
- let decimal:Vec<u8>=codes.iter().map(|&code|u8::from(pattern(3).test(&String::from(letter_of(code))))).collect();
+ let decimal:Vec<u8>=codes.iter().map(|&code|u8::from(decimal_number(code))).collect();
  let mut out=vec![0f32;codes.len()];
  let written=unsafe{crate::hebrew::nakdimon_ids(codes.as_ptr(),decimal.as_ptr(),codes.len(),out.as_mut_ptr())};
  if written<0{return Err(error("Nakdimon: invalid call"));}

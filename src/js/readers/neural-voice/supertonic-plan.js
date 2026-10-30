@@ -5,16 +5,12 @@ export const supertonicRuntimeConfig=(config,steps)=>voice().voice_host_superton
 export const supertonicTextIds=(text,indexer)=>voice().voice_host_supertonic_ids(text,indexer);
 export const supertonicLocalMarks=(marks,start,end)=>voice().voice_host_supertonic_local_marks(marks,start,end);
 export function supertonicNoise(length,random){
- const kernels=voice(),block=256,output=new Float32Array(length);
- for(let start=0;start<length;start+=block){
-  // RNG is injectable browser state; preserve its two draws per sample.
-  const pairs=new Float64Array(Math.min(block,length-start)*2);
-  for(let i=0;i<pairs.length;i++)pairs[i]=+random();
-  kernels.voice_host_noise_plan(pairs);
-  for(let i=0;i<pairs.length;i+=2){pairs[i]=Math.log(pairs[i]);pairs[i+1]=Math.cos(pairs[i+1]);}
-  output.set(kernels.voice_host_noise_finish(pairs),start);
- }
- return output;
+ const kernels=voice(),pairs=new Float64Array(length*2);
+ // RNG is injectable browser state; preserve its two draws per sample, in order.
+ for(let i=0;i<pairs.length;i++)pairs[i]=+random();
+ kernels.voice_host_noise_plan(pairs);
+ for(let i=0;i<pairs.length;i+=2){pairs[i]=Math.log(pairs[i]);pairs[i+1]=Math.cos(pairs[i+1]);}
+ return kernels.voice_host_noise_finish(pairs);
 }
 export const createSupertonicPcmJoin=sampleRate=>voice().voice_host_pcm_join(sampleRate);
 export const supertonicStyleValid=(dims,data)=>Array.isArray(dims)&&Array.isArray(data)&&voice().voice_host_style_valid(dims,Float64Array.from(data,value=>typeof value==='number'?value:NaN));
