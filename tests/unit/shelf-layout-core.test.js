@@ -60,6 +60,32 @@ describe('spine styles', () => {
     expect(rust.spineStylesFor([{ id: '' }, null, undefined, {}])).toStrictEqual([{ id: '' }, null, undefined, {}].map(record => original.spineStyleFor(record)));
   }, 60000);
 
+  // The Rust request reads a record's string id directly and asks seedFor (book_data) for every other record.
+  it('takes every seed from seedFor, visual ids and ids that are not strings included', () => {
+    const records = [{ shelfVisualId: 'visual-1', id: 'local:a' }, { shelfVisualId: '', id: 'local:b' }, { shelfVisualId: 7, id: 'x' },
+      { shelfVisualId: null, id: 'y', wordCount: 1200 }, { id: 0 }, { id: 5, wordCount: 1000 }, { id: '', path: '/p.pdf' }, { id: null, path: 9 },
+      { id: new String('boxed') }, { id: { toString: () => 'object id' } }, { title: 'T', author: 'A' }, { id: '😀 \ud800' }, { id: '� ok' },
+      { id: 'a\u0000b' }, 5, 'abc', true, null, undefined, 0, '', Object.assign(Object.create({ id: 'inherited' }), { wordCount: 5 })];
+    const styles = rust.spineStylesFor(records);
+    records.forEach((record, i) => {
+      const seed = rust.seedFor(record);
+      expect(styles[i].seed).toBe(seed);
+      const expected = seed === '' ? original.spineStyleFor(record) : original.spineStyleFor({ id: seed, wordCount: record?.wordCount });
+      expect(styles[i]).toStrictEqual(expected);
+    });
+  });
+
+  it('reads the options as withDefaults merges them: own enumerable fields that are not undefined', () => {
+    const inherited = Object.create({ minWidth: 40, maxWidth: 41 });
+    const hidden = Object.defineProperty({ maxWidth: 70 }, 'minWidth', { value: 30, enumerable: false });
+    const getter = { get minWidth() { return 12; }, maxWidth: undefined, pageThickness: 0.05 };
+    const books = library(40);
+    for (const options of [inherited, hidden, getter, null, undefined, 5, 'abc', [], { jitter: 3 }, { minHeightRatio: 0.5, maxHeightRatio: 2 },
+      { pageThickness: null, bindingThickness: '2' }, { pageThickness: true }, Object.freeze({ minWidth: 1, maxWidth: 2 })]) {
+      expect(rust.spineStylesFor(books, options)).toStrictEqual(books.map(record => original.spineStyleFor(record, options)));
+    }
+  });
+
   it('batches 700 books in one call, equal to the original one by one', () => {
     const books = Array.from({ length: 700 }, (_, index) => ({ id: index % 11 === 0 ? `😀日本語عنوان ${index}` : `local:Immune Journey-${index}:48291`,
       wordCount: index % 5 === 0 ? undefined : index * 655 + (index % 11) / 3, title: `Book ${index}`, author: 'Author', shelfOrder: index }));

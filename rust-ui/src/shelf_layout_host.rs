@@ -45,7 +45,7 @@ extern "C" {
     /// The catalogue core's exports: its kernels are called as methods, as `core.name(...)` calls them.
     type Core;
     #[wasm_bindgen(method, catch)]
-    fn alloc_f64(this: &Core, words: f64) -> R<JsValue>;
+    fn alloc_f64(this: &Core, words: f64) -> R<f64>;
     #[wasm_bindgen(method, catch)]
     fn free_f64(this: &Core, pointer: f64, words: f64) -> R<()>;
     #[wasm_bindgen(method, catch)]
@@ -58,6 +58,10 @@ extern "C" {
     /// The same, for a number (no handle is made for it).
     #[wasm_bindgen(js_namespace = Reflect, js_name = set)]
     fn put_number(target: &JsValue, key: &JsValue, value: f64) -> bool;
+    /// `Object.prototype.propertyIsEnumerable.call(target, key)`: an own enumerable property, as `Object.entries`
+    /// lists them.
+    #[wasm_bindgen(catch, js_namespace = ["Object", "prototype", "propertyIsEnumerable"], js_name = call)]
+    fn own_enumerable(target: &JsValue, key: &JsValue) -> R<bool>;
 }
 
 /// `target[key]` for a cached key, throwing like the engine for null/undefined.
@@ -102,11 +106,16 @@ impl Region<'_> {
 }
 
 /// What the host hands over: the catalogue core's exports and its frozen tables.
+/// The tables are frozen arrays (bookshelf-layout.js `Object.freeze`), so their entries are read once: the palette
+/// objects (whose fields are read per request) and the finish names. The spine defaults are a frozen object too.
 struct Host {
     core: Core,
     palette: JsValue,
+    palettes: Vec<JsValue>,
     textures: JsValue,
-    spine: JsValue,
+    finishes: Vec<JsValue>,
+    /// `DEFAULT_SPINE` minWidth, maxWidth, minHeightRatio, maxHeightRatio, pageThickness, bindingThickness.
+    defaults: [JsValue; 6],
 }
 
 thread_local! {
@@ -121,11 +130,22 @@ impl Host {
         if let Some(known) = known {
             return Ok(known);
         }
+        let (palette, textures, spine) = (read(host, "palette")?, read(host, "textures")?, read(host, "spine")?);
+        let entries = |table: &JsValue| -> R<Vec<JsValue>> {
+            let length = num(&read(table, "length")?);
+            (0..length as u32).map(|index| Reflect::get(table, &JsValue::from_f64(f64::from(index)))).collect()
+        };
+        let defaults = KEYS.with(|k| -> R<[JsValue; 6]> {
+            Ok([take(&spine, &k.min_width)?, take(&spine, &k.max_width)?, take(&spine, &k.min_height_ratio)?,
+                take(&spine, &k.max_height_ratio)?, take(&spine, &k.page_thickness)?, take(&spine, &k.binding_thickness)?])
+        })?;
         let made = Rc::new(Host {
             core: read(host, "core")?.unchecked_into(),
-            palette: read(host, "palette")?,
-            textures: read(host, "textures")?,
-            spine: read(host, "spine")?,
+            palettes: entries(&palette)?,
+            finishes: entries(&textures)?,
+            palette,
+            textures,
+            defaults,
         });
         HOST.with(|slot| *slot.borrow_mut() = Some((host.clone(), made.clone())));
         Ok(made)
@@ -174,35 +194,16 @@ impl Host {
             length += size;
         }
         let words = length.max(1) as f64;
+        // `if (!pointer)`: zero, or no number at all.
         let pointer = self.core.alloc_f64(words)?;
-        if !truthy(&pointer) {
+        if pointer == 0.0 || pointer.is_nan() {
             return Err(js_sys::RangeError::new("Shelf kernel: request too large").into());
         }
-        let pointer = num(&pointer);
         let result = work(pointer, &at);
         self.core.free_f64(pointer, words)?;
         result
     }
 }
-
-/// `withDefaults(defaults, options)`: the defaults with every own enumerable option that is not `undefined`.
-fn with_defaults(defaults: &JsValue, options: &JsValue) -> R<JsValue> {
-    let merged: JsValue = Object::assign(&Object::new(), defaults.unchecked_ref()).into();
-    if !truthy(options) {
-        return Ok(merged);
-    }
-    for entry in Object::entries(options.unchecked_ref()).iter() {
-        let entry: Array = entry.unchecked_into();
-        let value = entry.get(1);
-        if !value.is_undefined() {
-            Reflect::set(&merged, &entry.get(0), &value)?;
-        }
-    }
-    Ok(merged)
-}
-
-/// A parameter with the default `{}`.
-fn or_empty(options: &JsValue) -> JsValue { if options.is_undefined() { Object::new().into() } else { options.clone() } }
 
 /// The UTF-16 units of seeds one after another, and the `count + 1` offsets where each starts.
 struct Units {
@@ -267,16 +268,35 @@ fn seed_of(k: &Keys, book: &JsValue) -> R<(JsValue, Option<String>)> {
     Ok((crate::book_data::book_seed_for(book.clone())?, None))
 }
 
-/// The spine options of a request: `withDefaults(DEFAULT_SPINE, options)` as the kernel reads it.
+/// The spine options of a request as the kernel reads them: each field of `withDefaults(DEFAULT_SPINE, options)`,
+/// which is the option when it is an own enumerable property that is not `undefined`, and the default otherwise.
+/// Only the six fields the kernel uses are read, so no merged copy is made.
 fn spine_config(k: &Keys, host: &Host, options: &JsValue) -> R<[f64; 7]> {
-    let cfg = with_defaults(&host.spine, &or_empty(options))?;
-    let thickness = take(&cfg, &k.page_thickness)?;
-    let binding = take(&cfg, &k.binding_thickness)?;
+    // `options = {}` has nothing of its own, and `withDefaults` ignores a falsy one.
+    let given = !options.is_undefined() && truthy(options);
+    let field = |slot: usize, key: &JsValue| -> R<JsValue> {
+        if given && own_enumerable(options, key)? {
+            let value = Reflect::get(options, key)?;
+            if !value.is_undefined() {
+                return Ok(value);
+            }
+        }
+        Ok(host.defaults[slot].clone())
+    };
+    let config = [field(0, &k.min_width)?, field(1, &k.max_width)?, field(2, &k.min_height_ratio)?, field(3, &k.max_height_ratio)?];
+    let (thickness, binding) = (field(4, &k.page_thickness)?, field(5, &k.binding_thickness)?);
     Ok([
-        num(&take(&cfg, &k.min_width)?), num(&take(&cfg, &k.max_width)?), num(&take(&cfg, &k.min_height_ratio)?),
-        num(&take(&cfg, &k.max_height_ratio)?), thickness.as_f64().unwrap_or(f64::NAN), if truthy(&thickness) { 1.0 } else { 0.0 },
-        if truthy(&binding) { num(&binding) } else { 0.0 },
+        num(&config[0]), num(&config[1]), num(&config[2]), num(&config[3]), thickness.as_f64().unwrap_or(f64::NAN),
+        if truthy(&thickness) { 1.0 } else { 0.0 }, if truthy(&binding) { num(&binding) } else { 0.0 },
     ])
+}
+
+/// `table[index]` of a frozen table whose entries were read once.
+fn entry(read: &[JsValue], table: &JsValue, index: f64) -> R<JsValue> {
+    if index >= 0.0 && index.fract() == 0.0 && (index as usize) < read.len() {
+        return Ok(read[index as usize].clone());
+    }
+    Reflect::get(table, &JsValue::from_f64(index))
 }
 
 /// The style of every book of `books` under `config`, in order.
@@ -304,7 +324,7 @@ fn spine_styles_with(k: &Keys, host: &Host, books: &[JsValue], config: &[f64; 7]
         }
         host.f64s(pointer, at[3], count * 5)
     })?;
-    // The catalogue's palette and textures are frozen tables: each entry is read once per request.
+    // The fields of a palette entry are read once per request.
     let mut palettes: Vec<(u64, [JsValue; 4])> = Vec::new();
     let mut textures: Vec<(u64, JsValue)> = Vec::new();
     let mut styles = Vec::with_capacity(count);
@@ -313,7 +333,7 @@ fn spine_styles_with(k: &Keys, host: &Host, books: &[JsValue], config: &[f64; 7]
         let at = match palettes.iter().position(|(key, _)| *key == row[0].to_bits()) {
             Some(at) => at,
             None => {
-                let palette = Reflect::get(&host.palette, &JsValue::from_f64(row[0]))?;
+                let palette = entry(&host.palettes, &host.palette, row[0])?;
                 let entry = [take(&palette, &k.base)?, take(&palette, &k.shade)?, take(&palette, &k.ink)?, palette];
                 palettes.push((row[0].to_bits(), entry));
                 palettes.len() - 1
@@ -322,7 +342,7 @@ fn spine_styles_with(k: &Keys, host: &Host, books: &[JsValue], config: &[f64; 7]
         let texture = match textures.iter().position(|(key, _)| *key == row[1].to_bits()) {
             Some(at) => at,
             None => {
-                textures.push((row[1].to_bits(), Reflect::get(&host.textures, &JsValue::from_f64(row[1]))?));
+                textures.push((row[1].to_bits(), entry(&host.finishes, &host.textures, row[1])?));
                 textures.len() - 1
             }
         };
