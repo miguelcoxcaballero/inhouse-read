@@ -189,14 +189,8 @@ const wordCountQueue = createBookLengthQueue(library, {
     await new Promise(resolve => setTimeout(resolve, 0))
     await shelfWorkReady()
   },
-  onChange: record => {
-    if (app.appDisposed) return
-    app.lengthStatusVersion += 1
-    // Batch short books: rebuilding the shelf once per completed chapter or
-    // library record would spend far more time drawing than counting text.
-    scheduleLengthRefresh()
-    if (record?.driveFileId && hasDriveSession()) { cloudSync.scheduleProgress(record.id); scheduleLibraryBackup() }
-  },
+  // The batched shelf refresh and the Drive follow-up of a new count (rust-ui/src/app_controller.rs).
+  onChange: record => withShell(shell => shell.app_length_change(shellHost, record)),
   onError: error => console.warn('No se pudo contar el texto del libro:', error)
 })
 function persistBookState(bookId, fields) {
@@ -212,7 +206,7 @@ const readingExperience = createLazyReaderExperience(reader, {
 })
 
 const shellHost = {
-  els, document, reader, library, cloudSync, preparedPages, readingStreak, STREAK_KEY, APP_VERSION, state:app,
+  els, document, reader, library, cloudSync, preparedPages, progressWrites, readingStreak, STREAK_KEY, APP_VERSION, state:app,
   wordCountQueue, scheduleLibraryBackup, readerPositionGuard, onLocalBookChange:localRoomBookChanged,
   authNotice:document.getElementById('drive-auth-notice'), authMessage:document.getElementById('drive-auth-message'),
   authRetry:document.getElementById('drive-auth-retry'), authCancel:document.getElementById('drive-auth-cancel'),
@@ -588,13 +582,7 @@ initReadingDisplay()
 initAndroidFileImports({
   onActivity: active => nativeImportShelfGate.setActive(active),
   canImport: () => !app.closingReader && !els.readerScreen.classList.contains('is-preparing'),
-  onFile: async file => {
-    await app.shelf?.close()
-    await progressWrites.get(app.currentBookId)?.catch(() => {})
-    // Resolve the import after the loading wrapper has released its controls.
-    // Its successful result already guarantees committed original bytes.
-    return openFile(file, { restoreRemoved:true })
-  },
+  onFile: file => withShell(shell => shell.app_import_file(shellHost, file)),
   onError: error => alert(`No se pudo importar el libro: ${error.message}`)
 })
 if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {

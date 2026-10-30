@@ -77,6 +77,44 @@ async function lengthScript(implementation, seed) {
   return { results, log:w.log, app:{ ...w.app, lengthRefreshTimer:w.app.lengthRefreshTimer === null ? null : 'set' } }
 }
 
+// The length queue's `onChange`: the same seeded hosts, records with and without a Drive file.
+const changes = [null, undefined, {}, { id:'a' }, { id:'b', driveFileId:'drive' }, { id:'c', driveFileId:'' }]
+async function changeScript(implementation, seed) {
+  const w = world(seed), results = []
+  for (let step = 0; step < 6; step++) {
+    if (w.chance(.1)) w.app.appDisposed = !w.app.appDisposed
+    if (w.chance(.2)) w.host.els.readerScreen.hidden = !w.host.els.readerScreen.hidden
+    results.push(await outcome(() => implementation(w, changes[Math.floor(w.pick() * changes.length)])))
+    if (w.chance(.5)) { await vi.advanceTimersByTimeAsync(100); await flush() }
+    w.log.push(['timer', w.app.lengthRefreshTimer === null ? null : 'set', w.app.lengthStatusVersion])
+  }
+  await vi.advanceTimersByTimeAsync(200); await flush()
+  return { results, log:w.log, app:{ ...w.app, lengthRefreshTimer:w.app.lengthRefreshTimer === null ? null : 'set' } }
+}
+
+// The Android import's `onFile`: an open shelf whose close resolves, rejects or throws, a pending
+// progress write that resolves or rejects, and an openFile that answers, rejects or throws.
+async function importScript(implementation, seed) {
+  const w = world(seed), results = []
+  const settle = (name, value) => {
+    const roll = w.pick()
+    if (roll < .1) throw new Error(`${name} threw`)
+    if (roll < .2) return Promise.reject(new Error(`${name} rejected`))
+    return roll < .6 ? Promise.resolve(value) : value
+  }
+  const writes = new Map()
+  w.host.progressWrites = { get:id => { w.log.push(['write', id]); return writes.get(id) } }
+  w.host.openFile = (file, options) => { w.log.push(['open', file, options]); return settle('open', { opened:file }) }
+  for (let step = 0; step < 5; step++) {
+    w.app.shelf = w.chance(.25) ? null : { close:() => { w.log.push(['close']); return settle('close', undefined) } }
+    w.app.currentBookId = w.chance(.3) ? null : `book-${step}`
+    writes.clear()
+    if (w.chance(.6)) writes.set(w.app.currentBookId, w.chance(.4) ? Promise.reject(new Error('write failed')) : Promise.resolve({ saved:true }))
+    results.push(await outcome(() => implementation(w, `file-${step}`)))
+  }
+  return { results, log:w.log }
+}
+
 beforeEach(() => { vi.useFakeTimers(); vi.spyOn(console, 'warn').mockImplementation(() => {}) })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -92,7 +130,28 @@ describe('app.js decisions in rust-ui/src/app_controller.rs against the frozen J
       const actual = await lengthScript((w, ...args) => rustShelf.app_length_metadata(w.host, ...args), seed)
       expect(actual).toEqual(expected)
     })
+    it(`length queue change, seeded host ${seed}`, async () => {
+      const expected = await changeScript((w, record) => reference.onLengthChange(w.env, record), seed)
+      const actual = await changeScript((w, record) => rustShelf.app_length_change(w.host, record), seed)
+      expect(actual).toEqual(expected)
+    })
+    it(`Android file import, seeded host ${seed}`, async () => {
+      const expected = await importScript((w, file) => reference.importFile({ app:w.app, progressWrites:w.host.progressWrites, openFile:w.host.openFile }, file), seed)
+      const actual = await importScript((w, file) => rustShelf.app_import_file(w.host, file), seed)
+      expect(actual).toEqual(expected)
+    })
   }
+  it('covers changes, imports and their failures', async () => {
+    const log = [], results = []
+    for (let seed = 1; seed <= 40; seed++) {
+      log.push(...(await changeScript((w, record) => reference.onLengthChange(w.env, record), seed)).log)
+      const run = await importScript((w, file) => reference.importFile({ app:w.app, progressWrites:w.host.progressWrites, openFile:w.host.openFile }, file), seed)
+      log.push(...run.log); results.push(...run.results)
+    }
+    for (const kind of ['cloud', 'backup', 'refresh', 'close', 'write', 'open']) expect(log.some(entry => entry[0] === kind)).toBe(true)
+    for (const message of ['close threw', 'close rejected', 'open threw', 'open rejected']) expect(results.some(([, value]) => value === message)).toBe(true)
+    expect(results.some(([kind]) => kind === 'ok')).toBe(true)
+  })
   it('covers patches, cancellations, cloud schedules and refreshes', async () => {
     const all = []
     for (let seed = 1; seed <= 40; seed++) all.push(...(await lengthScript((w, ...args) => reference.onLengthMetadata(w.env, ...args), seed)).log)

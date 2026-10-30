@@ -65,3 +65,37 @@ pub fn app_progress_saved(host:JsValue,record:JsValue,book_id:JsValue,fields:JsV
  method(&host,"scheduleLibraryBackup",&[])?;
  Ok(())
 }
+
+/// The book-length queue finished (or changed) a count: batch the shelf's refresh, and give a Drive book's
+/// new length to the cloud copy and the library backup.
+#[wasm_bindgen]
+pub fn app_length_change(host:JsValue,record:JsValue)->R{
+ let state=state(&host)?;
+ if truthy(&read(&state,"appDisposed")?){return Ok(())}
+ set(&state,"lengthStatusVersion",&JsValue::from_f64(crate::host::num(&read(&state,"lengthStatusVersion")?)+1.0))?;
+ // Batch short books: rebuilding the shelf once per completed chapter or library record would spend far
+ // more time drawing than counting text.
+ crate::app_shell::app_schedule_length_refresh(&host)?;
+ if truthy(&get(&record,"driveFileId"))&&truthy(&method(&host,"hasDriveSession",&[])?){
+  method(&read(&host,"cloudSync")?,"scheduleProgress",&[&read(&record,"id")?])?;
+  method(&host,"scheduleLibraryBackup",&[])?;
+ }
+ Ok(())
+}
+
+/// A book handed over by Android: fold the open cover, let the open book's last position finish saving
+/// (its failure does not stop the import), then open the file, restoring it if it had been removed. The
+/// import resolves after the loading wrapper has released its controls; its successful result already
+/// guarantees committed original bytes.
+#[wasm_bindgen]
+pub fn app_import_file(host:JsValue,file:JsValue)->Promise{start(async move{
+ let shelf=read(&state(&host)?,"shelf")?;
+ if !absent(&shelf){JsFuture::from(Promise::resolve(&method(&shelf,"close",&[])?)).await?;}
+ let pending=method(&read(&host,"progressWrites")?,"get",&[&read(&state(&host)?,"currentBookId")?])?;
+ if !absent(&pending){
+  let ignore=function(Closure::<dyn FnMut(JsValue)>::new(|_:JsValue|{}));
+  JsFuture::from(Promise::resolve(&method(&pending,"catch",&[&ignore])?)).await?;
+ }
+ let opened=method(&host,"openFile",&[&file,&object(&[("restoreRemoved",JsValue::TRUE)])?])?;
+ JsFuture::from(Promise::resolve(&opened)).await
+})}
