@@ -16,6 +16,9 @@ mod length_metadata;
 mod book_data;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod shelf_layout_host;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod library_store;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
