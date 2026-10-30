@@ -1,0 +1,372 @@
+//! The shelf scene's room as it is set up once: the walnut's materials, the baked occlusion, the
+//! floor and the room's wall, the placement guide and the return's depth writers, the clip that
+//! holds the native room's canvas, the occlusion rebuilt for a new cabinet or theme, a drop into the
+//! bin's starting record and the book-only exports of the native room and of a returning book.
+//! None of these run per frame or per entry: once per scene, rebuild, theme change, drop or export.
+//! Every object is created, named, flagged and added in the order bookshelf-scene.js created it,
+//! so three.js hands out the same ids (render-list ties fall back to them) and the same children.
+use wasm_bindgen::{prelude::*,JsCast};
+use js_sys::{Array,Function,Object,Reflect};
+use crate::host::{absent,call,jmax,method,num,read,set,truthy};
+type R<T=()> = Result<T,JsValue>;
+
+fn st(text:&str)->JsValue{JsValue::from_str(text)}
+fn n(value:f64)->JsValue{JsValue::from_f64(value)}
+/// `new THREE[name](...args)`.
+fn make(three:&JsValue,name:&str,args:&[&JsValue])->R<JsValue>{
+ let constructor=read(three,name)?.dyn_into::<Function>().map_err(|_|js_sys::TypeError::new(&format!("THREE.{name} is not a constructor")))?;
+ let list=Array::new();for argument in args{list.push(argument);}
+ Reflect::construct(&constructor,&list)
+}
+/// A material's parameters, in the order the scene listed them (setValues assigns them in that order).
+fn params(entries:&[(&str,JsValue)])->R<JsValue>{
+ let object:JsValue=Object::new().into();
+ for (key,value) in entries{set(&object,key,value)?;}
+ Ok(object)
+}
+fn user(object:&JsValue,key:&str,value:&JsValue)->R{set(&read(object,"userData")?,key,value)}
+
+/// The room's materials and its fixed meshes. Oiled walnut under a thin satin lacquer: the pores stay
+/// open and matte in the base layer while a smooth clearcoat carries the room's reflections; vertex
+/// colours carry each board's own tone, end grain and joint shadow. The back panel takes the lighting's
+/// wide penumbra (`wide_penumbra`). The baked corner occlusion and floor contact are one unlit,
+/// depth-tested draw; three unlit depth writers (indexed by side) serve the insertion's depth pass.
+/// The floor keeps the physical support and contact diagnostics without painting a wooden platform
+/// around the cabinet or reserving camera space for it. The room's wall, apart from the open steel
+/// cabinet, catches real warm light through its mesh; its edges stay outside the viewport at any zoom
+/// and it adds neither furniture bounds nor selectable or drop surfaces. Both untouchable meshes take
+/// `inert` as their raycast. Returns [wood, backWood, darkWood, occlusionMaterial, depthOnly,
+/// occlusion, floor, roomWallMaterial, roomWall]; the floor, the occlusion and the wall join `furniture`.
+#[wasm_bindgen]
+pub fn scene_room_materials(three:&JsValue,texture:&JsValue,grain:&JsValue,wide_penumbra:&Function,furniture:&JsValue,inert:&JsValue)->R<Array>{
+ let yes=JsValue::TRUE;
+ let wood=make(three,"MeshPhysicalMaterial",&[&params(&[("map",texture.clone()),("bumpMap",grain.clone()),("bumpScale",n(0.55)),
+  ("roughnessMap",grain.clone()),("vertexColors",yes.clone()),("color",st("#ffffff")),("roughness",n(0.9)),("clearcoat",n(0.32)),
+  ("clearcoatRoughness",n(0.36))])?])?;
+ let back=wide_penumbra.call1(&JsValue::UNDEFINED,&make(three,"MeshStandardMaterial",&[&params(&[("map",texture.clone()),
+  ("bumpMap",grain.clone()),("bumpScale",n(0.4)),("roughnessMap",grain.clone()),("vertexColors",yes.clone()),("color",st("#e6dccf")),
+  ("roughness",n(1.2)),("envMapIntensity",n(0.7))])?])?)?;
+ let dark=make(three,"MeshPhysicalMaterial",&[&params(&[("map",texture.clone()),("bumpMap",grain.clone()),("bumpScale",n(0.5)),
+  ("roughnessMap",grain.clone()),("vertexColors",yes.clone()),("color",st("#f2e6d6")),("roughness",n(0.95)),("clearcoat",n(0.26)),
+  ("clearcoatRoughness",n(0.4))])?])?;
+ let floor_material=make(three,"MeshStandardMaterial",&[&params(&[("map",texture.clone()),("color",st("#b3a68d")),("roughness",n(0.94))])?])?;
+ let occlusion_material=make(three,"MeshBasicMaterial",&[&params(&[("vertexColors",yes.clone()),("transparent",yes.clone()),
+  ("depthWrite",JsValue::FALSE),("side",read(three,"DoubleSide")?),("polygonOffset",yes.clone()),("polygonOffsetFactor",n(-1.0)),
+  ("polygonOffsetUnits",n(-2.0))])?])?;
+ let depth_only=Array::new();
+ for side in ["FrontSide","BackSide","DoubleSide"]{
+  depth_only.push(&make(three,"MeshBasicMaterial",&[&params(&[("side",read(three,side)?),("colorWrite",JsValue::FALSE)])?])?);
+ }
+ let occlusion=make(three,"Mesh",&[&make(three,"BufferGeometry",&[])?,&occlusion_material])?;
+ set(&occlusion,"name",&st("Cabinet occlusion"))?;set(&occlusion,"raycast",inert)?;
+ let floor=make(three,"Mesh",&[&make(three,"BoxGeometry",&[&n(1.0),&n(2.0),&n(1.0)])?,&floor_material])?;
+ set(&floor,"name",&st("Library floor"))?;user(&floor,"floor",&yes)?;set(&floor,"receiveShadow",&yes)?;
+ set(&floor,"visible",&JsValue::FALSE)?;
+ method(furniture,"add",&[&floor,&occlusion])?;
+ let wall_material=make(three,"MeshStandardMaterial",&[&params(&[("color",st("#f0f1ed")),("roughness",n(1.0)),("envMapIntensity",n(0.7))])?])?;
+ let wall=make(three,"Mesh",&[&make(three,"PlaneGeometry",&[&n(1.0),&n(1.0)])?,&wall_material])?;
+ set(&wall,"name",&st("Library room wall"))?;user(&wall,"roomReceiver",&yes)?;
+ set(&wall,"receiveShadow",&yes)?;set(&wall,"raycast",inert)?;
+ method(furniture,"add",&[&wall])?;
+ Ok([wood,back,dark,occlusion_material,depth_only.into(),occlusion,floor,wall_material,wall].into_iter().collect())
+}
+
+/// The placement guide, prepared hidden with the first scene so dragging a book never links a new
+/// GPU program, joined to `furniture`; and the return's depth writers, one per side of `depth_only`,
+/// on the guide's own geometry: they never add a visible object or render pass. Returns
+/// [dropMarker, dropGuide, depthWriters].
+#[wasm_bindgen]
+pub fn scene_room_drop_marker(three:&JsValue,furniture:&JsValue,depth_only:&Array)->R<Array>{
+ let marker=make(three,"Group",&[])?;
+ set(&marker,"name",&st("Shelf placement guide"))?;user(&marker,"dropMarker",&JsValue::TRUE)?;set(&marker,"visible",&JsValue::FALSE)?;
+ let material=make(three,"MeshBasicMaterial",&[&params(&[("color",st("#709980")),("transparent",JsValue::TRUE),("opacity",n(0.9)),
+  ("depthTest",JsValue::FALSE),("depthWrite",JsValue::FALSE)])?])?;
+ let guide=make(three,"Mesh",&[&make(three,"BoxGeometry",&[&n(2.0),&n(1.0),&n(2.0)])?,&material])?;
+ let foot=make(three,"Mesh",&[&make(three,"BoxGeometry",&[&n(12.0),&n(2.0),&n(4.0)])?,&material])?;
+ set(&read(&foot,"position")?,"y",&n(1.0))?;
+ method(&marker,"add",&[&guide,&foot])?;method(furniture,"add",&[&marker])?;
+ let writers=Array::new();
+ for material in depth_only.iter(){writers.push(&make(three,"Mesh",&[&read(&guide,"geometry")?,&material])?);}
+ Ok([marker,guide,writers.into()].into_iter().collect())
+}
+
+/// The clip that holds the native room's canvas, hidden and untouchable, at the end of `stage`.
+#[wasm_bindgen]
+pub fn scene_native_room_clip(stage:&JsValue)->R<JsValue>{
+ let document=read(&crate::host::global(),"document")?;
+ let clip=method(&document,"createElement",&[&st("div")])?;
+ set(&clip,"className",&st("ihr-bookshelf-native-room-clip"))?;method(&clip,"setAttribute",&[&st("aria-hidden"),&st("true")])?;
+ let style=read(&clip,"style")?;
+ for (key,value) in [("position","absolute"),("overflow","hidden"),("pointerEvents","none"),("zIndex","0"),("display","none")]{set(&style,key,&st(value))?;}
+ method(stage,"append",&[&clip])?;
+ Ok(clip)
+}
+
+/// The public export of the native room into `raw` (the room canvas' 2D context), from the GL canvas
+/// `source` the caller has just repainted with `frame`. A physical frame without overscan keeps the
+/// ceil-sized export, including the original floor-to-ceil resample, without performing it on shown
+/// frames; one with overscan first scales the complete GL source to its ceil-sized 2D tile, as the
+/// original export did, then crops that tile into the base; an aligned frame crops its overscan.
+#[wasm_bindgen]
+pub fn scene_native_room_export(raw:&JsValue,canvas:&JsValue,source:&JsValue,frame:&JsValue,margin:f64)->R{
+ let size=|key:&str|read(canvas,key);
+ let zero=n(0.0);
+ method(raw,"clearRect",&[&zero,&zero,&size("width")?,&size("height")?])?;
+ let physical=truthy(&read(frame,"physical")?);
+ if physical&&!(margin!=0.0&&!margin.is_nan()){
+  return method(raw,"drawImage",&[source,&zero,&zero,&size("width")?,&size("height")?]).map(|_|());
+ }
+ if physical{
+  let document=read(&crate::host::global(),"document")?;
+  let tile=method(&document,"createElement",&[&st("canvas")])?;
+  set(&tile,"width",&n((num(&read(frame,"width")?)*num(&read(frame,"ratio")?)).ceil()))?;
+  set(&tile,"height",&n((num(&read(frame,"height")?)*num(&read(frame,"ratio")?)).ceil()))?;
+  let drawn=(||->R{
+   let context=method(&tile,"getContext",&[&st("2d")])?;
+   if !truthy(&context){return Err(js_sys::Error::new("Native room crop export requires a 2D context").into());}
+   method(&context,"drawImage",&[source,&zero,&zero,&read(&tile,"width")?,&read(&tile,"height")?])?;
+   let offset=n(margin*num(&read(frame,"ratio")?));
+   let offset2=n(margin*num(&read(frame,"ratio")?));
+   method(raw,"drawImage",&[&tile,&offset,&offset2,&size("width")?,&size("height")?,&zero,&zero,&size("width")?,&size("height")?])?;
+   Ok(())
+  })();
+  set(&tile,"height",&zero)?;set(&tile,"width",&zero)?;
+  return drawn;
+ }
+ let offset=n(margin*num(&read(frame,"ratio")?));
+ let offset2=n(margin*num(&read(frame,"ratio")?));
+ method(raw,"drawImage",&[source,&offset,&offset2,&size("width")?,&size("height")?,&zero,&zero,&size("width")?,&size("height")?]).map(|_|())
+}
+
+/// The book-only export of a returning book into `raw`: the overlay's whole surface cleared, then the
+/// GL canvas `source` (just repainted with `frame`) placed at the frame's device-pixel origin.
+#[wasm_bindgen]
+pub fn scene_insertion_export(raw:&JsValue,overlay:&JsValue,source:&JsValue,frame:&JsValue)->R{
+ let zero=n(0.0);
+ method(raw,"clearRect",&[&zero,&zero,&read(overlay,"width")?,&read(overlay,"height")?])?;
+ let x=n(num(&read(frame,"x")?)*num(&read(frame,"ratio")?));
+ let y=n(num(&read(frame,"y")?)*num(&read(frame,"ratio")?));
+ method(raw,"drawImage",&[source,&x,&y]).map(|_|())
+}
+
+/// The cabinet's baked occlusion for `units` units laid out by `plan` (scale at 0, each unit's x from
+/// 10), into `occlusion`'s new geometry: each unit's own rows; the bin's footprint and, on the dark page
+/// (`floor_light` given), the lamp's floor pool belong to the right-hand end. Several units are merged
+/// (`merge`) and their parts disposed. BAGGEBO has none: an empty geometry, hidden. The caller
+/// disposed the old geometry and decided `floor_light` from the page's theme.
+#[wasm_bindgen]
+pub fn scene_room_occlusion(three:&JsValue,occlusion:&JsValue,baggebo:bool,plan:&[f64],units:f64,unit_width:f64,height:f64,depth:f64,
+ floor_y:f64,rows:&JsValue,floor_light:&JsValue,trash:&JsValue,create:&Function,merge:&Function)->R{
+ set(occlusion,"visible",&JsValue::from_bool(!baggebo))?;
+ if baggebo{return set(occlusion,"geometry",&make(three,"BufferGeometry",&[])?);}
+ let parts=Array::new();
+ let mut index=0.0;
+ while index<units{
+  let x=plan.get(10+index as usize).copied().unwrap_or(f64::NAN);
+  let last=index==units-1.0;
+  let unit_rows=Array::new();
+  let list:&Array=rows.unchecked_ref();
+  // `(row.unit ?? 0) === index`: strictly a number, so a unit written as text matches none.
+  for row in list.iter(){
+   let unit=read(&row,"unit")?;
+   if if absent(&unit){index==0.0}else{unit.as_f64()==Some(index)}{unit_rows.push(&row);}
+  }
+  let footprints=Array::new();
+  if truthy(trash)&&last{
+   let footprint=params(&[("x",n(num(&read(&read(trash,"position")?,"x")?)-x)),("z",read(&read(trash,"position")?,"z")?),
+    ("radius",read(&read(trash,"userData")?,"radius")?)])?;
+   footprints.push(&footprint);
+  }
+  let light=if truthy(floor_light)&&last{floor_light.clone()}else{JsValue::NULL};
+  let options=params(&[("width",n(unit_width)),("height",n(height)),("depth",n(depth)),("scale",n(plan.first().copied().unwrap_or(f64::NAN))),("floorY",n(floor_y)),
+   ("rows",unit_rows.into()),("floorLight",light),("footprints",footprints.into())])?;
+  let geometry=call(create,"createShelfOcclusion",&[&options])?;
+  method(&geometry,"translate",&[&n(x),&n(0.0),&n(0.0)])?;parts.push(&geometry);
+  index+=1.0;
+ }
+ let single=parts.length()==1;
+ let geometry=if single{parts.get(0)}else{merge.call2(&JsValue::UNDEFINED,&parts,&JsValue::FALSE)?};
+ set(occlusion,"geometry",&geometry)?;
+ if parts.length()>1{for part in parts.iter(){method(&part,"dispose",&[])?;}}
+ Ok(())
+}
+
+/// The floor under the cabinet and the room's wall behind it, placed by the room's plan `room`
+/// (rust-ui/src/scene_plan.rs): the floor's old box is disposed for one of the plan's size.
+#[wasm_bindgen]
+pub fn scene_room_floor(three:&JsValue,floor:&JsValue,wall:&JsValue,room:&[f64])->R{
+ method(&read(floor,"geometry")?,"dispose",&[])?;
+ let at=|index:usize|n(room.get(index).copied().unwrap_or(f64::NAN));
+ set(floor,"geometry",&make(three,"BoxGeometry",&[&at(2),&n(2.0),&at(3)])?)?;
+ method(&read(floor,"geometry")?,"computeBoundingBox",&[])?;
+ method(&read(floor,"position")?,"set",&[&at(4),&at(5),&at(6)])?;
+ method(&read(wall,"scale")?,"set",&[&at(7),&at(7),&n(1.0)])?;
+ method(&read(wall,"position")?,"set",&[&n(0.0),&at(8),&at(9)]).map(|_|())
+}
+
+/// A layout on a new stage: the outgoing `stage` gets back its height, top and (unless it already had
+/// one) its scene class, and every projected button its own style while its cover hit leaves; the
+/// replacement `next` keeps its own height and top (it has not been pixel-shifted), takes the scene class
+/// and the scene's canvases: the room first, the inspection tiles and the native room's clip after.
+/// Returns [height, top, already] of `next`.
+#[wasm_bindgen]
+pub fn scene_move_stage(stage:&JsValue,next:&JsValue,height:&JsValue,top:&JsValue,already:bool,styles:&js_sys::Map,covers:&JsValue,
+ canvases:&Array)->R<Array>{
+ let style=read(stage,"style")?;
+ set(&style,"height",height)?;set(&style,"top",top)?;
+ if !already{method(&read(stage,"classList")?,"remove",&[&st("has-scene")])?;}
+ // The expensive projected leaf triangles stay until entries are rebound: an unchanged plant moves
+ // its native hit surface to the replacement button without tessellating again.
+ crate::scene_dom::scene_restore_buttons(styles,covers)?;
+ styles.clear();
+ let height=read(&read(next,"style")?,"height")?;
+ let top=read(&read(next,"style")?,"top")?;
+ let already=truthy(&method(&read(next,"classList")?,"contains",&[&st("has-scene")])?);
+ method(&read(next,"classList")?,"add",&[&st("has-scene")])?;
+ method(next,"prepend",&[&canvases.get(0)])?;
+ method(next,"append",&[&canvases.get(1)])?;
+ method(next,"append",&[&canvases.get(2)])?;
+ if truthy(&canvases.get(3)){method(next,"append",&[&canvases.get(3)])?;}
+ Ok([height,top,JsValue::from_bool(already)].into_iter().collect())
+}
+
+/// A disposed scene leaves its stage: the room canvas and the inspection tiles (shrunk to one pixel)
+/// are removed, the stage gets back its height and (unless it already had one) its scene class, and
+/// every projected button its own style.
+#[wasm_bindgen]
+pub fn scene_release_stage(stage:&JsValue,height:&JsValue,already:bool,styles:&js_sys::Map,canvases:&Array)->R{
+ let one=n(1.0);
+ method(&canvases.get(0),"remove",&[])?;
+ for tile in [canvases.get(1),canvases.get(2)]{
+  method(&tile,"remove",&[])?;set(&tile,"height",&one)?;set(&tile,"width",&one)?;
+ }
+ set(&read(stage,"style")?,"height",height)?;
+ if !already{method(&read(stage,"classList")?,"remove",&[&st("has-scene")])?;}
+ crate::scene_dom::scene_restore_buttons(styles,&JsValue::UNDEFINED)
+}
+
+/// A drop into the bin's starting record for `model`, settling through `resolve`: its clock at `now`,
+/// its duration (none under reduced motion, else the requested one, at least zero), the model's starting
+/// position, scale and turn, the book's tumble into the bin and the lid's current openness.
+#[wasm_bindgen]
+pub fn scene_trash_drop_record(three:&JsValue,resolve:&JsValue,now:f64,reduced:bool,duration:&JsValue,model:&JsValue,trash:&JsValue)->R<JsValue>{
+ // `Number(value) || 0`: NaN and both zeros give zero.
+ let or_zero=|value:f64|if value.is_nan()||value==0.0{0.0}else{value};
+ let duration=if reduced{0.0}else{jmax(0.0,or_zero(num(duration)))};
+ let start=method(&read(model,"position")?,"clone",&[])?;
+ let scale=read(&read(model,"scale")?,"x")?;
+ let turn=method(&read(model,"quaternion")?,"clone",&[])?;
+ let end=make(three,"Quaternion",&[])?;
+ let book=make(three,"Quaternion",&[])?;
+ let book=method(&book,"setFromEuler",&[&make(three,"Euler",&[&n(-0.22),&n(0.18),&n(-0.46)])?])?;
+ let openness=or_zero(num(&read(&read(trash,"userData")?,"openness")?));
+ params(&[("resolve",resolve.clone()),("settled",JsValue::FALSE),("complete",JsValue::FALSE),("started",n(now)),("lastFrame",n(now)),
+  ("elapsed",n(0.0)),("duration",n(duration)),("start",start),("startScale",scale),("startQuaternion",turn),("endQuaternion",end),
+  ("bookQuaternion",book),("initialOpenness",n(openness))])
+}
+
+/// A returning book's insertion record: its dock `slot`, started now, its duration (none under reduced
+/// motion, else the requested one, at least zero), settling through `resolve`, painted into `overlay`
+/// (when given) through `presentation` (when native), its bounded clock read again as its last frame.
+#[wasm_bindgen]
+pub fn scene_insertion_record(slot:&JsValue,reduced:bool,duration:&JsValue,resolve:&JsValue,overlay:&JsValue,presentation:&JsValue)->R<JsValue>{
+ let started=crate::host::clock()?;
+ let duration=if reduced{0.0}else{let value=num(duration);jmax(0.0,if value.is_nan()||value==0.0{0.0}else{value})};
+ let last=crate::host::clock()?;
+ params(&[("slot",slot.clone()),("started",n(started)),("duration",n(duration)),("resolve",resolve.clone()),("complete",JsValue::FALSE),
+  ("overlayCanvas",overlay.clone()),("elapsed",n(0.0)),("lastFrame",n(last)),("nativePresentation",presentation.clone())])
+}
+
+/// Where the bin stands, a real object on the floor independent of the camera, viewport, scroll and the
+/// progress of a view transition: clear of the room's wall with its whole body and the hinged lid's sweep
+/// (`bounds`, its footprint), rather than a cylinder centred on the cabinet's rear plane (rust-ui/src/scene_plan.rs),
+/// upright, unscaled and shown.
+#[wasm_bindgen]
+pub fn scene_position_trash(scene:&crate::scene_view::RustScene,trash:&JsValue,bounds:&JsValue,wall:&JsValue,floor_y:f64,gap:f64)->R{
+ let mut stand=[0.0;3];
+ let min=read(bounds,"min")?;
+ scene.trash_stand(num(&read(&read(trash,"userData")?,"radius")?),num(&read(&min,"z")?),num(&read(&min,"y")?),
+  num(&read(&read(wall,"position")?,"z")?),floor_y,gap,&mut stand);
+ let zero=n(0.0);
+ method(&read(trash,"position")?,"set",&[&n(stand[0]),&n(stand[1]),&n(stand[2])])?;
+ method(&read(trash,"rotation")?,"set",&[&zero,&zero,&zero])?;
+ method(&read(trash,"scale")?,"setScalar",&[&n(1.0)])?;
+ set(trash,"visible",&JsValue::TRUE)
+}
+
+/// A walnut map as the cabinet samples it: in sRGB when it is the colour photograph, repeating, at
+/// half scale (geometry UVs repeat every 160 shelf pixels; the seamless photograph is a ~32 cm flitch
+/// of veneer, so it spans two repeats and its figure reads true) and anisotropic up to 8 taps.
+#[wasm_bindgen]
+pub fn scene_walnut_map(three:&JsValue,map:&JsValue,colour:bool,renderer:&JsValue)->R<JsValue>{
+ if colour{set(map,"colorSpace",&read(three,"SRGBColorSpace")?)?;}
+ let repeat=read(three,"RepeatWrapping")?;
+ set(map,"wrapT",&repeat)?;set(map,"wrapS",&repeat)?;
+ method(&read(map,"repeat")?,"set",&[&n(0.5),&n(0.5)])?;
+ let most=num(&method(&read(renderer,"capabilities")?,"getMaxAnisotropy",&[])?);
+ set(map,"anisotropy",&n(crate::host::jmin(8.0,most)))?;
+ Ok(map.clone())
+}
+
+/// A book's pose for the flyout: the docking projection `pose` with the book's projected rectangle
+/// (`rect`, in the stage's frame) moved into the page's frame by the stage's `bounds`.
+#[wasm_bindgen]
+pub fn scene_book_pose(pose:&JsValue,rect:&JsValue,bounds:&JsValue)->R<JsValue>{
+ let result:JsValue=Object::assign(&Object::new(),pose.unchecked_ref()).into();
+ let moved=if truthy(rect){
+  let moved:JsValue=Object::assign(&Object::new(),rect.unchecked_ref()).into();
+  let left=read(bounds,"left")?;let top=read(bounds,"top")?;
+  set(&moved,"left",&(&left+&read(rect,"left")?))?;set(&moved,"top",&(&top+&read(rect,"top")?))?;
+  set(&moved,"right",&(&read(bounds,"left")?+&read(rect,"right")?))?;set(&moved,"bottom",&(&read(bounds,"top")?+&read(rect,"bottom")?))?;
+  moved
+ }else{rect.clone()};
+ set(&result,"rect",&moved)?;
+ Ok(result)
+}
+
+/// Where a grabbed book is held, as a fraction of its height from its centre: the ray's hit `point` in the
+/// model's own frame, else the finger's height on its button (`clientY`), else the centre.
+#[wasm_bindgen]
+pub fn scene_object_grip(entry:&JsValue,node:&JsValue,client_y:f64,point:&JsValue)->R{
+ let height=if truthy(point){
+  let local=method(&read(entry,"model")?,"worldToLocal",&[&method(point,"clone",&[])?])?;
+  num(&read(&local,"y")?)/num(&read(entry,"height")?)
+ }else{
+  let bounds=method(node,"getBoundingClientRect",&[])?;
+  let size=read(&bounds,"height")?;
+  if truthy(&size){0.5-(client_y-num(&read(&bounds,"top")?))/num(&read(&bounds,"height")?)}else{0.0}
+ };
+ set(entry,"gripHeight",&n(height))
+}
+
+/// A lamp's colour temperature: the entry keeps `kelvin` and its tint (made by `create` on first use)
+/// eases there from now, or jumps when `animate` is false.
+#[wasm_bindgen]
+pub fn scene_lamp_kelvin(entry:&JsValue,kelvin:&JsValue,animate:&JsValue,create:&Function)->R{
+ set(entry,"kelvin",kelvin)?;
+ let mut tint=read(entry,"lampTint")?;
+ if !truthy(&tint){tint=create.call1(&JsValue::UNDEFINED,&read(entry,"kelvin")?)?;set(entry,"lampTint",&tint)?;}
+ method(&tint,"set",&[kelvin,&n(crate::host::clock()?),animate]).map(|_|())
+}
+
+/// What a disposed scene's room lets go of, in the order the scene released it: the catalogue booklet,
+/// the bin from the room, the cabinet's units, the lamps' light pool, every geometry and material left
+/// under `furniture`, the veneer `maps`, the lighting rig, the room's `materials` and the bin's own parts.
+#[wasm_bindgen]
+pub fn scene_dispose_room(furniture:&JsValue,catalog:&JsValue,trash:&JsValue,lamp_lighting:&JsValue,lighting:&JsValue,maps:&Array,materials:&Array)->R{
+ if truthy(catalog){method(catalog,"removeFromParent",&[])?;method(&read(catalog,"userData")?,"dispose",&[])?;}
+ if !absent(trash){method(trash,"removeFromParent",&[])?;}
+ let children=Array::from(&read(furniture,"children")?);
+ for object in children.iter(){
+  if truthy(&read(&read(&object,"userData")?,"furniture")?){
+   method(&object,"removeFromParent",&[])?;crate::host::method_opt(&read(&object,"userData")?,"disposeGeometry",&[])?;
+  }
+ }
+ method(lamp_lighting,"dispose",&[])?;
+ crate::scene_dom::scene_release_object(furniture)?;
+ for map in maps.iter(){method(&map,"dispose",&[])?;}
+ method(lighting,"dispose",&[])?;
+ for material in materials.iter(){method(&material,"dispose",&[])?;}
+ if !absent(trash){method(&read(trash,"userData")?,"dispose",&[])?;}
+ Ok(())
+}
