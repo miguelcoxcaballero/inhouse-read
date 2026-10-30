@@ -8,7 +8,7 @@ import {
   GOAL_SECONDS, STREAK_KEY, STREAK_LOCAL_KEY, addReading, dayKey, dayWord, formatClock, isComplete,
   mergeStreaks, monthGrid, parseStreak, pruneStreak, streakInfo, syncedStreak, weekDays
 } from './reference-reading-streak-core.js'
-import { coverPng, minutesLeft, roundedMinutes } from '../../../src/js/streak-widget-book.js'
+import { coverPng, minutesLeft, roundedMinutes } from './reference-streak-widget-book.js'
 
 const IDLE_MS = 180_000
 const SAVE_EVERY_MS = 5_000
