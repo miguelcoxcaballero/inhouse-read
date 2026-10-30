@@ -117,3 +117,55 @@ it('updates shown materials and retains pending replacements with the same calls
  }
  expect(calls).toBeGreaterThan(100);expect(kept).toBeGreaterThan(5);expect(replaced).toBeGreaterThan(5);
 });
+
+function scene3d(log,seed){
+ const mat=i=>{const m={name:`m${i}`,dispose(){log.push(['dispose',this.name]);}};for(const key of ['map','normalMap','bumpMap','roughnessMap','alphaMap'])if((seed+i+key.length)%3)m[key]={anisotropy:1,name:`${key}${i}`};return m;};
+ const shared=mat(99);
+ const make=(depth,i)=>{
+  const object={name:`o${depth}-${i}`,isMesh:(i+depth)%3!==0,children:[],traverse(callback){callback(this);for(const child of this.children)child.traverse(callback);}};
+  if((i+seed)%4===1)object.material=[mat(i),shared,mat(i+1)];else if((i+seed)%4===2)object.material=shared;else if((i+seed)%4===3)object.material=mat(i);
+  if((i+depth)%2)object.geometry={dispose(){log.push(['geometry',object.name]);}};
+  if(depth<3)for(let k=0;k<(seed+i)%3+1;k++)object.children.push(make(depth+1,i*3+k));
+  return object;
+ };
+ const root=make(0,seed);root.userData={};return root;
+}
+const shape=object=>JSON.stringify(object,(key,value)=>typeof value==='function'?undefined:key==='entry'?value.kind??'book':value);
+it('prepares and releases models with the same walks',()=>{
+ for(let seed=0;seed<12;seed++)for(const kind of ['lamp','plant',undefined]){
+  const logs=[[],[]],[a,b]=[scene3d(logs[0],seed),scene3d(logs[1],seed)],entry={kind};
+  let calls=0;const renderer={capabilities:{getMaxAnisotropy(){calls++;return seed%2?8:32;}}};
+  reference.prepareModel(a,entry,renderer);const before=calls;rust.scene_prepare_model(b,entry,renderer.capabilities);
+  expect(shape(b)).toBe(shape(a));expect(b.userData.entry).toBe(entry);expect(calls-before).toBe(before);
+  reference.releaseObject(a);rust.scene_release_object(b);
+  expect(logs[1]).toEqual(logs[0]);
+ }
+});
+it('repaints fonts and reorders entries as before',()=>{
+ const logs=[[],[]];
+ const entries=side=>Array.from({length:14},(_,i)=>{
+  const model=k=>({userData:{invalidate:`redraw${k}`,...(k%3?{updateSpineAppearance(...args){logs[side].push(['spine',k,this.invalidate,...args.map(a=>a?.id??a)]);}}:{}),
+   ...(k%2?{updateCoverSource(...args){logs[side].push(['cover',k,this.invalidate,...args.map(a=>a?.id??a)]);}}:{})}});
+  const shown=i%5?model(i):null;
+  return {kind:i%7===3?'plant':i%6===4?'lamp':'book',book:{id:`b${i}`},style:{id:`s${i}`},coverUrl:i%4?'':'blob:x',model:shown,replacement:i%3?model(i+20):i%2?shown:null};
+ });
+ const [a,b]=[entries(0),entries(1)];reference.refreshFonts(a);rust.scene_refresh_fonts(b);
+ expect(logs[1]).toEqual(logs[0]);expect(logs[0].length).toBeGreaterThan(8);
+ expect(b.map(e=>[e.model?.userData.invalidate,e.replacement?.userData.invalidate])).toEqual(a.map(e=>[e.model?.userData.invalidate,e.replacement?.userData.invalidate]));
+ const rect=(left,top)=>({left,top,right:left+10,bottom:top+10,width:10,height:10});
+ for(let seed=0;seed<20;seed++){
+  const list=Array.from({length:16},(_,i)=>{
+   const node=i%5?document.createElement('button'):null;
+   if(node&&(i+seed)%3)node.dataset.objectId=`o${i}`;if(node&&(i+seed)%4===1)node.dataset.bookId=`b${i}`;
+   return {key:`k${i}`,node,book:i%2?{id:`b${i}`}:undefined,tapRect:(i+seed)%3?rect(i*7,seed):undefined,hitRect:(i+seed)%5?rect(i*7+.25,seed):undefined,rect:rect(i,i)};
+  });
+  const old=new Map();
+  for(let i=0;i<16;i++)if((i*seed)%7!==3)old.set([`o${i}`,`b${i}`,`k${i}`][(i+seed)%3],rect(i*7+(i%4)*.4+seed%3,seed+(i%3)*.5));
+  const stage={left:seed%4*.5,top:-seed};
+  for(const dragged of [undefined,null,`o${seed%16}`,`k${seed%16}`,seed%16]){
+   const [items,entry]=reference.reorderItems(list,old,stage,dragged),[nativeItems,nativeEntry]=rust.scene_reorder_items(list,old,stage.left,stage.top,dragged);
+   expect(nativeItems.map(item=>[item.entry,item.x,item.y])).toEqual(items.map(item=>[item.entry,item.x,item.y]));
+   expect(nativeEntry??null).toBe(entry??null);
+  }
+ }
+});

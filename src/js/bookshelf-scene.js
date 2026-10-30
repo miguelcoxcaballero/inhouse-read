@@ -138,14 +138,8 @@ function packRows(rows) {
   return packed;
 }
 
-function releaseObject(object) {
-  const materials = new Set();
-  object.traverse(child => {
-    child.geometry?.dispose();
-    for (const material of [].concat(child.material || [])) materials.add(material);
-  });
-  for (const material of materials) material.dispose();
-}
+// Every geometry and, once each, every material under `object` (rust-ui/src/scene_dom.rs).
+function releaseObject(object) { needRustShelf().scene_release_object(object); }
 
 // A missing file must not leave its maps sampling an empty (black) unit:
 // zero roughness would turn the cabinet into a mirror. Flat mean instead.
@@ -816,19 +810,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Loading a font changes canvas pixels without changing material keys.
     // Repaint the retained models, including a quality replacement awaiting
     // its cover, without replacing the projected buttons or the room layout.
-    for (const entry of bookEntries) {
-      if (entry.kind === 'plant' || entry.kind === 'lamp') continue;
-      for (const model of new Set([entry.model, entry.replacement])) {
-        if (!model) continue;
-        const redraw = model.userData.invalidate;
-        model.userData.invalidate = null;
-        try {
-          model.userData.updateSpineAppearance?.(entry.book, entry.style);
-          // Printed cover images have no generated lettering to refresh.
-          if (!entry.coverUrl) model.userData.updateCoverSource?.(null, entry.book, entry.style);
-        } finally { model.userData.invalidate = redraw; }
-      }
-    }
+    rust.scene_refresh_fonts(bookEntries);
     settledInvalidate(false, 'fonts-ready');
   }
 
@@ -839,21 +821,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
     model.userData.invalidate = () => rust.scene_quality_invalidate(entry,model,qualityHost);
-    model.traverse(object => {
-      for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
-        for (const key of ['map','normalMap','bumpMap','roughnessMap'])
-          if (material[key]) material[key].anisotropy = Math.min(16,renderer.capabilities.getMaxAnisotropy());
-    });
-    model.userData.entry = entry;
-    model.traverse(object => {
-      if (object.isMesh) {
-        // Fixtures own their shadow flags: clear glass, opal diffusers and
-        // glowing bulb envelopes transmit the source placed inside them.
-        // Making the shaded LED opaque here would extinguish its entire cone.
-        if (entry.kind !== 'lamp') object.castShadow = true;
-        object.receiveShadow = true;
-      }
-    });
+    // Its maps' anisotropy, its entry and the meshes' shadow flags (rust-ui/src/scene_dom.rs).
+    // Fixtures own their casting: clear glass, opal diffusers and glowing bulb
+    // envelopes transmit the source placed inside them.
+    rust.scene_prepare_model(model, entry, renderer.capabilities);
     if (entry.kind === 'lamp') { model.userData.shelfLampKeys = lampKeys(entry); model.userData.shownTint = lampTint(entry.kelvin).join(); }
     else if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
     else {
@@ -3180,19 +3151,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     animateFromRects(oldRects, { draggedKey } = {}) {
       if (reducedMotion.matches) return;
-      const stageRect = stage.getBoundingClientRect(), items = [];
-      for (const entry of bookEntries) {
-        const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
-          oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
-        const targetRect = entry.tapRect || entry.hitRect || entry.rect;
-        if (!old || !targetRect) continue;
-        const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
-        if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });
-      }
+      // Each entry that moved more than a pixel, and the dragged one among them (rust-ui/src/scene_dom.rs).
+      const stageRect = stage.getBoundingClientRect();
+      const [items, dragged] = rust.scene_reorder_items(bookEntries, oldRects, stageRect.left, stageRect.top, draggedKey);
       const started = performance.now();
       reorderItems = items; sceneView.beginReorder(started);
-      const dragged = draggedKey == null ? null : items.find(item =>
-        String(item.entry.node?.dataset.objectId ?? item.entry.key) === String(draggedKey))?.entry;
       if (dragged && dragged.lift.value > 0) {
         dragged.landing = { from:dragged.lift.value, started, duration:520 };
       }
