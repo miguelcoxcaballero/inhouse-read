@@ -280,6 +280,29 @@ export function updateRecord(entry, book, style, coverUrl, dimensions = null, ho
     Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]));
 }
 
+// releaseCandidate, cancelReplacement and releaseEntry after its cancelInsertion/cancelTrashDrop;
+// `releasedCandidates` and `semanticFoliage` are parameters, and the result is casterListDirty's change.
+export function releaseCandidate(model, releasedCandidates) {
+  if (!model || releasedCandidates.has(model)) return;
+  releasedCandidates.add(model); model.userData.dispose?.();
+}
+export function cancelReplacement(entry, releasedCandidates) {
+  entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
+  releaseCandidate(entry.replacement, releasedCandidates);
+  entry.replacement = null;
+  entry.qualityReplacement = false; entry.replacementReady = false;
+}
+export function releaseEntry(entry, semanticFoliage, releasedCandidates) {
+  let casterListDirty = false;
+  cancelReplacement(entry, releasedCandidates);
+  if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+  entry.lampHull?.free(); entry.lampHull = null;
+  const foliage = semanticFoliage.get(entry.node);
+  if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
+  clearPlantDiagnostics(entry.node);
+  return casterListDirty;
+}
+
 const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
 export const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
 export const freshEntry = (entry, index, pose = new THREE.Object3D(), flags = NO_FLAGS) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose,

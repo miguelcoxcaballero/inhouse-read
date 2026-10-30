@@ -785,27 +785,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return model;
   }
 
-  function releaseCandidate(model) {
-    if (!model || releasedCandidates.has(model)) return;
-    releasedCandidates.add(model); model.userData.dispose?.();
-  }
-
-  function cancelReplacement(entry) {
-    entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
-    releaseCandidate(entry.replacement);
-    entry.replacement = null;
-    entry.qualityReplacement = false; entry.replacementReady = false;
-  }
-
+  // A candidate model is released once; an entry leaving the scene releases its replacement, model,
+  // lamp silhouette, plant touch surface and diagnostics (rust-ui/src/scene_host.rs).
+  function releaseCandidate(model) { rust.scene_release_candidate(model, releasedCandidates); }
+  function cancelReplacement(entry) { rust.scene_cancel_replacement(entry, releasedCandidates); }
   function releaseEntry(entry) {
     cancelInsertion(entry);
     cancelTrashDrop(entry, false);
-    cancelReplacement(entry);
-    if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
-    entry.lampHull?.free(); entry.lampHull = null;
-    const foliage = semanticFoliage.get(entry.node);
-    if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
-    clearPlantDiagnostics(entry.node);
+    if (rust.scene_release_entry(entry, semanticFoliage, releasedCandidates)) casterListDirty = true;
   }
 
   // The drop's promise, the model's place at its pose and the drop's diagnostics (rust-ui/src/scene_host.rs).

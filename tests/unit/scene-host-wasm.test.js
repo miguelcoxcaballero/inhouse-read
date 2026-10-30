@@ -366,3 +366,36 @@ it('takes a book\'s newer record exactly as before',()=>{
   expect(rust.scene_hidden_material(b.entry)).toBe(reference.hiddenBookMaterial(a.entry));
  }
 });
+
+function releaseCase(seed,log){
+ const next=random(seed+4000),parent={children:[]},model=name=>{
+  const user=next()<.8?{dispose(){log.push(['dispose',name]);}}:{};
+  const object={name,userData:user,removeFromParent(){log.push(['remove',name]);}};return object;
+ };
+ const node=next()<.85?document.createElement('button'):null;
+ if(node){node.dataset.plantModelCatalogId='c';node.dataset.plantLeafOpacity='opaque';node.dataset.other='1';}
+ const shown=next()<.7?model('shown'):null,released=new WeakSet(),foliage=new Map();
+ const entry={node,model:shown,replacement:next()<.5?(next()<.3&&shown?shown:model('replacement')):null,qualityReplacement:true,replacementReady:true,
+  plantQuality:next()<.3?{plan:{dispose(){log.push(['plan']);}}}:undefined,lampHull:next()<.3?{free(){log.push(['hull']);}}:undefined};
+ if(next()<.2&&entry.replacement)released.add(entry.replacement);
+ if(node&&next()<.5){const svg=document.createElement('span');node.append(svg);foliage.set(node,{svg,state:{free(){log.push(['state']);}}});}
+ return {entry,foliage,released,parent};
+}
+it('releases candidates, replacements and leaving entries as before',()=>{
+ const seen=new Set();
+ for(let seed=0;seed<200;seed++){
+  const logs=[[],[]],[a,b]=[releaseCase(seed,logs[0]),releaseCase(seed,logs[1])];
+  const expected=reference.releaseEntry(a.entry,a.foliage,a.released);
+  expect(rust.scene_release_entry(b.entry,b.foliage,b.released)).toBe(expected);
+  expect(logs[1]).toEqual(logs[0]);for(const [name] of logs[0])seen.add(name);
+  const state=({entry,foliage})=>[entry.node?.outerHTML,entry.model,entry.replacement,entry.plantQuality,entry.lampHull,entry.qualityReplacement,entry.replacementReady,foliage.size];
+  expect(state(b)).toEqual(state(a));
+  // A second release of the same candidate does nothing, a fresh one is disposed once.
+  const candidate={userData:{dispose(){logs[0].push('again');}}};
+  reference.releaseCandidate(candidate,a.released);rust.scene_release_candidate(candidate,b.released);
+  expect(logs[0].filter(item=>item==='again')).toHaveLength(2);
+  rust.scene_release_candidate(candidate,b.released);rust.scene_release_candidate(null,b.released);
+  expect(logs[0].filter(item=>item==='again')).toHaveLength(2);
+ }
+ expect([...seen].sort()).toEqual(['dispose','hull','plan','remove','state']);
+});

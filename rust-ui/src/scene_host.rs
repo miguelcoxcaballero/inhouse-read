@@ -598,3 +598,53 @@ pub fn scene_update_record(entry:&JsValue,book:&JsValue,style:&JsValue,cover_url
  }
  Ok(false)
 }
+
+/// `model.userData.dispose?.()`.
+fn dispose_model(model:&JsValue)->R{
+ let user=read(model,"userData")?;
+ if !absent(&read(&user,"dispose")?){method(&user,"dispose",&[])?;}
+ Ok(())
+}
+
+/// Releases a model that never became the shown one, once: `released` remembers every candidate.
+#[wasm_bindgen]
+pub fn scene_release_candidate(model:&JsValue,released:&js_sys::WeakSet)->R{
+ if !truthy(model)||released.has(model.unchecked_ref()){return Ok(());}
+ released.add(model.unchecked_ref());
+ dispose_model(model)
+}
+
+/// Drops a book's pending replacement and a plant's quality plan.
+#[wasm_bindgen]
+pub fn scene_cancel_replacement(entry:&JsValue,released:&js_sys::WeakSet)->R{
+ let quality=read(entry,"plantQuality")?;
+ if !absent(&quality){method(&read(&quality,"plan")?,"dispose",&[])?;}
+ set(entry,"plantQuality",&JsValue::NULL)?;
+ scene_release_candidate(&read(entry,"replacement")?,released)?;
+ set(entry,"replacement",&JsValue::NULL)?;
+ set(entry,"qualityReplacement",&JsValue::FALSE)?;set(entry,"replacementReady",&JsValue::FALSE)
+}
+
+/// An entry leaving the scene (after its return and drop were cancelled): its replacement, its shown
+/// model, its lamp's silhouette, its plant's touch surface (`foliage`) and its button's diagnostics.
+/// True when a shown model was released, which changes the shadow casters.
+#[wasm_bindgen]
+pub fn scene_release_entry(entry:&JsValue,foliage:&Map,released:&js_sys::WeakSet)->R<bool>{
+ scene_cancel_replacement(entry,released)?;
+ let shown=truthy(&read(entry,"model")?);
+ if shown{
+  method(&read(entry,"model")?,"removeFromParent",&[])?;
+  dispose_model(&read(entry,"model")?)?;
+  set(entry,"model",&JsValue::NULL)?;
+ }
+ let hull=read(entry,"lampHull")?;
+ if !absent(&hull){method(&hull,"free",&[])?;}
+ set(entry,"lampHull",&JsValue::NULL)?;
+ let native=foliage.get(&read(entry,"node")?);
+ if truthy(&native){
+  method(&read(&native,"svg")?,"remove",&[])?;method(&read(&native,"state")?,"free",&[])?;
+  foliage.delete(&read(entry,"node")?);
+ }
+ crate::scene_dom::scene_clear_plant_diagnostics(&read(entry,"node")?)?;
+ Ok(shown)
+}
