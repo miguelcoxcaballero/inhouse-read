@@ -1,11 +1,12 @@
 // Every entry's motion sample, pose matrix, room matrix and projection in one native call per
 // frame (rust-ui/src/scene_entry_frame.rs). The host writes the poses and projection inputs
-// into the retained arena and reads the results from it; views follow any growth of memory.
+// into the retained arena and reads the results from it; `refresh` follows any growth of memory
+// (call it before using `input` or `output` after other native work).
 export const ENTRY_INPUT = 22, ENTRY_OUTPUT = 70;
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, inputAt = 0, outputAt = 0, buffer = null, room = null, disposed = false;
-  const frame = { input:null, output:null, prepare, step, free };
+  const frame = { input:null, output:null, prepare, refresh, step, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
     if (buffer === memory.buffer) return;

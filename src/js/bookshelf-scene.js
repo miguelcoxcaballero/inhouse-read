@@ -3,6 +3,7 @@ import { createSceneCountFrame } from './scene-count-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
+import { createSceneEntryFrame, ENTRY_INPUT, ENTRY_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -1409,7 +1410,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'catalog3d', 'true'); setData(canvas, 'catalogVisible', String(visible));
   }
 
-  const projectionFrame = createSceneProjectionFrame(rust), projectIo = projectionFrame.projection, hitIo = projectionFrame.hitOutput;
+  const projectionFrame = createSceneProjectionFrame(rust), hitIo = projectionFrame.hitOutput, entryFrame = createSceneEntryFrame(rust);
   const lampIo = new Float64Array(8), stepIo = new Float64Array(40);
   let stepBatch = new Float64Array(0), stepBatchViews = [];
   const insertionIo = new Float64Array(4), surfaceBox = new Float64Array(6), inverseTurn = new Float64Array(4);
@@ -1520,14 +1521,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       sceneView.stepEntries(stepBatch);
     }
+    // The poses the kinematics or the solver chose are written into the entry arena; one native call
+    // then samples the shared room's motion, composes each pose matrix, places it in the room and
+    // projects it, for every entry (scene-entry-frame.js). Its results are applied below, in order.
+    entryFrame.prepare(bookEntries.length);
     for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
       const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
-      const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
+      const decorative = plant || lamp;
       // The DOM is read only for a node whose class or style changed.
       const away = entry.flags.away;
       // The lift, the preview and the landing ease, and the pose follows, in Rust.
-      const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, landing = entry.landing, preview = entry.preview;
+      const kind = plant ? 1 : lamp ? 2 : 0, lift = entry.lift, preview = entry.preview;
       const io = usePhysics ? stepIo : stepBatchViews[entryIndex];
       if (usePhysics) gravityFrame.copyState(entryIndex, io);
       lift.value = io[5]; lift.from = io[6]; lift.target = io[7]; lift.started = io[8];
@@ -1545,41 +1550,58 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           completedLegacyInsertionLeases.add(entry.insertion.nativeLease);
         entry.insertion = null;
       }
-      const insertion = entry.insertion;
+      const insertion = entry.insertion, trashDrop = entry.trashDrop;
       moving ||= Boolean(motion & 8);
       shelfMoving ||= !away && Boolean(motion & 24);
-      entry.pose.position.set(io[29], io[30], io[31]);
+      const pose = entry.pose;
+      pose.position.set(io[29], io[30], io[31]);
       const gravityAt = entryIndex * 4;
       if (usePhysics && !decorative && node) writeLean(entry, node, gravityOutput[gravityAt]);
-      if (usePhysics && !decorative) entry.pose.rotation.set(io[32], io[33], io[34], io[37] ? 'ZYX' : 'XYZ');
-      else entry.pose.rotation.set(io[32], io[33], io[34]);
+      if (usePhysics && !decorative) pose.rotation.set(io[32], io[33], io[34], io[37] ? 'ZYX' : 'XYZ');
+      else pose.rotation.set(io[32], io[33], io[34]);
       moving ||= usePhysics && Boolean(io[38]);
       shelfMoving ||= usePhysics && Boolean(io[38]);
-      entry.pose.scale.setScalar(io[35]);
-      const liveFlags = sceneMotionFrame.sample(entryIndex, entry.pose, roomMotion, roomTransition, now, arranging);
-      const live = sceneMotionFrame.output;
-      if (liveFlags & 1) entry.localMotionPose = [sceneMotionFrame.key(entryIndex),live[0],live[1],live[2],live[3],live[4],live[5],live[6],live[7],live[8]];
+      pose.scale.setScalar(io[35]);
+      entryFrame.refresh();
+      const input = entryFrame.input, at = entryIndex * ENTRY_INPUT, p = pose.position, q = pose.quaternion;
+      input[at] = p.x; input[at + 1] = p.y; input[at + 2] = p.z;
+      input[at + 3] = q.x; input[at + 4] = q.y; input[at + 5] = q.z; input[at + 6] = q.w; input[at + 7] = pose.scale.x;
+      input[at + 8] = kind; input[at + 9] = usePhysics ? io[39] : entry.bits;
+      input[at + 10] = trashDrop ? 1 : 0; input[at + 11] = insertion ? 1 : 0; input[at + 12] = entry.model ? 1 : 0;
+      input[at + 13] = entry.overview ? 1 : 0; input[at + 14] = trashDrop?.complete ? 1 : 0; input[at + 15] = insertion?.overlayCanvas ? 1 : 0;
+      input.set(entry.box, at + 16);
+    }
+    entryFrame.step(sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging, furniture.matrixWorld);
+    for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
+      const entry = bookEntries[entryIndex];
+      const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
+      const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
+      const away = entry.flags.away, kind = plant ? 1 : lamp ? 2 : 0;
+      const insertion = entry.insertion, trashDrop = entry.trashDrop, pose = entry.pose;
+      // Native work below (models, quality, hits) may grow the memory: the views follow it.
+      entryFrame.refresh();
+      const live = entryFrame.output, at = entryIndex * ENTRY_OUTPUT, liveFlags = live[at];
+      if (liveFlags & 1) entry.localMotionPose = [sceneMotionFrame.key(entryIndex),live[at+1],live[at+2],live[at+3],live[at+4],live[at+5],live[at+6],live[at+7],live[at+8],live[at+9]];
       if (liveFlags & 2) {
-        entry.pose.position.set(live[9],live[10],live[11]);
-        entry.pose.quaternion.set(live[12],live[13],live[14],live[15]);entry.pose.scale.setScalar(live[16]);
-        if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(entry.pose.quaternion,'ZYX').z);
+        pose.position.set(live[at+10],live[at+11],live[at+12]);
+        pose.quaternion.set(live[at+13],live[at+14],live[at+15],live[at+16]);pose.scale.setScalar(live[at+17]);
+        if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(pose.quaternion,'ZYX').z);
       }
       if (liveFlags & 4) {
-        entry.pose.position.set(live[17],live[18],live[19]);
-        entry.pose.quaternion.set(live[20],live[21],live[22],live[23]);entry.pose.scale.setScalar(live[24]);
-        if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(entry.pose.quaternion,'ZYX').z);
+        pose.position.set(live[at+18],live[at+19],live[at+20]);
+        pose.quaternion.set(live[at+21],live[at+22],live[at+23],live[at+24]);pose.scale.setScalar(live[at+25]);
+        if (!decorative && node) writeLean(entry, node, leanEuler.setFromQuaternion(pose.quaternion,'ZYX').z);
       }
-      entry.pose.updateMatrix();
-      projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
+      // Object3D#updateMatrix and the room's multiply, already taken natively.
+      pose.matrix.fromArray(live, at + 26); pose.matrixWorldNeedsUpdate = true;
+      projectedMatrix.fromArray(live, at + 42);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
-      const trashDrop = entry.trashDrop;
-      projectionFrame.project(sceneView, entry, kind, usePhysics ? io[39] : entry.bits, trashDrop, insertion, projectedMatrix);
       const rect = entry.rect || (entry.rect = {});
-      rect.left = projectIo[30]; rect.right = projectIo[31]; rect.top = projectIo[32]; rect.bottom = projectIo[33];
-      rect.width = projectIo[34]; rect.height = projectIo[35]; rect.closest = projectIo[36];
-      const visible = projectIo[37] === 1;
-      if (projectIo[38] === 1) {
-        rust.scene_update_quality(entry,qualityHost,projectIo[39] === 1,projectIo[40]);
+      rect.left = live[at + 58]; rect.right = live[at + 59]; rect.top = live[at + 60]; rect.bottom = live[at + 61];
+      rect.width = live[at + 62]; rect.height = live[at + 63]; rect.closest = live[at + 64];
+      const visible = live[at + 65] === 1, modelVisible = live[at + 69] === 1;
+      if (live[at + 66] === 1) {
+        rust.scene_update_quality(entry,qualityHost,live[at + 67] === 1,live[at + 68]);
       }
       let created = null;
       if (visible && !entry.model) {
@@ -1590,7 +1612,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         releaseEntry(entry);
       }
       if (entry.model) {
-        const modelVisible = projectIo[41] === 1;
         if (entry.model.visible !== modelVisible) casterListDirty = true;
         entry.model.visible = modelVisible;
         if (trashDrop) {
@@ -3264,7 +3285,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { countFrame.free(); projectionFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { countFrame.free(); projectionFrame.free(); entryFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
