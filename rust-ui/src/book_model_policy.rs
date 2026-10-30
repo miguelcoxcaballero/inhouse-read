@@ -90,8 +90,12 @@ thread_local! { static SHARED_SOURCES: Map = Map::new(); }
 /// identical GPU upload for every book. Do not hold a Rust borrow across build.
 #[wasm_bindgen]
 pub fn book_shared_texture(key: JsValue, build: &Function) -> Result<JsValue, JsValue> {
+    book_shared_texture_with(key, || build.call0(&JsValue::UNDEFINED))
+}
+/// The same for a texture the shelf module builds itself.
+pub(crate) fn book_shared_texture_with(key: JsValue, build: impl FnOnce() -> Result<JsValue, JsValue>) -> Result<JsValue, JsValue> {
     SHARED_SOURCES.with(|cache| {
-        if !cache.has(&key) { cache.set(&key, &build.call0(&JsValue::UNDEFINED)?); }
+        if !cache.has(&key) { cache.set(&key, &build()?); }
         let base = cache.get(&key);
         let version = get(&get(&base, "source"), "version");
         let copy = method(&base, "clone", &[])?;
