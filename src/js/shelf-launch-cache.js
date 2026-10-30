@@ -58,20 +58,9 @@ export function validLaunchFrame(frame, key, width, height) {
 
 // `shelfModule` returns the shelf module (passed in: the preview's own module graph must not load it).
 export function rememberLaunchFrames(root, { books, idle, isIdle, shelfModule }) {
-  let timer = 0;
-  // Saving (is the canvas settled and unused, the key, the PNG, the checks after every wait) is
-  // rust-ui/src/launch_frames.rs; this keeps the observer, its timer and the store.
-  const host = { root, generation:0, stopped:false, isIdle, books, launchState, launchKey, validLaunchFrame, writeLaunchFrame };
-  const save = revision => shelfModule().shelf_save_launch_frame(host, revision);
-  const schedule = () => {
-    const revision = ++host.generation; clearTimeout(timer);
-    timer = setTimeout(() => idle(() => void save(revision)), 1000);
-  };
-  const observer = new MutationObserver(schedule);
-  observer.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['data-render-count'] });
-  const stop = () => { host.stopped = true; host.generation++; clearTimeout(timer); observer.disconnect(); };
-  addEventListener('pagehide', event => { if (!event.persisted) stop(); else { host.generation++; clearTimeout(timer); } });
-  addEventListener('pageshow', event => { if (event.persisted) schedule(); });
-  schedule();
-  return stop;
+  // The observer, its timer, the page listeners and the save (is the canvas settled and unused, the key, the
+  // PNG, the checks after every wait) are rust-ui/src/launch_frames.rs; this keeps the store and the state.
+  const shelf = shelfModule();
+  return shelf.shelf_remember_launch_frames({ root, generation:0, stopped:false, isIdle, books, launchState, launchKey,
+    validLaunchFrame, writeLaunchFrame }, idle, shelf);
 }

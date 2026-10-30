@@ -1,7 +1,7 @@
 //! renderBookshelf's set-up (formerly the body of bookshelf.js): the merged options, the shared state, the
 //! frame, the view-swipe and pinch-zoom controllers, the plant catalogue, the parts every piece of the screen
-//! shares, the page listeners and the first render, in the original order. bookshelf.js keeps the public
-//! handle. Every function handed to the host comes from the context's dispatcher, so it costs no handle here
+//! shares, the page listeners and the first render, in the original order; also the lookup table of the other
+//! modules' functions (shelf_env) and the public handle (shelf_handle). Every function handed to the host comes from the context's dispatcher, so it costs no handle here
 //! and, once the shelf is destroyed, answers as the original's `shelfCtxLive` guards did.
 use std::rc::{Rc,Weak};
 use wasm_bindgen::{prelude::*,JsCast};
@@ -157,4 +157,167 @@ impl RustShelfCtx{
   let parts=&self.ctx.parts;
   obj(&[("state",&self.ctx.state),("parts",parts),("root",&self.ctx.root),("lifecycle",&get(parts,"lifecycle"))])
  }
+}
+
+// ---- The shelf's lookup table and its public handle (formerly src/js/bookshelf.js) ----
+
+/// The functions and values of the other modules the shelf's parts call: `(name, module, export)`. `module` is a
+/// key of the namespaces bookshelf.js hands over, or `own` for the host's own entries. In the original order.
+const ENV:&[(&str,&str,&str)]=&[
+ ("physicalPlacement","own","physicalPlacement"),("playShelfSound","cozySounds","playShelfSound"),
+ ("withDefaults","layout","withDefaults"),("createBookReturnCache","bookshelfReturn","createBookReturnCache"),
+ ("attachShelfSounds","cozySounds","attachShelfSounds"),("createShelfViewGesture","viewGesture","createShelfViewGesture"),
+ ("createShelfZoom","shelfZoom","createShelfZoom"),("createLazyPlantCatalog","plantCatalogLazy","createLazyPlantCatalog"),
+ ("refreshCanvasFontsAfterPaint","canvasFonts","refreshCanvasFontsAfterPaint"),("displayBookTitle","bookTitle","displayBookTitle"),
+ ("getBookRenderer","bookModel","getBookRenderer"),("canAdoptShelfMetadata","metadataRecords","canAdoptShelfMetadata"),
+ ("planBookshelf","layout","planBookshelf"),("batchSpineStyles","spineStyles","batchSpineStyles"),
+ ("bookSpineOptions","plantDimensions","bookSpineOptions"),("minimumBookCellWidth","plantDimensions","minimumBookCellWidth"),
+ ("createBookshelfScene","scene","createBookshelfScene"),("DEFAULT_LAYOUT","layout","DEFAULT_LAYOUT"),
+ ("normalizeBookAuthor","bookTitle","normalizeBookAuthor"),("bookColorOptions","bookColors","bookColorOptions"),
+ ("spineColorStyle","bookColors","spineColorStyle"),("spineFinish","bookColors","spineFinish"),("surfaceFinish","bookColors","surfaceFinish"),
+ ("withCoverAppearance","coverAppearance","withCoverAppearance"),("fitCoverImage","bookModel","fitCoverImage"),
+ ("bookView","bookModel","bookView"),("bookmarkFor","layout","bookmarkFor"),("readCoverAspectRatio","coverAppearance","readCoverAspectRatio"),
+ ("planReadingBookPose","bookModel","planReadingBookPose"),("markTiming","perfMarks","markTiming"),("resetTimeline","perfMarks","resetTimeline"),
+ ("readerBookTiming","bookTiming","readerBookTiming"),("persistablePosition","persistable","persistablePosition"),
+ ("bookReturnSignature","bookshelfReturn","bookReturnSignature"),("bookReturnCompatibility","bookshelfReturn","bookReturnCompatibility"),
+ ("readerReturnCanvas","returnCanvas","readerReturnCanvas"),("coverAspectRatio","coverAppearance","coverAspectRatio"),
+ ("analyzeCoverAppearance","own","analyzeCoverAppearance"),("warmShelfCover","own","warmShelfCover"),("prepareShelfFonts","own","prepareShelfFonts"),
+ ("notifyCloudSettingsChanged","cloudSettings","notifyCloudSettingsChanged"),("getCatalogLamp","lampCatalogData","getCatalogLamp"),
+ ("lampCatalogIllustration","lampIllustration","lampCatalogIllustration"),("normalizeShelfLamp","lampCatalogData","normalizeShelfLamp"),
+ ("getCatalogPlant","plantCatalogData","getCatalogPlant"),("resolveCatalogPlant","plantRecords","resolveCatalogPlant"),
+ ("normalizeShelfType","shelfTypes","normalizeShelfType"),("placeRooftopPlants","rooftop","placeRooftopPlants"),
+ ("shelfModelLayout","modelLayout","measuredShelfModelLayout"),("getCatalogPot","plantCatalogData","getCatalogPot"),
+ ("getPotColor","plantCatalogData","getPotColor"),("normalizeShelfPlant","plantRecords","normalizeShelfPlant"),
+ ("shelfScale","plantDimensions","shelfScale"),("plantDimensions","plantDimensions","plantDimensions"),
+ ("layoutShelfDecorations","decorationLayout","layoutShelfDecorations"),("moveShelfDecoration","decorationLayout","moveShelfDecoration"),
+ ("getRustCore","rustCore","getRustCore"),("createShelfPlacementSession","placementWasm","createShelfPlacementSession"),
+ ("SHELF_PREVIEW_MIN_OBJECTS","placementPreview","SHELF_PREVIEW_MIN_OBJECTS"),("SHELF_PREVIEW_DIRECT_MOVES","placementPreview","SHELF_PREVIEW_DIRECT_MOVES"),
+ ("BAGGEBO_SPEC","shelfTypes","BAGGEBO_SPEC"),("needsDriveDownload","storagePolicy","needsDriveDownload"),
+ ("coverReliefLayers","coverRelief","coverReliefLayers"),("normalizeCoverRelief","coverRelief","normalizeCoverRelief"),
+ ("analyzeCoverRelief","coverRelief","analyzeCoverRelief"),("METAL_COLORS","bookColors","METAL_COLORS"),("COLOR_RELIEF_IDS","coverRelief","COLOR_RELIEF_IDS"),
+];
+
+/// The shelf's lookup table: every module entry is read from its module's namespace when it is read (a module
+/// replaced after the shelf was built is still the one called; the getter is `Reflect.get` bound to the
+/// namespace and export, so it holds no closure), every own entry is the host's value.
+#[wasm_bindgen]
+pub fn shelf_env(modules:JsValue,own:JsValue)->R<JsValue>{
+ let env:JsValue=js_sys::Object::new().into();
+ let reflect_get=read(&global(),"Reflect").and_then(|reflect|read(&reflect,"get"))?;
+ let bind=read(&reflect_get,"bind")?.dyn_into::<js_sys::Function>()?;
+ for (name,module,export) in ENV{
+  if *module=="own"{put(&env,name,&read(&own,export)?);continue;}
+  let namespace=read(&modules,module)?;
+  if !namespace.is_object(){return Err(js_sys::TypeError::new(&format!("renderBookshelf: falta el módulo {module}")).into());}
+  let getter=bind.call3(&reflect_get,&JsValue::UNDEFINED,&namespace,&JsValue::from_str(export))?;
+  let descriptor=obj(&[("get",&getter),("enumerable",&JsValue::TRUE),("configurable",&JsValue::TRUE)]);
+  js_sys::Reflect::define_property(env.unchecked_ref(),&JsValue::from_str(name),descriptor.unchecked_ref())?;
+ }
+ Ok(env)
+}
+
+/// The public handle of `renderBookshelf`: `{element, isInteracting, applyRoomPose, prepareCloudRoom, applyLiveRoomMotion,
+/// clearLiveRoomMotion, refresh, queueRefresh, update, returnToShelf, updateCloudRecord, setPresentationActive,
+/// setReturningBook, hasReaderOrigin, prepareOpeningPage, close, destroy}` over the mounted context `ctx` (a
+/// `RustShelfCtx`). Its functions are this module's exports (`exports`) bound to one plain record, so the handle
+/// holds no closure; once destroyed it has handed its context back and answers as the original's `shelfCtxLive`
+/// guards did.
+#[wasm_bindgen]
+pub fn shelf_handle(ctx:JsValue,exports:JsValue)->R<JsValue>{
+ let mounted=method(&ctx,"mounted",&[])?;
+ let record=obj(&[("ctx",&ctx),("live",&JsValue::TRUE),("state",&read(&mounted,"state")?),("parts",&read(&mounted,"parts")?),
+  ("lifecycle",&read(&mounted,"lifecycle")?),("exports",&exports)]);
+ let bound=|name:&str|->R<JsValue>{method(&read(&exports,name)?,"bind",&[&JsValue::UNDEFINED,&record])};
+ let handle:JsValue=js_sys::Object::new().into();
+ put(&handle,"element",&read(&mounted,"root")?);
+ let interacting=obj(&[("get",&bound("shelf_handle_interacting")?),("enumerable",&JsValue::TRUE),("configurable",&JsValue::TRUE)]);
+ js_sys::Reflect::define_property(handle.unchecked_ref(),&"isInteracting".into(),interacting.unchecked_ref())?;
+ let refresh=bound("shelf_handle_refresh")?;
+ for (key,export) in [("applyRoomPose","shelf_handle_room_pose"),("prepareCloudRoom","shelf_handle_cloud_room"),
+  ("applyLiveRoomMotion","shelf_handle_live_motion"),("clearLiveRoomMotion","shelf_handle_clear_motion")]{put(&handle,key,&bound(export)?);}
+ put(&handle,"refresh",&refresh);
+ put(&handle,"queueRefresh",&bound("shelf_handle_queue_refresh")?);
+ put(&handle,"update",&refresh);
+ for (key,export) in [("returnToShelf","shelf_handle_return"),("updateCloudRecord","shelf_handle_cloud_record"),
+  ("setPresentationActive","shelf_handle_presentation"),("setReturningBook","shelf_handle_returning_book"),
+  ("hasReaderOrigin","shelf_handle_reader_origin"),("prepareOpeningPage","shelf_handle_opening_page"),
+  ("close","shelf_handle_close"),("destroy","shelf_handle_destroy")]{put(&handle,key,&bound(export)?);}
+ Ok(handle)
+}
+fn live(record:&JsValue)->bool{truthy(&get(record,"live"))}
+fn handle_state(record:&JsValue)->JsValue{get(record,"state")}
+fn handle_ctx(record:&JsValue)->JsValue{get(record,"ctx")}
+
+#[wasm_bindgen]
+pub fn shelf_handle_interacting(record:&JsValue)->R<bool>{Ok(live(record)&&super::screen_lifecycle::shelf_has_interaction(handle_state(record))?)}
+#[wasm_bindgen]
+pub fn shelf_handle_room_pose(record:&JsValue)->R<bool>{Ok(live(record)&&super::screen_lifecycle::shelf_apply_room_pose(handle_state(record))?)}
+#[wasm_bindgen]
+pub fn shelf_handle_cloud_room(record:&JsValue)->R<()>{if live(record){method(&handle_ctx(record),"prepareCloudRoom",&[])?;}Ok(())}
+#[wasm_bindgen]
+pub fn shelf_handle_live_motion(record:&JsValue,packet:JsValue)->R<bool>{
+ Ok(live(record)&&super::screen_lifecycle::shelf_apply_live_room_motion(handle_state(record),packet)?)
+}
+/// `shelfCtxLive && shelf_clear_live_room_motion(state, source)`: false once destroyed, otherwise undefined.
+#[wasm_bindgen]
+pub fn shelf_handle_clear_motion(record:&JsValue,source:JsValue)->R<JsValue>{
+ if !live(record){return Ok(JsValue::FALSE);}
+ super::screen_lifecycle::shelf_clear_live_room_motion(handle_state(record),source)?;Ok(undef())
+}
+/// `refresh(nextBooks, { defer = false } = {})`.
+#[wasm_bindgen]
+pub fn shelf_handle_refresh(record:&JsValue,books:JsValue,options:JsValue)->R<()>{
+ let defer=if options.is_undefined(){JsValue::FALSE}else{let value=read(&options,"defer")?;if value.is_undefined(){JsValue::FALSE}else{value}};
+ if live(record){method(&handle_ctx(record),"refresh",&[&books,&defer])?;}
+ Ok(())
+}
+/// Storage may notify for several records in one turn. Keep only the last complete list and commit one
+/// semantic/GPU layout on the next frame.
+#[wasm_bindgen]
+pub fn shelf_handle_queue_refresh(record:&JsValue,books:JsValue)->R<()>{
+ if live(record){method(&handle_ctx(record),"refresh",&[&books,&JsValue::TRUE])?;}
+ Ok(())
+}
+#[wasm_bindgen]
+pub fn shelf_handle_return(record:&JsValue,book_id:JsValue,options:JsValue)->R<JsValue>{
+ if live(record){method(&handle_ctx(record),"returnToShelf",&[&book_id,&options])}else{Ok(js_sys::Promise::resolve(&JsValue::FALSE).into())}
+}
+#[wasm_bindgen]
+pub fn shelf_handle_cloud_record(record:&JsValue,cloud:JsValue)->R<()>{super::screen_lifecycle::shelf_update_cloud_record(handle_state(record),cloud)}
+#[wasm_bindgen]
+pub fn shelf_handle_presentation(record:&JsValue,value:JsValue)->R<()>{super::screen_lifecycle::shelf_set_presentation_active(handle_state(record),value)}
+/// A destroyed shelf has handed its context back; whatever a late callback asks of it is then moot.
+#[wasm_bindgen]
+pub fn shelf_handle_returning_book(record:&JsValue,book_id:JsValue)->R<()>{
+ if live(record){method(&handle_ctx(record),"setReturningBook",&[&book_id])?;}
+ Ok(())
+}
+#[wasm_bindgen]
+pub fn shelf_handle_reader_origin(record:&JsValue,book_id:JsValue)->R<bool>{super::screen_lifecycle::shelf_has_reader_origin(handle_state(record),book_id)}
+/// The default wait between preparation steps: one task.
+#[wasm_bindgen]
+pub fn shelf_handle_next_task()->js_sys::Promise{
+ js_sys::Promise::new(&mut |resolve,_|{let _=crate::host::set_timeout(&resolve,0.0);})
+}
+/// Hands the page a lifted book will open on to its 3D model ahead of the tap.
+#[wasm_bindgen]
+pub fn shelf_handle_opening_page(record:&JsValue,book_id:JsValue,snapshot:JsValue,idle:JsValue)->R<JsValue>{
+ let idle=if idle.is_undefined(){read(&get(record,"exports"),"shelf_handle_next_task")?}else{idle};
+ super::screen_lifecycle::shelf_prepare_opening_page(handle_state(record),book_id,snapshot,idle)
+}
+/// Folds the open cover back, if there is one.
+#[wasm_bindgen]
+pub fn shelf_handle_close(record:&JsValue)->R<JsValue>{
+ if live(record){method(&handle_ctx(record),"finishReturnSlot",&[&JsValue::FALSE])?;}
+ super::screen_lifecycle::shelf_public_close(handle_state(record))
+}
+#[wasm_bindgen]
+pub fn shelf_handle_destroy(record:&JsValue)->R<()>{
+ let parts=get(record,"parts");
+ method(&get(&global(),"window"),"removeEventListener",&[&"blur".into(),&read(&parts,"onInputInterrupted")?])?;
+ method(&get(&global(),"document"),"removeEventListener",&[&"visibilitychange".into(),&read(&parts,"onInputVisibility")?])?;
+ let callback=if live(record){read(&get(record,"lifecycle"),"destroy")?}else{JsValue::NULL};
+ super::screen_lifecycle::shelf_destroy_dispatch(parts,callback)?;
+ if live(record){put(record,"live",&JsValue::FALSE);method(&handle_ctx(record),"free",&[])?;}
+ Ok(())
 }

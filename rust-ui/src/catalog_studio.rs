@@ -324,7 +324,7 @@ pub fn studio_lamp_stage(undershelf: bool, width: f64) -> R<JsValue> {
 
 // ---- The three.js side of one studio (formerly src/js/catalog-studio.js's openStudio) ----
 // Every object is made, configured and added in the original's order, so three numbers them the same and
-// the pictures are identical. The studio's link/draw/unframe/finish and its context-loss listener are this
+// the pictures are identical. The studio's link/unframe/finish and its context-loss listener are this
 // module's exports bound to one plain record (`{host, adapter, hooks, parts, scene, camera, renderer,
 // state}`), so nothing here holds a Rust closure.
 
@@ -429,7 +429,8 @@ fn studio_build_renderer(three: &JsValue, room_environment: &JsValue, hooks: &Js
 /// the view is unavailable), the native loop (`studio_open`) and, with a renderer, the resize observer.
 /// `adapter` adds the studio's own `make`, `swap`, `retint`, `tintSet` and `release` (and optionally
 /// `prepareScene`, `linkRoot`, `beforeDraw`), `size(model)` and `padding`; `hooks` holds the other modules'
-/// functions (`createCatalogPreviewFrame`, `whenProgramsReady`, `retainPrograms`, `configureShaderDiagnostics`);
+/// functions (`createCatalogPreviewFrame`, `whenProgramsReady`, `configureShaderDiagnostics`) and `drawFor`, which
+/// makes the studio's draw;
 /// `exports` is this module, whose callbacks are bound. Answers `{state, parts, shelf:exports}`.
 #[wasm_bindgen]
 pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsValue, room_environment: JsValue, hooks: JsValue,
@@ -461,7 +462,11 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     set(&record, "renderer", &renderer)?;
     let studio: JsValue = Object::new().into();
     for name in ["make", "swap", "retint", "tintSet"] { set(&studio, name, &read(&adapter, name)?)?; }
-    for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
+    set(&studio, "link", &bind_export(&exports, "studio_three_link", &record)?)?;
+    // The one per-frame step (each frame of a lamp's colour easing) is the host's: crossing into WebAssembly for
+    // each of its property reads cost about 40 times the step itself.
+    set(&studio, "draw", &method(&hooks, "drawFor", &[&host, &adapter, &parts, &renderer])?)?;
+    for (name, export) in [("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
         set(&studio, name, &bind_export(&exports, export, &record)?)?;
     }
     let callbacks = field_object(&[("render", read(&exports, "studio_render")?), ("build", read(&exports, "studio_build")?),
@@ -490,30 +495,6 @@ pub fn studio_three_lost(record: &JsValue, event: &JsValue) -> R<()> {
 pub fn studio_three_link(record: &JsValue, model: JsValue, done: JsValue) -> R<JsValue> {
     let root = crate::host::method_opt(&get(record, "adapter"), "linkRoot", &[&model])?.filter(|root| !absent(root)).unwrap_or_else(|| model.clone());
     method(&get(record, "hooks"), "whenProgramsReady", &[&get(record, "renderer"), &get(record, "scene"), &get(record, "camera"), &root, &done])
-}
-
-/// Draw a model at the preview's layout size (the page may be scaled mid-flight, its drawing buffer not),
-/// keep its linked programs for a return to an earlier selection, and count the frame on the node.
-#[wasm_bindgen]
-pub fn studio_three_draw(record: &JsValue, model: JsValue) -> R<()> {
-    let (host, adapter, renderer, camera) = (get(record, "host"), get(record, "adapter"), get(record, "renderer"), get(record, "camera"));
-    let rect = if truthy(&read(&host, "clientWidth")?) {
-        field_object(&[("width", read(&host, "clientWidth")?), ("height", read(&host, "clientHeight")?)])?
-    } else { method(&host, "getBoundingClientRect", &[])? };
-    let framing = read(&get(record, "parts"), "framing")?;
-    let apply: js_sys::Function = read(&framing, "apply")?.dyn_into()
-        .map_err(|_| JsValue::from(js_sys::TypeError::new("apply is not a function")))?;
-    let size = method(&adapter, "size", &[&model])?;
-    let padding = read(&adapter, "padding")?;
-    apply.apply(&framing, &[camera.clone(), renderer.clone(), rect, size, padding].into_iter().collect::<Array>())?;
-    crate::host::method_opt(&adapter, "beforeDraw", &[&model])?;
-    method(&renderer, "render", &[&get(record, "scene"), &camera])?;
-    // Going back to an earlier selection reuses its linked shaders.
-    if truthy(&read(&renderer, "info")?) { method(&get(record, "hooks"), "retainPrograms", &[&renderer])?; }
-    let dataset = read(&host, "dataset")?;
-    let count = read(&dataset, "renderCount")?;
-    let count = if truthy(&count) { crate::host::num(&count) } else { 0.0 };
-    set(&dataset, "renderCount", &crate::host::number_string(count + 1.0).into())
 }
 
 /// The preview's framing is released.

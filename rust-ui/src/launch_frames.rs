@@ -1,6 +1,6 @@
 //! Saving the settled shelf as the next launch's first paint (the `save` step of
-//! `rememberLaunchFrames` in src/js/shelf-launch-cache.js). The host keeps the per-frame observer and
-//! its timer, the IndexedDB store, the key's hash and the launch state shared with the boot preview;
+//! `rememberLaunchFrames` in src/js/shelf-launch-cache.js), and its observer, timer and page listeners. The
+//! host keeps the IndexedDB store, the key's hash and the launch state shared with the boot preview;
 //! this decides whether the canvas is settled enough and runs the save, re-checking after every wait.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Function,Object,Promise,Reflect};
@@ -66,3 +66,68 @@ pub fn shelf_save_launch_frame(host:JsValue,revision:f64)->Promise{start(async m
  }.await;
  Ok(JsValue::UNDEFINED)
 })}
+
+// ---- rememberLaunchFrames' observer, timer and page listeners (formerly src/js/shelf-launch-cache.js) ----
+
+fn bound(exports:&JsValue,name:&str,args:&[&JsValue])->R<JsValue>{
+ let list=Array::new();list.push(&JsValue::UNDEFINED);for argument in args{list.push(argument);}
+ let function:Function=read(exports,name)?.dyn_into()?;
+ Reflect::apply(&read(&function,"bind")?.dyn_into()?,&function,&list)
+}
+fn put(host:&JsValue,key:&str,value:&JsValue)->R{Reflect::set(host,&key.into(),value)?;Ok(())}
+
+/// Every change to the root (a new frame included) restarts a one-second timer, after which an idle slice
+/// (`idle(callback)`) saves that revision; a page that leaves for good stops, a page put in the back/forward
+/// cache only drops its pending save and starts again when shown. `host` is the save's host (`root`,
+/// `generation`, `stopped`, `isIdle`, `books` and the store and launch-state functions); the observer's and
+/// listeners' callbacks are this module's exports bound to it (`exports`), so nothing here holds a closure.
+/// Answers `stop`.
+#[wasm_bindgen]
+pub fn shelf_remember_launch_frames(host:JsValue,idle:JsValue,exports:JsValue)->R<JsValue>{
+ put(&host,"timer",&JsValue::from_f64(0.0))?;
+ put(&host,"idle",&idle)?;
+ put(&host,"exports",&exports)?;
+ let schedule=bound(&exports,"shelf_launch_schedule",&[&host])?;
+ let observer=crate::host::construct("MutationObserver",&[&schedule])?;
+ put(&host,"observer",&observer)?;
+ let options=Object::new();
+ for (key,value) in [("childList",JsValue::TRUE),("subtree",JsValue::TRUE),("attributes",JsValue::TRUE),
+  ("attributeFilter",Array::of1(&"data-render-count".into()).into())]{Reflect::set(&options,&key.into(),&value)?;}
+ method(&observer,"observe",&[&read(&host,"root")?,&options])?;
+ let stop=bound(&exports,"shelf_launch_stop",&[&host])?;
+ method(&global(),"addEventListener",&[&"pagehide".into(),&bound(&exports,"shelf_launch_page_hide",&[&host])?])?;
+ method(&global(),"addEventListener",&[&"pageshow".into(),&bound(&exports,"shelf_launch_page_show",&[&host])?])?;
+ shelf_launch_schedule(&host)?;
+ Ok(stop)
+}
+/// A new revision: the pending save is dropped and this one waits a second, then an idle slice.
+#[wasm_bindgen]
+pub fn shelf_launch_schedule(host:&JsValue)->R{
+ let revision=num(&read(host,"generation")?)+1.0;
+ put(host,"generation",&JsValue::from_f64(revision))?;
+ crate::host::clear_timeout(&read(host,"timer")?)?;
+ let fire=bound(&read(host,"exports")?,"shelf_launch_timer",&[host,&JsValue::from_f64(revision)])?;
+ put(host,"timer",&crate::host::set_timeout(&fire,1000.0)?)
+}
+#[wasm_bindgen]
+pub fn shelf_launch_timer(host:&JsValue,revision:f64)->R{
+ let save=bound(&read(host,"exports")?,"shelf_launch_save",&[host,&JsValue::from_f64(revision)])?;
+ crate::host::call(&read(host,"idle")?,"idle",&[&save])?;Ok(())
+}
+#[wasm_bindgen]
+pub fn shelf_launch_save(host:JsValue,revision:f64){let _=shelf_save_launch_frame(host,revision);}
+#[wasm_bindgen]
+pub fn shelf_launch_stop(host:&JsValue)->R{
+ put(host,"stopped",&JsValue::TRUE)?;
+ put(host,"generation",&JsValue::from_f64(num(&read(host,"generation")?)+1.0))?;
+ crate::host::clear_timeout(&read(host,"timer")?)?;
+ method(&read(host,"observer")?,"disconnect",&[])?;Ok(())
+}
+#[wasm_bindgen]
+pub fn shelf_launch_page_hide(host:&JsValue,event:&JsValue)->R{
+ if !truthy(&read(event,"persisted")?){return shelf_launch_stop(host)}
+ put(host,"generation",&JsValue::from_f64(num(&read(host,"generation")?)+1.0))?;
+ crate::host::clear_timeout(&read(host,"timer")?)
+}
+#[wasm_bindgen]
+pub fn shelf_launch_page_show(host:&JsValue,event:&JsValue)->R{if truthy(&read(event,"persisted")?){shelf_launch_schedule(host)}else{Ok(())}}
