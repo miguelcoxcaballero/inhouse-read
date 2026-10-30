@@ -9,7 +9,7 @@ impl Core{
   let metadata=self.json(&url,&object(&[]),generation).await?;let mut key=get(&get(&metadata,"properties"),KEY);
   let valid=RegExp::new("^[A-Za-z0-9_-]{43}$","");let created=!valid.test(&string(&key));
   if created{
-   let bytes=Uint8Array::new(&call(&self.host,"randomBytes",&[&32.into()])?);let candidate=base64_url(&bytes.to_vec());
+   let bytes=Uint8Array::new(&self.platform("randomBytes",&[&32.into()])?);let candidate=base64_url(&bytes.to_vec());
    self.json(&url,&object(&[("method","PATCH".into()),("headers",object(&[("Content-Type","application/json".into())])),("body",json_text(&object(&[("properties",object(&[(KEY,candidate.into())]))]))?.into())]),generation).await?;
    let confirmed=self.json(&url,&object(&[]),generation).await?;key=get(&get(&confirmed,"properties"),KEY);
    if !valid.test(&string(&key)){return Err(error("No se pudo confirmar la conexión directa."));}
