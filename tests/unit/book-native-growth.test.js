@@ -5,10 +5,13 @@ import {configureNativeRendererSize} from '../../src/js/native-renderer-size.js'
 import {paddedBookFrameSize} from '../../src/js/book-frame-padding.js';
 
 afterEach(()=>vi.restoreAllMocks());
+// configureFrame runs on every frame of a flight over the view's state `v` (src/js/book-model.js).
 function productionConfigure(){
   const source=readFileSync('src/js/book-model.js','utf8');
-  const body=source.match(/function configureFrame\(frame\) \{([\s\S]*?)\n  \}/)[1];
-  return new Function('gpu','rendererSize','pixelRatio','directEnabled','compactReturnFrame','camera','paddedBookFrameSize','configureNativeRendererSize','frame',body);
+  const body=source.match(/function configureFrame\(v, frame\) \{([\s\S]*?)\n\}/)[1];
+  const configure=new Function('rendererSize','paddedBookFrameSize','configureNativeRendererSize','v','frame',body);
+  return (gpu,rendererSize,pixelRatio,directEnabled,compactReturnFrame,camera,padded,configureNative,frame)=>
+    configure(rendererSize,padded,configureNative,{gpu,pixelRatio,directEnabled,compactReturnFrame,camera},frame);
 }
 function driver(width,height){
   const canvas=document.createElement('canvas');canvas.width=width*2;canvas.height=height*2;

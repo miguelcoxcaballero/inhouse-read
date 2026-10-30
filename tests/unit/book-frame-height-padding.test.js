@@ -34,26 +34,30 @@ describe('bounded empty rows for the native book',()=>{
 });
 
 const source=()=>readFileSync('src/js/book-model.js','utf8');
-function body(name){return source().match(new RegExp('function '+name+'\\([^\\n]*\\) \\{([\\s\\S]*?)\\n  \\}'))[1];}
+// The per-frame functions of a view are top-level functions over its state `v` (src/js/book-model.js).
+function body(name){return source().match(new RegExp('function '+name+'\\(v, [^\\n]*\\) \\{([\\s\\S]*?)\\n\\}'))[1];}
 describe('production native padding coordinates',()=>{
  it('positions the original viewport above its blank upper rows without rescaling it',()=>{
   const parent={style:{},getBoundingClientRect:()=>({left:10,top:20}),append:vi.fn()};
   const canvas={parentElement:{parentElement:parent},style:{},getBoundingClientRect:()=>({left:30,top:50,width:780,height:1266})};
   const node={setAttribute:vi.fn(),style:{},parentNode:parent};
-  const fn=new Function('canvas','gpu','viewportWidth','viewportHeight','getComputedStyle','frame','let live=false;'+body('positionPresentation')+';return live;');
+  const position=new Function('getComputedStyle','v','frame',body('positionPresentation')+';return v.live;');
+  const fn=(canvas,gpu,viewportWidth,viewportHeight,styles,frame)=>position(styles,{canvas,gpu,viewportWidth,viewportHeight,live:false},frame);
   expect(fn(canvas,{domElement:node},390,844,()=>({position:'relative'}),{x:7,y:200,width:384,height:192,presentationWidth:390,presentationHeight:320,paddingTop:128})).toBe(true);
   expect(node.style.cssText).toContain('left:34px');expect(node.style.cssText).toContain('top:138px');
   expect(node.style.cssText).toContain('width:780px');expect(node.style.cssText).toContain('height:480px');
  });
  it.each([false,true])('exports the same full page with vertical padding=%s',padded=>{
   const context={clearRect:vi.fn(),drawImage:vi.fn()},camera={},gpu={domElement:{}},frame={x:5,y:100,camera:{},paddingTop:padded?128:0};
-  const call=new Function('context','canvas','gpu','camera','pixelRatio','frame','copyRectangle','current','full','let copiedRectangle=null,snapshotDirty=true;'+body('copyFrame'));
+  const copy=new Function('copyRectangle','v','frame','full',body('copyFrame'));
+  const call=(context,canvas,gpu,camera,pixelRatio,frame,rectangle,current,full)=>copy(rectangle,{context,canvas,gpu,camera,pixelRatio,current,copiedRectangle:null,snapshotDirty:true},frame,full);
   call(context,{width:780,height:1688},gpu,camera,2,frame,vi.fn(),{},true);
   expect(context.drawImage).toHaveBeenCalledWith(gpu.domElement,10,(100-(padded?128:0))*2);
  });
  it('copies a partial snapshot from the rendered lower viewport, not its transparent padding',()=>{
   const context={clearRect:vi.fn(),drawImage:vi.fn()},gpu={domElement:{}},rect={x:20,y:250,width:40,height:60};
-  const call=new Function('context','canvas','gpu','camera','pixelRatio','frame','copyRectangle','current','full','let copiedRectangle=null,snapshotDirty=true;'+body('copyFrame'));
+  const copy=new Function('copyRectangle','v','frame','full',body('copyFrame'));
+  const call=(context,canvas,gpu,camera,pixelRatio,frame,rectangle,current,full)=>copy(rectangle,{context,canvas,gpu,camera,pixelRatio,current,copiedRectangle:null,snapshotDirty:true},frame,full);
   call(context,{width:780,height:1688},gpu,{},2,{x:5,y:100,camera:{},paddingTop:128},()=>rect,{},false);
   expect(context.drawImage).toHaveBeenCalledWith(gpu.domElement,10,306,40,60,20,250,40,60);
  });
