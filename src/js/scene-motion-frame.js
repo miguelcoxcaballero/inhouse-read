@@ -23,7 +23,8 @@ export function createSceneMotionFrame(rust, motionKey) {
     input[0]=p.x;input[1]=p.y;input[2]=p.z;input[3]=q.x;input[4]=q.y;input[5]=q.z;input[6]=q.w;input[7]=pose.scale.x;
     const flags=native.sample(index,motion,transition,now,arranging);refresh();output.set(nativeOutput);return flags;
   }
-  return {output,prepare,sample,key:index=>keys[index],invalidate(){entries=null;},free(){
+  // `native` is the arena the whole-scene entry frame samples from (scene-entry-frame.js).
+  return {output,native,prepare,sample,key:index=>keys[index],invalidate(){entries=null;},free(){
     if(disposed)return;native.free();disposed=true;entries=null;keys=[];input=rows=nativeOutput=buffer=null;
   }};
 }
