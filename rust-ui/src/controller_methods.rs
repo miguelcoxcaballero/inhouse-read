@@ -82,3 +82,27 @@ pub fn pdf_method(host: JsValue, name: &str, args: Array, _kit: JsValue, _ui: Js
         _ => return Err(js_sys::TypeError::new(&format!("PdfReader has no method {name}")).into()),
     })
 }
+
+/// `FoliateReader.prototype[name].apply(host, args)` over `host.s`, and the members of its speech
+/// cursor (foliate_cursor.rs) over the cursor itself; `kit` holds the snapshot pipeline and
+/// foliate's Overlayer, read when the member runs.
+#[wasm_bindgen]
+pub fn foliate_method(host: JsValue, name: &str, args: Array, kit: JsValue, _ui: JsValue) -> Result<JsValue, JsValue> {
+    use crate::foliate_reader::*;
+    use crate::foliate_cursor::*;
+    let a = |index: u32| args.get(index);
+    let done = |result: Result<(), JsValue>| result.map(|_| JsValue::UNDEFINED);
+    match name {
+        // Snapshot the current paginated column/scroll viewport after a CFI restore.
+        "getPageSnapshot" => Ok(foliate_snapshot(read(&host, "s")?, read(&kit, "snapshot")?).into()),
+        "search" => Ok(foliate_search(read(&host, "s")?, a(0)).into()),
+        "getSelection" => foliate_selection(&read(&host, "s")?),
+        "close" => done(foliate_close(&read(&host, "s")?)),
+        "valid" => Ok(cursor_valid(&host).into()),
+        "remember" => done(cursor_remember(&host, &a(0), &a(1), &a(2))),
+        // Only the most recent audible CFI is shown; no timer, animation or rendering promise is a
+        // prerequisite for synthesis or playback.
+        "reveal" => cursor_reveal(host, read(&read(&kit, "Overlayer")?, "highlight")?),
+        _ => Err(js_sys::TypeError::new(&format!("The foliate reader has no method {name}")).into()),
+    }
+}

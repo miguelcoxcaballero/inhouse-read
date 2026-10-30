@@ -7,6 +7,7 @@ import {afterEach,expect,it,vi} from 'vitest'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({ui:null}))
 vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url',()=>({default:'worker.mjs'}))
+vi.mock('foliate-js/view.js',()=>({}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui,requireRustUI:async()=>fixture.ui,loadRustUI:async()=>fixture.ui,waitForRustUI:async()=>fixture.ui}))
 import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
 import {NeuralVoicePicker} from '../../src/js/readers/neural-picker.js'
@@ -17,10 +18,13 @@ import {ReaderLifecycle} from '../../src/js/readers/reader-lifecycle.js'
 import {PreferenceFlow} from '../../src/js/readers/preference-flow.js'
 import {VoiceFlow} from '../../src/js/readers/voice-flow.js'
 import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
+import {FoliateReader} from '../../src/js/readers/foliate-reader.js'
+import {FoliateSpeechCursor} from '../../src/js/readers/foliate-speech-cursor.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 afterEach(()=>{fixture.ui=null})
 const classes=[[ReadingVoice,'voice_method',40],[NeuralVoicePicker,'picker_method',20],[ReaderController,'controller_method',27],[PdfReader,'pdf_method',17],[ReaderExperience,'experience_method',36],
- [ReaderLifecycle,'flow_method',5],[PreferenceFlow,'flow_method',2],[VoiceFlow,'flow_method',4],[ReaderChrome,'flow_method',1]]
+ [ReaderLifecycle,'flow_method',5],[PreferenceFlow,'flow_method',2],[VoiceFlow,'flow_method',4],[ReaderChrome,'flow_method',1],
+ [FoliateReader,'foliate_method',4],[FoliateSpeechCursor,'foliate_method',3]]
 it('dispatches only members its Rust dispatcher knows',async()=>{
  // Timers a member might start on the fixture host never run.
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout','setInterval','clearInterval','requestAnimationFrame','cancelAnimationFrame']})
