@@ -75,10 +75,8 @@ const VENEER_WAIT = 3000;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
 const TRASH_PADDING = 7, TRASH_GAP = 12;
-const SVG_NS = 'http://www.w3.org/2000/svg';
-let foliageSerial = 0;
-const PLANT_DIAGNOSTICS = ['plantModelCatalogId', 'plantModelDepth', 'plantLeafTexture', 'plantLeafOpacity'];
-function clearPlantDiagnostics(node) { if (node) for (const key of PLANT_DIAGNOSTICS) delete node.dataset[key]; }
+// A plant button's model diagnostics, the foliage target and the scene's other cold DOM recipes: rust-ui/src/scene_dom.rs.
+function clearPlantDiagnostics(node) { needRustShelf().scene_clear_plant_diagnostics(node); }
 // Diagnostics rarely change from one frame to the next, yet even an identical
 // attribute write queues mutation records and style invalidation.
 function setData(element, key, value) { if (element.dataset[key] !== value) element.dataset[key] = value; }
@@ -207,12 +205,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   if (!renderer || !width || !height) return null;
   const rust = needRustShelf();
   const countFrame = createSceneCountFrame(rust);
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
+  const [canvas, context] = rust.scene_canvas(0);
   if (!context) return null;
-  canvas.className = 'ihr-bookshelf-scene';
-  canvas.setAttribute('aria-hidden', 'true');
-  Object.assign(canvas.style, { position:'sticky', top:'0', left:'0', display:'block', pointerEvents:'none', zIndex:'0' });
   let originalHeight = stage.style.height;
   let originalTop = stage.style.top;
   let stagePixelOffset = 0;
@@ -506,21 +500,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // of its shaders, GPU readback and native hit projections for each finger
   // sample. A full fitted backdrop covers anything beyond the detailed tile;
   // paint full quality and restore native surfaces when the gesture settles.
-  const inspectionCanvas = document.createElement('canvas');
-  const inspectionContext = inspectionCanvas.getContext('2d');
-  inspectionCanvas.className = 'ihr-bookshelf-inspection-snapshot';
-  inspectionCanvas.setAttribute('aria-hidden', 'true');
-  Object.assign(inspectionCanvas.style, { position:'absolute', left:'0', top:'0', display:'none',
-    pointerEvents:'none', zIndex:'0', transformOrigin:'0 0', willChange:'transform' });
+  const [inspectionCanvas, inspectionContext] = rust.scene_canvas(1);
   stage.append(inspectionCanvas);
   const inspectionCamera = camera.clone();
-  const inspectionOverviewCanvas = document.createElement('canvas');
-  const inspectionOverviewContext = inspectionOverviewCanvas.getContext('2d');
-  inspectionOverviewCanvas.className = 'ihr-bookshelf-inspection-overview';
-  inspectionOverviewCanvas.setAttribute('aria-hidden', 'true');
-  Object.assign(inspectionOverviewCanvas.style, { position:'absolute', left:'0', top:'0', display:'none', pointerEvents:'none', zIndex:'0',
-    transformOrigin:'0 0', willChange:'transform' });
-  inspectionCanvas.style.zIndex = '1';
+  const [inspectionOverviewCanvas, inspectionOverviewContext] = rust.scene_canvas(2);
   stage.append(inspectionOverviewCanvas);
   let inspectionSnapshot = null, inspectionSnapshotVisible = false, lastSceneMoving = false, lastLocalSceneMoving = false;
   let inspectionOverview = null;
@@ -708,40 +691,24 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const trashBox = new THREE.Box3(), footPoint = new THREE.Vector3(), floorPoint = new THREE.Vector3();
   const trashOriginalStates = new Map();
   function rememberTrashNode(node) {
-    if (node && !trashOriginalStates.has(node)) trashOriginalStates.set(node, {
-      style:node.getAttribute('style'), hidden:node.hidden, tabIndex:node.getAttribute('tabindex'),
-      ariaHidden:node.getAttribute('aria-hidden'), inert:Boolean(node.inert || node.hasAttribute('inert'))
-    });
+    if (node && !trashOriginalStates.has(node)) trashOriginalStates.set(node, rust.scene_remember_node(node, true));
   }
   function restoreTrashNode(node) {
     const original = trashOriginalStates.get(node);
     if (!original) return;
     if (trashWritten?.node === node) trashWritten = null;
-    for (const [attribute, value] of [['style', original.style], ['tabindex', original.tabIndex], ['aria-hidden', original.ariaHidden]]) {
-      if (value === null) node.removeAttribute(attribute); else node.setAttribute(attribute, value);
-    }
-    node.hidden = original.hidden; node.inert = original.inert;
-    for (const key of ['trash3d', 'trashHover', 'hover', 'trashDropProgress', 'dropProgress', 'trashVisible', 'trashViewHidden',
-      'trashLocalPosition', 'trashLocalScale', 'trashLocalRotation', 'trashFootY', 'cabinetFloorY', 'trashCameraInFrame',
-      'trashFootWorld', 'floorContactWorld', 'trashRadius', 'trashHeight'])
-      delete node.dataset[key];
+    rust.scene_restore_node(node, original, true);
   }
   rememberTrashNode(trashNode);
   const catalogOriginalStates = new Map();
   function rememberCatalogNode(node) {
-    if (node && !catalogOriginalStates.has(node)) catalogOriginalStates.set(node, {
-      style:node.getAttribute('style'), hidden:node.hidden, tabIndex:node.getAttribute('tabindex'), ariaHidden:node.getAttribute('aria-hidden')
-    });
+    if (node && !catalogOriginalStates.has(node)) catalogOriginalStates.set(node, rust.scene_remember_node(node, false));
   }
   function restoreCatalogNode(node) {
     const original = catalogOriginalStates.get(node);
     if (!original) return;
     if (catalogWritten?.node === node) catalogWritten = null;
-    for (const [attribute, value] of [['style', original.style], ['tabindex', original.tabIndex], ['aria-hidden', original.ariaHidden]]) {
-      if (value === null) node.removeAttribute(attribute); else node.setAttribute(attribute, value);
-    }
-    node.hidden = original.hidden;
-    delete node.dataset.catalog3d; delete node.dataset.catalogVisible; delete node.dataset.catalogViewHidden;
+    rust.scene_restore_node(node, original, false);
   }
   rememberCatalogNode(catalogNode);
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
@@ -789,22 +756,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const insertedIds = [], exclusionRects = [];
   let exclusionsReady = false;
 
-  function materialKeys(entry) {
-    const { book, style, coverUrl } = entry;
-    return {
-      spine:JSON.stringify([style, book.spineTitleOverride, book.title, book.author, book.spineFontSize,
-        book.spineAuthorFontSize, book.spineFinish, book.spineSurfaceFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
-      cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.spineTitleOverride, book.title, book.author, book.format, style.fontFamily]]),
-      coverFinish:book.coverFinish,
-      coverRelief:JSON.stringify(book.coverRelief ?? null),
-      edgeFinish:book.pageEdgeFinish,
-      bookmark:JSON.stringify(bookmarkFor(book))
-    };
-  }
-
-  const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.potColorId, entry.seed]);
-  const plantShapeKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.seed]);
-  const lampKeys = entry => JSON.stringify([entry.lampId, entry.width, entry.height, entry.depth, entry.mount]);
+  // What a book's materials, a plant's or a lamp's model are compared by (rust-ui/src/scene_dom.rs).
+  function materialKeys(entry) { return rust.scene_material_keys(entry, bookmarkFor); }
+  const plantKeys = entry => rust.scene_model_key(entry, 0);
+  const plantShapeKeys = entry => rust.scene_model_key(entry, 1);
+  const lampKeys = entry => rust.scene_model_key(entry, 2);
 
   // A selected book's slot is already painted empty. Its decoded lettering,
   // jacket and final ribbon can change while reading without changing that
@@ -1095,31 +1051,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     insertion?.resolve();
   }
 
-  function replacementTarget(entry) {
-    return {
-      geometry:JSON.stringify([entry.kind || 'book',entry.width,entry.height,entry.thickness,
-        Boolean(entry.overview),entry.inspectionResolution || 0]),
-      materials:materialKeys(entry)
-    };
-  }
-
-  function retainPendingReplacement(entry, target) {
-    const replacement = entry.replacement, previous = replacement?.userData.shelfReplacementTarget;
-    if (entry.kind === 'plant' || entry.kind === 'lamp' || !replacement || entry.qualityReplacement ||
-      !previous || previous.geometry !== target.geometry) return false;
-    const changed = Object.keys(target.materials).filter(key => previous.materials[key] !== target.materials[key]);
-    // The ribbon exposes an explicit in-place update. Every other material,
-    // cover and physical/quality change must prepare its own exact model.
-    if (changed.some(key => key !== 'bookmark') || changed.length && !replacement.userData.updateBookmark) return false;
-    if (changed.length) replacement.userData.updateBookmark(entry.book);
-    replacement.userData.shelfReplacementTarget = target;
-    replacement.userData.shelfKeys = target.materials;
-    return true;
-  }
-
+  // A pending replacement survives a newer record only when at most its ribbon changed, which it
+  // updates in place; every other material, cover and physical/quality change prepares its own model.
   function replaceWhenReady(entry) {
-    const target = replacementTarget(entry);
-    if (retainPendingReplacement(entry, target)) return;
+    const target = rust.scene_replacement_target(entry, bookmarkFor);
+    if (rust.scene_retain_replacement(entry, target)) return;
     cancelReplacement(entry);
     const previous = entry.model, replacement = makeModel(entry);
     replacement.userData.shelfReplacementTarget = target;
@@ -1177,20 +1113,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   };
 
-  function updateMaterials(entry) {
-    const model = entry.model;
-    if (!model || entry.kind === 'plant' || entry.kind === 'lamp') return;
-    const previous = model.userData.shelfKeys || {}, next = materialKeys(entry);
-    if (previous.spine !== next.spine) model.userData.updateSpineAppearance?.(entry.book, entry.style);
-    if (previous.cover !== next.cover) model.userData.updateCoverSource?.(entry.coverUrl, entry.book, entry.style);
-    if (previous.coverFinish !== next.coverFinish || previous.coverRelief !== next.coverRelief) model.userData.updateCoverAppearance?.(entry.book);
-    if (previous.edgeFinish !== next.edgeFinish) model.userData.updateEdgeAppearance?.(entry.book);
-    if (previous.bookmark !== next.bookmark) {
-      if (model.userData.updateBookmark) model.userData.updateBookmark(entry.book);
-      else { replaceWhenReady(entry); return; }
-    }
-    model.userData.shelfKeys = next;
-  }
+  // Each changed material key updates its part of the shown model in place (rust-ui/src/scene_dom.rs).
+  function updateMaterials(entry) { rust.scene_update_materials(entry, bookmarkFor, replaceWhenReady); }
 
   const recordIo = new Float64Array(20);
   function updateRecord(entry, book, style, coverUrl, dimensions = null) {
@@ -1772,20 +1696,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       return;
     }
     if (!native) {
-      const svg = document.createElementNS(SVG_NS, 'svg');
-      const definitions = document.createElementNS(SVG_NS, 'defs');
-      const clip = document.createElementNS(SVG_NS, 'clipPath');
-      const exclusions = document.createElementNS(SVG_NS, 'path');
-      const path = document.createElementNS(SVG_NS, 'path');
-      const id = `ihr-foliage-${++foliageSerial}`;
-      svg.classList.add('ihr-plant-foliage'); svg.setAttribute('aria-hidden', 'true');
-      svg.setAttribute('focusable', 'false'); svg.dataset.plantFoliageKey = node.dataset.objectId || entry.key;
-      clip.id = id; clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
-      exclusions.setAttribute('clip-rule', 'evenodd'); clip.append(exclusions); definitions.append(clip);
-      path.setAttribute('clip-path', `url(#${id})`); path.setAttribute('fill', 'transparent');
-      Object.assign(svg.style, { position:'absolute', pointerEvents:'none', touchAction:'none', overflow:'visible',
-        maxWidth:'none', maxHeight:'none' });
-      path.style.touchAction = 'none'; svg.append(definitions, path); node.append(svg);
+      const [svg, path, exclusions] = rust.scene_foliage_target(node, entry);
       native = { svg, path, exclusions, clip:'', state:foliageFrame.createState(),
         display:'', left:NaN, top:NaN, width:NaN, height:NaN, events:'' };
       semanticFoliage.set(node, native);
@@ -3139,17 +3050,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         stage.style.height = originalHeight;
         stage.style.top = originalTop;
         if (!alreadyScene) stage.classList.remove('has-scene');
-        for (const [node, style] of originalStyles) {
-          if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
-          delete node.dataset.sceneProjected;
-          delete node.dataset.sceneHitSurface;
-          delete node.dataset.sceneLean;
-          semanticCovers.get(node)?.remove(); semanticCovers.delete(node);
-          // Keep the expensive projected leaf triangles until entries are
-          // rebound below. An unchanged plant can move its native hit surface
-          // to the replacement semantic button without tessellating again.
-          clearPlantDiagnostics(node);
-        }
+        // Keep the expensive projected leaf triangles until entries are
+        // rebound below. An unchanged plant can move its native hit surface
+        // to the replacement semantic button without tessellating again.
+        rust.scene_restore_buttons(originalStyles, semanticCovers);
         originalStyles.clear();
         stage = next.stage;
         originalHeight = stage.style.height;
@@ -3328,13 +3232,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       inspectionOverviewCanvas.remove(); inspectionOverviewCanvas.width = inspectionOverviewCanvas.height = 1;
       inspectionSnapshot = inspectionOverview = null; stage.style.height = originalHeight;
       if (!alreadyScene) stage.classList.remove('has-scene');
-      for (const [node, style] of originalStyles) {
-        if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
-        delete node.dataset.sceneProjected;
-        delete node.dataset.sceneHitSurface;
-        delete node.dataset.sceneLean;
-        clearPlantDiagnostics(node);
-      }
+      rust.scene_restore_buttons(originalStyles, undefined);
       for (const node of semanticCovers.values()) node.remove();
       semanticCovers.clear();
       for (const native of semanticFoliage.values()) native.svg.remove();

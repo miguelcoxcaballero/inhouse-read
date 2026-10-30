@@ -26,6 +26,7 @@ mod decor_contacts;
 mod scene_plan;
 mod scene_quality;
 mod scene_hit_hull;
+mod scene_dom;
 mod occlusion_table;
 #[path="../../rust-core/src/jsmath.rs"]
 mod jsmath;
