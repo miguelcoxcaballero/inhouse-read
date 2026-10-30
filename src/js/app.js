@@ -174,12 +174,9 @@ function localRoomBookChanged(id,fields) {
   return withBookDataModule(module => module.app_room_book_changed(roomCoordinationHost,id,fields))
 }
 globalThis.addEventListener('inhouse-room-book-changed',e=>localRoomBookChanged(e.detail?.id,e.detail?.fields||[]))
-globalThis.addEventListener('inhouse-room-setting-changed', e => {
-  if (app.driveProfile?.id && libraryBackup.markSettingChanged(app.driveProfile.id,e.detail)) scheduleRoomCapture()
-})
-globalThis.addEventListener('storage',e => {
-  if (e.storageArea === localStorage && e.key?.startsWith('inhouse-read-shelf-')) applyCloudSettings([e.key])
-})
+// A room setting changed here, or a shelf setting in another tab (rust-ui/src/app_controller.rs).
+globalThis.addEventListener('inhouse-room-setting-changed', e => withShell(shell => shell.app_room_setting_changed(shellHost, e.detail)))
+globalThis.addEventListener('storage', e => withShell(shell => shell.app_storage_changed(shellHost, e)))
 globalThis.addEventListener('inhouse-library-changed', scheduleLibraryBackup)
 function scheduleLengthRefresh() { return withShell(shell => shell.app_schedule_length_refresh(shellHost)) }
 const wordCountQueue = createBookLengthQueue(library, {
@@ -213,35 +210,19 @@ const shellHost = {
   get readingExperience() { return readingExperience },
   notifyCloudSettingsChanged, setShelfWorkActive, classifyTapZone, isDriveConfigured, refreshShelf, hasDriveSession,
   requestDriveAccess, loadDriveAccountProfile, listAllDriveBooks, syncLibraryToDrive, setDriveSyncStatus,
-  offerAvailableAndroidUpdate, normalizeBookTitle, openFile,
+  offerAvailableAndroidUpdate, normalizeBookTitle, openFile, applyCloudSettings, scheduleRoomCapture,
+  libraryBackup, liveRoom, profileView, releaseShelfSoundPreference, nativeImportShelfGate, shelfRefreshQueue,
+  releasePositionGuard: () => { savedReaderPositionGuard?.free(); savedReaderPositionGuard = null },
+  get driveActions() { return driveActionsHost },
   openFileContent: (file, options) => bookDataModule().app_open_file_content(fileContentHost, file, options)
 }
 els.themeToggle.addEventListener('click', () => withShell(shell => shell.app_set_theme(shellHost, 'toggle')))
 function showScreen(name) { return withShell(shell => shell.app_show_screen(shellHost, name)) }
 
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && app.shelfLengthStatusVersion !== app.lengthStatusVersion) scheduleLengthRefresh()
-})
-// A discarded page has no shelf to update. Keep the queue alive for bfcache
-// restores, but cancel callbacks for a document that is actually leaving.
-addEventListener('pagehide', event => {
-  if (event.persisted) return
-  app.appDisposed = true
-  profileView.destroy()
-  releaseShelfSoundPreference()
-  readingStreak.destroy()
-  nativeImportShelfGate.destroy()
-  shelfRefreshQueue.dispose()
-  clearTimeout(app.lengthRefreshTimer)
-  app.lengthRefreshTimer = null
-  wordCountQueue.dispose()
-  clearTimeout(app.backupTimer)
-  if (app.drivePollTimer !== null) bookDataModule().app_drive_poll_update(driveActionsHost)
-  clearTimeout(app.roomCaptureTimer)
-  savedReaderPositionGuard?.free(); savedReaderPositionGuard = null
-  clearTimeout(app.roomRefreshRetry)
-  liveRoom.destroy()
-})
+// A count finished while the page was hidden; a page that is leaving for good withdraws its callbacks
+// (rust-ui/src/app_controller.rs).
+document.addEventListener('visibilitychange', () => withShell(shell => shell.app_length_visibility(shellHost)))
+addEventListener('pagehide', event => withShell(shell => shell.app_page_hide(shellHost, event)))
 
 function isAndroidShell() {
   return /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '')

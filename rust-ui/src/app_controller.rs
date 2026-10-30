@@ -83,6 +83,61 @@ pub fn app_length_change(host:JsValue,record:JsValue)->R{
  Ok(())
 }
 
+/// `pagehide`: a discarded page has no shelf to update. A page kept for the back/forward cache keeps its
+/// queues alive; one that is actually leaving withdraws every callback that could still touch it.
+#[wasm_bindgen]
+pub fn app_page_hide(host:JsValue,event:JsValue)->R{
+ if truthy(&read(&event,"persisted")?){return Ok(())}
+ let state=state(&host)?;
+ set(&state,"appDisposed",&JsValue::TRUE)?;
+ method(&read(&host,"profileView")?,"destroy",&[])?;
+ method(&host,"releaseShelfSoundPreference",&[])?;
+ method(&read(&host,"readingStreak")?,"destroy",&[])?;
+ method(&read(&host,"nativeImportShelfGate")?,"destroy",&[])?;
+ method(&read(&host,"shelfRefreshQueue")?,"dispose",&[])?;
+ clear_timeout(&read(&state,"lengthRefreshTimer")?)?;
+ set(&state,"lengthRefreshTimer",&JsValue::NULL)?;
+ method(&read(&host,"wordCountQueue")?,"dispose",&[])?;
+ clear_timeout(&read(&state,"backupTimer")?)?;
+ if !read(&state,"drivePollTimer")?.is_null(){crate::app_drive_poll::app_drive_poll_update(&read(&host,"driveActions")?)?;}
+ clear_timeout(&read(&state,"roomCaptureTimer")?)?;
+ method(&host,"releasePositionGuard",&[])?;
+ clear_timeout(&read(&state,"roomRefreshRetry")?)?;
+ method(&read(&host,"liveRoom")?,"destroy",&[])?;
+ Ok(())
+}
+
+/// The page is visible again: a count that finished while it was hidden refreshes the shelf now.
+#[wasm_bindgen]
+pub fn app_length_visibility(host:JsValue)->R{
+ let state=state(&host)?;
+ if !truthy(&read(&read(&host,"document")?,"hidden")?)&&read(&state,"shelfLengthStatusVersion")?!=read(&state,"lengthStatusVersion")?{
+  crate::app_shell::app_schedule_length_refresh(&host)?;
+ }
+ Ok(())
+}
+
+/// Another tab changed one of the shelf's settings: apply it here too.
+#[wasm_bindgen]
+pub fn app_storage_changed(host:JsValue,event:JsValue)->R{
+ let key=read(&event,"key")?;
+ if read(&event,"storageArea")?==read(&global(),"localStorage")?&&!absent(&key)
+  &&truthy(&method(&key,"startsWith",&[&"inhouse-read-shelf-".into()])?){
+  method(&host,"applyCloudSettings",&[&js_sys::Array::of1(&key).into()])?;
+ }
+ Ok(())
+}
+
+/// A room setting changed on this device: a signed-in account captures the room for the other devices.
+#[wasm_bindgen]
+pub fn app_room_setting_changed(host:JsValue,detail:JsValue)->R{
+ let account=get(&read(&state(&host)?,"driveProfile")?,"id");
+ if truthy(&account)&&truthy(&method(&read(&host,"libraryBackup")?,"markSettingChanged",&[&account,&detail])?){
+  method(&host,"scheduleRoomCapture",&[])?;
+ }
+ Ok(())
+}
+
 /// A book handed over by Android: fold the open cover, let the open book's last position finish saving
 /// (its failure does not stop the import), then open the file, restoring it if it had been removed. The
 /// import resolves after the loading wrapper has released its controls; its successful result already

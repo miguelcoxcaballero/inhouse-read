@@ -173,3 +173,4 @@ mod app_shell;
 mod font_score_client;
 mod launch_frames;
 mod app_controller;
+mod reading_focus;
