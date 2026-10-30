@@ -6,20 +6,31 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use js_sys::{Array, JsString, Object, Uint8Array};
+use js_sys::{Array, JsString, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 use crate::eager::{eager, settled};
-use crate::host::{absent, construct, get, method, read, set, text_value};
+use crate::host::{absent, get, method, read, set, text_value};
 use crate::phonemizer_runtime as runtime;
 
 type R<T = JsValue> = Result<T, JsValue>;
 fn error(message: &str) -> JsValue { js_sys::Error::new(message).into() }
 fn released() -> JsValue { error("phonemizer was released") }
-/// `new Error(...)` of a message made of these pieces, each as a template literal shows it, UTF-16 kept as it is.
+/// `new Error(message, {cause})` of a message made of these pieces, each as a template literal shows it, UTF-16 kept as it
+/// is. The realm's own Error, whatever the global object is called.
 fn error_of(parts: &[&JsValue], options: Option<&JsValue>) -> R {
     let mut message = JsString::from("");
     for part in parts { message = message.concat(&text_value(part)); }
-    match options { Some(options) => construct("Error", &[&message.into(), options]), None => construct("Error", &[&message.into()]) }
+    let error = js_sys::Error::new("");
+    Reflect::set(&error, &JsValue::from_str("message"), &message)?;
+    if let Some(cause) = options {
+        // InstallErrorCause: an own, non-enumerable data property.
+        let descriptor = Object::new();
+        set(&descriptor, "value", cause)?;
+        set(&descriptor, "writable", &JsValue::TRUE)?;
+        set(&descriptor, "configurable", &JsValue::TRUE)?;
+        Reflect::define_property(&error, &JsValue::from_str("cause"), &descriptor)?;
+    }
+    Ok(error.into())
 }
 /// `await f()` for an async function `f` of the original: its body starts at once and the caller goes on one job after
 /// it settled, as many microtasks later as the JavaScript took.
@@ -154,13 +165,11 @@ impl Inner {
             if let Err(second) = again {
                 // `second?.message || first?.message || second || first`
                 let reason = [get(&second, "message"), get(&first, "message"), second.clone()].into_iter().find(|value| value.is_truthy()).unwrap_or(first);
-                let options = Object::new();
-                set(&options, "cause", &second)?;
-                return Err(error_of(&[&JsValue::from_str("phonemizer failed: "), &reason], Some(&options))?);
+                return Err(error_of(&[&JsValue::from_str("phonemizer failed: "), &reason], Some(&second))?);
             }
         }
         let line = self.line.borrow().clone();
-        let result = if absent(&line) { JsValue::NULL } else { method(&get(&crate::host::global(), "JSON"), "parse", &[&line]).unwrap_or(JsValue::NULL) };
+        let result = if absent(&line) { JsValue::NULL } else { js_sys::JSON::parse(&String::from(text_value(&line).unchecked_into::<JsString>())).unwrap_or(JsValue::NULL) };
         if !result.is_truthy() {
             let errors = self.errors.borrow().clone();
             let start = JsValue::from_str("phonemizer gave no output");

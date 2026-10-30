@@ -25,6 +25,7 @@ import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
 import { VoiceClientPlan } from './client-plan.js'
 import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, piperScales } from './synth-flow.js'
+import { loadedRustVoiceUI } from '../../rust-voice-ui.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const plan = new VoiceClientPlan(() => new Error('voice runtime was released'), {}, true)
@@ -119,66 +120,15 @@ async function runSegment(ids, { rate, speaker }) {
   return {pcm,durations}
 }
 
-async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
-  if (supertonicRuntime) {
-    post({ type:'plan', id, counts:[Math.max(1, [...text].length)] })
-    const t = performance.now()
-    stage(3,3,id)
-    const { pcm:raw, sampleRate, marks:timeline = [] } = await supertonicRuntime.synthesize(text, { lang, style, rate, marks, isActive:() => plan.workerActive(id) })
-    stage(3,4,id)
-    if (!plan.workerActive(id)) return
-    if (!(raw instanceof Float32Array) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
-    // The SDK deliberately returns no samples when normalization removes all
-    // speakable text (for example an ornament). Keep Piper's short-rest policy.
-    if (!raw.length) {
-      const pcm = silence(sampleRate, 120)
-      post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
-      return
-    }
-    const done = finishSupertonic(raw, text, timeline, { sampleRate, rate })
-    if (!done) throw new Error('invalid Supertonic audio') // a sample that is not a number
-    post({ type:'chunk', id, index:0, last:true, pcm:done.pcm, sampleRate, ms:performance.now() - t, marks:done.marks }, [done.pcm.buffer])
-    // Inference already yields between its steps. This fragment is complete:
-    // deliver 'end' now so the page can request its next prefetched fragment.
-    return
-  }
-  const sampleRate = config.audio.sample_rate
-  stage(3,1,id)
-  const phonemize = async value => limitIds(plan.runtimeKind === 1 ? await hebrewPhonemizer.phonemize(value) : await phonemizer.phonemize(value, config.espeak.voice),config.num_symbols)
-  const ids = await phonemize(text)
-  if (!plan.workerActive(id)) return
-  const points = durationOutput ? await phonemeMarks(text,marks,ids,phonemize) : []
-  stage(3,2,id)
-  if (!plan.workerActive(id)) return
-  const segments = splitSegments(ids)
-  if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
-    post({ type: 'plan', id, counts: [0] })
-    const pcm = silence(sampleRate, 120)
-    post({ type: 'chunk', id, index: 0, last: true, pcm, sampleRate, ms: 0 }, [pcm.buffer])
-    return
-  }
-  post({ type: 'plan', id, counts: segments.map(ids => ids.length) })
-  let base = 0
-  for (let index = 0; index < segments.length; index++) {
-    if (!plan.workerActive(id)) return
-    const t = performance.now()
-    stage(3,3,id,index)
-    const {pcm:raw,durations} = await runSegment(segments[index], { rate, speaker })
-    stage(3,4,id,index)
-    if (!plan.workerActive(id)) return
-    const last = index === segments.length - 1
-    // Cleaned, its page boundaries placed, sped up, and with its rests: sentences of one fragment are separated by a rest at
-    // their start; the rest after the fragment comes with its last one (both shorten with the speaking rate, like the speech).
-    const done = finishPiper(raw, durations, points, text, { sampleRate, model:voice, rate, last, first:index === 0,
-      base, count:segments[index].length })
-    base += segments[index].length
-    if (!plan.workerActive(id)) return
-    post({ type: 'chunk', id, index, last, pcm:done.pcm, sampleRate, ms:performance.now()-t, marks:done.marks }, [done.pcm.buffer])
-    stage(3,5,id,index)
-    await yieldToMessages()
-    stage(3,6,id,index)
-  }
+// One job (rust-ui voice_worker.rs): the plan, then each sentence run, finished and posted as soon as it is ready. The
+// state stays here and is read live; the ONNX run of a sentence and the phonemizer closure are this worker's.
+const host = {
+  plan, post, stage, silence, finishPiper, finishSupertonic, phonemeMarks, splitSegments, runSegment, yieldToMessages,
+  get supertonic() { return supertonicRuntime }, get config() { return config }, get voice() { return voice }, get durationOutput() { return durationOutput },
+  activeFor: id => () => plan.workerActive(id), now: () => performance.now(),
+  phonemize: async value => limitIds(plan.runtimeKind === 1 ? await hebrewPhonemizer.phonemize(value) : await phonemizer.phonemize(value, config.espeak.voice),config.num_symbols)
 }
+const synth = job => loadedRustVoiceUI().voice_worker_synth(host, job)
 
 async function drain() {
   let finishDrain

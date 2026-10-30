@@ -28,6 +28,7 @@ mod voice_kernels;
 mod voice_phonemizer;
 mod voice_supertonic;
 mod voice_hebrew;
+mod voice_worker;
 
 /// The JavaScript side checks it before using the module.
 #[wasm_bindgen::prelude::wasm_bindgen]
