@@ -1,5 +1,28 @@
 # inhouse read
 
+## 1.7.325 / Android 1.1.25 — Compartir libros
+
+La tarjeta del libro (la misma pantalla que lo guarda en Google Drive) tiene un
+botón «Compartir». En la app de Android abre la hoja de compartir del sistema
+(WhatsApp, correo, Drive…) con el propio archivo del libro en su formato de
+ebook: `Título.epub` (`application/epub+zip`), `.pdf`, `.mobi`, `.azw3`,
+`.azw`, `.fb2` o `.cbz`, reconocidos por sus primeros bytes y no solo por el
+nombre. La app no se ofrece a sí misma como destino. Un libro que solo está en
+Drive se descarga antes, como «Descargar para usar sin conexión». En el
+navegador usa la Web Share API con el archivo y, si el navegador no comparte
+archivos, lo descarga. Se comparte un libro cada vez.
+
+Hace falta la APK 1.1.25: `android/book-share/BookShare.java`, registrada por
+`.github/scripts/register_book_share.py`, recibe los bytes en trozos base64 de
+una sesión (`begin` devuelve su identificador y `append`/`finish` solo aceptan
+esa sesión), los escribe en `cache/shared/` con un nombre de 200 bytes como
+máximo y los entrega con el FileProvider `.fileprovider` de la app, nunca con
+el del actualizador. Las APK anteriores muestran un aviso para actualizar antes
+de iniciar sesión o descargar nada. Límite de 512 MB por libro en Android.
+Verificado con pruebas unitarias, de Playwright (puente simulado y Web Share) y
+compilando `BookShare.java` contra clases mínimas de Android; no se ha probado
+en un teléfono físico.
+
 ## 1.7.324 / Android 1.1.24 — Sin avisos al leer
 
 Con un libro abierto y la app en primer plano, Android no muestra las
