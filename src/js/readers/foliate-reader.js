@@ -40,6 +40,12 @@ export function announceSpeechLayout() {
 Overlayer.outline = (rects, options) => readerUI().foliate_outline(rects, options)
 
 const snapshotKit = { settlePageLayout, renderedPageFilter, snapshotDOMPage, compositePageSnapshots, themes:READING_THEMES }
+// What foliate_open.rs mounts a book with. canSwipe (every pointer move), theme (every spoken sentence) and the snap
+// guard (any number of arguments) stay arrows.
+const kit = { attach:attachSwipeNavigation, hold:speechHold, SpeechCursor:FoliateSpeechCursor, pageBreaks:speechPageBreaks, readingCSS,
+  announce:announceSpeechLayout, get Overlayer() { return Overlayer },
+  canSwipe:s => () => s.preferences.flow !== 'scrolled', theme:s => () => s.preferences.theme,
+  guardSnap:(ui, s, snap) => (...args) => ui.foliate_snap_skipped(s) ? undefined : snap(...args) }
 
 export class FoliateReader {
   s = { view:null, container:null, onRelocate:() => {}, detachGestures:() => {}, preferences:{ ...DEFAULT_READING_PREFERENCES }, documentGestures:[],
@@ -47,57 +53,11 @@ export class FoliateReader {
     lengthMetadata:null, lastReaderStyles:null, speechCursor:null, turns:{ followPending:0, pageTurnPending:0 }, pageBoxChanged:false }
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
-    const s = this.s, ui = readerUI(), view = ui.foliate_attach(s, container, onRelocate ?? (() => {}))
-    // foliate-js es deliberadamente de bajo nivel y no trae gestos táctiles
-    // propios (ver HANDOFF-FORMATOS.md): reusamos el mismo detector de
-    // swipe/tap que el lector de PDF para que la sensación táctil sea
-    // idéntica entre formatos.
-    const gestures = {
-      onNext: () => { onUserNavigation?.(); ui.foliate_skip_snap(s); return this.next() },
-      onPrev: () => { onUserNavigation?.(); ui.foliate_skip_snap(s); return this.prev() },
-      onToggleChrome,
-      // Foliate already tracks touch drag/velocity and snaps to the next page.
-      // A second pointerup navigation here used to advance twice per swipe.
-      nativeTouchSwipes:true,
-      onNativeSwipe:() => { onUserNavigation?.(); ui.foliate_reset_cursor(s) },
-      onManualPan:() => { if (s.preferences.flow === 'scrolled') onUserNavigation?.() },
-      canSwipe:() => s.preferences.flow !== 'scrolled'
-    }
-    s.detachGestures = attachSwipeNavigation(container, gestures)
-    const tapZone = event => ui.foliate_tap_zone(s, event)
-    view.addEventListener('load', event => {
-      // Events inside the book iframe do not bubble to the outer viewport.
-      const doc = event.detail.doc
-      s.documentGestures.push(attachSwipeNavigation(doc.documentElement, { ...gestures, ...speechHold(doc), tapZone }))
-      doc.addEventListener('selectionchange', () => ui.foliate_selected(s, event.detail))
-    })
-    view.addEventListener('link', event => {
-      if (onFollowLink) { event.preventDefault(); onFollowLink(event.detail.href) }
-    })
-    view.addEventListener('draw-annotation', event => {
-      const { draw, annotation } = event.detail
-      const colors = { green:'#75ad6b66', blue:'#74a6d866', pink:'#df8dad66', yellow:'#f2d35d77' }
-      draw(Overlayer.highlight, { color:colors[annotation.color] || colors.yellow })
-    })
-    view.addEventListener('relocate', event => ui.foliate_relocated(s, event.detail))
-
+    const s = this.s, ui = readerUI(), view = ui.foliate_open(this, s, container, onRelocate, onToggleChrome, onUserNavigation, onFollowLink, kit, ui)
     await view.open(file)
-    const renderer = view.renderer, snap = renderer?.snap?.bind(renderer)
-    if (snap) renderer.snap = (...args) => ui.foliate_snap_skipped(s) ? undefined : snap(...args)
-    // Configure the paginator before the first page is laid out. Its defaults
-    // reserve 48 px above/below the text even though our chrome has its own
-    // space. The first visible page must use the same geometry as later pages.
-    this.#layout()
-    this.#styles()
+    ui.foliate_opened(s, view, kit, ui)
     await view.init({ showTextStart: true })
-    s.speechCursor = new FoliateSpeechCursor(view, { onRelocate:s.onRelocate, theme:() => s.preferences.theme })
-    if (typeof ResizeObserver !== 'undefined') {
-      s.resizeObserver = new ResizeObserver(() => {
-        clearTimeout(s.resizeTimer)
-        s.resizeTimer = setTimeout(() => this.#layout(), 80)
-      })
-      s.resizeObserver.observe(container)
-    }
+    ui.foliate_ready(s, view, container, kit, ui)
   }
 
   #layout() { readerUI().foliate_layout(this.s, announceSpeechLayout) }
@@ -138,31 +98,10 @@ export class FoliateReader {
   getNextSpeechSource(options) { return this.s.speechCursor?.next(options) }
   async getSpeechText() { return this.s.view?.lastLocation?.range?.toString() || '' }
 
-  /**
-   * The audiobook reads from the visible page to the end of its section, so a
-   * sentence keeps one highlight across page breaks. Its audio fragments end
-   * at actual page boundaries, so the next audible fragment turns the page.
-   * Offsets index the returned text; the
-   * DOM is only read (ranges for the highlight), never changed.
-   */
+  // The source's handlers: rust-ui foliate_speech_source (foliate_open.rs).
   async getSpeechSource({ visible:visibleOnly = false } = {}) {
-    const s = this.s, ui = readerUI(), prepared = await ui.foliate_speech_prepare(s, visibleOnly, mapSpeechText, speechPageBreaks)
-    if (prepared.done) return prepared.value
-    const { view, doc, map, content, pageBreaks, start } = prepared
-    const live = () => ui.foliate_live(s, view, doc)
-    const clear = () => ui.foliate_clear_speech(s, doc, content)
-    const source = {
-      text:map.text, start, pageBreaks, clear,
-      highlight:(from, to) => ui.foliate_speech_highlight(s, live, map, content, clear, from, to, Overlayer.highlight),
-      follow:(from, to) => live() ? ui.foliate_follow(s, doc, map.rangeFor(from, to)) : undefined,
-      // The text offset under a tap on this chapter, for ReadingVoice.jumpToPoint().
-      offsetAtPoint:(tapped, x, y) => ui.foliate_offset_at_point(live, tapped, doc, map, x, y),
-      // Measured again after a relayout: see ReadingVoice.refreshPageBreaks().
-      measurePageBreaks:() => live() && !document.hidden ? speechPageBreaks(map, view.renderer, { isCurrent:live }) : Promise.resolve(null)
-    }
-    // Web fonts arriving after the cuts were measured move lines between pages.
-    if (doc.fonts && doc.fonts.status !== 'loaded') void doc.fonts.ready.then(() => announceSpeechLayout())
-    return s.speechCursor?.wrap(source, map, content.index) || source
+    const ui = readerUI(), prepared = await ui.foliate_speech_prepare(this.s, visibleOnly, mapSpeechText, speechPageBreaks)
+    return prepared.done ? prepared.value : ui.foliate_speech_source(this.s, prepared, kit, ui)
   }
 
   clearSearch() { this.s.view?.clearSearch?.() }
