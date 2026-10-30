@@ -41,24 +41,16 @@ export function createShelfCatalogPreview(host) {
   }
   const studio = openStudio(SHELF_STUDIO, host, {
     padding:1.14,
-    make(type, [hemisphere, key, fill, environment, castShadow], previous, invalidate) {
-      const { scene, renderer, lights } = studio.parts;
+    // The type's lights and the cabinet's angle, centring and stated size: rust-ui/src/studio_build.rs.
+    make(type, stage, previous, invalidate) {
+      const { scene, renderer } = studio.parts;
       removeModel(previous);
-      lights.hemisphere.intensity = hemisphere; lights.key.intensity = key; lights.fill.intensity = fill;
-      scene.environmentIntensity = environment; lights.key.castShadow = castShadow === 1;
-      renderer.shadowMap.needsUpdate = true;
+      studio.shelf.studio_shelf_lights(studio.parts, stage);
       const model = type === 'baggebo' ? createBaggebo({ width:600 }) : createShelfFurniture({
         width:WALNUT_SPEC.width,height:WALNUT_SPEC.height,depth:WALNUT_SPEC.depth,scale:1,
         rows:WALNUT_SPEC.shelfBottoms.map(bottom => ({ bottom })),...walnutMaterials(renderer, invalidate)
       });
-      // A near-front angle reveals the shallow depth and perforations while
-      // retaining an easy comparison of the two furniture silhouettes.
-      model.rotation.set(.075,-.28,0);
-      const bounds = new THREE.Box3().setFromObject(model);
-      model.position.sub(bounds.getCenter(new THREE.Vector3()));
-      scene.add(model);
-      host.dataset.modelWidth = '600';
-      host.dataset.modelDepth = '250'; host.dataset.modelHeight = '1160';
+      studio.shelf.studio_shelf_place(THREE, host, scene, model);
       return model;
     },
     size:model => modelSize ||= new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()),

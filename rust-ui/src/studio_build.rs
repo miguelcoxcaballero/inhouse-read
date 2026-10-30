@@ -144,3 +144,141 @@ pub fn studio_parts(three: &JsValue, room: &JsValue, kind: f64, host: &JsValue, 
     }
     Ok(parts)
 }
+
+/// The cabinet studio's lights for a cabinet type: `stage` is `[hemisphere, key, fill, environment, castShadow]`
+/// (the key casts a shadow when `castShadow` is 1); the shadow map is redrawn for the new model.
+#[wasm_bindgen]
+pub fn studio_shelf_lights(parts: &JsValue, stage: &JsValue) -> R<()> {
+    let stage = Array::from(stage);
+    let lights = read(parts, "lights")?;
+    set(&read(&lights, "hemisphere")?, "intensity", &stage.get(0))?;
+    set(&read(&lights, "key")?, "intensity", &stage.get(1))?;
+    set(&read(&lights, "fill")?, "intensity", &stage.get(2))?;
+    set(&read(parts, "scene")?, "environmentIntensity", &stage.get(3))?;
+    set(&read(&lights, "key")?, "castShadow", &JsValue::from_bool(stage.get(4) == number(1.0)))?;
+    set(&read(&read(parts, "renderer")?, "shadowMap")?, "needsUpdate", &JsValue::TRUE)
+}
+
+/// Places a cabinet in its studio: a near-front angle reveals the shallow depth and perforations while retaining
+/// an easy comparison of the two furniture silhouettes; centred, added to `scene`, its real size on `host`.
+#[wasm_bindgen]
+pub fn studio_shelf_place(three: &JsValue, host: &JsValue, scene: &JsValue, model: &JsValue) -> R<()> {
+    let three = Three(three);
+    call(&read(model, "rotation")?, "set", &[&number(0.075), &number(-0.28), &number(0.0)])?;
+    let bounds = call(&three.new("Box3", &[])?, "setFromObject", &[model])?;
+    call(&read(model, "position")?, "sub", &[&call(&bounds, "getCenter", &[&three.new("Vector3", &[])?])?])?;
+    call(scene, "add", &[model])?;
+    let data = read(host, "dataset")?;
+    set(&data, "modelWidth", &"600".into())?;
+    set(&data, "modelDepth", &"250".into())?;
+    set(&data, "modelHeight", &"1160".into())
+}
+
+/// Dresses the lamp studio around a freshly made shelf lamp `model` (see `createLampCatalogPreview`): sharper
+/// texture filtering, no opaque shadow from glass, the model in `display`, its own light (a cone with its target or
+/// a bulb, scaled to the studio's exposure; a filament lamp's strips come from `filaments()`, the host's pool), the
+/// stand's surfaces (pushed to `surfaces` and added to `presentation`), the camera, and the whole display centred.
+/// Returns `{ fixture, target, size }` (`fixture` and `target` null when not made).
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn studio_lamp_dress(three: &JsValue, host: &JsValue, model: &JsValue, display: &JsValue, presentation: &JsValue, camera: &JsValue,
+    renderer: &JsValue, lamp: &JsValue, surfaces: &Array, filaments: &js_sys::Function) -> R<JsValue> {
+    let three = Three(three);
+    let capabilities = read(renderer, "capabilities")?;
+    crate::three_host::traverse(model, &mut |object| {
+        if !truthy(&read(object, "isMesh")?) {
+            return Ok(());
+        }
+        let material = read(object, "material")?;
+        let materials = if Array::is_array(&material) { Array::from(&material) } else { Array::of1(&material) };
+        let mut clear = false;
+        for material in materials.iter() {
+            if truthy(&read(&material, "transparent")?) || crate::host::num(&read(&material, "transmission")?) > 0.0 {
+                clear = true;
+                break;
+            }
+        }
+        // Glass keeps the model's transparent shadow behaviour, so the chimney cannot cast an opaque
+        // silhouette over its own LED filament.
+        if clear {
+            set(object, "castShadow", &JsValue::FALSE)?;
+        }
+        for material in materials.iter() {
+            for name in ["map", "bumpMap", "roughnessMap"] {
+                let map = read(&material, name)?;
+                if truthy(&map) {
+                    let most = crate::host::num(&call(&capabilities, "getMaxAnisotropy", &[])?);
+                    set(&map, "anisotropy", &number(js_sys::Math::min(8.0, most)))?;
+                }
+            }
+        }
+        Ok(())
+    })?;
+    call(display, "add", &[model])?;
+    let emitter = read(&read(model, "userData")?, "lightEmitter")?;
+    let dimensions = read(lamp, "dimensions")?;
+    let undershelf = read(lamp, "mount")?.as_string().is_some_and(|mount| mount == "undershelf");
+    let stage = crate::catalog_studio::studio_lamp_stage(undershelf, crate::host::num(&read(&dimensions, "width")?))?;
+    let (mut fixture, mut target) = (JsValue::NULL, JsValue::NULL);
+    if !absent(&emitter) && truthy(&read(&emitter, "filaments")?) {
+        let intensity = crate::host::num(&read(&emitter, "intensity")?) * crate::host::num(&read(&stage, "filament")?);
+        set(&emitter, "intensity", &number(intensity))?;
+        filaments.call0(&JsValue::UNDEFINED)?;
+    } else if truthy(&emitter) {
+        let direction = read(&emitter, "direction")?;
+        let intensity = crate::host::num(&read(&emitter, "intensity")?);
+        let (color, distance, decay) = (read(&emitter, "color")?, read(&emitter, "distance")?, read(&emitter, "decay")?);
+        fixture = if truthy(&direction) {
+            let power = number(intensity * crate::host::num(&read(&stage, "cone")?));
+            three.new("SpotLight", &[&color, &power, &distance, &read(&emitter, "angle")?, &read(&emitter, "penumbra")?, &decay])?
+        } else {
+            let power = number(intensity * crate::host::num(&read(&stage, "bulb")?));
+            three.new("PointLight", &[&color, &power, &distance, &decay])?
+        };
+        call(&read(&fixture, "position")?, "fromArray", &[&read(&emitter, "position")?])?;
+        call(display, "add", &[&fixture])?;
+        if truthy(&direction) {
+            target = three.new("Object3D", &[])?;
+            let offset = call(&three.new("Vector3", &[])?, "fromArray", &[&direction])?;
+            call(&call(&read(&target, "position")?, "copy", &[&read(&fixture, "position")?])?, "add", &[&offset])?;
+            call(display, "add", &[&target])?;
+            set(&fixture, "target", &target)?;
+        }
+    }
+    for surface in Array::from(&read(&stage, "surfaces")?).iter() {
+        let size = Array::from(&read(&surface, "size")?);
+        let kind = read(&surface, "kind")?.as_string().unwrap_or_default();
+        let geometry = if kind == "box" {
+            three.new("BoxGeometry", &[&size.get(0), &size.get(1), &size.get(2)])?
+        } else {
+            three.new("CircleGeometry", &[&size.get(0), &size.get(1)])?
+        };
+        let options: JsValue = Object::new().into();
+        set(&options, "color", &read(&surface, "color")?)?;
+        set(&options, "roughness", &number(0.86))?;
+        let mesh = three.new("Mesh", &[&geometry, &three.new("MeshStandardMaterial", &[&options])?])?;
+        set(&mesh, "receiveShadow", &JsValue::TRUE)?;
+        surfaces.push(&mesh);
+        call(presentation, "add", &[&mesh])?;
+        if kind == "circle" {
+            set(&read(&mesh, "rotation")?, "x", &number(-std::f64::consts::PI / 2.0))?;
+        }
+        set(&read(&mesh, "position")?, "y", &read(&surface, "y")?)?;
+        if truthy(&read(&surface, "cast")?) {
+            set(&mesh, "castShadow", &JsValue::TRUE)?;
+        }
+    }
+    spread(&read(camera, "position")?, "set", &read(&stage, "camera")?)?;
+    let bounds = call(&three.new("Box3", &[])?, "setFromObject", &[display])?;
+    let size = call(&bounds, "getSize", &[&three.new("Vector3", &[])?])?;
+    call(&read(display, "position")?, "sub", &[&call(&bounds, "getCenter", &[&three.new("Vector3", &[])?])?])?;
+    call(camera, "lookAt", &[&number(0.0), &number(0.0), &number(0.0)])?;
+    set(&read(host, "dataset")?, "lightEmitter", &(if truthy(&emitter) { "warm-physical" } else { "none" }).into())?;
+    // Its light must exist before linking: every lit program depends on it.
+    call(display, "updateMatrixWorld", &[&JsValue::TRUE])?;
+    let dressed: JsValue = Object::new().into();
+    set(&dressed, "fixture", &fixture)?;
+    set(&dressed, "target", &target)?;
+    set(&dressed, "size", &size)?;
+    Ok(dressed)
+}
