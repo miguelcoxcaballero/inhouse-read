@@ -6,9 +6,9 @@ import { cloudModule } from './cloud-native.js'
 
 // Google Drive access lives in rust-ui/src/drive_client.rs (the web sign-in, the
 // Android authorization-code/PKCE flow, the per-request account guard, folders,
-// manifests, reading state and uploads). What stays here is the platform: the
-// stored sign-in (read by the shelf before any module could load), fetch, crypto,
-// Google Identity Services and the Android bridge, handed over as callbacks.
+// manifests, reading state and uploads, with crypto, Google Identity Services and the
+// Android bridge). What stays here is the stored sign-in (read by the shelf before any
+// module could load), localStorage and fetch, handed over as callbacks.
 const TOKEN_KEY = 'ihr_drive_session_v2'
 const LEGACY_TOKEN_KEY = 'ihn_drive_tokens'
 const PROFILE_KEY = 'ihr_drive_profile_v2'
@@ -76,16 +76,6 @@ const host = {
   },
   androidClientId: ANDROID_OAUTH_CLIENT_ID,
   fetch: driveFetch,
-  randomBytes: length => crypto.getRandomValues(new Uint8Array(length)),
-  sha256: bytes => crypto.subtle.digest('SHA-256', bytes),
-  randomUUID: () => crypto.randomUUID(),
-  google: () => globalThis.google?.accounts?.oauth2,
-  bridge: () => globalThis.InhouseNative,
-  userAgent: () => navigator.userAgent,
-  offline: () => navigator.onLine === false,
-  assign: url => globalThis.location.assign(url),
-  emit: (type, detail) => globalThis.dispatchEvent(new CustomEvent(type, { detail })),
-  warn: message => console.warn(message),
   remembered: getRememberedDriveProfile,
   spineCustomization, cleanQuotes, normalizeDriveBookLength
 }

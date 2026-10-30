@@ -1,10 +1,10 @@
 //! Google Drive access: the web sign-in and the Android authorization-code/PKCE flow, the
 //! per-request account guard, folder lookup and the per-device library manifests, reading state
-//! and uploads. The platform stays behind host callbacks: fetch, localStorage, crypto, Google
-//! Identity Services, the Android bridge and the browser events.
+//! and uploads. The stored session, localStorage, fetch and the app's book helpers are host
+//! callbacks; crypto, Google Identity Services, the Android bridge, the user agent, navigation,
+//! the browser events and the console are the browser's own (see `Core::platform`).
 //! `host`: `{session:{token,restore,save,clear}, storage:{getItem,setItem,removeItem}, androidClientId,
-//! fetch, randomBytes, sha256, randomUUID, google, bridge, userAgent, offline, assign, emit, warn, remembered,
-//! spineCustomization, cleanQuotes, normalizeDriveBookLength}`.
+//! fetch, remembered, spineCustomization, cleanQuotes, normalizeDriveBookLength}`.
 use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function,Object,Promise,RegExp,Uint8Array};
@@ -80,6 +80,25 @@ impl Guarded{
 }
 
 impl Core{
+ /// A platform capability: the host's function of that name when it has one (unit tests pass
+ /// doubles), otherwise the browser's own, read from the global at each use as the page did.
+ fn platform(&self,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
+  if get(&self.host,name).is_function(){return call(&self.host,name,args);}
+  let crypto=||read(&global(),"crypto");let navigator=||read(&global(),"navigator");
+  match name{
+   "randomBytes"=>call(&crypto()?,"getRandomValues",&[&construct("Uint8Array",args)?]),
+   "sha256"=>call(&read(&crypto()?,"subtle")?,"digest",&[&"SHA-256".into(),args[0]]),
+   "randomUUID"=>call(&crypto()?,"randomUUID",&[]),
+   "google"=>Ok(get(&get(&get(&global(),"google"),"accounts"),"oauth2")),
+   "bridge"=>Ok(get(&global(),"InhouseNative")),
+   "userAgent"=>read(&navigator()?,"userAgent"),
+   "offline"=>Ok(JsValue::from_bool(read(&navigator()?,"onLine")?==JsValue::FALSE)),
+   "assign"=>call(&read(&global(),"location")?,"assign",args),
+   "emit"=>{let event=construct("CustomEvent",&[args[0],&object(&[("detail",args[1].clone())])])?;call(&global(),"dispatchEvent",&[&event])}
+   "warn"=>call(&read(&global(),"console")?,"warn",args),
+   _=>Err(error(&format!("Missing host function {name}"))),
+  }
+ }
  fn session(&self,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{call(&get(&self.host,"session"),name,args)}
  fn storage(&self,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{call(&get(&self.host,"storage"),name,args)}
  fn stored(&self,key:&str)->Result<JsValue,JsValue>{self.storage("getItem",&[&key.into()])}
@@ -87,10 +106,10 @@ impl Core{
  fn require(&self,generation:f64)->Result<(),JsValue>{if generation!=self.generation.get(){Err(generation_changed())}else{Ok(())}}
  fn client_id(&self)->JsValue{get(&self.host,"androidClientId")}
  fn native_shell(&self)->Result<bool,JsValue>{
-  let agent=or(call(&self.host,"userAgent",&[])?,"".into());
+  let agent=or(self.platform("userAgent",&[])?,"".into());
   Ok(RegExp::new(r"\bInhouseReadApp\/\d","i").test(&string(&agent)))
  }
- fn native_bridge(&self)->Result<bool,JsValue>{Ok(is_function_property(&call(&self.host,"bridge",&[])?,"openAuthUrl"))}
+ fn native_bridge(&self)->Result<bool,JsValue>{Ok(is_function_property(&self.platform("bridge",&[])?,"openAuthUrl"))}
 
  /// Remember a token for as long as Google says it lives (at least a minute, an hour if unsaid).
  fn save_token(&self,token:&JsValue,lifetime_seconds:&JsValue)->Result<JsValue,JsValue>{
@@ -101,10 +120,10 @@ impl Core{
 
  // ---- web sign-in ----
  fn request_web(self:&Rc<Self>)->Result<Promise,JsValue>{
-  let oauth=call(&self.host,"google",&[])?;
+  let oauth=self.platform("google",&[])?;
   let init=get(&oauth,"initTokenClient");
   if !oauth.is_truthy()||!init.is_truthy(){
-   return Err(error(if call(&self.host,"offline",&[])?.is_truthy(){"Sin conexión a Internet."}else{"Google está cargando. Pulsa Conectar otra vez."}));
+   return Err(error(if self.platform("offline",&[])?.is_truthy(){"Sin conexión a Internet."}else{"Google está cargando. Pulsa Conectar otra vez."}));
   }
   let core=self.clone();let generation=self.generation.get();
   let promise=Promise::new(&mut|resolve,reject|{
@@ -147,11 +166,11 @@ impl Core{
 
  // ---- PKCE (ported from Notes: verifier, challenge, authorization URL, code exchange, refresh) ----
  fn random_token(&self)->Result<String,JsValue>{
-  let bytes=Uint8Array::new(&call(&self.host,"randomBytes",&[&32.into()])?);
+  let bytes=Uint8Array::new(&self.platform("randomBytes",&[&32.into()])?);
   Ok(base64_url(&bytes.to_vec()))
  }
  async fn challenge(&self,verifier:&str)->Result<String,JsValue>{
-  let digest=settle(call(&self.host,"sha256",&[&Uint8Array::from(verifier.as_bytes())])).await?;
+  let digest=settle(self.platform("sha256",&[&Uint8Array::from(verifier.as_bytes())])).await?;
   Ok(base64_url(&Uint8Array::new(&digest).to_vec()))
  }
  async fn token_request(self:Rc<Self>,body:JsValue,generation:f64)->Result<JsValue,JsValue>{
@@ -212,10 +231,10 @@ impl Core{
   let address=text(&url)?;
   // If the native bridge does not really answer the call (checked before, but that only looks that the
   // function exists), the tab itself is sent to Google's page instead of doing nothing.
-  let bridge=call(&self.host,"bridge",&[])?;
+  let bridge=self.platform("bridge",&[])?;
   if !is_function_property(&bridge,"openAuthUrl"){
-   call(&self.host,"warn",&[&"PKCE sign-in: puente Android no disponible, se usa el flujo web como respaldo.".into()])?;
-   call(&self.host,"assign",&[&address.into()])?;return Ok(());
+   self.platform("warn",&[&"PKCE sign-in: puente Android no disponible, se usa el flujo web como respaldo.".into()])?;
+   self.platform("assign",&[&address.into()])?;return Ok(());
   }
   call(&bridge,"openAuthUrl",&[&address.into()])?;Ok(())
  }
@@ -274,7 +293,7 @@ impl Core{
   let fail=|failure:JsValue|{
    match &pending{
     Some(pending)=>self.finish_native(pending,Err(failure)),
-    None=>if generation==self.generation.get(){let _=call(&self.host,"emit",&[&"inhouse-drive-auth".into(),&object(&[("error",get(&failure,"message"))])]);}
+    None=>if generation==self.generation.get(){let _=self.platform("emit",&[&"inhouse-drive-auth".into(),&object(&[("error",get(&failure,"message"))])]);}
    }
   };
   *self.native.borrow_mut()=None;
@@ -298,14 +317,14 @@ impl Core{
     Ok(token)=>{
      match &pending{
       Some(pending)=>core.finish_native(pending,Ok(token.clone())),
-      None=>{let _=call(&core.host,"emit",&[&"inhouse-drive-auth".into(),&object(&[("connected",JsValue::TRUE)])]);}
+      None=>{let _=core.platform("emit",&[&"inhouse-drive-auth".into(),&object(&[("connected",JsValue::TRUE)])]);}
      }
      Ok(token)
     },
     Err(failure)=>{
      match &pending{
       Some(pending)=>core.finish_native(pending,Err(failure)),
-      None=>if generation==core.generation.get(){let _=call(&core.host,"emit",&[&"inhouse-drive-auth".into(),&object(&[("error",get(&failure,"message"))])]);}
+      None=>if generation==core.generation.get(){let _=core.platform("emit",&[&"inhouse-drive-auth".into(),&object(&[("error",get(&failure,"message"))])]);}
      }
      Ok(JsValue::UNDEFINED)
     }
@@ -516,7 +535,7 @@ impl Core{
    }
    token=get(&page,"nextPageToken");if !token.is_truthy(){break;}
   }
-  call(&self.host,"emit",&[&"inhouse-drive-live-peers".into(),&object(&[("folderId",folder),("peers",peers.into())])])?;
+  self.platform("emit",&[&"inhouse-drive-live-peers".into(),&object(&[("folderId",folder),("peers",peers.into())])])?;
   call(&rows,"sort",&[])?;Ok(json_text(&rows.into())?.into())
  }
  async fn read_snapshots(self:Rc<Self>)->Result<JsValue,JsValue>{
@@ -615,7 +634,7 @@ impl Core{
   let endpoint=format!("{UPLOAD_URL}{}",if drive_file_id.is_truthy(){format!("/{}",encode_uri_component(&drive_file_id))}else{String::new()});
   let method=if drive_file_id.is_truthy(){"PATCH"}else{"POST"};
   if number(&get(&file,"size"))<=5.0*1024.0*1024.0{
-   let boundary=format!("ihr_{}",string(&call(&self.host,"randomUUID",&[])?));
+   let boundary=format!("ihr_{}",string(&self.platform("randomUUID",&[])?));
    let parts=Array::of4(&format!("--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n",json_text(&metadata)?).into(),
     &format!("--{boundary}\r\nContent-Type: {}\r\n\r\n",string(&mime)).into(),&file,&format!("\r\n--{boundary}--").into());
    let body=construct("Blob",&[&parts.into(),&object(&[("type",format!("multipart/related; boundary={boundary}").into())])])?;

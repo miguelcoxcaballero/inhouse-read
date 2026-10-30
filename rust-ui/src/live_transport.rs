@@ -24,45 +24,73 @@ async fn awaited(host: &JsValue, name: &str, args: &[&JsValue]) -> R<JsValue> {
 }
 fn clone_fields(value: &JsValue) -> R<JsValue> { let entries=Array::new();copy_data_entries(&entries,value)?;Ok(Object::from_entries(entries.as_ref())?.into()) }
 
-// The browser's platform objects, looked up on the global at each use as the page's own code did
-// (Date, performance, crypto, TextEncoder/TextDecoder, atob). RTC, BroadcastChannel, timers and
-// Drive I/O stay host capabilities.
+// Platform capabilities and dispatch hooks. The page's host leaves these to Rust, which uses the
+// browser's own objects, looked up on the global at each use as the page's code did (Date,
+// performance, crypto, TextEncoder/TextDecoder, atob, clearTimeout, BroadcastChannel). A host may
+// still supply any of them as a function of the same name: the unit tests pass doubles that way.
+// RTC events, session timers, BroadcastChannel messages and Drive I/O stay host capabilities.
+fn supplied(host: &JsValue, name: &str) -> Option<js_sys::Function> { crate::host::get(host,name).dyn_into::<js_sys::Function>().ok() }
 fn platform(name: &str) -> R<JsValue> { read(&crate::host::global(),name) }
-fn now() -> R<JsValue> { method(&platform("Date")?,"now",&[]) }
-fn clock() -> R<JsValue> { method(&platform("performance")?,"now",&[]) }
-fn random_id() -> R<JsValue> { method(&platform("crypto")?,"randomUUID",&[]) }
-fn utf8(value: &JsValue) -> R<JsValue> { method(&crate::host::construct("TextEncoder",&[])?,"encode",&[value]) }
-fn decode(value: &JsValue) -> R<JsValue> { method(&crate::host::construct("TextDecoder",&[])?,"decode",&[value]) }
-fn base64(bytes: &JsValue) -> JsValue { live_transport_base64(&Uint8Array::new(bytes).to_vec()).into() }
+fn now(host: &JsValue) -> R<JsValue> { match supplied(host,"now") {Some(f)=>f.call0(host),None=>method(&platform("Date")?,"now",&[])} }
+fn clock(host: &JsValue) -> R<JsValue> { match supplied(host,"clock") {Some(f)=>f.call0(host),None=>method(&platform("performance")?,"now",&[])} }
+fn random_id(host: &JsValue) -> R<JsValue> { match supplied(host,"randomId") {Some(f)=>f.call0(host),None=>method(&platform("crypto")?,"randomUUID",&[])} }
+fn text_encode(value: &JsValue) -> R<JsValue> { method(&crate::host::construct("TextEncoder",&[])?,"encode",&[value]) }
+fn utf8(host: &JsValue, value: &JsValue) -> R<JsValue> { match supplied(host,"utf8") {Some(f)=>f.call1(host,value),None=>text_encode(value)} }
+fn decode(host: &JsValue, value: &JsValue) -> R<JsValue> {
+    match supplied(host,"decode") {Some(f)=>f.call1(host,value),None=>method(&crate::host::construct("TextDecoder",&[])?,"decode",&[value])}
+}
+fn encode(host: &JsValue, bytes: &JsValue) -> R<JsValue> {
+    match supplied(host,"encode") {Some(f)=>f.call1(host,bytes),None=>Ok(live_transport_base64(&Uint8Array::new(bytes).to_vec()).into())}
+}
+fn cancel_timer(host: &JsValue, id: &JsValue) -> R<()> { match supplied(host,"cancelTimer") {Some(f)=>f.call1(host,id).map(|_|()),None=>crate::host::clear_timeout(id)} }
 fn subtle() -> R<JsValue> { read(&platform("crypto")?,"subtle") }
-fn crypto_available() -> R<bool> { Ok(truthy(&subtle()?)) }
+fn crypto_available(host: &JsValue) -> R<bool> { Ok(truthy(&match supplied(host,"cryptoAvailable") {Some(f)=>f.call0(host)?,None=>subtle()?})) }
+fn tabs_available(host: &JsValue) -> R<bool> {
+    Ok(truthy(&match supplied(host,"tabsAvailable") {Some(f)=>f.call0(host)?,None=>crate::host::get(&crate::host::global(),"BroadcastChannel")}))
+}
 /// `Uint8Array.from(atob(text), c => c.charCodeAt(0))`.
 fn un64(text: &JsValue) -> R<JsValue> {
     let binary: js_sys::JsString=crate::host::call(&platform("atob")?,"atob",&[text])?.unchecked_into();
     let bytes: Vec<u8>=binary.iter().map(|unit| unit as u8).collect();
     Ok(Uint8Array::from(bytes.as_slice()).into())
 }
-fn aes(iv: JsValue, account: &JsValue) -> R<JsValue> { object(&[("name","AES-GCM".into()),("iv",iv),("additionalData",utf8(account)?)]) }
-async fn encrypt(session: &JsValue, plain: &JsValue) -> R<JsValue> {
+fn aes(iv: JsValue, account: &JsValue) -> R<JsValue> { object(&[("name","AES-GCM".into()),("iv",iv),("additionalData",text_encode(account)?)]) }
+async fn encrypt(host: &JsValue, session: &JsValue, plain: &JsValue) -> R<JsValue> {
+    if let Some(f)=supplied(host,"encrypt") {return cloud_host::settle(f.call2(host,session,plain)).await;}
     let iv=method(&platform("crypto")?,"getRandomValues",&[&Uint8Array::new_with_length(12).into()])?;
     let subtle=subtle()?;let params=aes(iv.clone(),&read(session,"account")?)?;
-    let data=cloud_host::settle(method(&subtle,"encrypt",&[&params,&read(session,"key")?,&utf8(plain)?])).await?;
+    let data=cloud_host::settle(method(&subtle,"encrypt",&[&params,&read(session,"key")?,&text_encode(plain)?])).await?;
     object(&[("iv",iv),("data",data)])
 }
-async fn decrypt(session: &JsValue, encrypted: &JsValue) -> R<JsValue> {
+async fn decrypt(host: &JsValue, session: &JsValue, encrypted: &JsValue) -> R<JsValue> {
+    if let Some(f)=supplied(host,"decrypt") {return cloud_host::settle(f.call2(host,session,encrypted)).await;}
     let subtle=subtle()?;let params=aes(un64(&read(encrypted,"iv")?)?,&read(session,"account")?)?;
     let key=read(session,"key")?;let data=un64(&read(encrypted,"data")?)?;
     cloud_host::settle(method(&subtle,"decrypt",&[&params,&key,&data])).await
 }
-/// The Drive rendezvous key is base64url; AES-GCM, not extractable, for both directions.
-async fn import_key(context: &JsValue) -> R<JsValue> {
+/// The Drive rendezvous key is base64url: an AES-GCM key, not extractable, for both directions.
+async fn import_key(host: &JsValue, context: &JsValue) -> R<JsValue> {
+    if let Some(f)=supplied(host,"importKey") {return cloud_host::settle(f.call1(host,context)).await;}
     let subtle=subtle()?;let key=read(context,"key")?;
     let key=method(&method(&key,"replaceAll",&[&"-".into(),&"+".into()])?,"replaceAll",&[&"_".into(),&"/".into()])?;
     let usages=Array::of2(&"encrypt".into(),&"decrypt".into());
     cloud_host::settle(method(&subtle,"importKey",&[&"raw".into(),&un64(&key)?,&"AES-GCM".into(),&JsValue::FALSE,usages.as_ref()])).await
 }
-async fn hash_account(account: &JsValue) -> R<JsValue> {
-    let subtle=subtle()?;cloud_host::settle(method(&subtle,"digest",&[&"SHA-256".into(),&utf8(account)?])).await
+async fn hash_account(host: &JsValue, account: &JsValue) -> R<JsValue> {
+    if let Some(f)=supplied(host,"hashAccount") {return cloud_host::settle(f.call1(host,account)).await;}
+    let subtle=subtle()?;cloud_host::settle(method(&subtle,"digest",&[&"SHA-256".into(),&text_encode(account)?])).await
+}
+fn failed(host: &JsValue, s: &JsValue, id: &JsValue) -> R<()> {
+    match supplied(host,"failed") {Some(f)=>f.call2(host,s,id).map(|_|()),None=>live_transport_failed(s.clone(),id.clone(),host.clone())}
+}
+fn close_peer(host: &JsValue, s: &JsValue, id: &JsValue) -> R<()> {
+    match supplied(host,"closePeer") {Some(f)=>f.call2(host,s,id).map(|_|()),None=>live_transport_close(s.clone(),id.clone(),host.clone())}
+}
+fn pending(host: &JsValue, s: &JsValue) -> R<()> {
+    match supplied(host,"pending") {Some(f)=>f.call1(host,s).map(|_|()),None=>live_transport_pending(s.clone(),host.clone(),false)}
+}
+async fn write(host: &JsValue, session: &JsValue) -> R<JsValue> {
+    cloud_host::settle(match supplied(host,"write") {Some(f)=>f.call1(host,session),None=>live_transport_write(session.clone(),host.clone())}).await
 }
 fn new_room(account: &JsValue, own: &JsValue) -> R<JsValue> {
     let text=|value: &JsValue| value.as_string().ok_or_else(|| JsValue::from(js_sys::TypeError::new("expected a string argument")));
@@ -107,7 +135,7 @@ async fn write_loop(session: &JsValue, host: &JsValue) -> R<JsValue> {
     loop {
         set(session,"writeAgain",&JsValue::FALSE)?;
         if !valid(host,session)? {return Ok(JsValue::UNDEFINED);}
-        let payload=object(&[("v",n(1.0)),("peer",read(session,"own")?),("at",now()?),
+        let payload=object(&[("v",n(1.0)),("peer",read(session,"own")?),("at",now(host)?),
             ("signals",clone_fields(&read(session,"signals")?)?),("motion",read(session,"relayMotion")?),("state",read(session,"relayState")?)])?;
         let first=awaited(host,"writeMailbox",&[&read(session,"own")?,&payload,&read(session,"file")?]).await;
         let file=match first {
@@ -141,11 +169,11 @@ pub fn live_transport_write(session: JsValue, host: JsValue) -> R<JsValue> {
 }
 
 async fn encrypted(host: &JsValue, session: &JsValue, plain: &JsValue) -> R<JsValue> {
-    let encrypted=encrypt(session,plain).await?;
+    let encrypted=encrypt(host,session,plain).await?;
     if !valid(host,session)? {return Ok(JsValue::NULL);}
-    let iv=base64(&read(&encrypted,"iv")?);
+    let iv=encode(host,&read(&encrypted,"iv")?)?;
     let bytes=Uint8Array::new(&read(&encrypted,"data")?);
-    let data=base64(bytes.as_ref());
+    let data=encode(host,bytes.as_ref())?;
     object(&[("iv",iv),("data",data)])
 }
 async fn state_body(session: &JsValue, host: &JsValue, packet: &JsValue) -> R<()> {
@@ -163,8 +191,8 @@ async fn state_body(session: &JsValue, host: &JsValue, packet: &JsValue) -> R<()
     if !valid(host,session)? {return Ok(());}
     set(session,"stateFile",&read(&file,"id")?)?;
     method(&read(host,"stateFiles")?,"set",&[&read(session,"account")?,&read(&file,"id")?])?;
-    set(session,"relayState",&object(&[("id",read(&file,"id")?),("revision",random_id()?)])?)?;
-    cloud_host::settle(live_transport_write(session.clone(),host.clone())).await?;
+    set(session,"relayState",&object(&[("id",read(&file,"id")?),("revision",random_id(host)?)])?)?;
+    write(host,session).await?;
     set(session,"stateFailures",&n(0.0))
 }
 #[wasm_bindgen]
@@ -201,10 +229,10 @@ pub fn live_transport_relay(session: JsValue, host: JsValue) -> Promise {
     let packet=match begin {Ok(Some(packet))=>packet,Ok(None)=>return Promise::resolve(&JsValue::UNDEFINED),Err(error)=>return Promise::reject(&error)};
     cloud_host::start(async move {
         let body=async {
-            let plain=cloud_host::stringify(&object(&[("at",now()?),("packet",packet)])?)?
+            let plain=cloud_host::stringify(&object(&[("at",now(&host)?),("packet",packet)])?)?
                 .map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
             let cipher=encrypted(&host,&session,&plain).await?;
-            if !cipher.is_null() {set(&session,"relayMotion",&cipher)?;cloud_host::settle(live_transport_write(session.clone(),host.clone())).await?;}
+            if !cipher.is_null() {set(&session,"relayMotion",&cipher)?;write(&host,&session).await?;}
             Ok::<(),JsValue>(())
         };
         let _=body.await;
@@ -241,7 +269,7 @@ pub fn live_transport_context(session: JsValue, host: JsValue) -> Promise {
         // A concurrently created rendezvous key is confirmed before use.
         if truthy(&read(&context,"confirm")?) {context=awaited(&host,"getContext",&[]).await?;}
         if !valid(&host,&session)? {return Ok(JsValue::UNDEFINED);}
-        let key=import_key(&context).await?;
+        let key=import_key(&host,&context).await?;
         if valid(&host,&session)? {set(&session,"key",&key)?;set(&session,"folder",&read(&context,"folderId")?)?;}
         Ok(JsValue::UNDEFINED)
     })
@@ -263,17 +291,17 @@ pub fn live_transport_accept(session: JsValue, packet: JsValue, host: JsValue) -
 async fn state_read_body(session: &JsValue, id: &JsValue, state: &JsValue, host: &JsValue) -> R<JsValue> {
     let encrypted=awaited(host,"readState",&[&read(state,"id")?]).await?;
     if !valid(host,session)? || read(&encrypted,"peer")?!=*id {return Ok(JsValue::UNDEFINED);}
-    let first=decrypt(session,&encrypted).await;
+    let first=decrypt(host,session,&encrypted).await;
     let decoded=match first {
         Ok(decoded)=>decoded,
         Err(_)=>{
             cloud_host::settle(Ok(live_transport_context(session.clone(),host.clone()).into())).await?;
             if !valid(host,session)? {return Ok(JsValue::UNDEFINED);}
-            decrypt(session,&encrypted).await?
+            decrypt(host,session,&encrypted).await?
         }
     };
     if !valid(host,session)? {return Ok(JsValue::UNDEFINED);}
-    let envelope=object(&[("packet",decode(&decoded)?)])?;
+    let envelope=object(&[("packet",decode(host,&decoded)?)])?;
     let packet=method(&read(session,"native")?,"receiveStateRelay",&[id,&envelope])?;
     accept_snapshot(session,&packet,host).await?;
     if valid(host,session)? {method(&read(session,"stateSeen")?,"set",&[id,&read(state,"revision")?])?;}
@@ -304,10 +332,10 @@ pub fn live_transport_signal(session: JsValue, id: JsValue, description: JsValue
     cloud_host::start(async move {
         if !valid(&host,&session)? {return Ok(JsValue::UNDEFINED);}
         let packet=object(&[("account",read(&session,"account")?),("from",read(&session,"own")?),("to",id.clone()),
-            ("nonce",nonce),("at",now()?),("type",read(&description,"type")?),("sdp",read(&description,"sdp")?)])?;
+            ("nonce",nonce),("at",now(&host)?),("type",read(&description,"type")?),("sdp",read(&description,"sdp")?)])?;
         let plain=cloud_host::stringify(&packet)?.map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
         let cipher=encrypted(&host,&session,&plain).await?;
-        if !cipher.is_null() {Reflect::set(&read(&session,"signals")?,&id,&cipher)?;cloud_host::settle(live_transport_write(session.clone(),host.clone())).await?;}
+        if !cipher.is_null() {Reflect::set(&read(&session,"signals")?,&id,&cipher)?;write(&host,&session).await?;}
         Ok(JsValue::UNDEFINED)
     })
 }
@@ -338,7 +366,7 @@ pub fn live_transport_flush_motion(peer:JsValue)->R<()>{
 #[wasm_bindgen]
 pub fn live_transport_send(peer:JsValue,packet:JsValue,host:JsValue)->R<()>{
     if !truthy(&packet){return Ok(());}
-    let data=if packet.is_string(){utf8(&packet)?}else{packet};
+    let data=if packet.is_string(){utf8(&host,&packet)?}else{packet};
     if truthy(&method(&read(&peer,"stream")?,"queue",&[&data])?){live_transport_pump(peer)?;}Ok(())
 }
 #[wasm_bindgen]
@@ -353,8 +381,8 @@ pub fn live_transport_pump(peer:JsValue)->R<()>{
 pub fn live_transport_health(s:JsValue,p:JsValue,host:JsValue)->R<()>{
     if !valid_peer(&host,&s,&p)?||!truthy(&read(&p,"open")?){return Ok(());}
     let interactive=read(&p,"interactive")?;
-    if num(&clock()?) - num(&read(&p,"lastReceived")?)>12000.0 || (!open(&interactive)?&&num(&clock()?) - num(&read(&p,"healthAt")?)>12000.0){live_transport_failed(s.clone(),read(&p,"id")?,host.clone())?;return Ok(());}
-    if open(&interactive)?{let ping=cloud_host::stringify(&object(&[("t","ping".into()),("at",now()?)])?)?.unwrap_or_default();let _=method(&interactive,"send",&[&ping.into()]);}
+    if num(&clock(&host)?) - num(&read(&p,"lastReceived")?)>12000.0 || (!open(&interactive)?&&num(&clock(&host)?) - num(&read(&p,"healthAt")?)>12000.0){failed(&host,&s,&read(&p,"id")?)?;return Ok(());}
+    if open(&interactive)?{let ping=cloud_host::stringify(&object(&[("t","ping".into()),("at",now(&host)?)])?)?.unwrap_or_default();let _=method(&interactive,"send",&[&ping.into()]);}
     arm(&host,&s,2000.0,"health",&p)?;Ok(())
 }
 #[wasm_bindgen]
@@ -372,14 +400,14 @@ pub fn live_transport_channel_event(s:JsValue,p:JsValue,c:JsValue,kind:&str,even
         match event{
             "open"=>if valid_peer(&host,&s,&p)?{if truthy(&read(&p,"open")?){method(&read(&s,"native")?,"connected",&[&read(&p,"id")?])?;}live_transport_flush_motion(p)?;},
             "low"=>live_transport_flush_motion(p)?,
-            "close"=>if read(&p,"interactive")?==c{set(&p,"interactive",&JsValue::NULL)?;if valid_peer(&host,&s,&p)?{live_transport_failed(s.clone(),read(&p,"id")?,host.clone())?;}},
+            "close"=>if read(&p,"interactive")?==c{set(&p,"interactive",&JsValue::NULL)?;if valid_peer(&host,&s,&p)?{failed(&host,&s,&read(&p,"id")?)?;}},
             _=>{}
         }
     }else{match event{
-        "open"=>if valid_peer(&host,&s,&p)?{set(&p,"open",&JsValue::TRUE)?;set(&p,"lastReceived",&clock()?)?;
+        "open"=>if valid_peer(&host,&s,&p)?{set(&p,"open",&JsValue::TRUE)?;set(&p,"lastReceived",&clock(&host)?)?;
             if open(&read(&p,"interactive")?)?{method(&read(&s,"native")?,"connected",&[&read(&p,"id")?])?;}
             live_transport_send(p.clone(),read(&read(&s,"native")?,"latest")?,host.clone())?;live_transport_health(s,p,host)?;},
-        "close"=>if valid_peer(&host,&s,&p)?{live_transport_failed(s.clone(),read(&p,"id")?,host.clone())?;},
+        "close"=>if valid_peer(&host,&s,&p)?{failed(&host,&s,&read(&p,"id")?)?;},
         "low"=>live_transport_pump(p)?,_=>{}
     }}Ok(())
 }
@@ -387,7 +415,7 @@ pub fn live_transport_channel_event(s:JsValue,p:JsValue,c:JsValue,kind:&str,even
 pub fn live_transport_interactive_message(s:JsValue,p:JsValue,c:JsValue,data:JsValue,host:JsValue)->R<()>{
     if !valid_peer(&host,&s,&p)?||!data.is_string()||num(&read(&data,"length")?)>98304.0{return Ok(());}
     let _=(||->R<()>{
-        let wire=js_sys::JSON::parse(&data.as_string().unwrap_or_default())?;set(&p,"lastReceived",&clock()?)?;
+        let wire=js_sys::JSON::parse(&data.as_string().unwrap_or_default())?;set(&p,"lastReceived",&clock(&host)?)?;
         if read(&wire,"t")?==JsValue::from_str("ping"){
             if open(&c)?{let pong=cloud_host::stringify(&object(&[("t","pong".into()),("at",read(&wire,"at")?)])?)?.unwrap_or_default();method(&c,"send",&[&pong.into()])?;}return Ok(());
         }
@@ -402,16 +430,16 @@ pub fn live_transport_interactive_message(s:JsValue,p:JsValue,c:JsValue,data:JsV
 #[wasm_bindgen]
 pub fn live_transport_room_message(s:JsValue,p:JsValue,data:JsValue,host:JsValue)->Promise{
     let begin=(||->R<Option<JsValue>>{
-        if !valid_peer(&host,&s,&p)?{return Ok(None);}set(&p,"lastReceived",&clock()?)?;
+        if !valid_peer(&host,&s,&p)?{return Ok(None);}set(&p,"lastReceived",&clock(&host)?)?;
         let input=if data.is_string(){data}else{Uint8Array::new(&data).into()};
         let assembled=method(&read(&p,"stream")?,"receive",&[&input])?;
-        if truthy(&assembled){let encoded=decode(&assembled)?;let packet=method(&read(&s,"native")?,"receive",&[&encoded])?;
+        if truthy(&assembled){let encoded=decode(&host,&assembled)?;let packet=method(&read(&s,"native")?,"receive",&[&encoded])?;
             if !absent(&packet)&&truthy(&read(&packet,"snapshot")?){broadcast(&s,"snapshot",&encoded)?;return Ok(Some(packet));}}
         Ok(None)
     })();
     cloud_host::start(async move {
         let result=match begin{Ok(Some(packet))=>accept_snapshot(&s,&packet,&host).await,Ok(None)=>Ok(JsValue::UNDEFINED),Err(e)=>Err(e)};
-        if result.is_err()&&valid_peer(&host,&s,&p)?{live_transport_failed(s.clone(),read(&p,"id")?,host.clone())?;}Ok(JsValue::UNDEFINED)
+        if result.is_err()&&valid_peer(&host,&s,&p)?{failed(&host,&s,&read(&p,"id")?)?;}Ok(JsValue::UNDEFINED)
     })
 }
 #[wasm_bindgen]
@@ -440,9 +468,9 @@ pub fn live_transport_candidates(p:JsValue,sdp:JsValue)->Promise{
 pub fn live_transport_offer(s:JsValue,id:JsValue,host:JsValue)->Promise{
     cloud_host::start(async move {
         cloud_host::settle(Ok(live_transport_context(s.clone(),host.clone()).into())).await?;if !valid(&host,&s)?{return Ok(JsValue::UNDEFINED);}
-        live_transport_close(s.clone(),id.clone(),host.clone())?;let nonce=random_id()?;
-        if !truthy(&method(&read(&s,"native")?,"beginOffer",&[&id,&nonce,&now()?])?){return Ok(JsValue::UNDEFINED);}
-        let p=method(&host,"peer",&[&s,&id])?;set(&p,"nonce",&nonce)?;live_transport_pending(s.clone(),host.clone(),false)?;
+        close_peer(&host,&s,&id)?;let nonce=random_id(&host)?;
+        if !truthy(&method(&read(&s,"native")?,"beginOffer",&[&id,&nonce,&now(&host)?])?){return Ok(JsValue::UNDEFINED);}
+        let p=method(&host,"peer",&[&s,&id])?;set(&p,"nonce",&nonce)?;pending(&host,&s)?;
         let pc=read(&p,"pc")?;
         for label in ["inhouse-read-room-v1","inhouse-read-interactive-v1"]{let c=method(&pc,"createDataChannel",&[&label.into(),&object(&[("ordered",JsValue::TRUE)])?])?;method(&host,"bindChannel",&[&s,&p,&c])?;}
         let offer=awaited(&pc,"createOffer",&[]).await?;awaited(&pc,"setLocalDescription",&[&offer]).await?;awaited(&host,"ice",&[&p,&n(1200.0)]).await?;
@@ -454,9 +482,9 @@ async fn read_mailbox_body(s:&JsValue,id:&JsValue,file:&JsValue,host:&JsValue)->
     let motion=read(&mailbox,"motion")?;let motion_data=if absent(&motion){JsValue::UNDEFINED}else{read(&motion,"data")?};
     if motion_data.is_string()&&num(&read(&motion_data,"length")?)<=132000.0{
         let _=async {
-            let decoded=decrypt(s,&motion).await?;if !valid(host,s)?{return Ok::<(),JsValue>(());}
-            let envelope=js_sys::JSON::parse(&decode(&decoded)?.as_string().unwrap_or_default())?;
-            let packet=method(&read(s,"native")?,"receiveRelay",&[id,&envelope,&now()?])?;
+            let decoded=decrypt(host,s,&motion).await?;if !valid(host,s)?{return Ok::<(),JsValue>(());}
+            let envelope=js_sys::JSON::parse(&decode(host,&decoded)?.as_string().unwrap_or_default())?;
+            let packet=method(&read(s,"native")?,"receiveRelay",&[id,&envelope,&now(host)?])?;
             if truthy(&packet){method(host,"motion",&[&read(s,"account")?,&packet])?;let wire=read(&envelope,"packet")?;broadcast(s,"motion",&wire)?;forward_motion(s,&wire,id)?;}Ok(())
         }.await;
         if !valid(host,s)?{return Ok(JsValue::UNDEFINED);}
@@ -466,15 +494,15 @@ async fn read_mailbox_body(s:&JsValue,id:&JsValue,file:&JsValue,host:&JsValue)->
     let cipher=Reflect::get(&read(&mailbox,"signals")?,&read(s,"own")?)?;
     if !truthy(&cipher){return Ok(JsValue::UNDEFINED);}let data=read(&cipher,"data")?;
     if !data.is_string()||num(&read(&data,"length")?)>65000.0{return Ok(JsValue::UNDEFINED);}
-    let decoded=match decrypt(s,&cipher).await{Ok(value)=>value,Err(_)=>{
-        cloud_host::settle(Ok(live_transport_context(s.clone(),host.clone()).into())).await?;if !valid(host,s)?{return Ok(JsValue::UNDEFINED);}decrypt(s,&cipher).await?
+    let decoded=match decrypt(host,s,&cipher).await{Ok(value)=>value,Err(_)=>{
+        cloud_host::settle(Ok(live_transport_context(s.clone(),host.clone()).into())).await?;if !valid(host,s)?{return Ok(JsValue::UNDEFINED);}decrypt(host,s,&cipher).await?
     }};
     if !valid(host,s)?{return Ok(JsValue::UNDEFINED);}
-    let wire=js_sys::JSON::parse(&decode(&decoded)?.as_string().unwrap_or_default())?;
-    let signal=method(&read(s,"native")?,"signal",&[id,&wire,&now()?])?;if !truthy(&signal){return Ok(JsValue::UNDEFINED);}
+    let wire=js_sys::JSON::parse(&decode(host,&decoded)?.as_string().unwrap_or_default())?;
+    let signal=method(&read(s,"native")?,"signal",&[id,&wire,&now(host)?])?;if !truthy(&signal){return Ok(JsValue::UNDEFINED);}
     let mut p=method(&read(s,"peers")?,"get",&[id])?;
     if read(&signal,"type")?==JsValue::from_str("offer"){
-        if absent(&p)||read(&p,"nonce")?!=read(&signal,"nonce")?{live_transport_close(s.clone(),id.clone(),host.clone())?;p=method(host,"peer",&[s,id])?;set(&p,"nonce",&read(&signal,"nonce")?)?;live_transport_pending(s.clone(),host.clone(),false)?;}
+        if absent(&p)||read(&p,"nonce")?!=read(&signal,"nonce")?{close_peer(host,s,id)?;p=method(host,"peer",&[s,id])?;set(&p,"nonce",&read(&signal,"nonce")?)?;pending(host,s)?;}
         let pc=read(&p,"pc")?;
         if truthy(&read(&pc,"remoteDescription")?){return cloud_host::settle(Ok(live_transport_candidates(p,read(&signal,"sdp")?).into())).await;}
         awaited(&pc,"setRemoteDescription",&[&object(&[("type","offer".into()),("sdp",read(&signal,"sdp")?)])?]).await?;if !valid_peer(host,s,&p)?{return Ok(JsValue::UNDEFINED);}
@@ -498,18 +526,18 @@ pub fn live_transport_read(s:JsValue,id:JsValue,file:JsValue,host:JsValue)->Prom
 pub fn live_transport_close(s:JsValue,id:JsValue,host:JsValue)->R<()>{
     let p=method(&read(&s,"peers")?,"get",&[&id])?;if !truthy(&p){return Ok(());}
     method(&read(&s,"peers")?,"delete",&[&id])?;Reflect::delete_property(&read(&s,"signals")?.unchecked_into::<Object>(),&id)?;
-    crate::host::clear_timeout(&read(&p,"iceTimer")?)?;
+    cancel_timer(&host,&read(&p,"iceTimer")?)?;
     for name in ["interactive","channel"]{let channel=read(&p,name)?;if !absent(&channel){method(&channel,"close",&[])?;}}
     method(&read(&p,"pc")?,"close",&[])?;method(&read(&p,"stream")?,"free",&[])?;method(&host,"disconnected",&[&id])?;Ok(())
 }
 #[wasm_bindgen]
 pub fn live_transport_failed(s:JsValue,id:JsValue,host:JsValue)->R<()>{
     if !valid(&host,&s)?{return Ok(());}live_transport_close(s.clone(),id.clone(),host.clone())?;
-    method(&read(&s,"native")?,"failed",&[&id,&now()?])?;live_transport_schedule_state(s,host,150.0)
+    method(&read(&s,"native")?,"failed",&[&id,&now(&host)?])?;live_transport_schedule_state(s,host,150.0)
 }
 #[wasm_bindgen]
 pub fn live_transport_pending(s:JsValue,host:JsValue,fire:bool)->R<()>{
-    if fire{set(&s,"pending",&JsValue::NULL)?;let actions=method(&read(&s,"native")?,"pending",&[&now()?])?;return live_transport_actions(s,actions,host);}
+    if fire{set(&s,"pending",&JsValue::NULL)?;let actions=method(&read(&s,"native")?,"pending",&[&now(&host)?])?;return live_transport_actions(s,actions,host);}
     if truthy(&read(&s,"pending")?)||!valid(&host,&s)?{return Ok(());}
     let peers=Array::from(&method(&read(&s,"peers")?,"values",&[])?);let mut unopened=false;
     for p in peers.iter(){if !truthy(&read(&p,"open")?){unopened=true;break;}}
@@ -532,7 +560,7 @@ pub fn live_transport_peer_event(s:JsValue,p:JsValue,event:&str,host:JsValue)->R
     if !valid_peer(&host,&s,&p)?{return Ok(());}let pc=read(&p,"pc")?;
     if event=="ice"{
         if !truthy(&read(&p,"nonce")?)||!truthy(&read(&pc,"localDescription")?){return Ok(());}
-        crate::host::clear_timeout(&read(&p,"iceTimer")?)?;
+        cancel_timer(&host,&read(&p,"iceTimer")?)?;
         let timer=method(&host,"armIceSignal",&[&s,&p,&n(200.0)])?;set(&p,"iceTimer",&timer)?;
     }else if event=="signal"{let request=live_transport_signal(s,read(&p,"id")?,read(&pc,"localDescription")?,read(&p,"nonce")?,host);
         let _=cloud_host::start(async move{let _=cloud_host::settle(Ok(request.into())).await;Ok(JsValue::UNDEFINED)});
@@ -545,8 +573,8 @@ pub fn live_transport_peer_event(s:JsValue,p:JsValue,event:&str,host:JsValue)->R
 
 #[wasm_bindgen]
 pub fn live_transport_publish_now(s:JsValue,host:JsValue)->R<()>{
-    let packet=method(&read(&s,"native")?,"publish",&[&read(&s,"latest")?,&random_id()?])?;
-    if !truthy(&packet){return Ok(());}broadcast(&s,"snapshot",&packet)?;let encoded=utf8(&packet)?;
+    let packet=method(&read(&s,"native")?,"publish",&[&read(&s,"latest")?,&random_id(&host)?])?;
+    if !truthy(&packet){return Ok(());}broadcast(&s,"snapshot",&packet)?;let encoded=utf8(&host,&packet)?;
     let peers=method(&read(&s,"peers")?,"values",&[])?;
     for p in js_sys::try_iter(&peers)?.ok_or_else(||js_sys::TypeError::new("Peer map is not iterable"))?{live_transport_send(p?,encoded.clone(),host.clone())?;}
     set(&s,"statePending",&packet)?;live_transport_schedule_state(s,host,150.0)
@@ -554,7 +582,7 @@ pub fn live_transport_publish_now(s:JsValue,host:JsValue)->R<()>{
 #[wasm_bindgen]
 pub fn live_transport_publish(account:JsValue,snapshot:JsValue,host:JsValue)->Promise{
     let begin=(||->R<Option<JsValue>>{
-        if !truthy(&account)||!truthy(&method(&host,"enabled",&[])?)||!crypto_available()?{return Ok(None);}
+        if !truthy(&account)||!truthy(&method(&host,"enabled",&[])?)||!crypto_available(&host)?{return Ok(None);}
         method(&host,"setDesired",&[&object(&[("account",account.clone()),("snapshot",snapshot.clone())])?])?;
         let mut s=method(&host,"session",&[])?;
         if absent(&s)||read(&s,"account")?!=account{
@@ -593,7 +621,7 @@ pub fn live_transport_motion_heartbeat(s:JsValue,host:JsValue)->R<()>{
 pub fn live_transport_observe(s:JsValue,detail:JsValue,host:JsValue)->R<()>{
     let folder=if absent(&detail){JsValue::UNDEFINED}else{read(&detail,"folderId")?};
     if truthy(&read(&s,"native")?)&&read(&s,"folder")?==folder{
-        let actions=method(&read(&s,"native")?,"observe",&[&read(&detail,"peers")?,&now()?])?;live_transport_actions(s,actions,host)?;
+        let actions=method(&read(&s,"native")?,"observe",&[&read(&detail,"peers")?,&now(&host)?])?;live_transport_actions(s,actions,host)?;
     }Ok(())
 }
 #[wasm_bindgen]
@@ -629,8 +657,8 @@ pub fn live_transport_start(s:JsValue,own:JsValue,host:JsValue)->Promise{
                 set(&s,"own",&own)?;let account=read(&s,"account")?;
                 for (field,cache) in [("file","mailboxes"),("stateFile","stateFiles")]{let cached=method(&read(&host,cache)?,"get",&[&account])?;set(&s,field,&if truthy(&cached){cached}else{JsValue::NULL})?;}
                 set(&s,"native",&new_room(&account,&own)?)?;
-                if truthy(&crate::host::get(&crate::host::global(),"BroadcastChannel")){
-                    let name=hash_account(&account).await?;if !valid(&host,&s)?{return Ok::<(),JsValue>(());}
+                if tabs_available(&host)?{
+                    let name=hash_account(&host,&account).await?;if !valid(&host,&s)?{return Ok::<(),JsValue>(());}
                     let name=format!("inhouse-read-room-v1:{}",live_transport_base64(&Uint8Array::new(&name).to_vec()));
                     method(&host,"openTabs",&[&s,&name.into()])?;live_transport_request_tabs(s.clone())?;
                 }
@@ -649,7 +677,7 @@ pub fn live_transport_stop(host:JsValue)->R<()>{
     let s=method(&host,"session",&[])?;method(&host,"setSession",&[&JsValue::NULL])?;
     method(&host,"setEpoch",&[&n(num(&method(&host,"epoch",&[]) ?)+1.0)])?;if !truthy(&s){return Ok(());}
     let tabs=read(&s,"tabs")?;if !absent(&tabs){method(&tabs,"close",&[])?;}method(&host,"disconnected",&[&"".into()])?;
-    for timer in js_sys::try_iter(&read(&s,"timers")?)?.ok_or_else(||js_sys::TypeError::new("Timers are not iterable"))?{crate::host::clear_timeout(&timer?)?;}
+    for timer in js_sys::try_iter(&read(&s,"timers")?)?.ok_or_else(||js_sys::TypeError::new("Timers are not iterable"))?{cancel_timer(&host,&timer?)?;}
     let ids=method(&read(&s,"peers")?,"keys",&[])?;
     for id in js_sys::try_iter(&ids)?.ok_or_else(||js_sys::TypeError::new("Peers are not iterable"))?{live_transport_close(s.clone(),id?,host.clone())?;}
     let native=read(&s,"native")?;if !absent(&native){method(&native,"free",&[])?;}Ok(())
@@ -684,7 +712,7 @@ pub fn live_transport_open_peer(s:JsValue,id:JsValue,host:JsValue)->R<JsValue>{
 #[wasm_bindgen]
 pub fn live_transport_new_peer(s:JsValue,id:JsValue,pc:JsValue,stream:JsValue,host:JsValue)->R<JsValue>{
     let p=object(&[("id",id.clone()),("pc",pc),("ui",read(&s,"ui")?),("open",JsValue::FALSE),("stream",stream),
-        ("lastReceived",clock()?),("healthAt",clock()?)])?;
+        ("lastReceived",clock(&host)?),("healthAt",clock(&host)?)])?;
     method(&read(&s,"peers")?,"set",&[&id,&p])?;Ok(p)
 }
 
