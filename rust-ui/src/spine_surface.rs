@@ -323,17 +323,30 @@ pub fn spine_surface(book:&JsValue,style:&JsValue,physical_height:&JsValue,thick
   if truthy(&name){Some(string_of(&name))}else{None}
  }else{None};
  let author_size=if author.is_some(){jmin(design_width*0.82,28.0*pick(num(&rd(style,"spineAuthorFontSize")?),12.0)/12.0)}else{0.0};
+ // The title font as set, so a width already measured for it is not measured again.
+ let title_font=std::cell::RefCell::new(String::new());
  let set_font=|size:f64|->R<()>{
   let weight=rd(style,"fontWeight")?;let weight=if truthy(&weight){weight}else{val(700.0)};
-  mc.set_font(&txt(&cat(&[&txt_of(&weight)," ",&show(size),"px ",&family])))
+  let font=cat(&[&txt_of(&weight)," ",&show(size),"px ",&family]);
+  mc.set_font(&txt(&font))?;*title_font.borrow_mut()=font;Ok(())
  };
  let set_author_font=||->R<()>{mc.set_font(&txt(&cat(&["500 ",&show(author_size),"px \"DM Sans\", sans-serif"])))};
  let width_of=|text:&JsString|->R<f64>{Ok(num(&rd(&mc.measure_text(text.as_ref())?,"width")?))};
+ // measureText changes nothing on the canvas and the same text in the same font has the same width: the
+ // untruncated title's width in each font is measured once (the original measured the last size of every
+ // fit twice, and a failed author-at-the-foot fit measured the same sizes again). `fit` only ever measures
+ // that title, before it is shortened; fonts are still set exactly as before.
+ let title_widths:std::cell::RefCell<Vec<(String,f64)>>=std::cell::RefCell::new(Vec::new());
+ let title_width=|title:&JsString|->R<f64>{
+  let font=title_font.borrow().clone();
+  if let Some((_,width))=title_widths.borrow().iter().find(|(known,_)|*known==font){return Ok(*width);}
+  let width=width_of(title)?;title_widths.borrow_mut().push((font,width));Ok(width)
+ };
  // Fit by font size, never by non-uniform fillText(maxWidth) compression.
  let fit=|title:&JsString,size:&mut f64,limit:f64|->R<bool>{
   set_font(*size)?;
-  while width_of(title)?>limit&&*size>44.0{*size-=1.0;set_font(*size)?;}
-  Ok(width_of(title)?<=limit)
+  while title_width(title)?>limit&&*size>44.0{*size-=1.0;set_font(*size)?;}
+  Ok(title_width(title)?<=limit)
  };
  // Ruled cases set a short author at the foot, in line with the title, whenever both fit without
  // shrinking the title below its minimum.

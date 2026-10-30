@@ -86,19 +86,30 @@ async function run(module,input,partial){
 }
 
 it('paints every canvas operation of 1500 random spines exactly like the original',async()=>{
-  const next=random(2024);let stretched=0,engraved=0,feet=0,devices=0;
+  const next=random(2024);let stretched=0,engraved=0,feet=0,devices=0;const measures={original:0,production:0};
   for(let i=0;i<1500;i++){
     const input=sample(next,i),partial=i%7===0;
     const expected=await run(original,input,partial),actual=await run(production,input,partial);
     expect(actual.outcome).toEqual(expected.outcome);
-    expect(actual.log.length).toBe(expected.log.length);
-    for(let j=0;j<expected.log.length;j++)if(JSON.stringify(actual.log[j])!==JSON.stringify(expected.log[j]))throw new Error(`case ${i}, operation ${j}: ${JSON.stringify(actual.log[j])} / ${JSON.stringify(expected.log[j])}`);
+    // measureText changes nothing on a canvas: the production measures the title in each font once, where the
+    // original measured the last size of every fit twice and repeated a failed author-at-the-foot fit. Every
+    // other operation, argument and value is identical and in order; every width it asks for, the original asked for.
+    const drawn=log=>log.filter(entry=>entry[1]!=='measureText'),measured=log=>log.filter(entry=>entry[1]==='measureText').map(entry=>JSON.stringify(entry));
+    const actualDrawn=drawn(actual.log),expectedDrawn=drawn(expected.log);
+    expect(actualDrawn.length).toBe(expectedDrawn.length);
+    for(let j=0;j<expectedDrawn.length;j++)if(JSON.stringify(actualDrawn[j])!==JSON.stringify(expectedDrawn[j]))throw new Error(`case ${i}, operation ${j}: ${JSON.stringify(actualDrawn[j])} / ${JSON.stringify(expectedDrawn[j])}`);
+    const asked=measured(expected.log),remaining=new Map();for(const entry of asked)remaining.set(entry,(remaining.get(entry)||0)+1);
+    for(const entry of measured(actual.log)){expect(remaining.get(entry),`case ${i}: ${entry}`).toBeGreaterThan(0);remaining.set(entry,remaining.get(entry)-1);}
+    measures.original+=asked.length;measures.production+=measured(actual.log).length;
     if(expected.log.some(entry=>entry[1]==='fillText'&&entry[2]?.endsWith('…"')))stretched++;
     if(input.book.spineEngraved===true&&input.options.engraving!==false&&input.options.engraving!==0)engraved++;
     if(expected.log.filter(entry=>entry[1]==='fillText').length===2&&expected.log.some(entry=>entry[1]==='measureText'))feet++;
     if(expected.log.some(entry=>entry[1]==='arc'))devices++;
   }
   expect(stretched).toBeGreaterThan(5);expect(engraved).toBeGreaterThan(50);expect(feet).toBeGreaterThan(50);expect(devices).toBeGreaterThan(30);
+  // Fewer measurements, never more (the counts are reported by the run).
+  expect(measures.production).toBeLessThan(measures.original);
+  console.log(`measureText calls of 1500 spines: original ${measures.original}, production ${measures.production}`);
 },120_000);
 
 it('lays out and decorates spines with the same bytes as the original for random books',()=>{
@@ -140,7 +151,8 @@ it('leaves the pooled rasters and throws like the original when a canvas call fa
       vi.stubGlobal('document',{createElement:tag=>{const node=make(tag);const getContext=node.getContext.bind(node);node.getContext=(...args)=>{const context=getContext(...args);
         return new Proxy(context,{get:(target,key)=>key===failing?()=>{throw new RangeError('stop '+failing);}:target[key]});};return node;}});
       let error=null;try{module.spineSurface(book,style,200,32,{level:'detail',textureWidth:64,textureHeight:128});}catch(caught){error=`${caught.constructor.name}: ${caught.message}`;}
-      results.push({error,log:log.length});release();
+      // Measurements change nothing on the canvas (the production repeats fewer): count everything else.
+      results.push({error,log:log.filter(entry=>entry[1]!=='measureText').length});release();
     }
     expect(results[1]).toEqual(results[0]);
   }
