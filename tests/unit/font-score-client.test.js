@@ -1,5 +1,13 @@
 // @vitest-environment node
+// The client now lives in rust-ui/src/font_score_client.rs. Every case runs on it (through the real shelf
+// module, a fresh instance per case) and on the frozen JavaScript it replaced.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
+const implementations = [
+  ['Rust client', () => import('../../src/js/font-score-client.js')],
+  ['frozen JavaScript client', () => import('./helpers/reference-font-score-client.js')]
+]
 
 const image = () => ({ gray:Uint8Array.from({length:64}, (_, i) => i),
   near:Float32Array.from({length:64}, (_, i) => i ? i / 3 : NaN), width:8, height:8, rows:6 })
@@ -30,23 +38,25 @@ class FakeWorker {
   terminate() { this.terminated++;if(this.terminateThrows)throw new Error('terminate rejected') }
 }
 let targets=[]
+let load
 const setup = async options => {
   const worker=new FakeWorker(options), target=events(), factory=vi.fn(()=>worker)
   targets.push(target)
-  const {openFontScoreJob}=await import('../../src/js/font-score-client.js')
+  const {openFontScoreJob}=await load()
   return {worker,target,factory,open:context=>openFontScoreJob(context,{factory,events:target})}
 }
 beforeEach(()=>{vi.resetModules();vi.useFakeTimers();targets=[]})
 afterEach(()=>{for(const target of targets)target.fire('pagehide');vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks()})
 
-describe('font score Worker transport',()=>{
+describe.each(implementations)('font score Worker transport: %s',(label,loader)=>{
+  beforeEach(()=>{load=loader})
   it('does not create a Worker when the platform has no Worker API',async()=>{
     vi.stubGlobal('Worker',undefined)
-    const {openFontScoreJob}=await import('../../src/js/font-score-client.js')
+    const {openFontScoreJob}=await load()
     expect(await openFontScoreJob(image())).toBeNull()
   })
   it('returns null on constructor failure so the caller uses the existing scorer',async()=>{
-    const {openFontScoreJob}=await import('../../src/js/font-score-client.js')
+    const {openFontScoreJob}=await load()
     const factory=vi.fn(()=>{throw new Error('module Worker unsupported')})
     expect(await openFontScoreJob(image(),{factory})).toBeNull();expect(factory).toHaveBeenCalledTimes(1)
   })

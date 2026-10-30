@@ -56,38 +56,21 @@ export function validLaunchFrame(frame, key, width, height) {
     frame.x >= -1 && frame.y >= 0 && frame.x + frame.width <= width + 1 && frame.y + frame.height <= height + 1;
 }
 
-export function rememberLaunchFrames(root, { books, idle, isIdle }) {
-  let timer = 0, generation = 0, stopped = false;
-  const canvas = () => root.querySelector('canvas.ihr-bookshelf-scene');
-  const usable = node => !stopped && !document.hidden && isIdle() && node?.isConnected &&
-    Number(node.dataset.renderCount) > 0 && node.dataset.animating === 'false' && Number(node.dataset.bookQualityPending) === 0 &&
-    node.width * node.height <= 4 * 1024 * 1024 && Number(node.dataset.inspectionZoom || 1) === 1 &&
-    (!node.dataset.inspectionPan || JSON.parse(node.dataset.inspectionPan).every(value => value === 0)) && !node.closest('.ihr-bookshelf__scroll')?.scrollTop &&
-    !root.querySelector('.ihr-library-loading') && !document.querySelector('.ihr-flyout');
-  const save = async revision => {
-    try {
-      const node = canvas();
-      if (!usable(node) || revision !== generation) return;
-      const count = node.dataset.renderCount;
-      const records = await books(), state = launchState(records), key = await launchKey(state);
-      if (!usable(node) || revision !== generation || node.dataset.renderCount !== count) return;
-      const rect = node.getBoundingClientRect();
-      // The canvas snapshot API materializes the already resolved native GPU
-      // frame. PNG preserves every pixel; it does not re-render scene geometry.
-      const image = await new Promise(resolve => node.toBlob(resolve, 'image/png'));
-      if (!usable(node) || revision !== generation || node.dataset.renderCount !== count || launchState(await books()).text !== state.text) return;
-      const frame = { key, image, x:rect.x, y:rect.y, width:rect.width, height:rect.height };
-      if (validLaunchFrame(frame, key, innerWidth, innerHeight)) await writeLaunchFrame(frame);
-    } catch { /* Cache eviction, tainted images and quota never block the app. */ }
-  };
+// `shelfModule` returns the shelf module (passed in: the preview's own module graph must not load it).
+export function rememberLaunchFrames(root, { books, idle, isIdle, shelfModule }) {
+  let timer = 0;
+  // Saving (is the canvas settled and unused, the key, the PNG, the checks after every wait) is
+  // rust-ui/src/launch_frames.rs; this keeps the observer, its timer and the store.
+  const host = { root, generation:0, stopped:false, isIdle, books, launchState, launchKey, validLaunchFrame, writeLaunchFrame };
+  const save = revision => shelfModule().shelf_save_launch_frame(host, revision);
   const schedule = () => {
-    const revision = ++generation; clearTimeout(timer);
+    const revision = ++host.generation; clearTimeout(timer);
     timer = setTimeout(() => idle(() => void save(revision)), 1000);
   };
   const observer = new MutationObserver(schedule);
   observer.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['data-render-count'] });
-  const stop = () => { stopped = true; generation++; clearTimeout(timer); observer.disconnect(); };
-  addEventListener('pagehide', event => { if (!event.persisted) stop(); else { generation++; clearTimeout(timer); } });
+  const stop = () => { host.stopped = true; host.generation++; clearTimeout(timer); observer.disconnect(); };
+  addEventListener('pagehide', event => { if (!event.persisted) stop(); else { host.generation++; clearTimeout(timer); } });
   addEventListener('pageshow', event => { if (event.persisted) schedule(); });
   schedule();
   return stop;
