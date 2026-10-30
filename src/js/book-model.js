@@ -17,7 +17,7 @@ import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from './studio-renderer.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
-import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, spineLayout, drawDevice } from './spine-surface.js';
+import { spineSurface, releaseSurface, seededRandom, paintCloth, paintWeave, drawDevice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
@@ -32,12 +32,9 @@ import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPre
 // The shelf renders only after requireRustCore() (app.js): every model is built with the core in.
 const rustCore = () => getRustCore() ?? loadedRustCore();
 
-// Procedural micro-detail shared by every book: generated once, uploaded once.
+// Procedural micro-detail shared by every book: generated once, uploaded once (book_shared_texture).
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
 // texture until the last clone is disposed, so every model owns its copy.
-function sharedTexture(key, build) {
-  return needRustShelf().book_shared_texture(key, build);
-}
 // The woven-cloth and printed-paper tooth, and the swallowtail cut, are produced by the numeric core.
 function tileNormals(kind) {
   const data = rustBookSurfacePixels(rustCore(), kind);
@@ -83,18 +80,8 @@ function endpaperTexture() {
   return texture;
 }
 
-// Numeric Rust meshes own their arrays; install them without another copy.
-function paperMeshGeometry(buffers) {
-  if (!buffers) return null;
-  const geometry = new THREE.BufferGeometry();
-  for (const [name, array, size] of [['position', buffers.positions, 3], ['normal', buffers.normals, 3],
-    ['uv', buffers.uvs, 2], ['color', buffers.colors, 3]]) {
-    geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
-  }
-  geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
-  for (const group of buffers.groups) geometry.addGroup(group.start, group.count, group.materialIndex);
-  return geometry;
-}
+// Numeric Rust meshes own their arrays; the shelf module installs them without another copy.
+const paperMeshGeometry = buffers => needRustShelf().book_paper_mesh(THREE, buffers);
 
 /** Text block of a rounded-and-backed binding: its back follows the round
  * inside the case, the fore-edge is concave, both ends are one crescent. */
@@ -115,55 +102,13 @@ export function leafStackGeometry(width, height, depth, { board = height * .007,
 }
 
 // The case: both boards (rounded edges, cover UVs on the faces, the bevel inside the book's dimensions)
-// and both half-ellipse ends of the binding (close-up copies leave the hollow open so the headband shows
-// inside a thin rim). One call to the shelf module (rust-ui/src/book_case.rs) builds each array once;
-// three only installs them. The front board's faces come split into outside (0) and inside (2) groups.
-function bookCase(width, height, depth, shelf, overview, thickness = 0, segments = 0, rim = 0) {
-  if (![width, height, depth].every(value => Number.isFinite(value) && value > 0)
-    || segments && !(Number.isFinite(thickness) && thickness > 0)) throw new RangeError('Medidas de tapas no válidas.');
-  const data = needRustShelf().book_case_geometry(width, height, depth, Boolean(shelf), Boolean(overview), thickness, segments, rim);
-  const [vertices, lidStart, lidCount, wallStart, wallCount, fronts, capVertices, capIndices] = data;
-  let at = 8;
-  const take = length => data.subarray(at, at += length);
-  const front = take(fronts * 3), board = { position:take(vertices * 3), uv:take(vertices * 2), normal:take(vertices * 3) };
-  const cap = capVertices ? { position:take(capVertices * 3), normal:take(capVertices * 3), uv:take(capVertices * 2),
-    index:take(capIndices) } : null;
-  return { groups:[lidStart, lidCount, 0, wallStart, wallCount, 1], front, board, cap };
-}
-// An ExtrudeGeometry's own attributes and groups (its order: position, uv, normal).
-function boardFrom(parts, front = false) {
-  const geometry = new THREE.BufferGeometry(), groups = front ? parts.front : parts.groups;
-  geometry.type = 'ExtrudeGeometry';
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(parts.board.position, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(parts.board.uv, 2));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(parts.board.normal, 3));
-  for (let i = 0; i < groups.length; i += 3) geometry.addGroup(groups[i], groups[i + 1], groups[i + 2]);
-  return geometry;
-}
-// A ShapeGeometry's: the index as setIndex(array) makes it, then position, normal, uv.
-function capFrom({ position, normal, uv, index }) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.type = 'ShapeGeometry';
-  geometry.setIndex(new (index.some(value => value >= 65535) ? THREE.Uint32BufferAttribute : THREE.Uint16BufferAttribute)(index, 1));
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  return geometry;
-}
+// and both half-ellipse ends of the binding, each array built once by the shelf module
+// (rust-ui/src/book_case.rs) and installed by rust-ui/src/book_model_build.rs. The front board's faces
+// come split into outside (0) and inside (2) groups.
 /** The case of a model on its own (createBookModel installs the same four): the front board with its
  * outside/inside groups, the back board, and the tail and head ends of the binding. */
 export function bookCaseGeometries(width, height, board, thickness, { shelf = false, overview = false, segments, rim = 0 }) {
-  const parts = bookCase(width, height, board, shelf, overview, thickness, segments, rim);
-  return { front:boardFrom(parts, true), back:boardFrom(parts), caps:[capFrom(parts.cap), capFrom(parts.cap)] };
-}
-
-// Paper edges are fibrous: even "brillante" is a burnished edge, not lacquer.
-function applyPaperFinish(material, value) {
-  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(value, 'satin')], 'paper', false);
-}
-
-function applySurfaceFinish(material, value, fallback = 'satin') {
-  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(value, fallback)], 'surface', false);
+  return needRustShelf().book_case_geometries(THREE, width, height, board, thickness, shelf, overview, segments, rim);
 }
 
 // Seen almost edge-on (the lifted book's front view), spine lettering shrinks
@@ -191,19 +136,6 @@ function spineGrazingFade(material) {
   };
 }
 
-function applyCoverFinish(material, value) {
-  // Dielectric reflection belongs to the laminate, above the printed image.
-  // Suppressing it uniformly erased both the glossy/satin distinction and
-  // warm lamp highlights. The physical clearcoat keeps highlights local and
-  // leaves the artwork's diffuse colour and texture untouched.
-  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(value, 'satin')], 'cover', false);
-}
-
-// A cover that can carry relief keeps a clearcoat program from the start: a
-// laminate-free (matte) board is given a clearcoat too thin to see, so raising
-// varnish later only changes uniforms and texture contents, never the shader.
-const COVER_CLEARCOAT_FLOOR = .001;
-
 /** Relief reaches the shader through the clearcoat normal map. The same
  * tangent-space normal also bends the base layer's normal, so the raised
  * zones read under a matte, satin or glossy laminate alike. Neutral
@@ -228,17 +160,6 @@ function installCoverRelief(material) {
   return uniforms;
 }
 
-function neutralTexture(r, g, b, a = 255) {
-  const texture = new THREE.DataTexture(new Uint8Array([r, g, b, a]), 1, 1);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function applySpineCapFinish(material, book) {
-  needRustShelf().book_apply_material_finish(material, SURFACE_FINISHES[surfaceFinish(book.spineSurfaceFinish, 'matte')],
-    'cap', book.spineFinish === 'gold' || book.spineFinish === 'silver');
-}
-
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
 export function bindingGeometry(width, height, thickness, segments = 96, relief = null, reliefRows = 384) {
@@ -256,7 +177,7 @@ export function bindingGeometry(width, height, thickness, segments = 96, relief 
 // Rounded board edges, with front/back UVs in the same coordinates as a cover.
 // The bevel stays inside the book dimensions so the shelf and flyout match.
 export function boardGeometry(width, height, depth, { shelf = false, overview = false } = {}) {
-  return boardFrom(bookCase(width, height, depth, shelf, overview));
+  return needRustShelf().book_board_geometry(THREE, width, height, depth, shelf, overview);
 }
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
@@ -288,32 +209,12 @@ export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
   return geometry;
 }
 
-// Woven satin: a soft sheen that slides along the ribbon, not a lacquered
-// strip. The swallowtail tip is cut by an alpha mask, not by geometry.
-// Binders stock a handful of classic silk dyes. Each book draws one that
-// stands clear of its own cloth (claret most often), so a row of ribbons reads
-// as a collection rather than a row of identical red markers. Finished books
-// keep the old-gold silk; shelf copies are a shade quieter.
-// All dark enough to read on the paper of an open page.
+// Woven satin ribbons: binders stock a handful of classic silk dyes. Each book draws one that stands
+// clear of its own cloth (claret most often); finished books keep the old-gold silk. The dye, the
+// material and its sheen are the shelf module's (rust-ui/src/book_surface_policy.rs).
 const ribbonColorHost = { hex:value => new THREE.Color(value).getHex() };
 export function ribbonSilk(seed, cloth, finished = false) {
   return needRustShelf().book_ribbon_silk(seed,cloth,Boolean(finished),ribbonColorHost);
-}
-// Satin's sheen is a brighter shade of its own dye, not a white veil: seen
-// edge-on a dark silk must not fade into a grey or pastel strip.
-function tintRibbon(material, silk, shelf) {
-  needRustShelf().book_ribbon_tint(material,silk,Boolean(shelf),new THREE.Color('#fff6ea'));
-}
-function satinRibbon(finished, silk, shelf = false) {
-  // On the shelf the ribbon is a few pixels wide: the sliding anisotropic
-  // sheen cannot show there, so shelf copies skip both shading terms.
-  const material = new THREE.MeshPhysicalMaterial({
-    ...needRustShelf().book_ribbon_material(Boolean(finished),Boolean(shelf)),
-    alphaMap:sharedTexture('ribbon-notch', ribbonNotch),
-    side:THREE.DoubleSide
-  });
-  tintRibbon(material, silk, shelf);
-  return material;
 }
 
 // The paper the reader shows: the median of the snapshot's outer ring, so the
@@ -350,680 +251,170 @@ export function mixPaperTone(target, stock, theme, mix) {
 
 export const fitCoverImage = fitImage;
 
-function coverRasterDimensions(ratio, textureHeight, maxDimension = Infinity) {
-  return needRustShelf().book_cover_raster_size(ratio, textureHeight, maxDimension);
-}
-
-const coverSeed = (book, style, salt) => seededRandom(textSeed(`${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}|${style?.color}|${salt}`));
-
-// Wear that belongs to the board rather than the artwork, drawn in design
-// units (1024 = board height) over printed and cloth covers alike.
-const finishBoard = (c, designWidth, random, { wear = true } = {}) => needRustShelf().book_finish_board(c, designWidth, random, wear);
-
-function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity, level = 'detail') {
-  const canvas = document.createElement('canvas');
-  const designWidth = Math.round(1024 * (Number(style.coverRatio) || .66));
-  const dimensions = coverRasterDimensions(designWidth / 1024, textureHeight, maxDimension);
-  canvas.width = dimensions.width; canvas.height = dimensions.height;
-  const c = canvas.getContext('2d'); c.scale(canvas.width / designWidth, canvas.height / 1024);
-  const random = coverSeed(book, style, 'case'), thumb = level === 'overview';
-  c.fillStyle = style.color; c.fillRect(0, 0, designWidth, 1024);
-  // A cloth case: dyed mottling, then the weave itself. A 256 px thumbnail
-  // shows neither, so it keeps the flat dyed colour and saves the work.
-  if (!thumb) { paintCloth(c, designWidth, random); paintWeave(c, designWidth); }
-  // The panel, lettering, rule and device are the shelf module's (rust-ui/src/book_paint.rs).
-  // The publisher's device is the spine's own mark when the case has one, otherwise one of the
-  // same family, per book.
-  const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
-  const device = thumb ? -1 : spineLayout(book).device ?? textSeed(`device|${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}`) % 3;
-  needRustShelf().book_cover_case(c, designWidth, displayBookTitle(book) || 'Sin título', String(normalizeBookAuthor(book.author) || ''),
-    style.ink, style.fontWeight, family, thumb, device, drawDevice, random);
-  const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
-  return map;
-}
-
 function shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution = 0) {
   return spineSurface(book, style, height, thickness, needRustShelf().book_spine_options(height,
     Boolean(shelf), Boolean(overview), inspectionResolution, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1));
 }
 
-// Shelf and lifted copies of a book overlap during a transition. Keep the
-// decoded image alive for exactly that overlap, so neither copy has to flash
-// its generated cover while loading the same blob URL again.
-
+// One book: the shelf module assembles its meshes, materials and textures and owns its page snapshot,
+// appearance updates, cover source, relief slots and disposal (rust-ui/src/book_model_build.rs), all over
+// one plain state object `s`. What stays here runs every frame of a flight (the pose setters below), the
+// asynchronous relief bake, and the adapters the module calls back. Shelf and lifted copies of a book
+// overlap during a transition: book-cover-images keeps the decoded image alive for exactly that overlap.
 export function createBookModel(book, style, width, height, thickness, coverUrl,
   { shelf = false, overview = false, inspectionResolution = 0, eagerRelief = true } = {}) {
-  const group = new THREE.Group();
-  const quality = needRustShelf().book_model_plan(height, Boolean(shelf), Boolean(overview), inspectionResolution,
-    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
-  inspectionResolution = quality.inspectionResolution;
-  group.userData.inspectionResolution = inspectionResolution;
-  group.userData.overview = group.userData.isOverview = Boolean(overview);
-  group.userData.detailLevel = quality.detailLevel;
-  const { textureHeight, maxTextureDimension, bindingSegments, reliefRows, ribbonSegments, detail } = quality;
-  const ribbonSeed = textSeed(`ribbon|${book?.shelfVisualId ?? book?.id ?? ''}|${book?.title ?? ''}`) || 1;
-  const level = group.userData.detailLevel, ratio = width / height;
-  const surfaceSeed = String(book?.shelfVisualId ?? book?.id ?? book?.path ?? book?.title ?? 'book');
-  const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
-  applyBookReflectionSurface(cloth, { seed:`${surfaceSeed}|back`, strength:.018 });
-  let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution);
-  const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
-  const updateSpineFade = !shelf && !overview ? spineGrazingFade(binding) : null;
-  updateSpineFade?.(book, style);
-  applyBookReflectionSurface(binding, { seed:`${surfaceSeed}|binding`, strength:.014 });
-  // Painted once, by updateCoverSource below (or as the placeholder while a
-  // download is pending), never twice per book.
-  const cover = new THREE.MeshPhysicalMaterial({ map:null });
-  const reliefCapable = true;
-  // The clearcoat + relief program is costly to shade. Views that only fly a
-  // book (opening, closing) skip it unless the cover already has a relief; a
-  // view that gets one later arms it then, once (setCoverRelief).
-  // Shelf books need the same saved pigment mask as the lifted book. Keep
-  // ordinary shelf materials cheap until a relief is actually selected.
-  let reliefArmed = ((detail || Boolean(inspectionResolution)) && eagerRelief) || Boolean(book.coverRelief);
-  const laminate = value => {
-    applyCoverFinish(cover, value);
-    if (reliefArmed && !cover.clearcoat) cover.clearcoat = COVER_CLEARCOAT_FLOOR;
-  };
-  const armRelief = () => {
-    if (reliefArmed || !reliefCapable) return;
-    reliefArmed = true;
-    laminate(coverFinishValue);
-    // Neutral 1x1 maps: clearcoat x1, roughness x1, metalness 0, flat normal.
-    cover.clearcoatNormalMap = neutralTexture(128, 128, 255, 0);
-    cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = neutralTexture(255, 255, 0);
-    cover.needsUpdate = true;
-  };
-  let coverFinishValue = book.coverFinish;
-  laminate(book.coverFinish);
-  // Keep the broad studio reflection from washing out printed ink at an
-  // oblique angle. Diffuse colour and direct lamp highlights are unchanged.
-  applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018, environmentReflection:.75 });
-  const reliefUniforms = installCoverRelief(cover);
-  const setReliefBaseFinish = () => {
-    const finish = SURFACE_FINISHES[surfaceFinish(coverFinishValue)];
-    reliefUniforms.bookReliefBaseFinish.value.set(finish.clearcoat, finish.roughness, finish.clearcoatRoughness);
-  };
-  setReliefBaseFinish();
-  if (reliefArmed) {
-    reliefArmed = false; armRelief();
-  }
-  // Close-up copies carry woven or paper tooth in the normal channel. On the
-  // shelf it would not survive the mipmaps, so those copies skip the cost.
-  // 224 threads per board height: below ~3 device pixels a thread the weave
-  // aliases into a screen-door grid, so it fades to a quiet tooth instead.
-  // Even at full resolution real bookcloth is a fine grain, never burlap.
-  const weaveStrength = needRustShelf().book_weave_strength(height,
-    typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
-  if (detail || inspectionResolution) {
-    cloth.normalMap = sharedTexture('cloth', clothNormals);
-    cloth.normalMap.repeat.set(14 * ratio, 14); cloth.normalScale.setScalar(.5 * weaveStrength);
-  }
-  let coverGrain = null, coverSurfaceFinish = surfaceFinish(book.coverFinish);
-  const updateCoverGrainStrength = () => {
-    if (!cover.normalMap) return;
-    // A laminate fills the paper/cloth tooth rather than polishing its dye.
-    // Keep the same shared normal raster while changing only its strength.
-    cover.normalScale.setScalar(needRustShelf().book_grain_strength(coverGrain,weaveStrength,coverSurfaceFinish));
-  };
-  const setCoverGrain = kind => {
-    if ((!detail && !inspectionResolution) || kind === coverGrain) return;
-    coverGrain = kind; cover.normalMap?.dispose();
-    cover.normalMap = sharedTexture(kind, kind === 'cloth' ? clothNormals : paperNormals);
-    const tiles = kind === 'cloth' ? 14 : 5;
-    cover.normalMap.repeat.set(tiles * ratio, tiles);
-    updateCoverGrainStrength(); cover.needsUpdate = true;
-  };
-  const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-    mesh.position.set(x, y, z); group.add(mesh); return mesh;
-  };
-  const board = height * .007;
-  const frontCover = new THREE.Group();
-  frontCover.name = 'front-cover-hinge';
-  // Rotate around the board's binding edge. A hinge at the centre of the
-  // page block made the board cut through the pages instead of opening out.
-  frontCover.position.set(-width / 2, 0, thickness / 2 - board / 2);
-  group.add(frontCover);
-  // Both boards and both ends of the binding, each array built once.
-  const parts = bookCase(width, height, board, shelf, overview, thickness, bindingSegments, overview ? 0 : board * 1.1);
-  // Inside of the board: the cloth turns in over its edges (this material)
-  // and the endpaper is pasted down over the rest (the 'endpaper' mesh).
-  const insideCover = new THREE.MeshStandardMaterial({ color:style.color, roughness:.9 });
-  insideCover.visible = false;
-  const frontGeometry = boardFrom(parts, true);
-  const frontMaterials = [cover, cloth, insideCover];
-  const frontBoard = new THREE.Mesh(frontGeometry, overview ? cover : frontMaterials);
-  frontBoard.name = 'front-cover';
-  frontBoard.position.set(width / 2, 0, 0);
-  frontCover.add(frontBoard);
-  // Pastedown: wove endpaper inside the cloth turn-ins, darker where it bends
-  // into the joint. Built here, drawn only while the board is open.
-  const turnIn = height * .028, joint = height * .004;
-  const pasteWidth = width - turnIn - joint, pasteHeight = height - turnIn * 2;
-  const paperBuffers = rustBookPaperBuffers(rustCore(), pasteWidth, pasteHeight,
-    width - height * .009 * 2, height - height * .009 * 2, height * .009, overview);
-  if (!paperBuffers) throw new RangeError('Medidas de guardas no válidas.');
-  const pasteGeometry = paperMeshGeometry(paperBuffers.pastedown);
-  const endpaper = new THREE.MeshStandardMaterial({ color:'#ffffff', roughness:1, vertexColors:true,
-    map:overview ? null : sharedTexture('endpaper', endpaperTexture) });
-  endpaper.map?.repeat.set(3 * pasteWidth / pasteHeight, 3);
-  const pastedown = new THREE.Mesh(pasteGeometry, endpaper);
-  pastedown.name = 'endpaper'; pastedown.rotation.y = Math.PI; pastedown.visible = false;
-  pastedown.position.set(-width / 2 + joint + pasteWidth / 2, 0, -board * .54);
-  frontBoard.add(pastedown);
-  // One material for face and edges: a single draw call per back board.
-  const backBoard = new THREE.Mesh(boardFrom(parts), cloth);
-  backBoard.name = 'back-cover';
-  backBoard.position.z = -thickness / 2 + board / 2;
-  group.add(backBoard);
-  const inset = height * .009;
-  let edges, pageBlock;
-  if (overview) {
-    // A thumbnail keeps a plain block and one tiny owned raster.
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
-    needRustShelf().book_thumbnail_pages(canvas.getContext('2d'));
-    const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
-    edges = new THREE.MeshPhysicalMaterial({ map, roughness:1 });
-    pageBlock = box(width - inset * 2, height - inset * 2, thickness - board * 2.4, edges, inset * .3);
-  } else {
-    // One crescent-shaped block and one shared atlas: a single draw call.
-    const size = detail ? 512 : 256, map = sharedTexture(`pages-${size}`, () => pageEdgeAtlas(size));
-    edges = new THREE.MeshPhysicalMaterial({ map, roughness:1, vertexColors:true });
-    pageBlock = new THREE.Mesh(pageBlockGeometry(width, height, thickness, { board, inset, detail }), [edges]);
-    group.add(pageBlock);
-  }
-  applyPaperFinish(edges, book.pageEdgeFinish);
-  pageBlock.name = 'page-block';
-  const pageWidth = width - inset * 2, pageHeight = height - inset * 2;
-  const pageFront = thickness / 2 - board * 1.2 + board * .03;
-  // The paper runs on into the joint, where the leaf bends down into shade,
-  // so no strip of bare text block shows between the two pages.
-  const paperGeometry = paperMeshGeometry(paperBuffers.paper);
-  const pagePaper = new THREE.Mesh(paperGeometry,
-    new THREE.MeshBasicMaterial({ color:'#ffffff', toneMapped:false, vertexColors:true }));
-  pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
-  // Fill depth with the opaque paper before shading the case beneath it.
-  // Materials and geometry are unchanged; hidden physical fragments can now
-  // fail the depth test, especially when the reading page fills the screen.
-  pagePaper.renderOrder = -2;
-  pagePaper.visible = false;
-  pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
-  // Both map and blending variants exist before the first flyout frame.
-  // Replacing their pixels cannot introduce a shader variant when opening.
-  const blankPageMap = () => {
-    const map = new THREE.DataTexture(new Uint8Array([255,255,255,255]), 1, 1);
-    map.colorSpace = THREE.SRGBColorSpace; map.minFilter = THREE.LinearFilter;
-    map.generateMipmaps = false; map.needsUpdate = true; return map;
-  };
-  // The saved rasters remain resident for reopening, but are completely
-  // occluded by the opaque closed board. Hide only their common parent so
-  // snapshot/theme flags and texture uploads keep their existing contracts.
-  const pagePrint = new THREE.Group();
-  pagePrint.name = 'reading-page-print'; pagePrint.visible = false; group.add(pagePrint);
-  const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap(), transparent:true });
-  const pageImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), pageMaterial);
-  pageImage.name = 'reading-page';
-  pageImage.position.set(inset * .3, 0, pageFront + board * .02);
-  pageImage.visible = false; pagePrint.add(pageImage);
-  group.userData.pageSurface = pageImage;
-  // The same page on white stock sits just behind the reader's own: the
-  // book opens and closes on white paper and the reading theme fades over it
-  // (pageTheme 0 = white stock, 1 = the reader's theme). Only exists when the
-  // snapshot carries a variant, i.e. for each reader theme, including sepia.
-  const stockMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap() });
-  const stockImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), stockMaterial);
-  stockImage.name = 'reading-page-stock';
-  stockImage.position.set(inset * .3, 0, pageFront + board * .01);
-  stockImage.renderOrder = -1;
-  stockImage.visible = false; pagePrint.add(stockImage);
-  let pageTheme = 1, themeTone = null, stockTone = null, installedRaster = null;
-  const paperScratch = new THREE.Color();
-  const applyPageTheme = () => {
-    const faded = stockImage.visible;
-    // Transparent for the whole life of a variant (never toggled while it is
-    // on screen: that would recompile the program mid-opening); at opacity 1
-    // the blend is exactly the opaque result.
-    pageMaterial.opacity = faded ? pageTheme : 1;
-    const tone = faded ? mixPaperTone(paperScratch, stockTone, themeTone, pageTheme) : themeTone;
-    if (tone) { pagePaper.material.color.copy(tone); leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
-  };
-  group.userData.setPageTheme = (mix, redraw = true) => {
-    if (disposed) return false;
-    const next = Math.max(0, Math.min(1, Number.isFinite(Number(mix)) ? Number(mix) : 1));
-    const changed = next !== pageTheme;
-    pageTheme = next;
-    if (!stockImage.visible) return false;
-    applyPageTheme();
-    if (changed && redraw) group.userData.invalidate?.();
-    return true;
-  };
-  group.userData.getPageTheme = () => pageTheme;
-  // `redraw:false` builds the page without rendering it (the caller draws later).
-  group.userData.getPageTextures = () => stockImage.visible ? [...new Set([pageMaterial.map, stockMaterial.map])] : [pageMaterial.map];
-  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme, redraw = true } = {}) => {
-    if (disposed || !snapshot?.source) return false;
-    const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
-    const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
-    if (!(imageWidth > 0 && imageHeight > 0)) return false;
-    const variant = snapshot.paper?.source ? snapshot.paper : null;
-    const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
-      && Number(variant.height || variant.source.height) === imageHeight;
-    const themeRaster = pageRaster(snapshot.source), stockRaster = sameSize && pageRaster(variant.source);
-    // Fresh copies of one settled render contain identical pixels. Preserve
-    // the already uploaded textures and geometry; bounds and locator metadata
-    // still come from this new snapshot. DOM/unknown copies always rebuild.
-    if (themeRaster && stockRaster && installedRaster?.theme === themeRaster
-      && installedRaster.stock === stockRaster && installedRaster.width === imageWidth
-      && installedRaster.height === imageHeight) {
-      if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
-      applyPageTheme();
-      group.userData.pageSnapshot = snapshot;
-      if (redraw) group.userData.invalidate?.();
-      return true;
-    }
-    const fit = fitCoverImage(imageWidth, imageHeight, pageWidth, pageHeight);
-    pageImage.geometry.dispose();
-    pageImage.geometry = new THREE.PlaneGeometry(fit.width, fit.height);
-    const pageTexture = source => {
-      const map = new THREE.CanvasTexture(source);
-      map.colorSpace = THREE.SRGBColorSpace;
-      map.minFilter = THREE.LinearFilter; map.generateMipmaps = false;
-      return map;
-    };
-    const map = pageTexture(snapshot.source);
-    pageMaterial.map?.dispose(); pageMaterial.map = map; pageMaterial.needsUpdate = true;
-    pageImage.visible = true;
-    // The stock variant must be the same page: same canvas size.
-    stockMaterial.map?.dispose();
-    if (sameSize) {
-      stockImage.geometry.dispose(); stockImage.geometry = pageImage.geometry.clone();
-      stockMaterial.map = themeRaster && themeRaster === stockRaster ? map : pageTexture(variant.source);
-      stockMaterial.needsUpdate = true;
-      stockImage.visible = true;
-    } else {
-      stockMaterial.map = blankPageMap();
-      stockImage.visible = false; pageMaterial.opacity = 1;
-    }
-    if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
-    // Match the reader's snapshot; ordinary unthemed book paper stays white.
-    themeTone = paperTone(snapshot.source, snapshot.toneKey);
-    stockTone = sameSize ? paperTone(variant.source, variant.toneKey) : null;
-    if (stockImage.visible) applyPageTheme();
-    else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
-    group.userData.pageSnapshot = snapshot;
-    installedRaster = themeRaster && stockRaster ? {theme:themeRaster,stock:stockRaster,width:imageWidth,height:imageHeight} : null;
-    if (redraw) group.userData.invalidate?.();
-    return true;
-  };
-  let bookmark = bookmarkFor(book);
-  let ribbonMaterial = null, ribbonMesh = null, coverOpening = 0, bookmarkWithdraw = 0;
-  // The ribbon's silk follows the cloth it has to stand out from.
-  let clothColor = style.color;
-  const silk = () => ribbonSilk(ribbonSeed, clothColor, bookmark.finished);
-  if (bookmark) {
-    ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
-    ribbonMesh = new THREE.Mesh(
-      bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek, { segments:ribbonSegments, seed:ribbonSeed }),
-      ribbonMaterial
-    );
-    ribbonMesh.renderOrder = 4;
-    ribbonMesh.name = 'reading-bookmark';
-    group.add(ribbonMesh);
-  }
-  // Lifted copies only: the leaves already read turn over with the board, so
-  // an open book shows paper curling into the gutter, never a bare pastedown.
-  const leafDepth = () => (thickness - board * 2.4) * THREE.MathUtils.clamp(bookmark?.progress ?? 0, .025, .5);
-  // Text paper: cooler and smoother than the endpaper, the tone of the page.
-  // Like the saved page beside it, it skips tone mapping: the two sheets must
-  // not be graded differently. Matte paper has no highlight to compress.
-  const leafPaper = detail ? new THREE.MeshStandardMaterial({ color:new THREE.Color(0xffffff).multiply(LEAF_LIGHT), roughness:.93, vertexColors:true,
-    map:sharedTexture('endpaper', endpaperTexture), toneMapped:false }) : null;
-  // Finer than the endpaper: the fibres shrink into the grain of a book paper.
-  leafPaper?.map.repeat.set(6 * width / height, 6);
-  const readLeaves = detail
-    ? new THREE.Mesh(leafStackGeometry(width, height, leafDepth(), { board, inset }), [leafPaper, edges]) : null;
-  if (readLeaves) { readLeaves.name = 'read-leaves'; readLeaves.visible = false; frontCover.add(readLeaves); }
-  // The joint grooves are pressed into the board artwork (finishBoard), so
-  // no raised strips sit on top of the covers any more.
-  const bindingMesh = new THREE.Mesh(bindingGeometry(width, height, thickness, bindingSegments, surface.relief, reliefRows), binding);
-  bindingMesh.name = 'binding';
-  group.add(bindingMesh);
-  const capMaterials = [];
-  for (const y of [-height / 2, height / 2]) {
-    const material = new THREE.MeshPhysicalMaterial({ color:style.color, side:THREE.DoubleSide });
-    applySpineCapFinish(material, book);
-    applyBookReflectionSurface(material, { seed:`${surfaceSeed}|${y < 0 ? 'tail' : 'head'}`, strength:.01,
-      uvScale:[1 / width, 1 / thickness] });
-    const mesh = new THREE.Mesh(capFrom(parts.cap), material);
-    mesh.name = y < 0 ? 'binding-tail-cap' : 'binding-head-cap';
-    capMaterials.push(mesh.material);
-    mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
-  }
-  let disposed = false, coverRevision = 0, currentCoverUrl, releaseImage = () => {}, resolveCoverReady = () => {};
-  let coverImageBounds = null, coverMaskSource = null;
-  const reliefSource = () => {
-    const printed = cover.map?.image;
-    if (!printed || !coverImageBounds) return printed;
-    if (coverMaskSource) return coverMaskSource;
-    const { x, y, width, height } = coverImageBounds;
-    if (x === 0 && y === 0 && width === printed.width && height === printed.height) return printed;
-    const canvas = document.createElement('canvas'); canvas.width = printed.width; canvas.height = printed.height;
-    const context = canvas.getContext('2d'); context.drawImage(printed, 0, 0);
-    // The laminate still covers the whole board, but colour selection belongs
-    // only to the printed image. Transparent margins cannot become a white/
-    // cloth colour proposal or receive relief merely because their ink matches.
-    context.clearRect(0, 0, canvas.width, y);
-    context.clearRect(0, y + height, canvas.width, canvas.height - y - height);
-    context.clearRect(0, y, x, height);
-    context.clearRect(x + width, y, canvas.width - x - width, height);
-    return coverMaskSource = canvas;
-  };
-  // ---- cover relief: raised and varnished zones selected by printed colour.
-  // Only the portable colour/tolerance/strength choice is saved. Maps swap into slots the cover
-  // material already compiled with: selecting a relief links no program.
-  let wantedRelief = null, reliefRevision = 0, reliefMaps = null, reliefOwned = new Set();
-  let reliefController = null, materialRevision = 0;
-  const mapTexture = (rgba, width, height) => {
-    // A canvas premultiplies transparent pixels and discards their RGB. The
-    // normal's alpha stores mask=0 outside, where RGB must remain 128/128/255.
-    // Raw pixels preserve those neutral normals with the same UV/filtering.
-    const bytes = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
-    const texture = new THREE.DataTexture(bytes, width, height);
-    texture.flipY = true;
-    texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.generateMipmaps = true;
-    texture.anisotropy = 4;
-    texture.needsUpdate = true;
-    return texture;
-  };
-  const adoptReliefTextures = (normal, material) => {
-    reliefOwned = needRustShelf().book_adopt_relief_textures(cover, reliefOwned, normal, material);
-  };
-  const reliefGain = strength => 3.5 * strength;
-  const reliefKey = choice => choice.layers ? JSON.stringify(['layers',...coverReliefLayers(choice)
-    .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>[layer.color,layer.tolerance])])
-    : JSON.stringify([choice.id, choice.color ?? null, choice.tolerance ?? null]);
-  const reliefStrengthKey=choice=>choice.layers?JSON.stringify(coverReliefLayers(choice)
-    .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>layer.strength)):null;
-  const applyReliefUniforms = () => {
-    setReliefBaseFinish();
-    reliefUniforms.bookReliefStrength.value = wantedRelief && reliefMaps ? (wantedRelief.layers?1:wantedRelief.strength) : 0;
-    if (!wantedRelief || !reliefMaps) {
-      cover.metalness = 0; cover.clearcoatNormalScale.set(1, 1);
-      if (reliefArmed) laminate(coverFinishValue);
-      return;
-    }
-    // Full clearcoat share: the map's red channel carries the laminate's own
-    // share outside the varnished zones, so a matte board still gets gloss spots.
-    // Varnish is a dielectric layer over unchanged printed ink, including
-    // yellow ink. Colour selection never implies a metallic pigment.
-    cover.clearcoat = 1; cover.metalness = 0;
-    // Multicolour intensities are already encoded independently in the height
-    // and finish pixels. A global scalar must not attenuate all other layers.
-    cover.clearcoatNormalScale.setScalar(reliefGain(wantedRelief.layers?1:wantedRelief.strength));
-  };
-  async function bakeReliefMaterial(revision, maps = reliefMaps, signal) {
-    if (!maps) return false;
-    const ticket = ++materialRevision;
-    const finishValue = coverSurfaceFinish, finish = SURFACE_FINISHES[finishValue];
-    const rgba = await runInSlices(composeMaterialMap(maps.pixels, {
-      clearcoat:finish.clearcoat, roughness:finish.roughness, clearcoatRoughness:finish.clearcoatRoughness
-    }));
-    if (revision !== reliefRevision || ticket !== materialRevision || signal?.aborted || disposed) return false;
-    // A finish can change while the first colour map is still being built;
-    // at that point there is no installed map for updateCoverAppearance to
-    // rebake. Do not commit material pixels computed for the old laminate.
-    if (finishValue !== coverSurfaceFinish) return bakeReliefMaterial(revision, maps, signal);
-    const { width, height } = maps.size;
-    adoptReliefTextures(maps.normalTexture, mapTexture(rgba, width, height));
-    reliefMaps = maps;
-    applyReliefUniforms();
-    return true;
-  }
-  function clearRelief() {
-    reliefMaps = null;
-    materialRevision++;
-    adoptReliefTextures(neutralTexture(128, 128, 255, 0), neutralTexture(255, 255, 0));
-    applyReliefUniforms();
-    group.userData.invalidate?.();
-  }
-  group.userData.coverRelief = () => normalizeCoverRelief(wantedRelief);
-  group.userData.supportsCoverRelief = reliefCapable;
-  // Only the cover editor needs these shader slots before its first choice.
-  // Ordinary flyouts retain the cheaper material until editing is requested.
-  group.userData.prepareCoverRelief = () => {
-    if (disposed || !reliefCapable) return false;
-    armRelief();
-    return true;
-  };
-  /** Apply (or clear, with null) a relief choice. Resolves true once drawn. */
-  group.userData.setCoverRelief = async relief => {
-    if (disposed || !reliefCapable) return false;
-    reliefController?.abort();
-    const controller = reliefController = new AbortController();
-    const next = normalizeCoverRelief(relief), revision = ++reliefRevision;
-    wantedRelief = next;
-    if (!next) { if (reliefArmed) clearRelief(); return true; }
-    armRelief();
-    // Only installed maps may be reused. A pending bake owns no cached state.
-    const cached=reliefMaps && reliefMaps.key === reliefKey(next) && reliefMaps.source === reliefSource();
-    if (cached && (!next.layers || reliefMaps.strengthKey===reliefStrengthKey(next))) {
-      applyReliefUniforms(); group.userData.invalidate?.(); return true;
-    }
-    let built;
-    try {
-      await group.userData.ready;
-      if (revision !== reliefRevision || disposed || controller.signal.aborted) return false;
-      // The map uses the same fitted raster/UVs as the printed cover, including
-      // any aspect-ratio margins. Analysing the unfitted source shifts masks.
-      const source = reliefSource();
-      if (!source) return false;
-      built = cached ? await updateReliefMapStrengths(reliefMaps,next,{signal:controller.signal})
-        : await buildReliefMaps(source, next, { maxSize: overview ? 128 : shelf && !inspectionResolution ? 256 : 512, selectionAlpha: true, signal: controller.signal });
-      if (!built || revision !== reliefRevision || disposed || controller.signal.aborted) return false;
-      const { width, height } = built.size;
-      const normals = built.normalSelectionAlpha ? built.normal : built.normal.slice();
-      for (let i = 0; !built.normalSelectionAlpha && i < width * height; i++) {
-        // Alpha is not used by a normal map. Keep the selection there so the
-        // shader restores exact base-finish floats outside it (no byte-rounding
-        // drift), without another texture, mesh, draw or shader variant.
-        normals[i * 4 + 3] = built.pixels.mask?.[i]
-          ?? Math.max(built.pixels.gloss[i], built.pixels.foil[i], built.pixels.heightMap?.[i] ?? 0);
-      }
-      built.normalTexture = mapTexture(normals, width, height);
-      built.id = next.id; built.key = reliefKey(next); built.strengthKey=reliefStrengthKey(next); built.source = source;
-      if (!await bakeReliefMaterial(revision, built, controller.signal)) {
-        built.normalTexture.dispose(); return false;
-      }
-      group.userData.invalidate?.();
-      return true;
-    } catch {
-      if (built?.normalTexture && !reliefOwned.has(built.normalTexture)) built.normalTexture.dispose();
-      return false;
-    }
-  };
-  function updateCoverSource(url, nextBook = book, nextStyle = style, { force = false } = {}) {
-    if (disposed) return Promise.resolve(false);
-    if (!force && url && url === currentCoverUrl) return group.userData.ready;
-    reliefController?.abort(); reliefRevision++;
-    if (reliefArmed && reliefMaps) clearRelief();
-    resolveCoverReady(false);
-    const revision = ++coverRevision, releasePrevious = releaseImage;
-    currentCoverUrl = url;
-    group.userData.ready = new Promise(resolve => { resolveCoverReady = resolve; });
-    const settle = loaded => {
-      if (revision !== coverRevision || disposed) return;
-      group.userData.coverLoaded = loaded;
-      resolveCoverReady(loaded);
-      if (loaded && wantedRelief) group.userData.setCoverRelief(wantedRelief);
-      group.userData.invalidate?.();
-    };
-    const replaceMap = (map, imageBounds = null) => {
-      coverImageBounds = imageBounds; coverMaskSource = null;
-      map.anisotropy = Math.min(16, renderer?.capabilities.getMaxAnisotropy() || 1);
-      cover.map?.dispose(); cover.map = map; cover.needsUpdate = true;
-    };
-    if (!url) {
-      releaseImage = () => {};
-      replaceMap(coverTexture(nextBook, nextStyle, textureHeight, maxTextureDimension, level));
-      setCoverGrain('cloth'); settle(true);
-    } else releaseImage = acquireCoverImage(url, (image, entry) => {
-      if (revision !== coverRevision || disposed) return;
-      // The previous cover remains on the mesh until every new pixel is ready.
-      try {
-        const dimensions = coverRasterDimensions(nextStyle.coverRatio, textureHeight, maxTextureDimension);
-        // The idle detailed model and its flyout print the same jacket. Keep
-        // one bounded raster with the decoded image while shelf copies exist.
-        // Each material owns a texture clone; pixels and Source stay exact.
-        const key = JSON.stringify([dimensions.width, dimensions.height, nextBook.id,
-          nextBook.title, nextStyle.color, level === 'overview']);
-        const { map:fittedMap, bounds:fit } = reuseCoverRaster(level === 'detail' ? entry : null, key, () => {
-          const canvas = document.createElement('canvas');
-          canvas.height = dimensions.height; canvas.width = dimensions.width;
-          const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
-          const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
-          c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-          c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
-          // A printed jacket is still paper over board: joint, edges, corners.
-          const unit = canvas.height / 1024;
-          c.setTransform?.(unit, 0, 0, unit, 0, 0);
-          finishBoard(c, canvas.width / unit, coverSeed(nextBook, nextStyle, 'print'), { wear:level !== 'overview' });
-          const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
-          return { map:fittedMap, bounds:fit };
-        });
-        replaceMap(fittedMap, fit); setCoverGrain('paper'); settle(true);
-      } catch { settle(false); }
-    }, () => settle(false));
-    releasePrevious();
-    return group.userData.ready;
-  }
-  group.userData.updateCoverSource = updateCoverSource;
-  updateCoverSource(coverUrl);
-  if (reliefCapable && book.coverRelief) group.userData.setCoverRelief(book.coverRelief);
-  // Only a download still in flight (or one that already failed) needs the
-  // generated case meanwhile; a decoded image or a generated cover is on.
-  if (!cover.map) {
-    cover.map = coverTexture(book, style, textureHeight, maxTextureDimension, level); cover.needsUpdate = true;
-  }
-  group.userData.dispose = () => {
-    if (disposed) return;
-    releaseImage(); resolveCoverReady(false);
-    reliefController?.abort();
-    disposed = true; reliefRevision++; materialRevision++; reliefMaps = null; coverMaskSource = null;
-    needRustShelf().book_dispose_resources(group, insideCover, surface);
-  };
-  group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
-    const previous = surface;
-    surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf, overview, inspectionResolution);
-    // Font arrival/editor changes replace pixels, not the renderer's sampling quality.
-    surface.map.anisotropy = previous.map.anisotropy;
-    surface.channels.anisotropy = previous.channels.anisotropy;
-    Object.assign(binding, surface.material); updateSpineFade?.(nextBook, nextStyle);
-    binding.needsUpdate = true;
-    releaseSurface(previous);
-    bindingMesh.geometry.dispose();
-    bindingMesh.geometry = bindingGeometry(width, height, thickness, bindingSegments, surface.relief, reliefRows);
-    cloth.color.set(nextStyle.color); insideCover.color.set(nextStyle.color);
-    clothColor = nextStyle.color;
-    if (ribbonMaterial) tintRibbon(ribbonMaterial, silk(), !detail);
-    for (const material of capMaterials) {
-      material.color.set(nextStyle.color);
-      applySpineCapFinish(material, nextBook);
-    }
-  };
-  group.userData.updateCoverAppearance = nextBook => {
-    const finishChanged = surfaceFinish(nextBook.coverFinish) !== coverSurfaceFinish;
-    coverSurfaceFinish = surfaceFinish(nextBook.coverFinish);
-    coverFinishValue = nextBook.coverFinish;
-    laminate(nextBook.coverFinish);
-    applyReliefUniforms();
-    updateCoverGrainStrength();
-    const wanted = 'coverRelief' in nextBook ? normalizeCoverRelief(nextBook.coverRelief) : wantedRelief;
-    const selectionChanged = JSON.stringify(wanted) !== JSON.stringify(wantedRelief);
-    if (reliefCapable && selectionChanged) {
-      group.userData.setCoverRelief(wanted);
-    } else if (finishChanged && reliefMaps) {
-      const revision = reliefRevision;
-      bakeReliefMaterial(revision).then(done => { if (done) group.userData.invalidate?.(); });
-    }
+  return needRustShelf().book_model_create(modelHost(), book, style, width, height, thickness, coverUrl,
+    shelf, overview, inspectionResolution, eagerRelief);
+}
 
-  };
-  let ribbonBatch = 0, ribbonDirty = false;
-  group.userData.setCoverOpen = amount => {
-    const next = Math.max(0, Math.min(1, amount));
-    frontCover.rotation.y = -Math.PI * .94 * next;
-    if (overview) frontBoard.material = next > 0 ? frontMaterials : cover;
-    // Closed shelf books need neither the occluded paper plane nor the
-    // cover's inner material submitted to the GPU on every shelf repaint.
-    pagePaper.visible = pagePrint.visible = next > 0;
-    insideCover.visible = pastedown.visible = next > 0;
-    if (readLeaves) readLeaves.visible = next > 0;
-    if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
-  };
-  function updateRibbonGeometry() {
-    if (ribbonBatch) { ribbonDirty = true; return; }
-    if (!ribbonMesh || !bookmark) return;
-    const previous = ribbonMesh.geometry;
-    ribbonMesh.geometry = bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw,
-        segments:ribbonSegments, seed:ribbonSeed, geometry:previous });
-    if (ribbonMesh.geometry !== previous) previous.dispose();
-    ribbonMesh.visible = bookmarkWithdraw < .999;
+// ---- per frame: the board's opening, the ribbon and the page's paper ---------------------------------
+function setCoverOpen(s, amount) {
+  const next = Math.max(0, Math.min(1, amount));
+  s.frontCover.rotation.y = -Math.PI * .94 * next;
+  if (s.overview) s.frontBoard.material = next > 0 ? s.frontMaterials : s.cover;
+  // Closed shelf books need neither the occluded paper plane nor the
+  // cover's inner material submitted to the GPU on every shelf repaint.
+  s.pagePaper.visible = s.pagePrint.visible = next > 0;
+  s.insideCover.visible = s.pastedown.visible = next > 0;
+  if (s.readLeaves) s.readLeaves.visible = next > 0;
+  if (Math.abs(next - s.coverOpening) > .00001) { s.coverOpening = next; updateRibbonGeometry(s); }
+}
+function updateRibbonGeometry(s) {
+  if (s.ribbonBatch) { s.ribbonDirty = true; return; }
+  if (!s.ribbonMesh || !s.bookmark) return;
+  const previous = s.ribbonMesh.geometry;
+  s.ribbonMesh.geometry = bookmarkGeometry(s.width, s.height, s.thickness, s.bookmark.progress, s.bookmark.peek,
+    { open:Math.max(0, Math.min(1, (s.coverOpening - .1) / .9)), withdraw:s.bookmarkWithdraw,
+      segments:s.ribbonSegments, seed:s.ribbonSeed, geometry:previous });
+  if (s.ribbonMesh.geometry !== previous) previous.dispose();
+  s.ribbonMesh.visible = s.bookmarkWithdraw < .999;
+}
+function setBookmarkWithdraw(s, amount) {
+  const next = Math.max(0, Math.min(1, Number(amount) || 0));
+  if (Math.abs(next - s.bookmarkWithdraw) > .00001) { s.bookmarkWithdraw = next; updateRibbonGeometry(s); }
+}
+// Both properties describe one displayed pose. Build its ribbon once,
+// after both values settle, rather than constructing an invisible midpoint.
+function setMotionPose(s, opening, withdrawal) {
+  s.ribbonBatch++;
+  try {
+    s.group.userData.setCoverOpen(opening);
+    s.group.userData.setBookmarkWithdraw(withdrawal);
+  } finally {
+    s.ribbonBatch--;
+    if (!s.ribbonBatch && s.ribbonDirty) { s.ribbonDirty = false; updateRibbonGeometry(s); }
   }
-  group.userData.setBookmarkWithdraw = amount => {
-    const next = Math.max(0, Math.min(1, Number(amount) || 0));
-    if (Math.abs(next - bookmarkWithdraw) > .00001) { bookmarkWithdraw = next; updateRibbonGeometry(); }
+}
+function setPageTheme(s, mix, redraw = true) {
+  if (s.disposed) return false;
+  const next = Math.max(0, Math.min(1, Number.isFinite(Number(mix)) ? Number(mix) : 1));
+  const changed = next !== s.pageTheme;
+  s.pageTheme = next;
+  if (!s.stockImage.visible) return false;
+  applyPageTheme(s);
+  if (changed && redraw) s.group.userData.invalidate?.();
+  return true;
+}
+// Transparent for the whole life of a variant (never toggled while it is on screen: that would recompile
+// the program mid-opening); at opacity 1 the blend is exactly the opaque result.
+function applyPageTheme(s) {
+  const faded = s.stockImage.visible;
+  s.pageMaterial.opacity = faded ? s.pageTheme : 1;
+  const tone = faded ? mixPaperTone(s.paperScratch, s.stockTone, s.themeTone, s.pageTheme) : s.themeTone;
+  if (tone) { s.pagePaper.material.color.copy(tone); s.leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
+}
+
+// ---- cover relief: the asynchronous bake of the maps the shelf module installs -----------------------
+const reliefKey = choice => choice.layers ? JSON.stringify(['layers',...coverReliefLayers(choice)
+  .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>[layer.color,layer.tolerance])])
+  : JSON.stringify([choice.id, choice.color ?? null, choice.tolerance ?? null]);
+const reliefStrengthKey=choice=>choice.layers?JSON.stringify(coverReliefLayers(choice)
+  .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>layer.strength)):null;
+async function bakeReliefMaterial(s, revision, maps = s.reliefMaps, signal) {
+  if (!maps) return false;
+  const ticket = ++s.materialRevision;
+  const finishValue = s.coverSurfaceFinish, finish = SURFACE_FINISHES[finishValue];
+  const rgba = await runInSlices(composeMaterialMap(maps.pixels, {
+    clearcoat:finish.clearcoat, roughness:finish.roughness, clearcoatRoughness:finish.clearcoatRoughness
+  }));
+  if (revision !== s.reliefRevision || ticket !== s.materialRevision || signal?.aborted || s.disposed) return false;
+  // A finish can change while the first colour map is still being built;
+  // at that point there is no installed map for updateCoverAppearance to
+  // rebake. Do not commit material pixels computed for the old laminate.
+  if (finishValue !== s.coverSurfaceFinish) return bakeReliefMaterial(s, revision, maps, signal);
+  const { width, height } = maps.size, rust = needRustShelf();
+  rust.book_model_adopt_relief(s, maps.normalTexture, rust.book_model_map_texture(THREE, rgba, width, height));
+  s.reliefMaps = maps;
+  rust.book_model_relief_uniforms(s);
+  return true;
+}
+/** Apply (or clear, with null) a relief choice. Resolves true once drawn. */
+async function setCoverRelief(s, relief) {
+  if (s.disposed) return false;
+  s.reliefController?.abort();
+  const controller = s.reliefController = new AbortController();
+  const next = normalizeCoverRelief(relief), revision = ++s.reliefRevision, rust = needRustShelf();
+  s.wantedRelief = next;
+  if (!next) { if (s.reliefArmed) rust.book_model_clear_relief(s); return true; }
+  rust.book_model_arm_relief(s);
+  // Only installed maps may be reused. A pending bake owns no cached state.
+  const cached=s.reliefMaps && s.reliefMaps.key === reliefKey(next) && s.reliefMaps.source === rust.book_model_relief_source(s);
+  if (cached && (!next.layers || s.reliefMaps.strengthKey===reliefStrengthKey(next))) {
+    rust.book_model_relief_uniforms(s); s.group.userData.invalidate?.(); return true;
+  }
+  let built;
+  try {
+    await s.group.userData.ready;
+    if (revision !== s.reliefRevision || s.disposed || controller.signal.aborted) return false;
+    // The map uses the same fitted raster/UVs as the printed cover, including
+    // any aspect-ratio margins. Analysing the unfitted source shifts masks.
+    const source = rust.book_model_relief_source(s);
+    if (!source) return false;
+    built = cached ? await updateReliefMapStrengths(s.reliefMaps,next,{signal:controller.signal})
+      : await buildReliefMaps(source, next, { maxSize: s.overview ? 128 : s.shelf && !s.inspectionResolution ? 256 : 512, selectionAlpha: true, signal: controller.signal });
+    if (!built || revision !== s.reliefRevision || s.disposed || controller.signal.aborted) return false;
+    const { width, height } = built.size;
+    const normals = built.normalSelectionAlpha ? built.normal : built.normal.slice();
+    for (let i = 0; !built.normalSelectionAlpha && i < width * height; i++) {
+      // Alpha is not used by a normal map. Keep the selection there so the
+      // shader restores exact base-finish floats outside it (no byte-rounding
+      // drift), without another texture, mesh, draw or shader variant.
+      normals[i * 4 + 3] = built.pixels.mask?.[i]
+        ?? Math.max(built.pixels.gloss[i], built.pixels.foil[i], built.pixels.heightMap?.[i] ?? 0);
+    }
+    built.normalTexture = rust.book_model_map_texture(THREE, normals, width, height);
+    built.id = next.id; built.key = reliefKey(next); built.strengthKey=reliefStrengthKey(next); built.source = source;
+    if (!await bakeReliefMaterial(s, revision, built, controller.signal)) {
+      built.normalTexture.dispose(); return false;
+    }
+    s.group.userData.invalidate?.();
+    return true;
+  } catch {
+    if (built?.normalTexture && !s.reliefOwned.has(built.normalTexture)) built.normalTexture.dispose();
+    return false;
+  }
+}
+
+// What the shelf module calls back: three, the painters, the rust-core meshes and the asynchronous parts.
+let modelHostObject;
+function modelHost() {
+  return modelHostObject ||= {
+    three:THREE, rust:needRustShelf(), noop:() => {},
+    finish:(value, fallback) => SURFACE_FINISHES[surfaceFinish(value, fallback)], surfaceFinish, normalizeRelief:normalizeCoverRelief,
+    reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFade:spineGrazingFade, installRelief:installCoverRelief,
+    clothNormals, paperNormals, endpaperTexture, pageEdgeAtlas, ribbonNotch,
+    paperBuffers:(...args) => rustBookPaperBuffers(rustCore(), ...args),
+    pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
+    silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, fit:fitCoverImage, paperTone, applyPageTheme,
+    acquire:acquireCoverImage, reuse:reuseCoverRaster, random:seededRandom, paintCloth, paintWeave, drawDevice,
+    title:displayBookTitle, author:normalizeBookAuthor, anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
+    pageTheme:setPageTheme, getPageTheme:s => s.pageTheme, coverRelief:s => normalizeCoverRelief(s.wantedRelief),
+    setCoverRelief, rebake:(s, revision) => { bakeReliefMaterial(s, revision).then(done => { if (done) s.group.userData.invalidate?.(); }); },
+    coverOpen:setCoverOpen, bookmarkWithdraw:setBookmarkWithdraw, motionPose:setMotionPose, ribbonGeometry:updateRibbonGeometry,
+    preparePresentation:(s, idle, current = () => true) => prepareBookPresentation(s.group, idle, () => !s.disposed && current()),
+    prepareDetailPresentation:(s, idle, current = () => true) => prepareBookDetailPresentation(() => createBookModel(s.book, s.style,
+      s.width, s.height, s.thickness, s.coverUrl, { eagerRelief:false }), idle, () => !s.disposed && current())
   };
-  // Both properties describe one displayed pose. Build its ribbon once,
-  // after both values settle, rather than constructing an invisible midpoint.
-  group.userData.setMotionPose = (opening, withdrawal) => {
-    ribbonBatch++;
-    try {
-      group.userData.setCoverOpen(opening);
-      group.userData.setBookmarkWithdraw(withdrawal);
-    } finally {
-      ribbonBatch--;
-      if (!ribbonBatch && ribbonDirty) { ribbonDirty = false; updateRibbonGeometry(); }
-    }
-  };
-  group.userData.hasBookmark = Boolean(bookmark);
-  group.userData.updateBookmark = nextBook => {
-    if (disposed) return;
-    bookmark = bookmarkFor(nextBook);
-    if (!bookmark && ribbonMesh) {
-      group.remove(ribbonMesh); ribbonMesh.geometry.dispose(); ribbonMaterial.alphaMap?.dispose(); ribbonMaterial.dispose();
-      ribbonMesh = null; ribbonMaterial = null;
-    }
-    if (bookmark) {
-      if (!ribbonMesh) {
-        ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
-        ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-          { segments:ribbonSegments, seed:ribbonSeed }), ribbonMaterial);
-        ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
-      } else {
-        // Progress changes the same silk and bends its existing strip. Keep its
-        // GPU material, alpha texture and buffers through the return animation.
-        ribbonMaterial.metalness = bookmark.finished ? .16 : 0;
-        tintRibbon(ribbonMaterial, silk(), !detail);
-      }
-      updateRibbonGeometry();
-    }
-    if (readLeaves) {
-      readLeaves.geometry.dispose();
-      readLeaves.geometry = leafStackGeometry(width, height, leafDepth(), { board, inset });
-    }
-    group.userData.hasBookmark = Boolean(bookmark);
-    group.userData.invalidate?.();
-  };
-  group.userData.updateEdgeAppearance = nextBook => applyPaperFinish(edges, nextBook.pageEdgeFinish);
-  if (shelf && !overview) group.userData.preparePresentation = (idle, current = () => true) =>
-    prepareBookPresentation(group, idle, () => !disposed && current());
-  if (shelf && !overview) group.userData.prepareDetailPresentation = (idle, current = () => true) =>
-    prepareBookDetailPresentation(() => createBookModel(book, style, width, height, thickness,
-      coverUrl, { eagerRelief:false }), idle, () => !disposed && current());
-  return group;
 }
 
 let renderer, studioEnvironment, presentationRenderer;
@@ -1053,21 +444,10 @@ export function getPresentationBookRenderer() {
 
 /** One warm reading-room rig for shelf, editor and opening/closing books.
  * The key matches the environment's window; shelf-lighting gives it shadows. */
+// A pale ceiling, a muted floor bounce, the warm key matching the environment's window, a cool fill and
+// a strip that travels over foil and clearcoat (rust-ui/src/book_model_build.rs).
 export function lightBookScene(scene, activeRenderer = renderer) {
-  scene.environment = studioEnvironmentFor(activeRenderer) || studioEnvironment;
-  scene.environmentIntensity = .55;
-  // Pale ceiling above, a muted bounce from the wooden floor below.
-  scene.add(new THREE.HemisphereLight(0xf6f3ee, 0x5e5047, .5));
-  const readerLight = new THREE.DirectionalLight(0xfff4e8, 1.9);
-  readerLight.position.set(-.46, .42, 1); scene.add(readerLight);
-  scene.userData.readerLight = readerLight;
-  // Cooler, dim fill from the other side keeps shaded spines legible.
-  const fillLight = new THREE.DirectionalLight(0xe6edff, .26);
-  fillLight.position.set(3, .8, 2.6); scene.add(fillLight);
-  // A modest off-axis strip still travels over metallic foil and clearcoat.
-  const stripLight = new THREE.DirectionalLight(0xfff8f0, .34);
-  stripLight.position.set(3, 1, 2); scene.add(stripLight);
-  return scene;
+  return needRustShelf().book_light_scene(THREE, scene, studioEnvironmentFor(activeRenderer) || studioEnvironment);
 }
 
 // Three owns scene construction and compilation; Rust owns idle sequencing,
