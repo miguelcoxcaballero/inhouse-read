@@ -6,11 +6,9 @@
 //
 // The rules (syllables, consonants, vowels, sheva, stress), the Nakdimon alphabet, the merge of the model's predictions and
 // the packing of the text (with the browser's Unicode normalisation and classes) are Rust (rust-ui/src/voice_kernels.rs over
-// rust-core/src/hebrew.rs). What stays here is the ONNX session and its queue. tests/unit/helpers/reference-hebrew.js
+// rust-core/src/hebrew.rs). What stays here is the module's wiring. tests/unit/helpers/reference-hebrew.js
 // is the frozen JavaScript implementation the Rust one is compared with.
 import { loadedRustVoiceUI as voice } from '../../rust-voice-ui.js'
-
-const NIQQUD_PATTERN = /[\u05B0-\u05BC\u05BF\u05C1\u05C2\u05C7]/u
 
 /** The IPA of a Hebrew text with niqqud: words joined by a space, as upstream does. */
 export const hebrewToIpa = text => voice().voice_host_hebrew_ipa(text)
@@ -21,45 +19,10 @@ export const mergeNiqqud = (letters, outputs) => voice().voice_host_merge_niqqud
 /** IPA code points use the voice's table, not the fixed table in the espeak WASM program. */
 export const phonemeIdsFromIpa = (ipa, idMap) => voice().voice_host_ipa_ids(ipa, idMap)
 
-const disposeTensors = tensors => {
-  for (const tensor of new Set(tensors)) { try { tensor?.dispose?.() } catch { /* continue releasing the other tensors */ } }
-}
-
-/** Cached Nakdimon bytes are passed from the page; this module never downloads during reading. */
-export async function createHebrewPhonemizer({ ort, model, config }) {
-  if (!(model instanceof ArrayBuffer) || !model.byteLength) throw new Error('Hebrew phonemizer model is not available')
-  const idMap = config?.phoneme_id_map
-  if (!['_', '^', '$'].every(mark => Array.isArray(idMap?.[mark]) && idMap[mark].length)) throw new Error('Hebrew phoneme id map is not available')
-  const session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
-  if (!session.inputNames?.length || !['N', 'D', 'S'].every(name => session.outputNames?.includes(name))) {
-    await session.release().catch(() => {})
-    throw new Error('Nakdimon session has invalid inputs or outputs')
-  }
-  let chain = Promise.resolve(), destroyed = false, destruction = null
-  const phonemize = async text => {
-    if (destroyed) throw new Error('Hebrew phonemizer was released')
-    text = String(text || '')
-    if (!NIQQUD_PATTERN.test(text) && text) {
-      const letters = Array.from(text)
-      const input = new ort.Tensor('float32', nakdimonInputIds(text), [1, letters.length])
-      let outputs
-      try {
-        outputs = await session.run({ [session.inputNames[0]]: input })
-        if (destroyed) throw new Error('Hebrew phonemizer was released')
-        text = mergeNiqqud(letters, outputs)
-      } finally { disposeTensors([input, ...Object.values(outputs || {})]) }
-    }
-    return phonemeIdsFromIpa(hebrewToIpa(text), idMap)
-  }
-  return {
-    phonemize(text) {
-      const job = chain.then(() => phonemize(text))
-      chain = job.catch(() => {})
-      return job
-    },
-    destroy() {
-      destroyed = true
-      return destruction ||= chain.then(() => session.release())
-    }
-  }
+const KIT = { noop: () => {} }
+/** Cached Nakdimon bytes are passed from the page; this module never downloads during reading. The session checks, the
+ * queue, the inference and its release are the voice module (rust-ui/src/voice_hebrew.rs). */
+const create = ({ ort, model, config }) => voice().voice_hebrew_create({ ort, model, config }, KIT)
+export function createHebrewPhonemizer(options) {
+  try { return create(options) } catch (error) { return Promise.reject(error) }
 }
