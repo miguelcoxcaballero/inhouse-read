@@ -34,3 +34,15 @@ const model=new THREE.Object3D(),bin={userData:{openness:.3}},resolveDrop=()=>{}
 time('bin drop record',()=>reference.trashDropRecord(resolveDrop,1000,false,850,model,bin),()=>rust.scene_trash_drop_record(THREE,resolveDrop,1000,false,850,model,bin));
 const floor=new THREE.Mesh(new THREE.BoxGeometry(1,2,1)),wall=new THREE.Mesh(new THREE.PlaneGeometry(1,1)),room=Float64Array.from({length:11},(_,i)=>i*3+1);
 time('floor and wall',()=>reference.roomFloor(floor,wall,room),()=>rust.scene_room_floor(THREE,floor,wall,room));
+const scene=new rust.RustScene(390,1160,390,250,false,true,0),stand=new THREE.Group(),bounds=new THREE.Box3(new THREE.Vector3(-20,-2,-30),new THREE.Vector3(20,40,10));
+stand.userData.radius=18;
+time('bin stand',()=>reference.positionTrash(scene,stand,bounds,wall,-1160,12),()=>rust.scene_position_trash(scene,stand,bounds,wall,-1160,12));
+const map=new THREE.Texture(),renderer={capabilities:{getMaxAnisotropy:()=>16}};
+time('walnut map',()=>reference.walnutMap(map,renderer,true),()=>rust.scene_walnut_map(THREE,map,true,renderer));
+const pose={matrix:[1,2,3],scale:.6},rect={left:4,right:30,top:-2,bottom:90,width:26,height:92,closest:.5},stage={left:10,top:80};
+time('book pose',()=>reference.bookPose(pose,{rect},stage),()=>rust.scene_book_pose(pose,rect,stage));
+const held={model:new THREE.Object3D(),height:180},point=new THREE.Vector3(3,40,1),button={getBoundingClientRect:()=>({top:0,height:200})};
+time('grip',()=>reference.objectGrip(held,button,50,point),()=>rust.scene_object_grip(held,button,50,point));
+const lamp={kelvin:2700,lampTint:{set(){}}};
+time('lamp kelvin',()=>reference.lampKelvin(lamp,4000,true,{matches:false},()=>lamp.lampTint),()=>rust.scene_lamp_kelvin(lamp,4000,true,()=>lamp.lampTint));
+time('insertion record',()=>reference.insertionRecord({},false,180,()=>{},null,null),()=>rust.scene_insertion_record({},false,180,()=>{},null,null));

@@ -264,3 +264,109 @@ pub fn scene_trash_drop_record(three:&JsValue,resolve:&JsValue,now:f64,reduced:b
   ("elapsed",n(0.0)),("duration",n(duration)),("start",start),("startScale",scale),("startQuaternion",turn),("endQuaternion",end),
   ("bookQuaternion",book),("initialOpenness",n(openness))])
 }
+
+/// A returning book's insertion record: its dock `slot`, started now, its duration (none under reduced
+/// motion, else the requested one, at least zero), settling through `resolve`, painted into `overlay`
+/// (when given) through `presentation` (when native), its bounded clock read again as its last frame.
+#[wasm_bindgen]
+pub fn scene_insertion_record(slot:&JsValue,reduced:bool,duration:&JsValue,resolve:&JsValue,overlay:&JsValue,presentation:&JsValue)->R<JsValue>{
+ let started=crate::host::clock()?;
+ let duration=if reduced{0.0}else{let value=num(duration);jmax(0.0,if value.is_nan()||value==0.0{0.0}else{value})};
+ let last=crate::host::clock()?;
+ params(&[("slot",slot.clone()),("started",n(started)),("duration",n(duration)),("resolve",resolve.clone()),("complete",JsValue::FALSE),
+  ("overlayCanvas",overlay.clone()),("elapsed",n(0.0)),("lastFrame",n(last)),("nativePresentation",presentation.clone())])
+}
+
+/// Where the bin stands, a real object on the floor independent of the camera, viewport, scroll and the
+/// progress of a view transition: clear of the room's wall with its whole body and the hinged lid's sweep
+/// (`bounds`, its footprint), rather than a cylinder centred on the cabinet's rear plane (rust-ui/src/scene_plan.rs),
+/// upright, unscaled and shown.
+#[wasm_bindgen]
+pub fn scene_position_trash(scene:&crate::scene_view::RustScene,trash:&JsValue,bounds:&JsValue,wall:&JsValue,floor_y:f64,gap:f64)->R{
+ let mut stand=[0.0;3];
+ let min=read(bounds,"min")?;
+ scene.trash_stand(num(&read(&read(trash,"userData")?,"radius")?),num(&read(&min,"z")?),num(&read(&min,"y")?),
+  num(&read(&read(wall,"position")?,"z")?),floor_y,gap,&mut stand);
+ let zero=n(0.0);
+ method(&read(trash,"position")?,"set",&[&n(stand[0]),&n(stand[1]),&n(stand[2])])?;
+ method(&read(trash,"rotation")?,"set",&[&zero,&zero,&zero])?;
+ method(&read(trash,"scale")?,"setScalar",&[&n(1.0)])?;
+ set(trash,"visible",&JsValue::TRUE)
+}
+
+/// A walnut map as the cabinet samples it: in sRGB when it is the colour photograph, repeating, at
+/// half scale (geometry UVs repeat every 160 shelf pixels; the seamless photograph is a ~32 cm flitch
+/// of veneer, so it spans two repeats and its figure reads true) and anisotropic up to 8 taps.
+#[wasm_bindgen]
+pub fn scene_walnut_map(three:&JsValue,map:&JsValue,colour:bool,renderer:&JsValue)->R<JsValue>{
+ if colour{set(map,"colorSpace",&read(three,"SRGBColorSpace")?)?;}
+ let repeat=read(three,"RepeatWrapping")?;
+ set(map,"wrapT",&repeat)?;set(map,"wrapS",&repeat)?;
+ method(&read(map,"repeat")?,"set",&[&n(0.5),&n(0.5)])?;
+ let most=num(&method(&read(renderer,"capabilities")?,"getMaxAnisotropy",&[])?);
+ set(map,"anisotropy",&n(crate::host::jmin(8.0,most)))?;
+ Ok(map.clone())
+}
+
+/// A book's pose for the flyout: the docking projection `pose` with the book's projected rectangle
+/// (`rect`, in the stage's frame) moved into the page's frame by the stage's `bounds`.
+#[wasm_bindgen]
+pub fn scene_book_pose(pose:&JsValue,rect:&JsValue,bounds:&JsValue)->R<JsValue>{
+ let result:JsValue=Object::assign(&Object::new(),pose.unchecked_ref()).into();
+ let moved=if truthy(rect){
+  let moved:JsValue=Object::assign(&Object::new(),rect.unchecked_ref()).into();
+  let left=read(bounds,"left")?;let top=read(bounds,"top")?;
+  set(&moved,"left",&(&left+&read(rect,"left")?))?;set(&moved,"top",&(&top+&read(rect,"top")?))?;
+  set(&moved,"right",&(&read(bounds,"left")?+&read(rect,"right")?))?;set(&moved,"bottom",&(&read(bounds,"top")?+&read(rect,"bottom")?))?;
+  moved
+ }else{rect.clone()};
+ set(&result,"rect",&moved)?;
+ Ok(result)
+}
+
+/// Where a grabbed book is held, as a fraction of its height from its centre: the ray's hit `point` in the
+/// model's own frame, else the finger's height on its button (`clientY`), else the centre.
+#[wasm_bindgen]
+pub fn scene_object_grip(entry:&JsValue,node:&JsValue,client_y:f64,point:&JsValue)->R{
+ let height=if truthy(point){
+  let local=method(&read(entry,"model")?,"worldToLocal",&[&method(point,"clone",&[])?])?;
+  num(&read(&local,"y")?)/num(&read(entry,"height")?)
+ }else{
+  let bounds=method(node,"getBoundingClientRect",&[])?;
+  let size=read(&bounds,"height")?;
+  if truthy(&size){0.5-(client_y-num(&read(&bounds,"top")?))/num(&read(&bounds,"height")?)}else{0.0}
+ };
+ set(entry,"gripHeight",&n(height))
+}
+
+/// A lamp's colour temperature: the entry keeps `kelvin` and its tint (made by `create` on first use)
+/// eases there from now, or jumps when `animate` is false.
+#[wasm_bindgen]
+pub fn scene_lamp_kelvin(entry:&JsValue,kelvin:&JsValue,animate:&JsValue,create:&Function)->R{
+ set(entry,"kelvin",kelvin)?;
+ let mut tint=read(entry,"lampTint")?;
+ if !truthy(&tint){tint=create.call1(&JsValue::UNDEFINED,&read(entry,"kelvin")?)?;set(entry,"lampTint",&tint)?;}
+ method(&tint,"set",&[kelvin,&n(crate::host::clock()?),animate]).map(|_|())
+}
+
+/// What a disposed scene's room lets go of, in the order the scene released it: the catalogue booklet,
+/// the bin from the room, the cabinet's units, the lamps' light pool, every geometry and material left
+/// under `furniture`, the veneer `maps`, the lighting rig, the room's `materials` and the bin's own parts.
+#[wasm_bindgen]
+pub fn scene_dispose_room(furniture:&JsValue,catalog:&JsValue,trash:&JsValue,lamp_lighting:&JsValue,lighting:&JsValue,maps:&Array,materials:&Array)->R{
+ if truthy(catalog){method(catalog,"removeFromParent",&[])?;method(&read(catalog,"userData")?,"dispose",&[])?;}
+ if !absent(trash){method(trash,"removeFromParent",&[])?;}
+ let children=Array::from(&read(furniture,"children")?);
+ for object in children.iter(){
+  if truthy(&read(&read(&object,"userData")?,"furniture")?){
+   method(&object,"removeFromParent",&[])?;crate::host::method_opt(&read(&object,"userData")?,"disposeGeometry",&[])?;
+  }
+ }
+ method(lamp_lighting,"dispose",&[])?;
+ crate::scene_dom::scene_release_object(furniture)?;
+ for map in maps.iter(){method(&map,"dispose",&[])?;}
+ method(lighting,"dispose",&[])?;
+ for material in materials.iter(){method(&material,"dispose",&[])?;}
+ if !absent(trash){method(&read(trash,"userData")?,"dispose",&[])?;}
+ Ok(())
+}

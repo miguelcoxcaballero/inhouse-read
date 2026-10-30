@@ -126,8 +126,6 @@ function packRows(rows) {
   return packed;
 }
 
-// Every geometry and, once each, every material under `object` (rust-ui/src/scene_dom.rs).
-function releaseObject(object) { needRustShelf().scene_release_object(object); }
 
 // A missing file leaves its maps a flat swatch of the mean, not black (rust-ui/src/scene_host.rs).
 function veneerSwatch(map, mean) { needRustShelf().scene_veneer_swatch(map, mean); }
@@ -148,13 +146,8 @@ function loadVeneer(map, url, mean, onLoad) {
 function walnutTexture(url, renderer, colour, mean, onLoad) {
   const map = offThreadVeneer() ? new THREE.Texture()
     : new THREE.TextureLoader().load(url, onLoad, undefined, () => { veneerSwatch(map, mean); onLoad(); });
-  if (colour) map.colorSpace = THREE.SRGBColorSpace;
-  map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  // Geometry UVs repeat every 160 shelf pixels. The seamless photograph is a
-  // ~32 cm flitch of veneer, so it spans two repeats and its figure reads true.
-  map.repeat.set(.5, .5);
-  map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  return map;
+  // Its colour space, repeat and anisotropy (rust-ui/src/scene_room.rs).
+  return needRustShelf().scene_walnut_map(THREE, map, Boolean(colour), renderer);
 }
 
 // The near-black page gets a faint warm pool of lamp light on the floor
@@ -229,7 +222,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const [wood, backWood, darkWood, occlusionMaterial, depthOnly, occlusion, floor, roomWallMaterial, roomWall] =
     rust.scene_room_materials(THREE, texture, grain, widePenumbra, furniture, () => {});
   let floorY = -height, floorLit = false;
-  const standOut = new Float64Array(3);
   // The cabinet's units, the floor and the room's wall are laid out in Rust (rust-ui/src/scene_plan.rs).
   const roomPlan = () => {
     const plan = new Float64Array(10 + Math.max(1, Math.ceil(unitCount)));
@@ -372,15 +364,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       rows, floorLit ? DARK_FLOOR_LIGHT : null, trash, createShelfOcclusion, mergeGeometries);
   }
   function positionTrash() {
-    if (trash) {
-      // Its local placement is a real object on the floor, independent of the
-      // camera, viewport, scroll and the progress of a view transition.
-      // Clear the actual room wall with the whole body and hinged-lid sweep,
-      // rather than centring a cylinder on the cabinet's rear plane.
-      sceneView.trashStand(trash.userData.radius, trashBounds.min.z, trashBounds.min.y, roomWall.position.z, floorY, TRASH_GAP, standOut);
-      trash.position.set(standOut[0], standOut[1], standOut[2]);
-      trash.rotation.set(0, 0, 0); trash.scale.setScalar(1); trash.visible = true;
-    }
+    // The bin stands on the floor clear of the wall with its lid's whole sweep (rust-ui/src/scene_room.rs).
+    if (trash) rust.scene_position_trash(sceneView, trash, trashBounds, roomWall, floorY, TRASH_GAP);
     rebuildOcclusion();
   }
   // Lights and environment are final once the lamps' light pool exists. The
@@ -2648,9 +2633,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (disposed || entry?.kind !== 'lamp') return;
       noteInspectionDirty('lamp-kelvin');
-      entry.kelvin = kelvin;
-      const tint = entry.lampTint ||= createTintTransition(entry.kelvin);
-      tint.set(kelvin, performance.now(), animate && !reducedMotion.matches);
+      // Its tint eases to the new temperature (rust-ui/src/scene_room.rs).
+      rust.scene_lamp_kelvin(entry, kelvin, animate && !reducedMotion.matches, createTintTransition);
       inspectionOverview = null; shelfSnapshotDirty = true;
       invalidate(false);
     },
@@ -2714,9 +2698,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp') return null;
       const stageRect = stage.getBoundingClientRect();
-      return { ...projectShelfBookPose(furniture.matrixWorld, entry.pose.matrix, entry, stageRect),
-        rect:entry.rect && { ...entry.rect, left:stageRect.left + entry.rect.left, top:stageRect.top + entry.rect.top,
-          right:stageRect.left + entry.rect.right, bottom:stageRect.top + entry.rect.bottom } };
+      return rust.scene_book_pose(projectShelfBookPose(furniture.matrixWorld, entry.pose.matrix, entry, stageRect), entry.rect, stageRect);
     },
     getReturnPose(node) {
       const entry = byNode.get(node);
@@ -2734,9 +2716,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       cancelInsertion(entry);
       let resolve;
       const finished = new Promise(done => { resolve = done; });
-      const insertion = { slot:shelfBookSlot(entry, width, settleBooks && physicsStarted ? entry.pose.matrix.elements : null), started:performance.now(),
-        duration:reducedMotion.matches ? 0 : Math.max(0, Number(duration) || 0), resolve, complete:false, overlayCanvas,
-        elapsed:0, lastFrame:performance.now(), nativePresentation };
+      const insertion = rust.scene_insertion_record(shelfBookSlot(entry, width, settleBooks && physicsStarted ? entry.pose.matrix.elements : null),
+        reducedMotion.matches, duration, resolve, overlayCanvas, nativePresentation);
       if (nativePresentation) {
         insertion.nativeLease = createNativeInsertionLease(insertion);
         if (!insertion.nativeLease) return null;
@@ -2772,11 +2753,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // the local grip and computes its leverage, swing and release torque.
       const hitPoint = pointerHit?.node === node && pointerHit.clientX === clientX && pointerHit.clientY === clientY
         ? pointerHit.point : pointerRay(clientX, clientY).intersectObject(entry.model, true)[0]?.point;
-      if (hitPoint) entry.gripHeight = entry.model.worldToLocal(hitPoint.clone()).y / entry.height;
-      else {
-        const bounds = node.getBoundingClientRect();
-        entry.gripHeight = bounds.height ? .5 - (clientY - bounds.top) / bounds.height : 0;
-      }
+      rust.scene_object_grip(entry, node, clientY, hitPoint);
     },
     getObjectAtPoint(clientX, clientY) {
       return objectAtPoint(clientX, clientY);
@@ -3065,16 +3042,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       nativeRoomLease?.dispose({snapshot:false});
       nativeFrameCache?.dispose();nativeRoomClip?.remove();
       nativeRoomDisplay=nativeBaseFrame=nativeInspectionExportFrame=nativeOverviewExportFrame=nativeFineFrame=null;
-      if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
-      trash?.removeFromParent();
-      for (const object of [...furniture.children]) if (object.userData.furniture) {
-        object.removeFromParent(); object.userData.disposeGeometry?.();
-      }
-      lampLighting.dispose();
-      releaseObject(furniture); texture.dispose(); grain.dispose(); lighting.dispose();
-      wood.dispose(); backWood.dispose(); darkWood.dispose();
-      for (const material of depthOnly) material.dispose();
-      trash?.userData.dispose();
+      rust.scene_dispose_room(furniture, catalog, trash, lampLighting, lighting, [texture, grain], [wood, backWood, darkWood, ...depthOnly]);
       rust.scene_release_stage(stage, originalHeight, alreadyScene, originalStyles, [canvas, inspectionCanvas, inspectionOverviewCanvas]);
       inspectionSnapshot = inspectionOverview = null;
       for (const node of semanticCovers.values()) node.remove();

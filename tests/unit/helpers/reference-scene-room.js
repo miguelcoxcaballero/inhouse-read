@@ -138,3 +138,58 @@ export function trashDropRecord(resolve, now, reduced, duration, model, trash) {
     bookQuaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(-.22, .18, -.46)),
     initialOpenness:Number(trash.userData.openness) || 0 };
 }
+
+export function positionTrash(sceneView, trash, trashBounds, roomWall, floorY, TRASH_GAP) {
+  const standOut = new Float64Array(3);
+  sceneView.trashStand(trash.userData.radius, trashBounds.min.z, trashBounds.min.y, roomWall.position.z, floorY, TRASH_GAP, standOut);
+  trash.position.set(standOut[0], standOut[1], standOut[2]);
+  trash.rotation.set(0, 0, 0); trash.scale.setScalar(1); trash.visible = true;
+}
+
+export function walnutMap(map, renderer, colour) {
+  if (colour) map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(.5, .5);
+  map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return map;
+}
+
+export function bookPose(pose, entry, stageRect) {
+  return { ...pose,
+    rect:entry.rect && { ...entry.rect, left:stageRect.left + entry.rect.left, top:stageRect.top + entry.rect.top,
+      right:stageRect.left + entry.rect.right, bottom:stageRect.top + entry.rect.bottom } };
+}
+
+export function objectGrip(entry, node, clientY, hitPoint) {
+  if (hitPoint) entry.gripHeight = entry.model.worldToLocal(hitPoint.clone()).y / entry.height;
+  else {
+    const bounds = node.getBoundingClientRect();
+    entry.gripHeight = bounds.height ? .5 - (clientY - bounds.top) / bounds.height : 0;
+  }
+}
+
+export function lampKelvin(entry, kelvin, animate, reducedMotion, createTintTransition) {
+  entry.kelvin = kelvin;
+  const tint = entry.lampTint ||= createTintTransition(entry.kelvin);
+  tint.set(kelvin, performance.now(), animate && !reducedMotion.matches);
+}
+
+export function disposeRoom({ furniture, catalog, trash, lampLighting, lighting, texture, grain, wood, backWood, darkWood, depthOnly, releaseObject }) {
+  if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
+  trash?.removeFromParent();
+  for (const object of [...furniture.children]) if (object.userData.furniture) {
+    object.removeFromParent(); object.userData.disposeGeometry?.();
+  }
+  lampLighting.dispose();
+  releaseObject(furniture); texture.dispose(); grain.dispose(); lighting.dispose();
+  wood.dispose(); backWood.dispose(); darkWood.dispose();
+  for (const material of depthOnly) material.dispose();
+  trash?.userData.dispose();
+}
+
+export function insertionRecord(slot, reduced, duration, resolve, overlayCanvas, nativePresentation) {
+  const reducedMotion = { matches:reduced };
+  return { slot, started:performance.now(),
+    duration:reducedMotion.matches ? 0 : Math.max(0, Number(duration) || 0), resolve, complete:false, overlayCanvas,
+    elapsed:0, lastFrame:performance.now(), nativePresentation };
+}

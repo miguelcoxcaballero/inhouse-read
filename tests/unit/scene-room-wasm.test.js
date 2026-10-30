@@ -178,3 +178,94 @@ it('starts a drop into the bin with the same record',()=>{
   expect(native.start.isVector3&&native.endQuaternion.isQuaternion&&native.bookQuaternion.isQuaternion).toBe(true);
  }
 });
+
+it('stands the bin on the floor clear of the wall',()=>{
+ for(let seed=0;seed<30;seed++){
+  const next=random(seed+900),radius=[18,'12',undefined,0,-0,7.25][seed%6],floorY=-next()*1200,gap=12;
+  const minY=-next()*3,minZ=-next()*40,wallZ=-next()*300;
+  const run=place=>{
+   const scene=new rust.RustScene(390+seed,1160,390,250,seed%2===1,true,0);
+   const trash=new THREE.Group();trash.userData.radius=radius;trash.position.set(3,4,5);trash.rotation.set(.1,.2,.3);trash.scale.setScalar(2);trash.visible=false;
+   const bounds=new THREE.Box3(new THREE.Vector3(-20,minY,minZ),new THREE.Vector3(20,40,10)),wall=new THREE.Object3D();wall.position.z=wallZ;
+   place(scene,trash,bounds,wall,floorY,gap);scene.free();
+   return bits([...trash.position.toArray(),...trash.rotation.toArray().slice(0,3),...trash.scale.toArray(),trash.visible]);
+  };
+  expect(run((...args)=>rust.scene_position_trash(...args))).toEqual(run(reference.positionTrash));
+ }
+});
+
+it('samples the walnut maps as the scene did',()=>{
+ for(const colour of [true,false,1,0,'',null])for(const most of [1,4,8,16,NaN]){
+  const run=configure=>{const map=new THREE.Texture(),renderer={capabilities:{getMaxAnisotropy:()=>most}};const back=configure(map,renderer,colour);
+   return {same:back===map,colorSpace:map.colorSpace,wrap:[map.wrapS,map.wrapT],repeat:bits(map.repeat.toArray()),anisotropy:bits([map.anisotropy])};};
+  expect(run((map,renderer,c)=>rust.scene_walnut_map(THREE,map,Boolean(c),renderer))).toEqual(run(reference.walnutMap));
+ }
+});
+
+it('moves a book\'s projected rectangle into the page for its pose',()=>{
+ const rects=[null,undefined,{left:4,right:30,top:-2,bottom:90,width:26,height:92,closest:.5},{left:-0,right:NaN,top:1.5,bottom:2}];
+ const poses=[null,{matrix:[1,2],rect:'old',x:1},{scale:2}];
+ for(const rect of rects)for(const pose of poses)for(const stage of [{left:10.5,top:-3},{left:-0,top:0}]){
+  const expected=reference.bookPose(pose,{rect},stage),native=rust.scene_book_pose(pose,rect,stage);
+  expect(Object.keys(native)).toEqual(Object.keys(expected));
+  expect(JSON.stringify(native,(key,value)=>Object.is(value,-0)?'-0':Number.isNaN(value)?'NaN':value)).toBe(JSON.stringify(expected,(key,value)=>Object.is(value,-0)?'-0':Number.isNaN(value)?'NaN':value));
+  if(rect)expect(native.rect).not.toBe(rect);
+ }
+});
+
+it('holds a grabbed book where the ray or the finger met it',()=>{
+ for(let seed=0;seed<24;seed++){
+  const next=random(seed+1200),hit=seed%3?new THREE.Vector3(next()*20,next()*200-100,next()*5):undefined;
+  const run=grip=>{
+   const model=new THREE.Object3D();model.position.set(5,-40,2);model.rotation.set(0,.4,.1);model.updateMatrixWorld(true);
+   const entry={model,height:[180,0,'90'][seed%3]},node={getBoundingClientRect:()=>({top:100,height:[0,240,undefined,60][seed%4]})};
+   grip(entry,node,[150,undefined,90.5][seed%3],hit);return bits([entry.gripHeight]);
+  };
+  expect(run((...args)=>rust.scene_object_grip(...args))).toEqual(run(reference.objectGrip));
+ }
+});
+
+it('eases a lamp to its new colour temperature',()=>{
+ for(const existing of [false,true])for(const animate of [true,false,0,undefined])for(const reduced of [false,true]){
+  const run=change=>{
+   const log=[],make=kelvin=>({made:kelvin,set:(...args)=>log.push(['set',args[0],typeof args[1],args[2]])});
+   const entry={kelvin:2700,lampTint:existing?make('old'):undefined};
+   vi.spyOn(performance,'now').mockReturnValue(1234.5);
+   change(entry,4000,animate,{matches:reduced},make);vi.restoreAllMocks();
+   return {log,kelvin:entry.kelvin,made:entry.lampTint.made};
+  };
+  expect(run((entry,kelvin,animate,reduced,make)=>rust.scene_lamp_kelvin(entry,kelvin,animate&&!reduced.matches,make))).toEqual(run(reference.lampKelvin));
+ }
+});
+
+it('lets go of the room in the order the scene did',()=>{
+ for(let seed=0;seed<8;seed++){
+  const run=release=>{
+   const log=[],named=(name,extra={})=>({dispose:()=>log.push(`${name}.dispose`),...extra});
+   const furniture=new THREE.Group();
+   for(let index=0;index<4;index++){const child=new THREE.Group();child.name=`c${index}`;if(index%2===seed%2)child.userData={furniture:true,...(index>1?{disposeGeometry:()=>log.push(`c${index}.geometry`)}:{})};furniture.add(child);}
+   const catalog=seed%3?Object.assign(new THREE.Group(),{name:'catalog'}):null;if(catalog){catalog.userData.dispose=()=>log.push('catalog.dispose');furniture.add(catalog);}
+   const trash=seed%4?Object.assign(new THREE.Group(),{name:'trash'}):(seed%2?null:undefined);if(trash){trash.userData.dispose=()=>log.push('trash.dispose');furniture.add(trash);}
+   const mesh=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshBasicMaterial());mesh.geometry.addEventListener('dispose',()=>log.push('mesh.geometry'));furniture.add(mesh);
+   release({furniture,catalog,trash,lampLighting:named('lamps'),lighting:named('lighting'),texture:named('texture'),grain:named('grain'),wood:named('wood'),
+    backWood:named('back'),darkWood:named('dark'),depthOnly:[named('d0'),named('d1'),named('d2')],releaseObject:object=>rust.scene_release_object(object)});
+   return {log,children:furniture.children.map(child=>child.name||child.type)};
+  };
+  expect(run(o=>rust.scene_dispose_room(o.furniture,o.catalog,o.trash,o.lampLighting,o.lighting,[o.texture,o.grain],[o.wood,o.backWood,o.darkWood,...o.depthOnly])))
+   .toEqual(run(reference.disposeRoom));
+ }
+});
+
+it('starts a returning book\'s insertion with the same record and clock reads',()=>{
+ const durations=[180,0,90,undefined,null,'45',NaN,-0,-5,'x'];
+ for(const duration of durations)for(const reduced of [false,true])for(const overlay of [null,{width:780}]){
+  const run=make=>{
+   let tick=100;vi.spyOn(performance,'now').mockImplementation(()=>tick+=16.5);
+   const slot={kind:'slot'},resolve=()=>{},presentation=overlay&&{native:true};
+   const record=make(slot,reduced,duration,resolve,overlay,presentation);vi.restoreAllMocks();
+   const name=value=>value===slot?'slot':value===resolve?'resolve':value===overlay?'overlay':value===presentation?'presentation':value;
+   return Object.entries(record).map(([key,value])=>[key,typeof value==='number'?bits([value])[0]:name(value)]);
+  };
+  expect(run((...args)=>rust.scene_insertion_record(...args))).toEqual(run(reference.insertionRecord));
+ }
+});
