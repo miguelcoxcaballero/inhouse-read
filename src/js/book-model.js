@@ -917,8 +917,21 @@ function viewHost() {
     lease:(gpu, callbacks, canvas, context) => createNativeRendererPresentation(gpu, { ...callbacks, canvas, context }),
     lazyExports, draw, capture:captureSnapshot, position:positionPresentation, compactBounds, positionModel, measure:measureModel,
     suspend:suspendPresentation, repaint:repaintPresentation, nativeFrame:hasCurrentNativeFrame, bookmarkFrame:updateBookmarkFrame,
-    bookmarkPoseKeys
+    bookmarkPoseKeys, state:viewState
   };
 }
+// A view's state with every field it will hold, so the shelf module only writes existing properties: an object
+// grown one key at a time from WebAssembly becomes a slow dictionary for the per-frame reads of draw().
+const viewState = () => ({ env:undefined, canvas:undefined, model:undefined, node:undefined, book:undefined, style:undefined,
+  width:undefined, height:undefined, thickness:undefined, viewportWidth:undefined, viewportHeight:undefined, centerX:undefined,
+  centerY:undefined, coverUrl:undefined, shelf:undefined, shelfView:undefined, compactReturnFrame:undefined, adaptiveNativeFrame:undefined,
+  shared:undefined, gpu:undefined, directEnabled:undefined, pixelRatio:undefined, context:undefined, scene:undefined, camera:undefined,
+  disposed:undefined, current:undefined, pendingModel:undefined, appearanceRevision:undefined, reliefPrepared:undefined,
+  reliefPreparation:undefined, currentBook:undefined, currentSnapshot:undefined, pageTheme:undefined, coverPaintKey:undefined,
+  waitingForFirstDraw:undefined, compactCamera:undefined, compactBox:undefined, compactPoint:undefined, projectionPacket:undefined,
+  compactWidth:undefined, closedCompactWidth:undefined, compactHeight:undefined, copiedRectangle:undefined, displayedFrame:undefined,
+  snapshotDirty:undefined, live:undefined, suspendedHost:undefined, displayedPose:undefined, visualRevision:undefined,
+  displayedRevision:undefined, invalidatePresentation:undefined, externalPresentation:undefined, unregisterSnapshot:undefined,
+  owner:undefined, compactBounds:undefined, bookmarkFrame:undefined, motionState:undefined });
 
 export { sampleBookMotion } from './book-motion.js';

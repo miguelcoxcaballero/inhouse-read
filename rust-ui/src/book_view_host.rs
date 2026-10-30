@@ -141,7 +141,9 @@ pub fn book_view_create(environment:&JsValue,node:&JsValue,book:&JsValue,style:&
  let scene=call(environment,"light",&[&Reflect::construct(read(&three,"Scene")?.unchecked_ref(),&Array::new())?,&gpu])?;
  let model=call(environment,"model",&[book,style,&width,&height,&thickness,&cover_url,&object(&[("shelf",shelf.clone()),("eagerRelief",JsValue::FALSE)])?])?;
  call(&scene,"add",&[&model])?;
- let v:JsValue=Object::new().into();
+ // The host's state object already has every field (src/js/book-model.js, viewState): writing existing keys keeps
+ // it a fast object for draw().
+ let v=call(environment,"state",&[])?;
  for(key,value)in[("env",environment.clone()),("canvas",canvas.clone()),("model",model.clone())]{put(&v,key,&value)?;}
  bookmark_flag(&v)?;
  if truthy(&shelf){put(&dataset(&v)?,"shelfView",&shelf_view)?;}
