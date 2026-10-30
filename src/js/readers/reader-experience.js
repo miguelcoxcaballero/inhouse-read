@@ -34,6 +34,12 @@ const experienceKit = {
   revoker:url => () => URL.revokeObjectURL(url),
 }
 
+// The classes the constructor builds (rust-ui reader_experience_construct, reader_assembly.rs) and the arrows it keeps
+// for what may run every frame of a resize or viewport scroll, or for every spoken word.
+const parts = { ReaderView, ReaderLists, ReadingVoice, ReaderControls, SelectMenu, NeuralVoicePicker, normalize:normalizeReadingPreferences,
+  syncMini:host => () => host.syncMiniPlayerLayout(), syncReturn:host => () => host.syncReturnLayout(),
+  progress:host => () => host.updateReadingMetrics(), resize:host => () => host.chrome.resize() }
+
 export class ReaderExperience {
   chrome = new ReaderChrome(this)
   lifecycle = new ReaderLifecycle(this)
@@ -44,53 +50,17 @@ export class ReaderExperience {
   get navigating() { return this.navigation.navigating }
 
   constructor(reader, { persist = async () => {}, onLengthMetadata = async () => {} } = {}) {
-    this.reader = reader
-    this.persist = persist
-    this.onLengthMetadata = onLengthMetadata
-    readerUI().reader_experience_init(this, normalizeReadingPreferences)
-    this.chrome.create()
-    this.view = new ReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
-    this.lists = new ReaderLists(this.panel)
-    if (typeof ResizeObserver === 'function') {
-      this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
-      this.miniPlayerResizeObserver.observe(this.miniPlayer)
-      this.returnResizeObserver = new ResizeObserver(() => this.syncReturnLayout())
-      this.returnResizeObserver.observe(this.returnButton)
-    }
-    document.body.append(this.panel)
-    readerUI().reader_experience_selection_init(this)
-    document.addEventListener('selectionchange', () => readerUI().reader_experience_selection_changed(this))
-    window.addEventListener('inhouse-reader-selection',event => readerUI().reader_experience_remember_selection(this,event.detail))
-    this.voice = new ReadingVoice(reader, (state,message) => this.chrome.voiceState(state,message))
-    this.voice.onProgress = () => this.updateReadingMetrics()
-    this.controls = new ReaderControls(this)
-    // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
-    // the downloadable natural voices of the chosen language live at the end of the voice list.
-    this.languageMenu = new SelectMenu({ label:'Idioma', onChange:value => this.chooseLanguage(value) })
-    this.voiceMenu = new SelectMenu({ label:'Voz', extra:this.panel.querySelector('[data-neural]'), onChange:value => this.setPreference('voice', value) })
-    this.panel.querySelector('[data-voice-menus]').append(this.languageMenu.root, this.voiceMenu.root)
-    this.neuralPicker = new NeuralVoicePicker(this)
-    this.populateVoices()
-    const resize = () => this.chrome.resize()
-    window.visualViewport?.addEventListener('resize', resize)
-    window.visualViewport?.addEventListener('scroll', resize)
-    window.addEventListener('resize', resize)
-    this.resizePanel = resize
+    const ui = readerUI()
+    ui.reader_experience_construct(this, reader, persist, onLengthMetadata, parts, ui)
   }
   syncMiniPlayerLayout() { this.view.syncMiniPlayerLayout() }
   syncReturnLayout() { this.view.syncReturnLayout() }
-  jump(place, target) {
-    return this.queueNavigation(current => this.actions.jump(place,target,current))
-  }
-  step(direction) {
-    // Consult another page without moving the independent audible cursor.
-    return this.queueNavigation(() => this.voice.continueFromPage(() => readerUI().reader_experience_page_step(this,direction)))
-  }
 }
 // Answered by rust-ui experience_methods.rs: what Rust decides (reader_experience_policy.rs) and the hand-offs to
-// the lifecycle, preference and voice flows, actions, view and navigation queue that own the rest.
+// the lifecycle, preference and voice flows, actions, view and navigation queue that own the rest; jump and step queue
+// their navigation through reader_assembly.rs.
 rustMethods(ReaderExperience,'experience_method',`resetAppearance ~rotateReading open relocate readingMetrics updateReadingMetrics label
  showTab showPlaceTab updateMiniPlayer updateBookmarkButton queueNavigation returnToReading ~shareBook formatSize renderPlaces renderToc
  updateReturnButton refreshNames closeVoice reset show setSleepChoice setPreference applyPreferences bookLanguage
- chooseLanguage voiceBase populateVoices error savePlaces cancelNavigation addBookmark addQuote search endSearch`,
+ chooseLanguage voiceBase populateVoices error savePlaces cancelNavigation addBookmark addQuote search endSearch jump step`,
  {experience:experienceKit,runtime,preferences,state,places})

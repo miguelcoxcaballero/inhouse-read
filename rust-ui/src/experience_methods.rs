@@ -2,7 +2,7 @@
 //! the ones Rust decides (reader_experience_policy.rs) get the experience (`host`) and the doorways
 //! of `kit`; the rest hand the call to the part of the experience that owns it (its lifecycle,
 //! preference and voice flows, actions, view and navigation queue), with the defaults the
-//! JavaScript methods had. The constructor, the methods that close over a navigation step and the
+//! JavaScript methods had. The constructor and the navigation steps are reader_assembly.rs; the
 //! layout syncs its resize observers call (possibly every frame of a resize) stay with the class.
 use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
@@ -84,6 +84,9 @@ pub fn experience_method(host: JsValue, name: &str, args: Array, kit: JsValue, u
         "addQuote" => part(&host, "actions", "addQuote", &[]),
         "search" => part(&host, "actions", "search", &[&a(0)]),
         "endSearch" => part(&host, "actions", "endSearch", &[]),
+        // The two steps that queue a navigation: reader_assembly.rs.
+        "jump" => crate::reader_assembly::reader_experience_jump(&host, &a(0), &a(1), &ui),
+        "step" => crate::reader_assembly::reader_experience_step(&host, &a(0), &ui),
         _ => { let _ = ui; Err(js_sys::TypeError::new(&format!("ReaderExperience has no method {name}")).into()) }
     }
 }
