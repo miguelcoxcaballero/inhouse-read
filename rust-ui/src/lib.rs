@@ -129,3 +129,6 @@ mod reading_streak;
 
 #[cfg(feature = "shelf")]
 mod native_room_shaders;
+
+#[cfg(feature = "shelf")]
+mod native_room_cache;
