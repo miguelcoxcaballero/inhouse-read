@@ -1,11 +1,13 @@
 // Host ownership of the tiny Rust voice-client ledger. Only prepare() requests
 // the voice core; constructing, stopping or disposing a client never loads it.
 import {getRustVoiceCore,requireRustVoiceCore} from '../../rust-voice-core.js'
+import {getRustVoiceUI,requireRustVoiceUI} from '../../rust-voice-ui.js'
 const kinds={stage:1,error:2,plan:3,chunk:4,end:5}
 const number=value=>typeof value==='number'?value:NaN
 const finalizer=typeof FinalizationRegistry==='function'?new FinalizationRegistry(({core,pointer})=>core.voice_client_free(pointer)):null
 export class VoiceClientPlan {
-  constructor(released,ticket={}){this.released=released;this.pointer=0;this.core=null;this.seed=[0,0];this.ticket=ticket;this.boot=null;this.bootstrapPreparation=null}
+  // `kernels`: this realm synthesises (the worker, the Android client), so ready() also brings the voice module in.
+  constructor(released,ticket={},kernels=false){this.released=released;this.pointer=0;this.core=null;this.seed=[0,0];this.ticket=ticket;this.boot=null;this.bootstrapPreparation=null;this.kernels=kernels}
   capture(){return{ticket:this.ticket,generation:this.pointer?this.core.voice_client_field(this.pointer,1):this.seed[1]}}
   ready(){
     if(this.pointer)return Promise.resolve(this)
@@ -19,9 +21,10 @@ export class VoiceClientPlan {
       if(this.bootstrapPreparation){this.model(6,this.bootstrapPreparation.key);this.bootstrapPreparation=null}
       return this
     }
-    if(existing){attach(existing);return Promise.resolve(this)}
+    const needed=this.kernels&&!getRustVoiceUI()
+    if(existing&&!needed){attach(existing);return Promise.resolve(this)}
     if(this.boot)return this.boot
-    const boot=requireRustVoiceCore().then(attach)
+    const boot=needed?Promise.all([requireRustVoiceCore(),requireRustVoiceUI()]).then(([core])=>attach(core)):requireRustVoiceCore().then(attach)
     this.boot=boot
     boot.then(()=>{if(this.boot===boot)this.boot=null},()=>{if(this.boot===boot)this.boot=null})
     return boot

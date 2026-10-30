@@ -1,5 +1,7 @@
 // @vitest-environment node
 import {describe,it,expect,vi,afterEach} from 'vitest'
+// The runtime's requests, upload fences and release are rust-ui (native_ort.rs): the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import {createNativeOrt} from '../../src/js/readers/neural-voice/native-ort.js'
 
 const CHUNK=131072,fixtures=[]

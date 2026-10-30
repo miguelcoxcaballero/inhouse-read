@@ -5,9 +5,18 @@ import { resolve } from 'node:path';
 import { beforeAll, afterEach, expect, it, vi } from 'vitest';
 const state=vi.hoisted(()=>({core:null,calls:0,raw:null}));
 vi.mock('../../src/js/rust-voice-core.js',()=>({requireRustVoiceCore:async()=>state.core,loadedRustVoiceCore:()=>state.core,loadRustVoiceCore:async()=>state.core,getRustVoiceCore:()=>state.core}));
+// One call of the voice module finishes a chunk, whichever route and runtime asked for it.
+vi.mock('../../src/js/rust-voice-ui.js',async original=>{
+  const real=await original(),voice=real.loadedRustVoiceUI();
+  const counted={...voice,voice_host_finish_piper(...args){state.calls++;return voice.voice_host_finish_piper(...args);},
+    voice_host_finish_supertonic(...args){state.calls++;return voice.voice_host_finish_supertonic(...args);}};
+  return {...real,getRustVoiceUI:()=>counted,loadedRustVoiceUI:()=>counted,requireRustVoiceUI:async()=>counted,loadRustVoiceUI:async()=>counted};
+});
 vi.mock('../../src/js/readers/neural-voice/phonemizer.js',()=>({createPhonemizer:async()=>({phonemize:async()=>[1,0,4,0,2],destroy(){}})}));
 vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:async()=>({
   synthesize:async()=>({pcm:state.raw.slice(),sampleRate:24000}),dispose(){}})}));
+// The client's preparation, job chain and synthesis loop are rust-ui: the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import { NativeSynthClient } from '../../src/js/readers/neural-voice/native-client.js';
 import { NativeTensor } from '../../src/js/readers/neural-voice/native-ort.js';
 import { peakNormalize,trimSilence,fadeEdges,silence,concat,pauseAfter,restScale } from './helpers/reference-pcm.js';
@@ -15,10 +24,7 @@ import { makePCM } from '../helpers/pcm-cases.mjs';
 import { speechTempoJS } from './helpers/reference-speech-tempo.js';
 beforeAll(async()=>{
   const {instance}=await WebAssembly.instantiate(readFileSync(new URL('../../src/wasm/inhouse_read_voice.wasm',import.meta.url)));
-  const core=instance.exports;expect(typeof core.voice_finish_piper).toBe('function');
-  // One call finishes a chunk, whichever route and runtime asked for it.
-  state.core={...core,voice_finish_piper(...args){state.calls++;return core.voice_finish_piper(...args);},
-    voice_finish_supertonic(...args){state.calls++;return core.voice_finish_supertonic(...args);}};
+  state.core=instance.exports;
 });
 afterEach(()=>vi.unstubAllGlobals());
 for(const runtime of ['piper','supertonic3'])for(const route of ['worker','native'])

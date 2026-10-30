@@ -6,6 +6,7 @@ import { beforeEach, vi } from 'vitest'
 import './helpers/rust-shelf-ready.js'
 import './helpers/rust-core-ready.js'
 import './helpers/rust-voice-ready.js'
+import './helpers/rust-voice-ui-ready.js'
 
 // La versión de jsdom usada por este entorno de test no implementa
 // Blob/File.prototype.arrayBuffer() (sí existe en todos los navegadores

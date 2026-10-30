@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest'
+// The client's routing and preparation are rust-ui (synth_client.rs): the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import { SynthClient } from '../../src/js/readers/neural-voice/client.js'
 
 /** A Worker the test answers by hand. */

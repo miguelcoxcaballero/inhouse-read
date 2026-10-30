@@ -1,4 +1,6 @@
 import {describe,it,expect,vi} from 'vitest'
+// The client's preparation, job chain and synthesis loop are rust-ui: the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js'
 import {NativeSynthClient} from '../../src/js/readers/neural-voice/native-client.js'
 import {NativeTensor} from '../../src/js/readers/neural-voice/native-ort.js'
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}}

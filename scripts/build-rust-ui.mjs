@@ -64,10 +64,13 @@ const inherited=env.CARGO_ENCODED_RUSTFLAGS?.split('\x1f')??env.RUSTFLAGS?.split
 env.CARGO_ENCODED_RUSTFLAGS=[...inherited,'-C','target-feature=-reference-types,-multivalue','-C','link-arg=-zstack-size=262144',
  '--remap-path-prefix=src\\lib.rs=lib.rs','--remap-path-prefix=src/lib.rs=lib.rs',
  '--remap-path-prefix=src\\ui_lib.rs=ui_lib.rs','--remap-path-prefix=src/ui_lib.rs=ui_lib.rs',
- '--remap-path-prefix=src\\shelf_lib.rs=shelf_lib.rs','--remap-path-prefix=src/shelf_lib.rs=shelf_lib.rs'].join('\x1f')
+ '--remap-path-prefix=src\\shelf_lib.rs=shelf_lib.rs','--remap-path-prefix=src/shelf_lib.rs=shelf_lib.rs',
+ '--remap-path-prefix=src\\voice_lib.rs=voice_lib.rs','--remap-path-prefix=src/voice_lib.rs=voice_lib.rs'].join('\x1f')
 // One crate, two modules (like rust-core's domains): `ui` for the reader and catalogue,
-// `shelf` for the live shelf's pointer controllers, which the page head fetches early.
-for(const [domain,flags,stem] of [['ui',[],'inhouse_read_ui'],['shelf',['--no-default-features','--features','shelf'],'inhouse_read_shelf']]){
+// `shelf` for the live shelf's pointer controllers, which the page head fetches early,
+// `voice` for what the synthesis worker and the Android client run around the voice models.
+for(const [domain,flags,stem] of [['ui',[],'inhouse_read_ui'],['shelf',['--no-default-features','--features','shelf'],'inhouse_read_shelf'],
+ ['voice',['--no-default-features','--features','voice'],'inhouse_read_voice_ui']]){
  run(cargo,[...args,'build','--manifest-path',resolve(root,'rust-ui/Cargo.toml'),'--release','--target','wasm32-unknown-unknown','--locked',...flags],{env,stdio:'inherit'})
  const built=join(target,'wasm32-unknown-unknown/release/inhouse_read_ui.wasm')
  // The second build overwrites the first artifact: take the module before the next build.
@@ -77,5 +80,5 @@ for(const [domain,flags,stem] of [['ui',[],'inhouse_read_ui'],['shelf',['--no-de
  await mkdir(output,{recursive:true})
  run(cli,['--target','web','--remove-name-section','--out-dir',output,staged],{stdio:'inherit'})
  const bytes=await readFile(join(output,`${stem}_bg.wasm`))
- console.log(`Rust ${domain==='ui'?'UI':'shelf'}: ${bytes.length} bytes; SHA256 ${createHash('sha256').update(bytes).digest('hex')}`)
+ console.log(`Rust ${{ui:'UI',shelf:'shelf',voice:'voice UI'}[domain]}: ${bytes.length} bytes; SHA256 ${createHash('sha256').update(bytes).digest('hex')}`)
 }
