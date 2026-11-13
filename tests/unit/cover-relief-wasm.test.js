@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { loadRustCore, getRustCore } from '../../src/js/rust-core.js';
 import { composeMaterialMap, composeReliefLayerPixels, heightToNormals } from '../../src/js/cover-relief.js';
-import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers } from '../../src/js/cover-relief-wasm.js';
+import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers } from './helpers/reference-cover-relief-wasm.js';
 // The distance and the blur are not called by production code any more (the pigment maps run inside the core's
 // jobs): their bridges are the frozen ones, so the kernels keep their byte comparisons.
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur } from './helpers/reference-relief-bridge.js';

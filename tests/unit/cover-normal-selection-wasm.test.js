@@ -1,10 +1,9 @@
 // @vitest-environment node
 import { beforeAll, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import * as rustLoader from '../../src/js/rust-core.js';
 import { loadRustCore } from '../../src/js/rust-core.js';
 import { heightToNormals } from '../../src/js/cover-relief.js';
-import { wasmHeightToNormals } from '../../src/js/cover-relief-wasm.js';
+import { wasmHeightToNormals } from './helpers/reference-cover-relief-wasm.js';
 import { mapsFor, referenceNormals } from '../helpers/cover-relief-reference.mjs';
 const drain = task => { let step; do { step=task.next(); } while(!step.done); return step.value; };
 const equal = (actual, expected) => expect(Buffer.compare(Buffer.from(actual),Buffer.from(expected))).toBe(0);
@@ -60,12 +59,10 @@ it('rejects unavailable or invalid selection inputs without allocating',()=>{
 });
 
 it('keeps selected alpha and normals for odd shapes, and has no JavaScript recovery path',()=>{
- // The numeric core is the only implementation: the same maps are compared with the frozen JavaScript
- // normals, and an unavailable core is a clear error instead of a second path.
+ // The shelf module is the only implementation: the same maps are compared with the frozen JavaScript
+ // normals, and maps the job cannot take are a clear error instead of a second path.
  for(const withMask of [false,true]){const maps=mapsFor(37,43);if(!withMask){delete maps.mask;maps.preserveInk=false;}
   equal(drain(heightToNormals(maps,{selectionAlpha:true})),selected(maps));}
- const stub=vi.spyOn(rustLoader,'getRustCore').mockReturnValue(null);
- try{for(const withMask of [false,true]){const maps=mapsFor(37,43);if(!withMask){delete maps.mask;maps.preserveInk=false;}
- expect(()=>drain(heightToNormals(maps,{selectionAlpha:true}))).toThrow(/módulo numérico/);}}
- finally{stub.mockRestore();}
+ for(const wrong of [{...mapsFor(37,43),mask:new Uint8Array(1)},{...mapsFor(37,43),mask:null,preserveInk:false,gloss:null},{...mapsFor(37,43),mask:null,preserveInk:true},{...mapsFor(37,43),width:0}])
+  expect(()=>drain(heightToNormals(wrong,{selectionAlpha:true}))).toThrow(/núcleo de relieve/);
 });

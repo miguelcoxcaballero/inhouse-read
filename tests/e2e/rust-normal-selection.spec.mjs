@@ -4,7 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {wasmHeightToNormals} from '/inhouse-read/src/js/cover-relief-wasm.js';
+import {wasmHeightToNormals} from '/inhouse-read/tests/unit/helpers/reference-cover-relief-wasm.js';
 import {mapsFor} from '/inhouse-read/tests/helpers/cover-relief-reference.mjs';
 const core=await loadRustCore();if(!core?.relief_normal_selected_rows)throw Error('Actual selection core required');
 const drain=task=>{let step;do{step=task.next();}while(!step.done);return step.value;};

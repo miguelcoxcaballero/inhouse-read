@@ -18,6 +18,7 @@ use crate::relief_jobs::{relief_analysis_colour, relief_analysis_mask, relief_an
 const LIMIT: f64 = 1_048_576.0;
 const JOB_LIMIT: f64 = 262_144.0;
 static LIVE: AtomicU32 = AtomicU32::new(0);
+static MADE: AtomicU32 = AtomicU32::new(0);
 static TABLE: Once = Once::new();
 
 #[wasm_bindgen]
@@ -118,11 +119,14 @@ impl Drop for ReliefJob {
     }
 }
 
-fn job(work: Work) -> ReliefJob { LIVE.fetch_add(1, Ordering::Relaxed); ReliefJob { work, result: JsValue::UNDEFINED } }
+fn job(work: Work) -> ReliefJob { LIVE.fetch_add(1, Ordering::Relaxed); MADE.fetch_add(1, Ordering::Relaxed); ReliefJob { work, result: JsValue::UNDEFINED } }
 
 /// Jobs made and not yet freed (lifetime tests).
 #[wasm_bindgen]
 pub fn relief_jobs_live() -> u32 { LIVE.load(Ordering::Relaxed) }
+/// Jobs made since the module started (tests count one job per pass).
+#[wasm_bindgen]
+pub fn relief_jobs_made() -> u32 { MADE.load(Ordering::Relaxed) }
 
 /// `{ height, foil, gloss }`: the three material planes of `maps` as opaque grey RGBA, in one pass.
 #[wasm_bindgen]

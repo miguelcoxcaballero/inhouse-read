@@ -4,7 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {wasmReliefRgbaPlanes} from '/inhouse-read/src/js/cover-relief-wasm.js';
+import {wasmReliefRgbaPlanes} from '/inhouse-read/tests/unit/helpers/reference-cover-relief-wasm.js';
 const core=await loadRustCore();if(!core?.relief_rgba_planes)throw Error('Actual plane core required');
 function reference(maps){const out={};for(const [key,input] of [['height',maps.heightMap],['foil',maps.foil],['gloss',maps.gloss]]){const result=new Uint8ClampedArray(input.length*4);for(let i=0;i<input.length;i++){result[i*4]=result[i*4+1]=result[i*4+2]=input[i];result[i*4+3]=255;}out[key]=result;}return out;}
 window.checkPlanes=()=>{

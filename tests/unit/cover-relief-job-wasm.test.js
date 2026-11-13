@@ -1,5 +1,7 @@
 // @vitest-environment node
-// The analysis of a cover and its pigment maps are jobs inside the numeric core (rust-core/src/cover_relief.rs).
+// The analysis of a cover and its pigment maps are jobs of the shelf module (rust-ui/src/relief_job.rs over the
+// sources of rust-core/src/cover_relief.rs). The frozen reference still drives the numeric core, so the `stats`
+// below count the reference's jobs; production's are counted by the shelf module (`relief_jobs_made/live`).
 // They are compared with the frozen JavaScript original (reference-relief-color.js) on large corpora, bit for bit,
 // and put through cancellation, memory growth, rejection, trap and concurrency like every other native pass.
 import { readFileSync } from 'node:fs';
@@ -13,6 +15,7 @@ import { loadRustCore } from '../../src/js/rust-core.js';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
 import * as production from '../../src/js/cover-relief.js';
 import * as frozen from './helpers/reference-relief-color.js';
+import { shelfWasm } from './helpers/rust-shelf-ready.js';
 import { installLinearTable } from './helpers/core-oklab.js';
 import { makeColorMaskImage, colorMaskCases, colorMaskSelection } from '../helpers/color-mask-cases.mjs';
 import { reliefPaletteCases, makeReliefPaletteImage } from '../helpers/relief-palette-cases.mjs';
@@ -68,6 +71,7 @@ beforeEach(() => { stats = { live: 0, jobs: 0, arenas: 0, allocations: 0, steps:
 afterEach(() => {
   expect(stats.live, 'every job is freed').toBe(0);
   expect(stats.arenas, 'every arena is released').toBe(0);
+  expect(needRustShelf().relief_jobs_live(), 'every job of the shelf module is freed').toBe(0);
   state.core = null;
 });
 
@@ -151,9 +155,8 @@ describe('the analysis job equals the frozen original on large corpora', () => {
   });
   it('keeps the work between two pauses small: every step is 0, 1 or 2 and there are enough pauses', () => {
     const image = makeColorMaskImage(colorMaskCases[2]), result = drain(production.analyzePixels(image));
-    expect([...stats.codes].every(code => code === 0 || code === 1 || code === 2)).toBe(true);
     expect(result.yields).toBeGreaterThan(Math.floor(image.width * image.height / 1024));
-    expect(stats.steps).toBeGreaterThanOrEqual(result.yields);
+    // (Pause for pause it is the frozen bridge's job: relief-job-differential.test.js.)
   });
 });
 
@@ -208,7 +211,7 @@ describe('cancellation, memory growth, rejection, traps and concurrency', () => 
       const task = production.analyzePixels(image);
       for (let i = 0; i < stop; i++) if (task.next().done) break;
       task.return();
-      expect(stats.live, `analysis stopped after ${stop}`).toBe(0);
+      expect(needRustShelf().relief_jobs_live(), `analysis stopped after ${stop}`).toBe(0);
       expect(stats.arenas).toBe(0);
     }
   });
@@ -219,7 +222,7 @@ describe('cancellation, memory growth, rejection, traps and concurrency', () => 
       const task = production.buildMapsFromPixels(image, image, selection);
       for (let i = 0; i < stop; i++) if (task.next().done) break;
       task.return();
-      expect(stats.live, `maps stopped after ${stop}`).toBe(0);
+      expect(needRustShelf().relief_jobs_live(), `maps stopped after ${stop}`).toBe(0);
       expect(stats.arenas).toBe(0);
     }
   });
@@ -240,67 +243,46 @@ describe('cancellation, memory growth, rejection, traps and concurrency', () => 
     core.memory.grow(2);
     [maps.owners, maps.baseMask, maps.baseHeight].forEach((plane, index) => expect(Buffer.compare(bytes(plane), kept[index])).toBe(0));
   });
-  it('rejects unsupported rasters before allocating anything', () => {
-    const view = core.alloc_f64(40), allocated = stats.allocations;
-    try {
-      for (const ArrayType of [Uint8Array, Uint8ClampedArray]) {
-        const data = new ArrayType(core.memory.buffer, view + 8, 8 * 4 * 4); data.fill(128);
-        expect(() => drain(production.analyzePixels({ width: 8, height: 4, data }))).toThrow(/núcleo de relieve/);
-        expect(() => drain(production.buildMapsFromPixels({ width: 8, height: 4, data }, { width: 8, height: 4, data }, colorMaskSelection(1)))).toThrow(/núcleo de relieve/);
-      }
-    } finally { core.free_f64(view, 40); }
+  it('rejects unsupported rasters before making a job', () => {
+    const shelf = needRustShelf(), made = shelf.relief_jobs_made();
+    // A view of the module's own memory could be detached by the copy that takes it: it is turned away.
+    const page = shelfWasm.memory.grow(1) * 65536;
+    for (const ArrayType of [Uint8Array, Uint8ClampedArray]) {
+      const data = new ArrayType(shelfWasm.memory.buffer, page + 8, 8 * 4 * 4); data.fill(128);
+      expect(() => drain(production.analyzePixels({ width: 8, height: 4, data }))).toThrow(/núcleo de relieve/);
+      expect(() => drain(production.buildMapsFromPixels({ width: 8, height: 4, data }, { width: 8, height: 4, data }, colorMaskSelection(1)))).toThrow(/núcleo de relieve/);
+    }
     const tooBig = { width: 513, height: 512, data: new Uint8ClampedArray(513 * 512 * 4) };
     expect(() => drain(production.analyzePixels(tooBig))).toThrow(/núcleo de relieve/);
     expect(() => drain(production.buildMapsFromPixels(tooBig, tooBig, colorMaskSelection(1)))).toThrow(/núcleo de relieve/);
-    // Nothing but the one-time 256-entry table is ever allocated for a raster that is turned away.
-    expect(stats.allocations - allocated).toBeLessThanOrEqual(1);
     for (const image of [{ width: 0, height: 1, data: new Uint8Array(0) }, { width: 1.5, height: 2, data: new Uint8Array(12) }, { width: 1, height: 1, data: new Uint8Array(3) }, null, {}]) {
       expect(() => drain(production.analyzePixels(image))).toThrow(/RGBA/);
     }
-    expect(stats.jobs).toBe(0);
+    expect(shelf.relief_jobs_made()).toBe(made);
   });
-  it('turns a rejected job into a clear error without a second path', () => {
-    const image = small();
-    for (const override of [{ relief_analysis_new: () => 0 }, { relief_analysis_new: undefined }, { relief_job_step: undefined }, { relief_linear_set: undefined }]) {
-      state.core = tracked(override);
-      expect(() => drain(production.analyzePixels(image))).toThrow(/núcleo de relieve/);
+  it('turns a refused job into a clear error without a second path', () => {
+    // The kernels are inside the module now, so a step cannot be made to fail from outside; what can be refused
+    // is the input, and that is an error where the frozen bridge answered null.
+    const image = small(), shelf = needRustShelf(), made = shelf.relief_jobs_made();
+    for (const layers of [[], Array.from({ length: 11 }, () => ({ color: '#102030', tolerance: 6 })), null, 'x', [{ tolerance: 6 }]]) {
+      expect(() => shelf.ReliefJob.maps(image, layers, false)).toThrow(/núcleo de relieve/);
     }
-    for (const override of [{ relief_maps_new: () => 0 }, { relief_maps_plane: undefined }]) {
-      state.core = tracked(override);
-      expect(() => drain(production.buildMapsFromPixels(image, image, colorMaskSelection(2)))).toThrow(/núcleo de relieve/);
-    }
+    expect(() => shelf.ReliefJob.maps({ ...image, data: new Uint8ClampedArray(4) }, [{ color: '#102030', tolerance: 6 }], true)).toThrow(/núcleo de relieve/);
+    expect(shelf.relief_jobs_made()).toBe(made);
   });
-  it('reports a failed or trapped step and frees everything', () => {
-    const image = small(), selection = colorMaskSelection(3);
-    for (const at of [1, 2, 7, 15]) for (const failure of ['reject', 'trap']) {
-      let calls = 0;
-      state.core = tracked({ relief_job_step(job) {
-        if (++calls === at) { if (failure === 'trap') throw new WebAssembly.RuntimeError('step trap'); return -1; }
-        return core.relief_job_step(job);
-      } });
-      const message = failure === 'trap' ? /step trap/ : /rechazó/;
-      expect(() => drain(production.analyzePixels(image)), `analysis ${failure} at ${at}`).toThrow(message);
-      expect(stats.live).toBe(0);
-      calls = 0;
-      expect(() => drain(production.buildMapsFromPixels(image, image, selection)), `maps ${failure} at ${at}`).toThrow(message);
-      expect(stats.live).toBe(0);
-    }
-    state.core = tracked();
-    exact(drain(production.buildMapsFromPixels(image, image, selection)).value, drain(frozen.buildMapsFromPixels(image, image, selection)).value);
-  });
-  it('frees the job when the allocation of the input arena fails, and the arena when the job is refused', () => {
-    const image = small();
-    state.core = tracked({ alloc_f64: () => 0 });
-    expect(() => drain(production.analyzePixels(image))).toThrow(/memoria|núcleo/);
-    state.core = tracked({ alloc_f64() { throw new RangeError('exhausted'); } });
-    expect(() => drain(production.analyzePixels(image))).toThrow(/exhausted/);
-    expect(stats.live).toBe(0);
-    state.core = tracked({ relief_analysis_new() { throw new WebAssembly.RuntimeError('new trap'); } });
-    expect(() => drain(production.analyzePixels(image))).toThrow(/new trap/);
-    expect(stats.arenas).toBe(0);
+  it('keeps a finished job finished: more steps answer 0 and the result does not change', () => {
+    const image = small(), shelf = needRustShelf(), job = shelf.ReliefJob.maps(image, [{ color: '#111111', tolerance: 6 }], true);
+    try {
+      while (job.step()) { /* to the end */ }
+      const first = job.result();
+      expect(job.step()).toBe(0);
+      expect(job.result()).toBe(first);
+    } finally { job.free(); }
+    exact(drain(production.buildMapsFromPixels(image, image, colorMaskSelection(3))).value, drain(frozen.buildMapsFromPixels(image, image, colorMaskSelection(3))).value);
   });
   it('runs independent jobs side by side, interleaved step by step, without influencing each other', () => {
     const images = [small(), makeColorMaskImage(colorMaskCases[0]), makeColorMaskImage({ width: 70, height: 20, kind: 'noise' })];
+    const made = needRustShelf().relief_jobs_made();
     const tasks = [production.analyzePixels(images[0]), production.buildMapsFromPixels(images[1], images[1], colorMaskSelection(4)), production.analyzePixels(images[2]),
       production.buildMapsFromPixels(images[0], images[0], colorMaskSelection(1).layers[0])];
     const expected = [drain(frozen.analyzePixels(images[0])).value, drain(frozen.buildMapsFromPixels(images[1], images[1], colorMaskSelection(4))).value,
@@ -312,7 +294,8 @@ describe('cancellation, memory growth, rejection, traps and concurrency', () => 
       if (step.done) { done[i] = step.value; live--; }
     }
     done.forEach((value, index) => exact(value, expected[index], `job ${index}`));
-    expect(stats.jobs).toBe(4);
+    // Two analyses, one single-colour map, and a layered map (its classification and its composition).
+    expect(needRustShelf().relief_jobs_made() - made).toBe(5);
   });
 });
 

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {beforeAll, expect, it, vi} from 'vitest';
 import {readFileSync} from 'node:fs';
-import {wasmRenderRelief,wasmHeightToNormals,wasmComposeReliefLayers,wasmReliefRgbaPlanes} from '../../src/js/cover-relief-wasm.js';
+import {wasmRenderRelief,wasmHeightToNormals,wasmComposeReliefLayers,wasmReliefRgbaPlanes} from './helpers/reference-cover-relief-wasm.js';
 import {referenceNormals,referenceCompose,mapsFor,layers} from '../helpers/cover-relief-reference.mjs';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.relief_render_new).toBe('function');});

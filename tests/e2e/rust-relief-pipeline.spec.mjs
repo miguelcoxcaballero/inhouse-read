@@ -4,7 +4,7 @@ import {createServer as httpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
-import {wasmRenderRelief,wasmHeightToNormals,wasmComposeReliefLayers,wasmReliefRgbaPlanes} from '/inhouse-read/src/js/cover-relief-wasm.js';
+import {wasmRenderRelief,wasmHeightToNormals,wasmComposeReliefLayers,wasmReliefRgbaPlanes} from '/inhouse-read/tests/unit/helpers/reference-cover-relief-wasm.js';
 import {buildReliefMaps,updateReliefMapStrengths} from '/inhouse-read/src/js/cover-relief.js';
 import {mapsFor,layers} from '/inhouse-read/tests/helpers/cover-relief-reference.mjs';
 const core=await loadRustCore();await loadRustShelf();
