@@ -69,8 +69,8 @@ describe('book meshes of the shelf module against the frozen bridges to the nume
       expect(() => leafStackGeometry(264, 400, 40, { columns })).toThrow(RangeError);
     }
     for (const [width, height, depth] of [[0, 400, 40], [264, NaN, 40], [264, 400, -1]]) {
-      expect(Boolean(rustLeafStackBuffers(core, width, height, depth)), `${width} ${height} ${depth}`)
-        .toBe(shelf.book_mesh_leaf_stack(width, height, depth, height * .007, height * .009, 14).length > 0);
+      expect(rustLeafStackBuffers(core, width, height, depth), `${width} ${height} ${depth}`).toBeNull();
+      expect(() => leafStackGeometry(width, height, depth)).toThrow(RangeError);
     }
   });
 

@@ -36,6 +36,32 @@ const sharedTexture = (key, build) => needRustShelf().book_shared_texture(key, b
 const clothNormals = () => needRustShelf().book_model_tile_normals(modelHost(), 'cloth');
 const endpaperTexture = () => needRustShelf().book_model_endpaper(modelHost());
 
+// The meshes whose plans need the engine's own Math are single calls of the shelf module (rust-ui/src/book_mesh.rs).
+// Between a plan's stages it asks here, once per round, for the sines, cosines, powers and lengths (see host-math.js:
+// (operation, a, b) triples in, one number each out), read and written in the module's memory. The views are remade
+// when that memory has grown.
+let meshMemory, meshBuffer, meshNumbers, meshWords;
+const ribbonViews = new Map();
+function meshViews() {
+  if (meshBuffer !== meshMemory.buffer) { meshBuffer = meshMemory.buffer; meshNumbers = new Float64Array(meshBuffer); meshWords = new Uint32Array(meshBuffer); ribbonViews.clear(); }
+}
+const meshMath = { resolve(requests, results, count) {
+  meshViews();
+  const numbers = meshNumbers, out = results >>> 3;
+  for (let i = 0, at = requests >>> 3; i < count; i++, at += 3) {
+    const a = numbers[at + 1];
+    switch (numbers[at]) {
+      case 0: numbers[out + i] = Math.sin(a); break;
+      case 1: numbers[out + i] = Math.cos(a); break;
+      case 2: numbers[out + i] = Math.pow(a, numbers[at + 2]); break;
+      case 3: numbers[out + i] = Math.hypot(a, numbers[at + 2]); break;
+      case 5: numbers[out + i] = Math.atan2(a, numbers[at + 2]); break;
+      default: break; // not asked for this input
+    }
+  }
+} };
+function meshRust() { const rust = needRustShelf(); meshMemory ||= rust.book_mesh_memory(); return rust; }
+
 // A mesh of the shelf module (rust-ui/src/book_mesh.rs) is one owned record of words: vertices, indices, flags
 // (1 wide index, 2 colours, 4 changed normals, 8 groups), the first group's indices, then the arrays. Three
 // installs views of it without another copy; `at` is the record's first word.
@@ -58,7 +84,7 @@ function meshGeometry(data, at = 0) {
 /** Text block of a rounded-and-backed binding: its back follows the round
  * inside the case, the fore-edge is concave, both ends are one crescent. */
 export function pageBlockGeometry(width, height, thickness, { board = height * .007, inset = height * .009, detail = false } = {}) {
-  const geometry = meshGeometry(needRustShelf().book_mesh_page_block(width, height, thickness, board, inset, Boolean(detail)));
+  const geometry = meshGeometry(meshRust().book_mesh_page_block(meshMath, width, height, thickness, board, inset, Boolean(detail)));
   if (!geometry) throw new RangeError('Medidas de bloque de páginas no válidas.');
   return geometry;
 }
@@ -68,7 +94,7 @@ export function pageBlockGeometry(width, height, thickness, { board = height * .
  * Hinge coordinates (joint at x = 0, board centred on z = 0); the open face
  * looks toward -z until the board turns over. Only lifted copies build it. */
 export function leafStackGeometry(width, height, depth, { board = height * .007, inset = height * .009, columns = 14 } = {}) {
-  const geometry = meshGeometry(needRustShelf().book_mesh_leaf_stack(width, height, depth, board, inset, columns));
+  const geometry = meshGeometry(meshRust().book_mesh_leaf_stack(meshMath, width, height, depth, board, inset, columns));
   if (!geometry) throw new RangeError('Medidas de pila de hojas no válidas.');
   return geometry;
 }
@@ -124,7 +150,7 @@ export function bookCaseGeometries(width, height, board, thickness, { shelf = fa
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
 export function bindingGeometry(width, height, thickness, segments = 96, relief = null, reliefRows = 384) {
-  const geometry = meshGeometry(needRustShelf().book_mesh_binding(width, height, thickness, segments, relief, reliefRows));
+  const geometry = meshGeometry(meshRust().book_mesh_binding(meshMath, width, height, thickness, segments, relief, reliefRows));
   if (!geometry) throw new RangeError('Medidas de lomo no válidas.');
   return geometry;
 }
@@ -137,18 +163,15 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
 
 // The ribbon is built in the shelf module's own arenas, one set per section count, and read in place: the
 // views below are scratch (the next ribbon of that count rewrites them) and are remade when the memory grows.
-let ribbonMemory, ribbonBuffer, ribbonWords;
-const ribbonViews = new Map();
 function ribbonBuffers(width, height, thickness, progress, peek, open, withdraw, segments, seed, legacy) {
-  const rust = needRustShelf(), at = rust.book_mesh_ribbon(width, height, thickness, progress, peek, open, withdraw, segments, seed, Boolean(legacy));
+  const at = meshRust().book_mesh_ribbon(meshMath, width, height, thickness, progress, peek, open, withdraw, segments, seed, Boolean(legacy)) >>> 2;
   if (!at) return null;
-  ribbonMemory ||= rust.book_mesh_memory();
-  if (ribbonBuffer !== ribbonMemory.buffer) { ribbonBuffer = ribbonMemory.buffer; ribbonWords = new Uint32Array(ribbonBuffer); ribbonViews.clear(); }
-  const word = at >> 2, count = ribbonWords[word];
+  meshViews();
+  const words = meshWords, count = words[at];
   let views = ribbonViews.get(count);
-  if (!views) ribbonViews.set(count, views = { positions:new Float32Array(ribbonBuffer, ribbonWords[word + 1], count * 12),
-    uvs:new Float32Array(ribbonBuffer, ribbonWords[word + 2], count * 8), normals:new Float32Array(ribbonBuffer, ribbonWords[word + 3], count * 12),
-    indices:new Uint16Array(ribbonBuffer, ribbonWords[word + 4], ribbonWords[word + 5]) });
+  if (!views) ribbonViews.set(count, views = { positions:new Float32Array(meshBuffer, words[at + 1], count * 12),
+    uvs:new Float32Array(meshBuffer, words[at + 2], count * 8), normals:new Float32Array(meshBuffer, words[at + 3], count * 12),
+    indices:new Uint16Array(meshBuffer, words[at + 4], words[at + 5]) });
   return views;
 }
 
