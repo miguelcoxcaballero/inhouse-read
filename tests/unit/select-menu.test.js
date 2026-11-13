@@ -1,7 +1,7 @@
 import './helpers/rust-ui-ready.js'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { SelectMenu } from '../../src/js/readers/select-menu.js'
+import { SelectMenu } from './helpers/live-select-menu.js'
 import { initSync, RustSelectMenu } from '../../src/wasm/ui/inhouse_read_ui.js'
 
 beforeAll(() => initSync({ module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm') }))
