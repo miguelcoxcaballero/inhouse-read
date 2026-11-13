@@ -60,6 +60,39 @@ extern "C" {
     #[wasm_bindgen(method, getter = soilKind, catch)] pub fn soil_kind(this: &Thing) -> R<JsValue>;
     #[wasm_bindgen(method, getter, catch)] pub fn detailed(this: &Thing) -> R<JsValue>;
 
+    // The catalogue tables (plant_layout_policy).
+    #[wasm_bindgen(method, getter, catch)] pub fn dimensions(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter = potSizes, catch)] pub fn pot_sizes(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter = standardClasses, catch)] pub fn standard_classes(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter = sizeLabels, catch)] pub fn size_labels(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter, catch)] pub fn width(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter, catch)] pub fn depth(this: &Thing) -> R<JsValue>;
+    /// A record read back from IndexedDB (plant_valid_bake): structured-clone data, whose properties are plain
+    /// values that cannot throw when read, so its accessors are bare property reads.
+    pub type Plain;
+    #[wasm_bindgen(method, getter)] pub fn parts(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn objects(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn kind(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn name(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn position(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn scale(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn quaternion(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn place(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn rotation(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn parent(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn role(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn geometry(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn attributes(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn index(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn groups(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter = box)] pub fn bounds(this: &Plain) -> JsValue;
+    #[wasm_bindgen(method, getter)] pub fn length(this: &Plain) -> JsValue;
+    /// `Number.isFinite`, the function itself.
+    #[wasm_bindgen(thread_local_v2, js_namespace = Number, js_name = isFinite)] static IS_FINITE: js_sys::Function;
+    #[wasm_bindgen(method, js_name = every)] fn every_passing(this: &Thing, test: &js_sys::Function) -> bool;
+    /// `Object.prototype.toString.call(value)`.
+    #[wasm_bindgen(js_namespace = ["Object", "prototype", "toString"], js_name = call, catch)] pub fn object_tag(value: &JsValue) -> R<JsValue>;
+
     #[wasm_bindgen(method, setter = version, catch)] pub fn set_version(this: &Thing, value: &JsValue) -> R<()>;
     #[wasm_bindgen(method, setter = x, catch)] pub fn set_x(this: &Thing, value: f64) -> R<()>;
     #[wasm_bindgen(method, setter = surfaces, catch)] pub fn set_surfaces(this: &Thing, value: &JsValue) -> R<()>;
@@ -83,6 +116,7 @@ extern "C" {
     #[wasm_bindgen(method, setter)] pub fn set_width(this: &Fresh, value: f64);
     #[wasm_bindgen(method, setter)] pub fn set_height(this: &Fresh, value: f64);
     #[wasm_bindgen(method, setter)] pub fn set_row(this: &Fresh, value: f64);
+    #[wasm_bindgen(method, setter)] pub fn set_depth(this: &Fresh, value: f64);
     #[wasm_bindgen(method, setter)] pub fn set_spec(this: &Fresh, value: &JsValue);
     #[wasm_bindgen(method, setter)] pub fn set_pigment(this: &Fresh, value: &JsValue);
     #[wasm_bindgen(method, setter)] pub fn set_data(this: &Fresh, value: &JsValue);
@@ -138,6 +172,10 @@ pub fn r(value: &JsValue, name: &str, read: impl Fn(&Thing) -> R<JsValue>) -> R<
     }
     read(value.unchecked_ref())
 }
+/// `list.every(Number.isFinite)`.
+pub fn every_finite(list: &Array) -> bool { IS_FINITE.with(|test| list.unchecked_ref::<Thing>().every_passing(test)) }
+/// `value?.name` of a record read back from disk.
+pub fn p(value: &JsValue, read: impl Fn(&Plain) -> JsValue) -> JsValue { if absent(value) { JsValue::UNDEFINED } else { read(value.unchecked_ref()) } }
 pub fn thing(value: &JsValue) -> &Thing { value.unchecked_ref() }
 pub fn fresh() -> Fresh { JsValue::from(Object::new()).unchecked_into() }
 

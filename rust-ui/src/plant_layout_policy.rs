@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Array,Object,Reflect,Symbol};
 use crate::host::*;
 use crate::cloud_host::{copy_data_entries,data_entry};
+use crate::plant_recipe::{fresh,r,Thing};
 type R<T>=Result<T,JsValue>;
 fn set(target:&JsValue,key:&str,value:&JsValue)->R<()>{
  if Reflect::set(target,&key.into(),value)?{Ok(())}else{Err(js_sys::TypeError::new(&format!("Cannot assign to read only property '{key}'")).into())}
@@ -40,25 +41,40 @@ fn compare(a:&JsValue,b:&JsValue,greater:bool)->R<bool>{
  if a.is_symbol()||b.is_symbol(){return Err(js_sys::TypeError::new("Cannot convert a Symbol value to a number").into());}
  Ok(if greater{a.gt(&b)}else{a.lt(&b)})
 }
-fn clone_record(value:&JsValue)->R<JsValue>{let entries=Array::new();copy_data_entries(&entries,value)?;Ok(Object::from_entries(entries.as_ref())?.into())}
+/// `{ ...value }`. `Object.assign({}, value)` copies the same own enumerable properties in the same order, reading
+/// each the same way, in one call; only an own `__proto__` field would be set instead of defined, so a record that
+/// has one is copied entry by entry.
+fn clone_record(value:&JsValue)->R<JsValue>{
+ if absent(value)||!Object::has_own(boxed(value).unchecked_ref(),&JsValue::from_str(wasm_bindgen::intern("__proto__"))){
+  return Ok(Object::assign(&Object::new(),boxed(value).unchecked_ref()).into());
+ }
+ let entries=Array::new();copy_data_entries(&entries,value)?;Ok(Object::from_entries(entries.as_ref())?.into())
+}
+/// The pot's own key when the tables name it, else `''` (an unknown pot stands for the MUSKOT).
+fn pot_key(tables:&JsValue,pot:&JsValue)->R<JsValue>{Ok(if has(&r(tables,"potSizes",Thing::pot_sizes)?,pot){pot.clone()}else{JsValue::from_str(wasm_bindgen::intern(""))})}
 fn has(table:&JsValue,key:&JsValue)->bool{key.is_string()&&Object::has_own(table.unchecked_ref(),key)}
 fn keyed(table:&JsValue,key:&JsValue)->R<JsValue>{Reflect::get(table,key)}
 #[wasm_bindgen]
-pub fn plant_standard_class(tables:&JsValue,id:&JsValue)->R<JsValue>{let classes=read(tables,"standardClasses")?;if has(&classes,id){clone_record(&keyed(&classes,id)?)}else{Ok(JsValue::NULL)}}
+pub fn plant_standard_class(tables:&JsValue,id:&JsValue)->R<JsValue>{let classes=r(tables,"standardClasses",Thing::standard_classes)?;if has(&classes,id){clone_record(&keyed(&classes,id)?)}else{Ok(JsValue::NULL)}}
 #[wasm_bindgen]
 pub fn plant_dimensions_lookup(tables:&JsValue,id:&JsValue,pot:&JsValue)->R<JsValue>{
- let dimensions=read(tables,"dimensions")?;if !has(&dimensions,id){return Ok(JsValue::NULL);}
- let key=if has(&read(tables,"potSizes")?,pot){pot.clone()}else{"".into()};clone_record(&keyed(&keyed(&dimensions,id)?,&key)?)
+ let dimensions=r(tables,"dimensions",Thing::dimensions)?;if !has(&dimensions,id){return Ok(JsValue::NULL);}
+ let key=pot_key(tables,pot)?;clone_record(&keyed(&keyed(&dimensions,id)?,&key)?)
 }
 #[wasm_bindgen]
 pub fn plant_size_label(tables:&JsValue,id:&JsValue,pot:&JsValue)->R<JsValue>{
- let labels=read(tables,"sizeLabels")?;if !has(&labels,id){return Ok("".into());}
- let key=if has(&read(tables,"potSizes")?,pot){pot.clone()}else{"".into()};keyed(&keyed(&labels,id)?,&key)
+ let labels=r(tables,"sizeLabels",Thing::size_labels)?;if !has(&labels,id){return Ok("".into());}
+ let key=pot_key(tables,pot)?;keyed(&keyed(&labels,id)?,&key)
 }
 #[wasm_bindgen]
 pub fn plant_scene_dimensions(tables:&JsValue,id:&JsValue,pot:&JsValue,scale:&JsValue)->R<JsValue>{
  let size=plant_dimensions_lookup(tables,id,pot)?;if !truthy(&size){return Ok(JsValue::NULL);}
- let result=Object::new();for key in ["width","height","depth"]{set(result.as_ref(),key,&(numeric(&read(&size,key)?)?*numeric(scale)?).into())?;}Ok(result.into())
+ // `size` is the copy made above; the result is a new record. Each side is still read and converted in turn.
+ let result=fresh();
+ result.set_width(numeric(&r(&size,"width",Thing::width)?)?*numeric(scale)?);
+ result.set_height(numeric(&r(&size,"height",Thing::height)?)?*numeric(scale)?);
+ result.set_depth(numeric(&r(&size,"depth",Thing::depth)?)?*numeric(scale)?);
+ Ok(result.into())
 }
 #[wasm_bindgen]
 pub fn plant_minimum_tap_width(viewport:&JsValue)->R<u32>{
