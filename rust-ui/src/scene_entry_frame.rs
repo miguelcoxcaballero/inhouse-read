@@ -27,11 +27,12 @@ use super::projection::RustSceneProjectionFrame;
 /// - 56 the pose's Euler order (0 `XYZ`, 1 `ZYX`), which a frame without rigid bodies keeps;
 /// - 57-60 the pose's quaternion (`Quaternion#setFromEuler`, recomputed when the Euler moved);
 /// - 61-68 the pose last handed to the host; 69 the lean; 70 out: 1 the pose differs from the
-///   one the host holds, 2 its matrix differs; 71 in: the host holds nothing of this row yet;
-/// - 72 the previous frame's motion flags.
+///   one the host holds, 2 its matrix differs, 4 its projected rectangle differs; 71 in: the
+///   host holds nothing of this row yet;
+/// - 72 the previous frame's motion flags; 73 in: the host holds no hit target of this row yet.
 const STATE:usize=76;
 const HOST:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
-const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;
+const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;
 
 /// Per entry in: pose position, quaternion `[x, y, z, w]` and scale; the projection's kind,
 /// flags, drop, insertion, model, overview, drop complete and overlay; the slot box.
@@ -44,9 +45,10 @@ const OUTPUT:usize=70;
 /// written styles, 16 fresh cover, 32 use the placed matrix), the button's flags, the hit
 /// surface's box and its world matrix.
 const HIT_INPUT:usize=24;
-/// Per entry hit out: the style dirty bits, the hit rectangle (7), the tap rectangle (4), the
-/// z-index, the cover's left and top, whether it shows and whether it takes pointer events.
-const HIT_OUTPUT:usize=17;
+/// Per entry hit out: the style dirty bits (and `HIT_MOVED` when one of the sixteen numbers
+/// after it differs from the ones the host holds), the hit rectangle (7), the tap rectangle (4),
+/// the z-index, the cover's left and top, whether it shows and whether it takes pointer events.
+const HIT_OUTPUT:usize=17;const HIT_MOVED:u32=8192;
 
 #[wasm_bindgen]
 pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit_input:Vec<f64>,hit_output:Vec<f64>,room:Box<[f64;16]>}
@@ -134,9 +136,12 @@ impl RustSceneEntryFrame{
    input[16..22].copy_from_slice(&row[BOX..BOX+6]);
    let mut held=[0u64;16];
    for (bits,value) in held.iter_mut().zip(&output[26..42]){*bits=value.to_bits();}
+   let mut rect=[0u64;7];
+   for (bits,value) in rect.iter_mut().zip(&output[58..65]){*bits=value.to_bits();}
    let flags=place_entry(index,input,output,&room,motion_frame,scene,motion,transition,now,arranging);
    let matrix_changed=fresh||held.iter().zip(&output[26..42]).any(|(bits,value)|*bits!=value.to_bits());
-   row[CHANGED]=f64::from(u32::from(pose_changed)|u32::from(matrix_changed)<<1);
+   let rect_changed=fresh||rect.iter().zip(&output[58..65]).any(|(bits,value)|*bits!=value.to_bits());
+   row[CHANGED]=f64::from(u32::from(pose_changed)|u32::from(matrix_changed)<<1|u32::from(rect_changed)<<2);
    row[FRESH]=0.0;row[LIVE]=f64::from(flags);
   }
   f64::from(u32::from(moving)|u32::from(shelf_moving)<<1|u32::from(previewing)<<2|previewed<<3)
@@ -147,8 +152,8 @@ impl RustSceneEntryFrame{
  /// the one `step` projected.
  pub fn hits(&mut self,projection:&mut RustSceneProjectionFrame,scene:&RustScene){
   let entries=self.hit_input.chunks_exact(HIT_INPUT).zip(self.hit_output.chunks_exact_mut(HIT_OUTPUT))
-   .zip(self.input.chunks_exact(INPUT).zip(self.output.chunks_exact(OUTPUT)));
-  for (index,((hit,out),(input,output))) in entries.enumerate(){
+   .zip(self.input.chunks_exact(INPUT).zip(self.output.chunks_exact(OUTPUT))).zip(self.state.chunks_exact_mut(STATE));
+  for (index,(((hit,out),(input,output)),row)) in entries.enumerate(){
    let bits=hit[0] as u32;
    if bits&1==0{continue;}
    let mut io=[0.0;49];
@@ -156,7 +161,10 @@ impl RustSceneEntryFrame{
    io[4..11].copy_from_slice(&output[58..65]);io[11..17].copy_from_slice(&hit[2..8]);
    io[17..33].copy_from_slice(if bits&32!=0{&output[42..58]}else{&hit[8..24]});
    let dirty=projection.hit_io(scene,index,bits&8!=0,bits&16!=0,&mut io);
-   out[0]=f64::from(dirty);out[1..17].copy_from_slice(&io[33..49]);
+   // The host copies the numbers into its objects only when they moved (or it holds none yet).
+   let moved=row[HIT_FRESH]!=0.0||bits&8!=0||out[1..17].iter().zip(&io[33..49]).any(|(a,b)|a.to_bits()!=b.to_bits());
+   row[HIT_FRESH]=0.0;
+   out[0]=f64::from(dirty|if moved{HIT_MOVED}else{0});out[1..17].copy_from_slice(&io[33..49]);
   }
  }
 }

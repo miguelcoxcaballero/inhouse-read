@@ -1,5 +1,5 @@
 // @vitest-environment node
-import {expect,it} from 'vitest';
+import {afterAll,beforeAll,expect,it,vi} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
 import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
@@ -13,6 +13,11 @@ import {createMarshalFrame} from './helpers/reference-scene-entry-marshal.js';
 // step packet, read back, composed by three, written into `step`) must give the same bits: the
 // whole output arena, each pose as its three object holds it, the lift, the landing, the
 // preview, the lean and the frame's summary, with and without rigid bodies.
+// The solver's first step settles against an 80 ms wall clock (book_gravity.rs): on a busy machine
+// the two solvers compared here would stop at different steps. A still clock lets both finish.
+let wallClock;
+beforeAll(()=>{wallClock=vi.spyOn(Date,'now').mockReturnValue(1.7e12);});
+afterAll(()=>wallClock.mockRestore());
 const key=e=>e.kind==='plant'||e.kind==='lamp'?e.key:e.book?.driveFileId?`book:drive:${e.book.driveFileId}`:null;
 const S=ENTRY_STATE;
 const bytes=values=>Buffer.from(values.buffer,values.byteOffset,values.byteLength).toString('hex');
@@ -70,7 +75,7 @@ for(const physicsFrom of [Infinity,0,90])for(const reduced of [false,true])it(`h
  const marshal=createMarshalFrame({gravityFrame:oldGravity,entryFrame:o.entryFrame,motionFrame:o.motionFrame});
  const room=new THREE.Object3D(),inverse=new Float64Array([0,0,0,1]),rows=[{left:0,right:600,bottom:300,ceiling:10},{left:0,bottom:600,top:310},{left:0,right:600,bottom:900,ceiling:610}];
  const width=600,pixelsPerMetre=1000;
- let ds=Array.from({length:12},(_,i)=>data(i)),olds=ds.map(oldEntry),news=ds.map(newEntry),sequence=0,rested=0,total=0,seen=new Set();
+ let ds=Array.from({length:12},(_,i)=>data(i)),olds=ds.map(oldEntry),news=ds.map(newEntry),sequence=0,rested=0,total=0,stood=0,seen=new Set(),rects=new Map();
  n.entryFrame.bind(news,true);
  const state=()=>(n.entryFrame.refresh(),n.entryFrame.state);
  const both=(index,change)=>{change(olds[index],null);change(news[index],news[index].row*S);};
@@ -107,7 +112,7 @@ for(const physicsFrom of [Infinity,0,90])for(const reduced of [false,true])it(`h
     const extra=tick===330?[data(40),data(41),data(43)]:[];
     olds=[...order.map(index=>olds[index]),...extra.map(oldEntry)];news=[...order.map(index=>news[index]),...extra.map(newEntry)];
     for(const e of olds){e.preview=freshPreview();e.landing=null;}
-    n.entryFrame.bind(news,true);
+    n.entryFrame.bind(news,true);rects.clear();
    }
    if(tick%18===0){
     const poses=olds.filter(e=>key(e)).map((e,i)=>[key(e),i%3,.04+tick*.0001,-.12,.01,0,0,Math.sin(i*.03),Math.cos(i*.03),.9]);
@@ -143,6 +148,10 @@ for(const physicsFrom of [Infinity,0,90])for(const reduced of [false,true])it(`h
     expect(s[at+9]!==0,`landing ${label}`).toBe(Boolean(e.landing));
     expect([Object.is(s[at+13],e.preview.x),Object.is(s[at+14],e.preview.y),s[at+20]!==0],`preview ${label}`).toEqual([true,true,e.preview.active]);
     expect(Object.is(a.lean,e.lean),`lean ${label}`).toBe(true);
+    // 4 in column 70: the projected rectangle differs from the one this row held (a layout holds none).
+    const rect=bytes(n.entryFrame.output.subarray(i*ENTRY_OUTPUT+58,i*ENTRY_OUTPUT+65)),moved=rects.get(a)!==rect;
+    expect(Boolean(s[at+70]&4),`rectangle ${label}`).toBe(moved);
+    rects.set(a,rect);if(!moved)stood++;
    });
    total+=olds.length;rested+=olds.length-applied;
   }
@@ -150,6 +159,7 @@ for(const physicsFrom of [Infinity,0,90])for(const reduced of [false,true])it(`h
   for(const flags of [0,1,3,5])expect(seen.has(flags),`motion flags ${flags}`).toBe(true);
   // Without rigid bodies most frames move nothing: the pose then never reaches its three object.
   if(physicsFrom===Infinity)expect(rested/total).toBeGreaterThan(.2);
+  expect(stood).toBeGreaterThan(100);
  }finally{
   oldGravity.free();gravityFrame.free();
   for(const side of sides){side.entryFrame.free();side.motionFrame.free();side.sceneView.free();side.bookGravity.free();side.roomMotion.free();side.roomTransition.free();}
@@ -168,8 +178,8 @@ it('keeps each entry\'s row through a layout, clears what a committed layout cle
   expect(next.map(e=>e.row)).toEqual([0,1,2]);
   const s=frame.state;
   for(const [index,source] of [[0,3],[2,1]])for(let column=0;column<S;column++)
-   expect(s[index*S+column],`${index}/${column}`).toBe(column>=9&&column<21?0:column===71?1:source*1000+column);
-  expect(Array.from(s.subarray(S,2*S))).toEqual(Array.from({length:S},(_,column)=>column===71?1:0));
+   expect(s[index*S+column],`${index}/${column}`).toBe(column>=9&&column<21?0:column===71||column===73?1:source*1000+column);
+  expect(Array.from(s.subarray(S,2*S))).toEqual(Array.from({length:S},(_,column)=>column===71||column===73?1:0));
   frame.bind([],true);expect(frame.state).toHaveLength(0);
  }finally{frame.free();}
  expect(()=>frame.bind([],true)).toThrow('disposed');

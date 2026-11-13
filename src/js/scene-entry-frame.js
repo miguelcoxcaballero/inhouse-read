@@ -31,7 +31,7 @@ export function createSceneEntryFrame(rust) {
   // A layout's entries take the arena's rows in their new order. A retained entry (`row` is
   // its former place) keeps its state, a new one starts from zeros; `reset` clears every
   // landing and preview, as a committed layout does. Each row is marked as not yet held by
-  // the host, so the next frame hands over its whole pose.
+  // the host, so the next frame hands over its whole pose, rectangle and hit target.
   function bind(entries, reset) {
     const held = count > 0 ? (refresh(), frame.state.slice()) : null;
     prepare(entries.length);
@@ -41,7 +41,7 @@ export function createSceneEntryFrame(rust) {
       if (held && entry.row >= 0) state.set(held.subarray(from, from + ENTRY_STATE), to);
       else state.fill(0, to, to + ENTRY_STATE);
       if (reset) state.fill(0, to + 9, to + 21);
-      state[to + 71] = 1; entry.row = index;
+      state[to + 71] = state[to + 73] = 1; entry.row = index;
     }
   }
   function step(motionFrame, scene, motion, transition, now, arranging, roomMatrix) {
