@@ -4,6 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
 import {rustPDFImagePaths} from '/inhouse-read/src/js/readers/pdf-images-wasm.js';
 import {paintPDFTheme} from '/inhouse-read/tests/unit/helpers/live-pdf-page-theme.js';
 import {referenceImagePaths,referencePaintTheme} from '/inhouse-read/tests/unit/helpers/reference-pdf-image-paths.js';
@@ -12,6 +13,8 @@ import {getDocument,GlobalWorkerOptions} from '/inhouse-read/node_modules/pdfjs-
 import workerURL from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 GlobalWorkerOptions.workerSrc=workerURL;
 const core=await loadRustCore();if(!core?.pdf_image_paths)throw Error('Actual path kernel required');
+// The reader awaits its Rust module before creating any component; so does this page.
+await requireRustUI();
 window.checkPaths=()=>{
  const results=[];
  for(const count of [1,8,32,128,512,2048]){

@@ -5,9 +5,12 @@ import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs'
 const html=`<!doctype html><script type="module">
 import * as THREE from '/inhouse-read/node_modules/three/build/three.module.js';
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {createShelfFurniture} from '/inhouse-read/src/js/shelf-furniture.js';
 import {createShelfFurniture as reference} from '/inhouse-read/tests/unit/helpers/reference-shelf-furniture.js';
 const core=await loadRustCore();if(!core?.cabinet_build)throw Error('Actual cabinet core required');
+// The app loads the shelf module before its first frame; so does this page.
+await requireRustShelf();
 window.checkTimber=()=>{
  const results=[],wood=new THREE.MeshStandardMaterial(),backWood=new THREE.MeshStandardMaterial(),darkWood=new THREE.MeshStandardMaterial();
  try{for(const count of [3,12,100]){

@@ -4,6 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><main id="result"></main><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
 import {rustPDFImageRects} from '/inhouse-read/src/js/readers/pdf-images-wasm.js';
 import {pdfImageRects,populatePDFReflow,clearPDFReflow} from '/inhouse-read/tests/unit/helpers/live-pdf-reflow.js';
 import {extractPDFText} from '/inhouse-read/src/js/readers/pdf-text.js';
@@ -13,6 +14,8 @@ import {getDocument,GlobalWorkerOptions} from '/inhouse-read/node_modules/pdfjs-
 import workerURL from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 GlobalWorkerOptions.workerSrc=workerURL;
 const core=await loadRustCore();if(!core?.pdf_image_rects)throw Error('Actual compiled image bounds required');
+// The reader awaits its Rust module before creating any component; so does this page.
+await requireRustUI();
 window.checkImageBounds=()=>{
  const results=[];
  for(const count of [8,32,128,512,2000]){

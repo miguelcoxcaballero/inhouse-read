@@ -3,12 +3,15 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {measuredShelfModelLayout as shelfModelLayout} from '/inhouse-read/src/js/shelf-model-layout.js';
 import {placeRooftopPlants} from '/inhouse-read/src/js/plant-rooftop-layout.js';
 import {shelfModelLayout as reference} from '/inhouse-read/tests/unit/helpers/reference-shelf-model-layout.js';
 import {placeRooftopPlants as roofReference} from '/inhouse-read/tests/unit/helpers/reference-plant-rooftop-layout.js';
 import {scratchPointer,scratch} from '/inhouse-read/src/js/catalogue-core.js';
 const core=await loadRustCore();if(!core?.shelf_model)throw Error('Actual shelf_model required');
+// The app loads the shelf module before its first frame; so does this page.
+await requireRustShelf();
 const fixture=(count,width,tall=false)=>({width,rows:Array.from({length:Math.ceil(count/6)},()=>({})),entries:Array.from({length:count},(_,i)=>({
 kind:['book','plant','lamp'][i%3],shelf:Math.floor(i/6),key:'object-'+i,x:40+(i%6)*48,
 height:i%3===1?(tall?350:25):172,width:90,depth:100,style:{heightRatio:.91},mount:i%2?'floor':'undershelf',node:{dataset:{}},book:{title:'Book '+i}}))});

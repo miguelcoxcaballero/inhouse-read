@@ -4,9 +4,12 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {paintCloth,seededRandom} from '/inhouse-read/src/js/spine-surface.js';
 import {paintCloth as reference,seededRandom as referenceRandom} from '/inhouse-read/tests/unit/helpers/reference-book-cloth.js';
 const core=await loadRustCore();if(!core?.book_cloth_plan)throw Error('Actual cloth core required');
+// The app loads the shelf module before its first frame; so does this page.
+await requireRustShelf();
 window.checkCloth=()=>{
  const results=[];
  for(const [width,metal] of [[80,false],[257.3592701820759,false],[257.3592701820759,true],[512,false]]){

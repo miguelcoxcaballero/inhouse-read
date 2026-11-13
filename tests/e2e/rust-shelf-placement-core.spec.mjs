@@ -5,6 +5,7 @@ import { placementBenchCases } from '../helpers/shelf-placement-cases.mjs';
 
 const html=`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {requireRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
 import * as production from '/inhouse-read/src/js/shelf-placement.js';
 import * as productionDecoration from '/inhouse-read/src/js/shelf-decoration-layout.js';
@@ -14,6 +15,8 @@ import * as originalDecoration from '/inhouse-read/tests/unit/helpers/reference-
 import {placementFixture,originalPlacement} from '/inhouse-read/tests/helpers/shelf-placement-cases.mjs';
 import {targetsFor,placementOptions,canonicalPlacement,placementChecksum} from '/inhouse-read/tests/helpers/shelf-placement-benchmark.mjs';
 const core=await loadRustCore();if(!core?.shelf_place)throw new Error('Actual compiled shelf placement kernel required');
+// The app loads the shelf module before its first frame; so does this page.
+await requireRustShelf();
 const hash=async data=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',typeof data==='string'?new TextEncoder().encode(data):data)),n=>n.toString(16).padStart(2,'0')).join('');
 const same=(actual,expected)=>{if(canonicalPlacement(actual)!==canonicalPlacement(expected))throw new Error('Complete placement parity changed');};
 const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
