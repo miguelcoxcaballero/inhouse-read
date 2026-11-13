@@ -114,12 +114,9 @@ fn with_built_stops<S:AsRef<str>>(gradient:JsValue,stops:&[(f64,S)])->R<JsValue>
 fn linear(c:&JsValue,x0:f64,y0:f64,x1:f64,y1:f64)->R<JsValue>{ctx(c).create_linear_gradient(x0,y0,x1,y1)}
 /// `context.setTransform?.(a, b, c, d, e, f)`.
 fn transform(context:&JsValue,a:f64,d:f64)->R<()>{optional(context,"setTransform",&[&val(a),&val(0.0),&val(0.0),&val(d),&val(0.0),&val(0.0)])?;Ok(())}
+/// FNV-1a over the string's UTF-16 units: one crossing for the whole text (book_reflection.rs, utf16_fnv).
 #[inline(never)]
-fn text_seed(text:&JsString)->u32{
- let mut h=2166136261u32;
- for i in 0..text.length(){h=(h^(text.char_code_at(i) as i64 as u32)).wrapping_mul(16777619);}
- h
-}
+fn text_seed(text:&JsString)->u32{crate::book_reflection::utf16_fnv(text,2166136261u32)}
 #[inline(never)]
 fn joined(parts:&[&JsValue])->JsString{let mut out=JsString::from("");for part in parts{out=out.concat(&string_of(part).into());}out}
 /// The small deterministic stream of `seededRandom`.
@@ -156,6 +153,8 @@ fn layout_of(book:&JsValue)->R<Layout>{
  })
 }
 
+/// `spineLayout(book).device`: the mark at the tail of a plain spine, without building the layout's object.
+pub(crate) fn spine_device(book:&JsValue)->R<Option<f64>>{Ok(layout_of(book)?.device)}
 /// The layout as the plain object the callers read, keys in the original order.
 #[wasm_bindgen]
 pub fn spine_layout(book:&JsValue)->R<JsValue>{
@@ -531,4 +530,66 @@ pub fn paint_cloth_callback(c:&JsValue,width:f64,random:&JsValue,metal:bool)->R<
   context.set_fill_style(&txt(&color))?;let thickness=0.5+next()?*0.7;context.fill_rect(x,y,thickness,length)?;
  }}
  Ok(())
+}
+
+/// Plain weave, 16 × 16 threads per 128 px tile with uneven yarn, at 4.4 design units a thread (1024 = board
+/// height), so cover and lifted spine are one cloth: laid over a canvas drawn in design units, in colour or
+/// multiplied into the packed height/roughness/metal raster. Both tiles are made on first use from the core's
+/// pixels (`host.weavePixels()`) and kept by the host (`host.tiles`).
+#[wasm_bindgen]
+pub fn spine_paint_weave(host:&JsValue,c:&JsValue,design_width:f64,options:&JsValue)->R<()>{
+ let channels=!options.is_undefined()&&truthy(&rd(options,"channels")?);
+ // `c.createPattern?.(weaveTile(…), 'repeat')`: without the method no tile is made.
+ let create=rd(c,"createPattern")?;
+ if absent(&create){return Ok(());}
+ let tile=weave_tile(host,if channels{"channels"}else{"color"})?;
+ let create=create.dyn_into::<js_sys::Function>().map_err(|_|JsValue::from(js_sys::TypeError::new("c.createPattern is not a function")))?;
+ let pattern=create.call2(c,&tile,&lit("repeat"))?;
+ if !truthy(&pattern){return Ok(());}
+ let context=ctx(c);
+ context.save()?;
+ if channels{context.set_composite(&lit("multiply"))?;}
+ let weave=4.4/8.0;
+ method(c,"scale",&[&val(weave),&val(weave)])?;
+ context.set_fill_style(&pattern)?;context.fill_rect(0.0,0.0,design_width/weave,1024.0/weave)?;context.restore()
+}
+/// The textures and the material description of a painted spine (`raw` from spine_surface). Colour and PBR
+/// channels share exactly the same glyph raster: text follows the continuous curved binding UVs.
+#[wasm_bindgen]
+pub fn spine_surface_material(host:&JsValue,raw:&JsValue,style:&JsValue)->R<JsValue>{
+ let three=rd(host,"three")?;
+ let make=|class:&'static str,args:&[&JsValue]|->R<JsValue>{
+  let list=Array::new();for a in args{list.push(a);}
+  Reflect::construct(rd(&three,class)?.unchecked_ref(),&list)
+ };
+ let map=make("CanvasTexture",&[&rd(raw,"color")?])?;Reflect::set(&map,&lit("colorSpace"),&rd(&three,"SRGBColorSpace")?)?;
+ let channels=make("CanvasTexture",&[&rd(raw,"packed")?])?;
+ let pixels=rd(raw,"relief")?;
+ let relief=if truthy(&pixels){host_call(host,"bindingRelief",&[&pixels])?}else{JsValue::NULL};
+ let bump=rd(raw,"bump")?;
+ let bump_map=if truthy(&bump){channels.clone()}else{JsValue::NULL};
+ let (bump_scale,sheen)=(bump,rd(raw,"sheen")?);
+ let sheen_color=method(&make("Color",&[&rd(style,"color")?])?,"lerp",&[&make("Color",&[&lit("#fff4e6")])?,&val(0.45)])?;
+ let material=object(&[("map",map.clone()),("roughness",val(1.0)),("metalness",val(1.0)),("roughnessMap",channels.clone()),
+  ("metalnessMap",channels.clone()),("bumpMap",bump_map),("bumpScale",bump_scale),("sheen",sheen),("sheenRoughness",val(0.62)),
+  ("sheenColor",sheen_color),("envMapIntensity",rd(raw,"envMapIntensity")?),("anisotropy",rd(raw,"anisotropy")?),
+  ("clearcoat",rd(raw,"clearcoat")?),("clearcoatRoughness",rd(raw,"clearcoatRoughness")?)])?;
+ object(&[("map",map),("channels",channels),("relief",relief),("material",material)])
+}
+fn weave_tile(host:&JsValue,kind:&'static str)->R<JsValue>{
+ let known=rd(host,"tiles")?;
+ if !absent(&known){return rd(&known,kind);}
+ let pixels=host_call(host,"weavePixels",&[])?;
+ if absent(&pixels){return Err(js_sys::Error::new("No se pudo generar el tejido del libro en Rust.").into());}
+ let tiles=object(&[])?;
+ for name in["color","channels"]{
+  let tile=canvas(128.0,128.0)?;
+  let t=context_2d(&tile)?;
+  let image=optional(&t,"createImageData",&[&val(128.0),&val(128.0)])?.unwrap_or(JsValue::UNDEFINED);
+  let data=get(&image,"data");
+  if truthy(&data){method(&data,"set",&[&rd(&pixels,name)?])?;ctx(&t).put_image_data(&image,0.0,0.0)?;}
+  Reflect::set(&tiles,&lit(name),&tile)?;
+ }
+ Reflect::set(host,&lit("tiles"),&tiles)?;
+ rd(&tiles,kind)
 }

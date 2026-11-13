@@ -19,7 +19,8 @@ import * as spine from '/inhouse-read/src/js/spine-surface.js';
 import * as reference from '/inhouse-read/tests/unit/helpers/reference-book-case.js';
 window.benchReady = (async () => {
   await requireRustCore(); await requireRustShelf();
-  const model = await import('/inhouse-read/src/js/book-model.js');
+  // ?reference measures the frozen JavaScript the shelf module replaced (tests/unit/helpers/reference-book-model.js).
+  const model = await import(location.search.includes('reference') ? '/inhouse-read/tests/unit/helpers/reference-book-model.js' : '/inhouse-read/src/js/book-model.js');
   return { THREE, model, spine, reference, needRustShelf };
 })();
 const palette = ['#18364b','#713b42','#375a46','#5a4a2e','#2f2f4f','#6b2d5c','#1f4d4d','#8a5a2b'];
