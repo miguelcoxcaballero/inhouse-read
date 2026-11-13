@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { it, expect } from 'vitest'
-import { normalizeSupertonicText, supertonicTextChunks } from '../../src/js/readers/neural-voice/supertonic-runtime.js'
+import { normalizeSupertonicText, supertonicTextChunks } from './helpers/live-supertonic-runtime.js'
 import * as original from './helpers/reference-supertonic-text.js'
 import { SUPERTONIC_LANGUAGES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
 

@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest'
 // pcm-wasm.test.js and synth-flow.test.js hold the core to byte for byte. The phoneme-id helpers and length_scale run the same
 // assertions against the original and against the voice core.
 import { peakOf, rmsOf, peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, PAUSE_MS, splitSegments as originalSplit, limitIds as originalLimit, lengthScaleFor as originalScale } from './helpers/reference-pcm.js'
-import * as voiceCore from '../../src/js/readers/neural-voice/synth-flow.js'
+import * as voiceCore from './helpers/live-synth-flow.js'
 
 const tone = (n, amp = 0.5) => Float32Array.from({ length: n }, (_, i) => amp * Math.sin(i / 5))
 

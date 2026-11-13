@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {createSupertonicRuntime,normalizeSupertonicText,supertonicTextChunks} from '../../src/js/readers/neural-voice/supertonic-runtime.js';
+import {createSupertonicRuntime,normalizeSupertonicText,supertonicTextChunks} from './helpers/live-supertonic-runtime.js';
 import {SUPERTONIC_STYLES,SUPERTONIC_LEGACY_STYLES,supertonicVoicesFor,SUPERTONIC_ASSETS,SUPERTONIC_BYTES,SUPERTONIC_LEGACY_ASSETS,isSupertonicVoiceId} from '../../src/js/readers/neural-voice/supertonic-catalog.js';
 
 function fixture(overrides={}) {
@@ -102,7 +102,7 @@ describe('Supertonic inference lifecycle',()=>{
 
 describe('supertonicSeconds', () => {
   it('never shortens the model duration above 1x; tempo changes only after inference', async () => {
-    const { supertonicSeconds } = await import('../../src/js/readers/neural-voice/supertonic-runtime.js')
+    const { supertonicSeconds } = await import('./helpers/live-supertonic-runtime.js')
     expect(supertonicSeconds(2, 1)).toBe(2)
     expect(supertonicSeconds(2, 0.5)).toBe(4)
     for(const rate of [1.25,1.5,2])expect(supertonicSeconds(2,rate)).toBe(2)

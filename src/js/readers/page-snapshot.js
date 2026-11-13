@@ -27,8 +27,6 @@ const localBlob = href => fetch(href).then(response => response.blob())
 const loadImage = (image, url) => new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = url })
 const snapshotKit = () => [beforeDeadline, localBlob, blobDataURL, loadImage]
 
-export const plainBounds = rect => readerUI().snapshot_bounds(rect)
-
 /** Copies before returning: subsequent PDF renders cannot alter the preview. */
 export function snapshotCanvas(source, { filter = 'none', displayBounds, paper = false, paperSource = source } = {}) {
   return readerUI().snapshot_canvas(source, filter, displayBounds, paper, paperSource)
@@ -43,9 +41,6 @@ export const rasterizeInlineSVG = (svg, options) => readerUI().snapshot_svg(svg,
 
 /** Composite visible fixed-layout spread frames into the same reader viewport. */
 export const compositePageSnapshots = (snapshots, options) => readerUI().snapshot_composite(snapshots, options)
-
-/** Does a computed CSS colour (rgb()) equal a theme colour (#rrggbb)? */
-export const sameColor = (a, b) => readerUI().snapshot_same_color(a, b)
 
 /**
  * Snapshot DOM in its actual visible viewport, including iframe offset after

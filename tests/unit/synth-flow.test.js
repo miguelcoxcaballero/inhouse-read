@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest'
-import { limitIds, splitSegments, lengthScaleFor, synthesisRate, finishPiper, finishSupertonic, speedUpSpeech, silence } from '../../src/js/readers/neural-voice/synth-flow.js'
+import { limitIds, splitSegments, lengthScaleFor, synthesisRate, finishPiper, finishSupertonic, speedUpSpeech, silence } from './helpers/live-synth-flow.js'
 import * as rustVoice from '../../src/js/rust-voice-core.js'
 import * as referencePcm from './helpers/reference-pcm.js'
 import * as referenceTempo from './helpers/reference-speech-tempo.js'

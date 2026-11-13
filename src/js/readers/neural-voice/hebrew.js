@@ -10,15 +10,6 @@
 // is the frozen JavaScript implementation the Rust one is compared with.
 import { loadedRustVoiceUI as voice } from '../../rust-voice-ui.js'
 
-/** The IPA of a Hebrew text with niqqud: words joined by a space, as upstream does. */
-export const hebrewToIpa = text => voice().voice_host_hebrew_ipa(text)
-/** The ids of the characters of the official Nakdimon alphabet (any niqqud already in the text is ignored). */
-export const nakdimonInputIds = text => voice().voice_host_nakdimon_ids(text)
-/** Merge model predictions onto the ORIGINAL characters, in Nakdimon's dagesh/dot/vowel order. */
-export const mergeNiqqud = (letters, outputs) => voice().voice_host_merge_niqqud(letters, outputs)
-/** IPA code points use the voice's table, not the fixed table in the espeak WASM program. */
-export const phonemeIdsFromIpa = (ipa, idMap) => voice().voice_host_ipa_ids(ipa, idMap)
-
 const KIT = { noop: () => {} }
 /** Cached Nakdimon bytes are passed from the page; this module never downloads during reading. The session checks, the
  * queue, the inference and its release are the voice module (rust-ui/src/voice_hebrew.rs). */

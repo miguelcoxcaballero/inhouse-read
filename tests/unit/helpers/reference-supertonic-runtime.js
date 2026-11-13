@@ -6,7 +6,7 @@
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from '../../../src/js/readers/neural-voice/supertonic-catalog.js';
 import { speedUpSpeech } from '../../../src/js/readers/neural-voice/synth-flow.js';
 import { loadedRustVoiceUI as voice } from '../../../src/js/rust-voice-ui.js';
-import {supertonicRuntimeConfig,supertonicTextIds,supertonicLocalMarks,supertonicNoise,createSupertonicPcmJoin,supertonicStyleValid,createSupertonicState} from '../../../src/js/readers/neural-voice/supertonic-plan.js';
+import {supertonicRuntimeConfig,supertonicTextIds,supertonicLocalMarks,supertonicNoise,createSupertonicPcmJoin,supertonicStyleValid,createSupertonicState} from './live-supertonic-plan.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
 import { yieldToMessages as yieldTask } from '../../../src/js/readers/neural-voice/task-yield.js';
