@@ -8,11 +8,13 @@ vi.mock('../../src/js/rust-core.js',async original=>{
 import { loadRustCore } from '../../src/js/rust-core.js';
 import { prepareColorMaskJob } from './helpers/reference-color-mask-bridge.js';
 import * as production from '../../src/js/cover-relief.js';
+import { needRustShelf } from '../../src/js/rust-shelf.js';
+const shelf=needRustShelf();
 import * as frozen from './helpers/reference-relief-color.js';
 import { colorMaskCases, colorMaskPalette, makeColorMaskImage, colorMaskSelection } from '../helpers/color-mask-cases.mjs';
 
 // The prepared classifier below is the frozen JavaScript bridge of the kernels (the production code now runs the
-// whole classification inside the core's jobs, see cover-relief-job-wasm.test.js): these tests keep proving that
+// whole classification inside the shelf module's jobs, counted by `relief_jobs_made/live`; see cover-relief-job-wasm.test.js): these tests keep proving that
 // the membership kernels, fed the original JavaScript OKLab, are byte-identical to the original loops, and that the
 // production builders (jobs) produce the original complete maps.
 let core, stats;
@@ -64,17 +66,18 @@ describe('compiled prepared OKLab masks preserve complete original map decisions
     [colorMaskCases[4],3],[colorMaskCases[6],10]])it(`preserves owners, physical heights, gloss, foil and rendered channels for ${input.name}/${layers}`,()=>{
     const image=makeColorMaskImage(input),selection=colorMaskSelection(layers),before=Buffer.from(bytes(image.data));
     const expected=drain(frozen.buildMapsFromPixels(image,image,selection));
-    const actual=drain(production.buildMapsFromPixels(image,image,selection));
-    exact(actual,expected,'full map');expect(stats.jobs).toBe(1);expect(stats.steps).toBeGreaterThan(0);
+    const made=shelf.relief_jobs_made(),actual=drain(production.buildMapsFromPixels(image,image,selection));
+    // One classification job and one composition job.
+    exact(actual,expected,'full map');expect(shelf.relief_jobs_made()-made).toBe(2);expect(shelf.relief_jobs_live()).toBe(0);
     exact(drain(production.heightToNormals(actual)),drain(frozen.heightToNormals(expected)),'normal RGBA');
     exact(drain(production.composeMaterialMap(actual)),drain(frozen.composeMaterialMap(expected)),'material RGBA');
     expect(bytes(image.data)).toEqual(before);
   });
   it('preserves the complete proposal analysis with actual masks and coverage',()=>{
     const image=makeColorMaskImage(colorMaskCases[1]);
-    const expected=drain(frozen.analyzePixels(image)),actual=drain(production.analyzePixels(image));
+    const made=shelf.relief_jobs_made(),expected=drain(frozen.analyzePixels(image)),actual=drain(production.analyzePixels(image));
     exact(actual,expected,'analysis');expect(actual.chosen.length).toBeGreaterThanOrEqual(3);
-    expect(stats.steps).toBeGreaterThan(0);
+    expect(shelf.relief_jobs_made()-made).toBe(1);
   });
   it('keeps canonical color ordering and strict overlap ties, even for zero-strength owners',()=>{
     const image=makeColorMaskImage({width:128,height:128,kind:'overlap'}),selection=colorMaskSelection(3,{overlap:true});
@@ -95,18 +98,19 @@ describe('compiled prepared OKLab masks preserve complete original map decisions
     const image=makeColorMaskImage(colorMaskCases[1]),selection=colorMaskSelection(5);
     const maps=drain(production.buildMapsFromPixels(image,image,selection));
     const changed={layers:selection.layers.map((layer,index)=>({...layer,strength:index%2?.93:.12}))};
-    const before=stats.jobs;
+    const before=shelf.relief_jobs_made();
     exact(drain(production.composeReliefLayerPixels(maps,changed)),drain(frozen.composeReliefLayerPixels(maps,changed)));
-    expect(stats.jobs).toBe(before);
+    // The composition job alone: no classification job is made again.
+    expect(shelf.relief_jobs_made()-before).toBe(1);
   });
-  it('frees the classification job before the separate material composition allocates its arena',()=>{
-    const image=makeColorMaskImage(colorMaskCases[1]),selection=colorMaskSelection(3);
-    let observed=false,freed=false;
-    state.core=trackedCore({relief_compose_pixels(...args){
-      observed=true;freed=stats.jobs===1&&stats.liveJobs===0;
-      return core.relief_compose_pixels(...args);
-    }});
-    drain(production.buildMapsFromPixels(image,image,selection));expect(observed).toBe(true);expect(freed).toBe(true);
+  it('frees the classification job before the separate composition job is made',()=>{
+    const image=makeColorMaskImage(colorMaskCases[1]),selection=colorMaskSelection(3),made=shelf.relief_jobs_made();
+    const task=production.buildMapsFromPixels(image,image,selection);let peak=0,second=false;
+    for(let step=task.next();!step.done;step=task.next()){
+      peak=Math.max(peak,shelf.relief_jobs_live());
+      if(shelf.relief_jobs_made()-made===2){second=true;expect(shelf.relief_jobs_live()).toBe(1);}
+    }
+    expect(second).toBe(true);expect(peak).toBe(1);expect(shelf.relief_jobs_made()-made).toBe(2);expect(shelf.relief_jobs_live()).toBe(0);
   });
   it('recreates the prepared classification views after unrelated WASM memory growth',()=>{
     const image=makeColorMaskImage(colorMaskCases[1]),task=prepareColorMaskJob(state.core,image,frozen.internals.rgbToOklab);

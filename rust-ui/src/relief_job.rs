@@ -9,7 +9,7 @@ use std::sync::Once;
 use js_sys::{Array, Float32Array, Object, Reflect, Uint8Array, Uint8ClampedArray};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use crate::host::{get, num, truthy};
+use crate::host::{num, truthy};
 use crate::relief::{relief_compose_pixels, relief_material_pixels, relief_normal_rows, relief_normal_selected_rows,
     relief_preview_rows, relief_render_buffer, relief_render_free, relief_render_new, relief_render_step, relief_rgba_planes, ReliefRender};
 use crate::relief_jobs::{relief_analysis_colour, relief_analysis_mask, relief_analysis_new, relief_analysis_value, relief_job_free,
@@ -39,26 +39,78 @@ fn shape(value: &JsValue, limit: f64) -> Option<(usize, usize)> {
     let (width, height) = (integer(&get(value, "width"))?, integer(&get(value, "height"))?);
     if width > 0.0 && height > 0.0 && width * height <= limit { Some((width as usize, height as usize)) } else { None }
 }
-/// A view of this module's own memory could be detached by the allocation that copies it.
-fn foreign(buffer: JsValue) -> bool {
-    let memory = wasm_bindgen::memory();
-    Reflect::get(&memory, &"buffer".into()).map_or(true, |own| !Object::is(&own, &buffer))
+// The fields of the plane sets, read as plain property reads (one crossing each, no key string to build).
+#[wasm_bindgen]
+extern "C" {
+    type Fields;
+    #[wasm_bindgen(method, getter, structural)] fn width(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn height(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn data(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural, js_name = heightMap)] fn height_map(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn foil(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn gloss(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn mask(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn owners(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural, js_name = preserveInk)] fn preserve_ink(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural, js_name = baseMask)] fn base_mask(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural, js_name = baseHeight)] fn base_height(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn layers(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn strength(this: &Fields) -> JsValue;
 }
-/// The bytes of a `Uint8Array` or `Uint8ClampedArray` of exactly `length` elements.
-fn bytes(value: &JsValue, length: usize) -> Option<Vec<u8>> {
-    if let Some(array) = value.dyn_ref::<Uint8Array>() {
-        if array.length() as usize == length && foreign(array.buffer().into()) { return Some(array.to_vec()); }
-    } else if let Some(array) = value.dyn_ref::<Uint8ClampedArray>() {
-        if array.length() as usize == length && foreign(array.buffer().into()) { return Some(array.to_vec()); }
+/// `value[key]`; `undefined` for `null` and `undefined`, like the optional reads of the original.
+#[inline(always)]
+fn get(value: &JsValue, key: &str) -> JsValue {
+    if value.is_null() || value.is_undefined() { return JsValue::UNDEFINED; }
+    let fields: &Fields = value.unchecked_ref();
+    match key {
+        "width" => fields.width(), "height" => fields.height(), "data" => fields.data(), "heightMap" => fields.height_map(),
+        "foil" => fields.foil(), "gloss" => fields.gloss(), "mask" => fields.mask(), "owners" => fields.owners(),
+        "preserveInk" => fields.preserve_ink(), "baseMask" => fields.base_mask(), "baseHeight" => fields.base_height(),
+        "layers" => fields.layers(), "strength" => fields.strength(),
+        _ => crate::host::get(value, key),
     }
-    None
+}
+/// This module's memory as it is now; any allocation may replace it.
+fn own() -> JsValue { wasm_bindgen::memory().unchecked_into::<js_sys::WebAssembly::Memory>().buffer() }
+/// The bytes of a `Uint8Array` or `Uint8ClampedArray` of exactly `length` elements. (A view of this module's own
+/// memory is turned away: the allocation that copies it could detach it.)
+fn bytes(value: &JsValue, length: usize) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(length);
+    // The length is the allocation's: the copy below writes every byte of it, or nothing is kept.
+    bytes_into(value, unsafe { std::slice::from_raw_parts_mut(out.as_mut_ptr(), length) })?;
+    unsafe { out.set_len(length); }
+    Some(out)
+}
+/// The same bytes copied straight into `target` (a plane the job already owns): one copy, like the arena had.
+fn bytes_into(value: &JsValue, target: &mut [u8]) -> Option<()> {
+    let (length, buffer) = if let Some(array) = value.dyn_ref::<Uint8Array>() { (array.length(), array.buffer()) }
+        else if let Some(array) = value.dyn_ref::<Uint8ClampedArray>() { (array.length(), array.buffer()) } else { return None };
+    let own = own();
+    if length as usize != target.len() || JsValue::from(buffer) == own { return None; }
+    Uint8Array::new_with_byte_offset_and_length(&own, target.as_mut_ptr() as u32, length).set(value.unchecked_ref(), 0);
+    Some(())
+}
+fn floats_into(value: &JsValue, target: &mut [f32]) -> Option<()> {
+    let array = value.dyn_ref::<Float32Array>()?;
+    let own = own();
+    if array.length() as usize != target.len() || JsValue::from(array.buffer()) == own { return None; }
+    Float32Array::new_with_byte_offset_and_length(&own, target.as_mut_ptr() as u32, array.length()).set(array, 0);
+    Some(())
 }
 fn floats(value: &JsValue, length: usize) -> Option<Vec<f32>> {
-    let array = value.dyn_ref::<Float32Array>()?;
-    if array.length() as usize == length && foreign(array.buffer().into()) { Some(array.to_vec()) } else { None }
+    let mut out = Vec::with_capacity(length);
+    floats_into(value, unsafe { std::slice::from_raw_parts_mut(out.as_mut_ptr(), length) })?;
+    unsafe { out.set_len(length); }
+    Some(out)
 }
-fn clamped(data: &[u8]) -> JsValue { Uint8ClampedArray::from(data).into() }
-fn plain(data: &[u8]) -> JsValue { Uint8Array::from(data).into() }
+// The host's own copy of a plane: `slice` of a view of this memory is one allocation and one copy (a typed
+// array built from the bytes would be zeroed first). Nothing allocates between the view and its `slice`.
+// (js-sys gives a `Uint8Array` for a clamped `view`, so the clamped view is made over the buffer itself.)
+fn clamped(data: &[u8]) -> JsValue {
+    Uint8ClampedArray::new_with_byte_offset_and_length(&own(), data.as_ptr() as u32, data.len() as u32).slice(0, data.len() as u32).into()
+}
+fn plain(data: &[u8]) -> JsValue { unsafe { Uint8Array::view(data) }.slice(0, data.len() as u32).into() }
+fn reals(data: &[f32]) -> JsValue { unsafe { Float32Array::view(data) }.slice(0, data.len() as u32).into() }
 fn put(target: &Object, key: &str, value: &JsValue) { let _ = Reflect::set(target, &JsValue::from_str(key), value); }
 /// `{ ...maps, layers, mask, gloss, heightMap, foil:new Uint8Array(count) }` from the composed planes.
 fn composed(maps: &JsValue, layers: &JsValue, planes: &[u8], count: usize) -> JsValue {
@@ -104,7 +156,7 @@ enum Work {
 }
 
 #[wasm_bindgen]
-pub struct ReliefJob { work: Work, result: JsValue }
+pub struct ReliefJob { work: Work, result: JsValue, error: JsValue }
 
 impl Drop for ReliefJob {
     fn drop(&mut self) {
@@ -119,7 +171,7 @@ impl Drop for ReliefJob {
     }
 }
 
-fn job(work: Work) -> ReliefJob { LIVE.fetch_add(1, Ordering::Relaxed); MADE.fetch_add(1, Ordering::Relaxed); ReliefJob { work, result: JsValue::UNDEFINED } }
+fn job(work: Work) -> ReliefJob { LIVE.fetch_add(1, Ordering::Relaxed); MADE.fetch_add(1, Ordering::Relaxed); ReliefJob { work, result: JsValue::UNDEFINED, error: JsValue::UNDEFINED } }
 
 /// Jobs made and not yet freed (lifetime tests).
 #[wasm_bindgen]
@@ -133,10 +185,12 @@ pub fn relief_jobs_made() -> u32 { MADE.load(Ordering::Relaxed) }
 pub fn relief_planes_rgba(maps: &JsValue) -> Result<JsValue, JsValue> {
     let (width, height) = shape(maps, LIMIT).ok_or_else(refused)?;
     let count = width * height;
-    let mut input = Vec::with_capacity(count * 3);
-    for key in ["heightMap", "foil", "gloss"] { input.extend_from_slice(&bytes(&get(maps, key), count).ok_or_else(refused)?); }
-    let mut output = vec![0u8; count * 12];
+    let mut input = vec![0u8; count * 3];
+    for (plane, key) in input.chunks_exact_mut(count).zip(["heightMap", "foil", "gloss"]) { bytes_into(&get(maps, key), plane).ok_or_else(refused)?; }
+    // The kernel writes every one of the 12 bytes per pixel, or answers 0 and nothing is read.
+    let mut output: Vec<u8> = Vec::with_capacity(count * 12);
     if unsafe { relief_rgba_planes(input.as_ptr(), output.as_mut_ptr(), count as u32) } != 1 { return Err(refused()); }
+    unsafe { output.set_len(count * 12); }
     let out = Object::new();
     put(&out, "height", &clamped(&output[..count * 4]));
     put(&out, "foil", &clamped(&output[count * 4..count * 8]));
@@ -183,43 +237,37 @@ impl ReliefJob {
         let compose = !layers.is_null();
         let (owners_value, mask_value) = (get(maps, "owners"), get(maps, "mask"));
         let (preserve, selected) = (truthy(&get(maps, "preserveInk")), truthy(selection_alpha));
-        let owners = if truthy(&owners_value) { Some(bytes(&owners_value, count).ok_or_else(refused)?) } else { None };
+        let has_owners = truthy(&owners_value);
         let mut strengths = Vec::new();
-        let (mut base_mask, mut base_height, mut height_map) = (Vec::new(), Vec::new(), Vec::new());
         if compose {
             if !Array::is_array(layers) { return Err(refused()); }
             let list: &Array = layers.unchecked_ref();
-            if list.length() > 10 || owners.is_none() { return Err(refused()); }
-            base_mask = bytes(&get(maps, "baseMask"), count).ok_or_else(refused)?;
-            base_height = floats(&get(maps, "baseHeight"), count).ok_or_else(refused)?;
+            if list.length() > 10 || !has_owners { return Err(refused()); }
             for layer in list.iter() { strengths.push(finite(&get(&layer, "strength")).ok_or_else(refused)?); }
-        } else {
-            height_map = bytes(&get(maps, "heightMap"), count).ok_or_else(refused)?;
         }
         let has_mask = compose || (truthy(&mask_value) && (preserve || selected));
         let extra = rgba || (selected && !has_mask);
-        // preserveInk without a mask is refused here: there is nothing to copy.
-        let mask = if !compose && (has_mask || preserve) { Some(bytes(&mask_value, count).ok_or_else(refused)?) } else { None };
-        let planes = if !compose && extra {
-            Some((bytes(&get(maps, "foil"), count).ok_or_else(refused)?, bytes(&get(maps, "gloss"), count).ok_or_else(refused)?))
-        } else { None };
-        let flags = u32::from(owners.is_some()) | u32::from(preserve) << 1 | u32::from(selected) << 2 | u32::from(has_mask) << 3
+        let flags = u32::from(has_owners) | u32::from(preserve) << 1 | u32::from(selected) << 2 | u32::from(has_mask) << 3
             | u32::from(compose) << 4 | u32::from(rgba) << 5;
         let made = relief_render_new(width as u32, height as u32, flags, unit, strengths.len() as u32);
         if made.is_null() { return Err(refused()); }
-        unsafe {
-            let fill = |index: u32, data: &[u8]| std::ptr::copy_nonoverlapping(data.as_ptr(), relief_render_buffer(made, index), data.len());
-            if let Some(owners) = &owners { fill(1, owners); }
+        // Every plane goes from the host straight into the buffer the job reads it from.
+        let filled = (|| unsafe {
+            let plane = |index: u32| std::slice::from_raw_parts_mut(relief_render_buffer(made, index), count);
+            if has_owners { bytes_into(&owners_value, plane(1))?; }
             if compose {
-                fill(5, &base_mask);
-                std::ptr::copy_nonoverlapping(base_height.as_ptr(), relief_render_buffer(made, 6).cast::<f32>(), count);
+                bytes_into(&get(maps, "baseMask"), plane(5))?;
+                floats_into(&get(maps, "baseHeight"), std::slice::from_raw_parts_mut(relief_render_buffer(made, 6).cast::<f32>(), count))?;
                 std::ptr::copy_nonoverlapping(strengths.as_ptr(), relief_render_buffer(made, 7).cast::<f64>(), strengths.len());
             } else {
-                fill(0, &height_map);
-                if let Some(mask) = &mask { fill(2, mask); }
-                if let Some((foil, gloss)) = &planes { fill(3, foil); fill(4, gloss); }
+                bytes_into(&get(maps, "heightMap"), plane(0))?;
+                // preserveInk without a mask is refused here: there is nothing to copy.
+                if has_mask || preserve { bytes_into(&mask_value, plane(2))?; }
+                if extra { bytes_into(&get(maps, "foil"), plane(3))?; bytes_into(&get(maps, "gloss"), plane(4))?; }
             }
-        }
+            Some(())
+        })();
+        if filled.is_none() { unsafe { relief_render_free(made); } return Err(refused()); }
         Ok(job(Work::Render(Render { job: made, count, compose, maps: maps.clone(), layers: layers.clone(), output: Object::new(), pixels: maps.clone() })))
     }
 
@@ -309,8 +357,24 @@ impl ReliefJob {
             width: width as u32, rows: height as u32, map_width: map_width as u32, map_height: map_height as u32, from: 0, preserve: u32::from(preserve) })))
     }
 
-    /// 1: give the main thread back and call again; 0: finished, `result` is ready.
-    pub fn step(&mut self) -> Result<u32, JsValue> {
+    /// 1: give the main thread back and call again; 0: finished, `result` is ready; -1: failed, `error` says why.
+    /// (A plain number: this is called hundreds of times per job, and an error slot would cost every call.)
+    pub fn step(&mut self) -> i32 {
+        match self.advance() { Ok(code) => code as i32, Err(error) => { self.work = Work::Done; self.failed(error) } }
+    }
+
+    /// Why `step` answered -1.
+    pub fn error(&self) -> JsValue { self.error.clone() }
+
+
+    /// What the finished job made; the arrays are the host's own.
+    pub fn result(&self) -> JsValue { self.result.clone() }
+}
+
+impl ReliefJob {
+    fn failed(&mut self, error: JsValue) -> i32 { self.error = error; -1 }
+
+    fn advance(&mut self) -> Result<u32, JsValue> {
         unsafe {
             match &mut self.work {
                 Work::Analysis(job, _) | Work::Maps(job, _, _) => loop {
@@ -386,11 +450,6 @@ impl ReliefJob {
         Ok(0)
     }
 
-    /// What the finished job made; the arrays are the host's own.
-    pub fn result(&self) -> JsValue { self.result.clone() }
-}
-
-impl ReliefJob {
     fn finish(&mut self) -> Result<(), JsValue> {
         let work = std::mem::replace(&mut self.work, Work::Done);
         self.result = unsafe {
@@ -408,7 +467,7 @@ impl ReliefJob {
                             put(&colour, "rgb", &Array::of3(&fields[0].into(), &fields[1].into(), &fields[2].into()));
                             put(&colour, "tolerance", &fields[3].into());
                             put(&colour, "pixels", &fields[4].into());
-                            put(&colour, "mask", &Float32Array::from(std::slice::from_raw_parts(relief_analysis_mask(*job, index), *count)).into());
+                            put(&colour, "mask", &reals(std::slice::from_raw_parts(relief_analysis_mask(*job, index), *count)));
                             colours.push(&colour);
                         }
                         outcome.and_then(|()| {
@@ -433,7 +492,7 @@ impl ReliefJob {
                     } else {
                         put(&out, "owners", &plane(0));
                         put(&out, "baseMask", &plane(1));
-                        put(&out, "baseHeight", &Float32Array::from(std::slice::from_raw_parts(relief_maps_plane(*job, 2).cast::<f32>(), *count)).into());
+                        put(&out, "baseHeight", &reals(std::slice::from_raw_parts(relief_maps_plane(*job, 2).cast::<f32>(), *count)));
                     }
                     relief_job_free(*job);
                     out.into()

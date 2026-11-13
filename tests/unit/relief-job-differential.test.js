@@ -36,7 +36,7 @@ function exact(actual, expected, label = 'value') {
 }
 const same = (actual, expected, label) => { expect(actual.yields, `${label} pauses`).toBe(expected.yields); exact(actual.value, expected.value, label); };
 /** One production job, stepped like cover-relief.js steps it. */
-function* job(make) { const made = make(shelf.ReliefJob); try { while (made.step()) yield; return made.result(); } finally { made.free(); } }
+function* job(make) { const made = make(shelf.ReliefJob); try { for (let code; (code = made.step()) !== 0;) { if (code < 0) throw made.error(); yield; } return made.result(); } finally { made.free(); } }
 const unitOf = (maps, gain = 1) => shelf.relief_normal_unit(maps.width, maps.height, gain);
 const SHAPES = [[1, 1], [3, 5], [7, 16], [7, 17], [47, 1], [1, 35], [64, 65], [193, 128], [512, 512]];
 function variants(width, height) {

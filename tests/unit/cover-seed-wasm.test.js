@@ -29,13 +29,13 @@ for(const input of reliefPaletteCases)it('keeps complete palette, proposals and 
  const {seed,...palette}=actual.value;assert.deepStrictEqual({value:palette,yields:actual.yields},expected);expect(seed).toBe(seedOf(image));assert.deepStrictEqual(image.data,before);
  const plain=drain(analyzePixels(image)),seeded=drain(analyzePixels(image,true));assert.deepStrictEqual(seeded,plain);
 });
-it('keeps the generic palette shape; the production analysis carries the seed of its raster and rejects the whole analysis when the job is unavailable or rejected',()=>{
+it('keeps the generic palette shape; the production analysis carries the seed of its raster and rejects the whole analysis when the job refuses its raster',()=>{
  // The seed is computed inside the analysis job now. There is no JavaScript seed fallback: a rejected job is a
  // clear error, never a second path.
  const image=makeReliefPaletteImage(reliefPaletteCases[4]),expected=drain(analyzePixels(image));expect(expected.value.seed).toBe(seedOf(image));
  const call=vi.fn(core.relief_cover_seed);const ordinary=drain(rustReliefPalette({...core,relief_cover_seed:call},image,internals.rgbToOklab));expect(Object.keys(ordinary.value)).toEqual(['bins','opaque','colors']);expect(call).not.toHaveBeenCalled();
- for(const [replacement,message] of [[undefined,/núcleo de relieve/],[()=>-1,/núcleo de relieve/],[()=>{throw new WebAssembly.RuntimeError('job trap');},/job trap/]]){state.core={...core,relief_job_step:replacement};expect(()=>drain(analyzePixels(image,true))).toThrow(message);}
- state.core={...core,relief_analysis_new:undefined};expect(()=>drain(analyzePixels(image,true))).toThrow(/núcleo de relieve/);
+ // The job lives in the shelf module: what it turns away is the raster, as an error.
+ for(const wrong of [{width:513,height:512,data:new Uint8ClampedArray(513*512*4)},{...image,data:new Float32Array(image.data.length)}])expect(()=>drain(analyzePixels(wrong,true))).toThrow(/núcleo de relieve|RGBA/);
 });
 it('owns no extra allocation and retains arena validity across memory growth and cancellation',()=>{
  const image=makeReliefPaletteImage(reliefPaletteCases[4]);let live=0,jobs=0,seeds=0;

@@ -88,7 +88,7 @@ async function ready() { if (!await loadRustShelf()) throw unavailable(); }
 /** Step a job of the shelf module to its end, pausing where it asks; it is freed however this ends. */
 function* run(make) {
   const job = make(needRustShelf().ReliefJob);
-  try { while (job.step()) yield; return job.result(); }
+  try { for (let code; (code = job.step()) !== 0;) { if (code < 0) throw job.error(); yield; } return job.result(); }
   finally { job.free(); }
 }
 
