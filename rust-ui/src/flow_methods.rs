@@ -37,7 +37,7 @@ pub fn flow_method(part: JsValue, name: &str, args: Array, kit: JsValue, _ui: Js
         ("voices", "bookLanguage") => crate::voice_flow::reader_book_language(host, d("device")?),
         ("voices", "chooseLanguage") => done(crate::voice_flow::reader_choose_language(host, a(0), d("catalog.langBase")?)),
         ("voices", "voiceBase") => crate::voice_flow::reader_voice_base(host, a(0).unchecked_into(), d("catalog.langBase")?, d("catalog.declaredLanguage")?),
-        ("voices", "populateVoices") => done(crate::voice_flow::reader_populate_voices(host, d("runtime.neuralVoiceList")?, d("device")?, d("catalog.langBase")?, d("menus.languageOptions")?, d("menus.voiceOptions")?)),
+        ("voices", "populateVoices") => done(crate::voice_flow::reader_populate_voices_catalog(host, d("runtime.neuralVoiceList")?, d("device")?, kit_value(&kit, "catalog")?)),
         ("chrome", "voiceState") => done(crate::reader_chrome::reader_voice_state(host, a(0), a(1), kit_value(&kit, "document")?.unchecked_into())),
         _ => Err(js_sys::TypeError::new(&format!("The reader's {which} part has no method {name}")).into()),
     }

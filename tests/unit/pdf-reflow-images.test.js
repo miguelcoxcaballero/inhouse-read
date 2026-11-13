@@ -6,7 +6,7 @@ vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 
 import { extractPDFText } from '../../src/js/readers/pdf-text.js'
-import { clearPDFReflow, pdfImageRects, populatePDFReflow } from '../../src/js/readers/pdf-reflow.js'
+import { clearPDFReflow, pdfImageRects, populatePDFReflow } from './helpers/live-pdf-reflow.js'
 import { mapTextNodes } from '../../src/js/readers/speech-map.js'
 import { planSpeech } from '../../src/js/readers/speech-text.js'
 

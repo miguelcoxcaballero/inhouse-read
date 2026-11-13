@@ -2,8 +2,8 @@ import {beforeAll,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import * as reference from './helpers/reference-speech-highlight.js'
-import * as highlight from '../../src/js/readers/speech-highlight.js'
-import {speechFollowOffset} from '../../src/js/readers/speech-follow.js'
+import * as highlight from './helpers/live-speech-highlight.js'
+import {speechFollowOffset} from './helpers/live-speech-follow.js'
 import {speechFollowOffsetLegacy} from './helpers/reference-speech-follow.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

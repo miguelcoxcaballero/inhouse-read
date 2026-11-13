@@ -64,6 +64,7 @@ mod speech_highlight;
 mod speech_map;
 mod speech_pages;
 mod voice_options;
+mod voice_menus;
 mod neural_view;
 mod neural_engine;
 mod neural_player;

@@ -1,4 +1,5 @@
-import {readerUI} from './rust-ui-required.js'
+// Test harness: the argument defaults the readers' callers used to get from src/js/readers. Production calls the Rust export directly.
+import {readerUI} from '../../../src/js/readers/rust-ui-required.js'
 
 // The sentence being read aloud is painted with the CSS Custom Highlight API when
 // the window has it (no DOM mutation, selection or saved position is touched);

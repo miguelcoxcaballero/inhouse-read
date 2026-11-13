@@ -1,6 +1,6 @@
 import {readerUI} from './rust-ui-required.js'
 export {orderNeuralVoices,recommendedNeuralFor} from './voice-order.js'
-export {detectLanguage} from './language-detect.js'
+export const detectLanguage=(text,fallback='en-US')=>readerUI().detect_voice_language(text,fallback,normalizeLang)
 // What the reader knows about the on-device neural voices (Piper and Supertonic, see neural-voice/): language tags, the record of
 // a voice of the picker, which voice speaks a text, and the Spanish names of languages. The record, the choice of voice and the
 // names are Rust (rust-ui voice_catalog.rs); the tags stay here because they are read before the reader (and rust-ui) loads, when the

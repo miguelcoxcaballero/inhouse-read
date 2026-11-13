@@ -3,12 +3,10 @@ import {ReaderChrome} from './reader-chrome.js'
 import {ReaderLifecycle} from './reader-lifecycle.js'
 import {VoiceFlow} from './voice-flow.js'
 import {PreferenceFlow} from './preference-flow.js'
-import { readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, rateLabel } from './reading-preferences.js'
 import * as runtime from './neural-runtime.js'
 import * as preferences from './reading-preferences.js'
 import * as state from './reading-state.js'
-import * as places from './reading-places.js'
 import { ReadingVoice } from './reading-voice.js'
 import { SelectMenu } from './select-menu.js'
 import { ReaderView } from './reader-view.js'
@@ -22,7 +20,7 @@ import { displayBookTitle } from '../book-title.js'
 // Promise and callback adapters retain browser/engine identities. The reader
 // chunk is instantiated only after requireRustUI; these never start a load.
 const experienceKit = {
-  title:displayBookTitle, rate:rateLabel, icon:readerIcon,
+  title:displayBookTitle, rate:rateLabel,
   metadata:(host, value, record, epoch) => Promise.resolve(value)
     .then(metadata => readerUI().reader_experience_metadata(host, record, epoch, metadata)).catch(() => {}),
   current:(host, book, generation) => () => readerUI().reader_experience_current(host, book, generation),
@@ -93,4 +91,4 @@ rustMethods(ReaderExperience,'experience_method',`resetAppearance ~rotateReading
  showTab showPlaceTab updateMiniPlayer updateBookmarkButton queueNavigation returnToReading ~shareBook formatSize renderPlaces renderToc
  updateReturnButton refreshNames closeVoice reset show setSleepChoice setPreference applyPreferences bookLanguage
  chooseLanguage voiceBase populateVoices error savePlaces cancelNavigation addBookmark addQuote search endSearch`,
- {experience:experienceKit,runtime,preferences,state,places})
+ {experience:experienceKit,runtime,preferences,state})

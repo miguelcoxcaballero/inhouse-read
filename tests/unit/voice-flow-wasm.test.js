@@ -3,11 +3,14 @@ import {it,vi,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {LegacyVoiceFlow} from './helpers/reference-voice-flow.js'
-const fixture=vi.hoisted(()=>({voices:[]}))
+const fixture=vi.hoisted(()=>({voices:[],ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralVoiceList:()=>fixture.voices}))
-import {langBase,declaredLanguage} from '../../src/js/readers/voice-catalog.js'
+import * as catalog from '../../src/js/readers/voice-catalog.js'
+const {langBase,declaredLanguage}=catalog
 import {languageOptions,voiceOptions} from './helpers/reference-voice-menus.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+fixture.ui=ui
 const device=()=>navigator.language
 function setup(native,trial){
  const voices=['es-ES','es-MX','en-GB','en-US','nl-NL'].map((lang,i)=>({id:'voice'+i,lang,base:langBase(lang),region:lang.split('-')[1],name:'Voice '+i,installed:trial%(i+2)!==0,neural:true,tier:'high',recommended:i===2}))
@@ -26,7 +29,7 @@ function setup(native,trial){
   host.bookLanguage=()=>ui.reader_book_language(host,device)
   host.voiceBase=voices=>ui.reader_voice_base(host,voices,langBase,declaredLanguage)
   host.chooseLanguage=value=>ui.reader_choose_language(host,value,langBase)
-  host.populateVoices=()=>ui.reader_populate_voices(host,()=>voices,device,langBase,languageOptions,voiceOptions)
+  host.populateVoices=()=>native===2?ui.reader_populate_voices(host,()=>voices,device,langBase,languageOptions,voiceOptions):ui.reader_populate_voices_catalog(host,()=>voices,device,catalog)
  }
  return{host,voices,events}
 }
@@ -34,13 +37,13 @@ it('preserves choices, automatic labels, installation state and menu effects in 
 let checks=0
 for(let trial=0;trial<500;trial++){
  const outputs=[]
- for(const native of [false,true]){
+ for(const native of [false,true,2]){
   const {host,voices,events}=setup(native,trial)
   const initialBase=host.voiceBase(voices);host.populateVoices();host.chooseLanguage(['','es','en','nl'][trial%4]);host.populateVoices()
   assert.equal(host.voiceCatalog.voices,voices)
   outputs.push({initialBase,events,preferences:host.preferences,catalog:host.voiceCatalog,shown:host.voiceBaseShown})
  }
- assert.deepEqual(outputs[1],outputs[0]);checks++
+ assert.deepEqual(outputs[1],outputs[0]);assert.deepEqual(outputs[2],outputs[0]);checks++
 }
 })
 it('keeps voice-menu command allocations bounded through 2000 cycles',()=>{

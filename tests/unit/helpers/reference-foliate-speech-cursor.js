@@ -5,7 +5,7 @@
 import { SectionProgress } from 'foliate-js/progress.js'
 import { mapSpeechText } from '../../../src/js/readers/speech-map.js'
 import { speechPageBreaks } from '../../../src/js/readers/speech-page-breaks.js'
-import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from '../../../src/js/readers/speech-highlight.js'
+import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './live-speech-highlight.js'
 import { Overlayer } from 'foliate-js/overlayer.js'
 
 const cancelled = () => new DOMException('Speech preparation cancelled', 'AbortError')

@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest'
-import {pdfImageRects,preparePDFReflow} from '../../src/js/readers/pdf-reflow.js'
+import {pdfImageRects,preparePDFReflow} from './helpers/live-pdf-reflow.js'
 
 let root,source,old,drawn,channelDescriptor
 const viewport={width:600,height:800,transform:[1,0,0,-1,0,800]}

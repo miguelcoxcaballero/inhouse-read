@@ -1,7 +1,8 @@
-import { pdfPlaceFigures } from './pdf-figures-wasm.js'
-import { readerUI } from './rust-ui-required.js'
-export { pdfFigureOffset } from './pdf-figures-wasm.js'
-export { pdfImageRects } from './pdf-images-wasm.js'
+// Test harness: the reflow forwarders (argument defaults only) src/js/readers used to hold. The reader calls reflow_* in rust-ui directly.
+import { pdfPlaceFigures } from '../../../src/js/readers/pdf-figures-wasm.js'
+import { readerUI } from '../../../src/js/readers/rust-ui-required.js'
+export { pdfFigureOffset } from '../../../src/js/readers/pdf-figures-wasm.js'
+export { pdfImageRects } from '../../../src/js/readers/pdf-images-wasm.js'
 // Render illustrations from PDF.js's original composite pixels: transforms,
 // transparency, clipping and colour profiles remain the renderer's job.
 // Text stays in its exact source-offset stream even when a picture splits it.

@@ -16,6 +16,11 @@ fn fraction(value:&JsValue)->Result<f64,JsValue>{
 }
 fn key(value:&JsValue)->Result<JsString,JsValue>{JSON::stringify(&value.unchecked_ref::<Place>().locator()?)}
 fn matches(place:&JsValue,target:&JsString,location:&JsValue)->Result<bool,JsValue>{Ok(key(place)?==*target&&(fraction(place)?-fraction(location)?).abs()<0.0001)}
+/// `reading_marked` for a caller inside this module: a missing list fails as reading its length did.
+pub(crate) fn marked(bookmarks:&JsValue,location:&JsValue)->Result<bool,JsValue>{
+ if bookmarks.is_null()||bookmarks.is_undefined(){crate::host::read(bookmarks,"length")?;}
+ reading_marked(bookmarks.clone().unchecked_into(),location.clone())
+}
 #[wasm_bindgen]
 pub fn reading_marked(bookmarks:Array,location:JsValue)->Result<bool,JsValue>{
  if bookmarks.length()==0{return Ok(false);}let target=key(&location)?;

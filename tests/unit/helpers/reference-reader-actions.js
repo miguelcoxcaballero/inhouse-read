@@ -1,5 +1,5 @@
 import {clonePlace,cleanPlaces,cleanQuotes} from '../../../src/js/readers/reading-state.js'
-import {toggleBookmark,prependHistory} from '../../../src/js/readers/reading-places.js'
+import {toggleBookmark,prependHistory} from './live-reading-places.js'
 export const legacyReaderActions = {
   async savePlaces() {
     if (!this.book) return

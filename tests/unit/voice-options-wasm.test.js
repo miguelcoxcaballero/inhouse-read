@@ -2,7 +2,7 @@ import {beforeAll,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import * as reference from './helpers/reference-voice-menus.js'
-import * as active from '../../src/js/readers/voice-menus.js'
+import * as active from './helpers/live-voice-menus.js'
 import {normalizeNeuralVoice,langBase} from '../../src/js/readers/voice-catalog.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

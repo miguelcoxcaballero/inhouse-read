@@ -5,7 +5,7 @@ import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs'
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {rustPDFImagePaths} from '/inhouse-read/src/js/readers/pdf-images-wasm.js';
-import {paintPDFTheme} from '/inhouse-read/src/js/readers/pdf-page-theme.js';
+import {paintPDFTheme} from '/inhouse-read/tests/unit/helpers/live-pdf-page-theme.js';
 import {referenceImagePaths,referencePaintTheme} from '/inhouse-read/tests/unit/helpers/reference-pdf-image-paths.js';
 import {manyImagesPDF} from '/inhouse-read/tests/e2e/fixtures/pdf-many-images.mjs';
 import {getDocument,GlobalWorkerOptions} from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.mjs';

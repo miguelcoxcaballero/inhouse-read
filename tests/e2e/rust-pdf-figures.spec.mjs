@@ -8,7 +8,7 @@ import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
 import {rustPDFPlaceFigures} from '/inhouse-read/src/js/readers/pdf-figures-wasm.js';
 import {placeFigures as referenceFigures} from '/inhouse-read/tests/unit/helpers/reference-pdf-figures.js';
 import {rustPDFImageRects} from '/inhouse-read/src/js/readers/pdf-images-wasm.js';
-import {pdfImageRects,populatePDFReflow,clearPDFReflow} from '/inhouse-read/src/js/readers/pdf-reflow.js';
+import {pdfImageRects,populatePDFReflow,clearPDFReflow} from '/inhouse-read/tests/unit/helpers/live-pdf-reflow.js';
 import {extractPDFText} from '/inhouse-read/src/js/readers/pdf-text.js';
 import {pdfImageRects as reference} from '/inhouse-read/tests/unit/helpers/reference-pdf-images.js';
 import {manyImagesPDF} from '/inhouse-read/tests/e2e/fixtures/pdf-many-images.mjs';
