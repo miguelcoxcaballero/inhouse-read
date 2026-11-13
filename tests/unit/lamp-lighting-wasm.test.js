@@ -22,7 +22,7 @@ describe('lamp lighting from the Rust shelf module',()=>{
   // (only the rooms with repeated keys make the original, and so the new module, throw).
   expect(coverage.frames).toBeGreaterThan(15000);expect(coverage.lit).toBeGreaterThan(15000);expect(coverage.shadows).toBeGreaterThan(6000);
   expect(coverage.refreshed).toBeGreaterThan(2000);expect(coverage.answeredTrue).toBeGreaterThan(6000);expect(coverage.filamentFrames).toBeGreaterThan(1500);
-  expect(coverage.unexpected,coverage.messages.join()).toBe(0);expect(coverage.duplicated).toBeGreaterThan(5);expect(coverage.facts).toBeGreaterThan(3_000_000);
+  expect(coverage.unexpected,coverage.messages.join()).toBe(0);expect(coverage.prepared).toBeGreaterThan(60);expect(coverage.prepares).toBeGreaterThan(2000);expect(coverage.duplicated).toBeGreaterThan(5);expect(coverage.facts).toBeGreaterThan(3_000_000);
  },240_000);
  it('keeps the maximum of lights the library owns',()=>{expect(MAX_SHELF_LAMP_LIGHTS).toBe(ORIGINAL_MAX);});
  it('lights the same lamps among many: a thousand lamps, drags, scrolls and power changes',()=>{

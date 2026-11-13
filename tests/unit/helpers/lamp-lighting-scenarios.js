@@ -82,7 +82,8 @@ function fixture(random) {
 
 function scenario(seed, { createMine, createReference }) {
   const random = generator(seed), { pick, vector, emitterOf, matrixOf } = fixture(random);
-  const options = { maxLights: pick(8, 8, 1, 2, 3, 5, 0, 12, NaN, '3', undefined, 2.5, -1), filamentAreas: pick(false, true) };
+  // One room in four is run as the shelf scene runs its lamps: the entries are scanned by `prepare`, not by every frame.
+  const options = { maxLights: pick(8, 8, 1, 2, 3, 5, 0, 12, NaN, '3', undefined, 2.5, -1), filamentAreas: pick(false, true), preparedEntries: pick(false, false, false, true) };
   const sceneA = new THREE.Scene(), sceneB = new THREE.Scene();
   const mine = createMine(sceneA, options), reference = createReference(sceneB, options);
   const room = new THREE.Group(), keys = [...KEYS];
@@ -153,7 +154,7 @@ function mutate(state) {
 /** Runs `seeds` scripted rooms of `frames` frames through `createMine(scene, options)` and `createReference(scene, options)`
  * (both build a lamp-lighting manager) and throws at the first difference. Returns what was covered. */
 export function compareRooms({ createMine, createReference, seeds, frames }) {
-  const coverage = { rooms: 0, frames: 0, answeredTrue: 0, lights: 0, lit: 0, shadows: 0, refreshed: 0, facts: 0, errors: 0, unexpected: 0, filamentFrames: 0, duplicated: 0, messages: [] };
+  const coverage = { rooms: 0, prepared: 0, prepares: 0, late: 0, frames: 0, answeredTrue: 0, lights: 0, lit: 0, shadows: 0, refreshed: 0, facts: 0, errors: 0, unexpected: 0, filamentFrames: 0, duplicated: 0, messages: [] };
   for (let seed = 1; seed <= seeds; seed++) {
     const state = scenario(seed, { createMine, createReference }), { mine, reference, sceneA, sceneB } = state;
     coverage.rooms++; if (state.duplicates) coverage.duplicated++;
@@ -170,16 +171,23 @@ export function compareRooms({ createMine, createReference, seeds, frames }) {
       coverage.lit += mine.activeCount; coverage.shadows += mine.shadowCount;
       if (mine.shadowRefresh) coverage.refreshed++;
       if (answerA.value === true) coverage.answeredTrue++;
-      if (answerA.error) { coverage.errors++; if (!state.duplicates) { coverage.unexpected++; coverage.messages.push(answerA.error); } }
+      // Only repeated keys make the original throw, or (prepared rooms) a lamp whose kind got no light because the
+      // layout changed after the last prepare.
+      if (answerA.error) { coverage.errors++; if (state.options.preparedEntries && !state.duplicates) coverage.late++; else if (!state.duplicates) { coverage.unexpected++; coverage.messages.push(answerA.error); } }
       if (sceneA.children.some(o => o.isRectAreaLight && o.intensity > 0)) coverage.filamentFrames++;
     };
-    if (state.random() < .4) check(`room ${seed} prepare`, call(mine, m => m.prepare(state.entries)), call(reference, m => m.prepare(state.entries)));
+    const prepare = where => { coverage.prepares++; check(where, call(mine, m => m.prepare(state.entries)), call(reference, m => m.prepare(state.entries))); };
+    if (state.options.preparedEntries) coverage.prepared++;
+    if (state.options.preparedEntries || state.random() < .4) prepare(`room ${seed} prepare`);
     for (let frame = 0; frame < frames; frame++) {
       const options = frameOptions(state), where = `room ${seed} frame ${frame}`;
       check(where, call(mine, m => m.update(state.entries, options)), call(reference, m => m.update(state.entries, options)));
       // The same room again: nothing may be reported and nothing may move.
       if (frame % 5 === 4) check(`${where} (again)`, call(mine, m => m.update(state.entries, options)), call(reference, m => m.update(state.entries, options)));
       mutate(state);
+      // The scene prepares again when its layout changed; now and then it is a frame late (the lights then follow the
+      // entries it last prepared, in both managers).
+      if (state.random() < (state.options.preparedEntries ? .8 : .05)) prepare(`${where} prepare`);
     }
     mine.dispose(); reference.dispose();
     if (sceneA.children.length || sceneB.children.length) throw Error(`room ${seed}: lights left in the scene after dispose`);
