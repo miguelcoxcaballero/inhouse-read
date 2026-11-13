@@ -33,7 +33,13 @@ export function instrumentPaintedRoom(body){
   rows=body.slice(Math.max(0,at-180),at).match(new RegExp(`(${identifier})\\[${identifier}\\.shelf\\|\\|0\\]`))?.[1];
   if(!rows)throw Error('Painted room probe: missing legacy room rows');
  }
+ const capture=`globalThis.__captureRoomPaint(${entry},(${ppm}),(${width}),(${rows}))`;
+ // The matrix is taken natively and copied in only when it changed; the pose it was made from is complete just before
+ // that copy, on every frame.
+ const copied=new RegExp(`(${identifier})&2&&\\(${identifier}\\.matrix\\.fromArray\\(`,'g');copied.lastIndex=at;
+ const copy=copied.exec(body);
+ if(copy&&!body.slice(at,copy.index).includes(';'))return body.slice(0,copy.index)+`(${capture},${copy[1]})`+body.slice(copy.index+copy[1].length);
  const point=`${entry}.pose.updateMatrix()`,pointAt=body.indexOf(point,at);
  if(pointAt<0)throw Error('Painted room probe: missing real pose matrix update');
- return body.slice(0,pointAt)+`(globalThis.__captureRoomPaint(${entry},(${ppm}),(${width}),(${rows})),${point})`+body.slice(pointAt+point.length);
+ return body.slice(0,pointAt)+`(${capture},${point})`+body.slice(pointAt+point.length);
 }

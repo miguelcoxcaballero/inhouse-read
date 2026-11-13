@@ -8,6 +8,14 @@ it('captures the actual post-live pose before its matrix update using native fra
  new Function('globalThis',instrumentPaintedRoom(source))(observed);
  expect(observed.calls).toEqual(['capture','matrix']);expect(observed.capture).toEqual({x:17,checkpointX:999,ppm:10000,width:390,rows:[{left:4,bottom:70}]});
 });
+it('captures on every frame before the natively taken matrix is copied in, changed or not',()=>{
+ const run=changed=>{
+  const source='const f={prepare(){},key(){return "k"}},N={shelf:0,pose:{position:{x:0},matrix:{fromArray(){globalThis.calls.push("copy")}}}},P=N.pose,c='+changed+',X=1,l=[];f.prepare([],[{left:4}],390,1e4);X&1&&(N.localMotionPose=[f.key(0),0,999]),X&2&&(N.pose.position.x=17),c&2&&(P.matrix.fromArray(l,26),P.matrixWorldNeedsUpdate=!0);';
+  const observed={calls:[],__captureRoomPaint(e,ppm,width){this.calls.push('capture:'+e.pose.position.x+':'+ppm+':'+width);}};
+  new Function('globalThis',instrumentPaintedRoom(source))(observed);return observed.calls;
+ };
+ expect(run(2)).toEqual(['capture:0:10000:390','copy']);expect(run(0)).toEqual(['capture:0:10000:390']);
+});
 it('handles minified dollar identifiers and nested coordinate expressions without borrowing saved poses',()=>{
  const body='$f.prepare(es,rows,w,(u/(spec[t].width+fn(1,2)))*1e3);e$.localMotionPose=[$f.key(i),out[0]];e$.pose.updateMatrix();';
  expect(instrumentPaintedRoom(body)).toContain('globalThis.__captureRoomPaint(e$,((u/(spec[t].width+fn(1,2)))*1e3),(w),(rows))');
