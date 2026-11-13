@@ -816,7 +816,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const trashData = (key, value) => { setData(trashNode, key, value); showData(key, value); };
 
   const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
-  const scrollerClip = new Float64Array(4), trashRect0 = {};
+  const scrollerClip = new Float64Array(4), trashRect0 = {}, trashNumbers = new Float64Array(17);
+  let trashTexts = null, viewTexts = null;
   function updateTrash(scroll, now, finishedDrops) {
     if (!trash || !trashNode) {
       for (const key of ['trash3d', 'trashHover', 'trashVisible', 'trashViewHidden', 'trashLocalPosition', 'trashLocalScale',
@@ -914,9 +915,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const footY = trash.position.y + trashBounds.min.y * trash.scale.y;
     const footWorld = furniture.localToWorld(footPoint.set(trash.position.x, footY, trash.position.z));
     const floorContact = furniture.localToWorld(floorPoint.set(trash.position.x, floorY, trash.position.z));
-    const { position, rotation } = trash;
-    const texts = rust.scene_trash_texts([position.x, position.y, position.z], trash.scale.x, [rotation.x, rotation.y, rotation.z], footY, floorY,
-      [footWorld.x, footWorld.y, footWorld.z], [floorContact.x, floorContact.y, floorContact.z], trash.userData.radius, trash.userData.height);
+    const { position, rotation } = trash, n = trashNumbers;
+    n[0] = position.x; n[1] = position.y; n[2] = position.z; n[3] = trash.scale.x; n[4] = rotation.x; n[5] = rotation.y; n[6] = rotation.z;
+    n[7] = footY; n[8] = floorY; n[9] = footWorld.x; n[10] = footWorld.y; n[11] = footWorld.z;
+    n[12] = floorContact.x; n[13] = floorContact.y; n[14] = floorContact.z; n[15] = trash.userData.radius; n[16] = trash.userData.height;
+    // Formatted again only when one of the numbers moved; the texts held are written otherwise.
+    const texts = trashTexts = sceneView.trashTexts(n) || trashTexts;
     trashData('trashLocalPosition', texts[0]);
     trashData('trashLocalScale', texts[1]); trashData('trashLocalRotation', texts[2]);
     trashData('trashFootY', texts[3]); trashData('cabinetFloorY', texts[4]);
@@ -1153,7 +1157,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const { min, max } = trashBounds, { position } = trash;
       binBox.set([min.x, min.y, min.z, max.x, max.y, max.z, position.x, position.y, position.z]);
     }
-    const texts = sceneView.transform(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame);
+    // The diagnostics are formatted again only when a number they show moved; the texts held are written otherwise.
+    const texts = viewTexts = sceneView.transformFresh(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
     // The fitted room: turned, scaled and placed as the Rust view decided.
     furniture.rotation.set(viewFrame[1], viewFrame[0], 0); furniture.scale.setScalar(viewFrame[2]);
     furniture.position.set(viewFrame[3], viewFrame[4], 0);
