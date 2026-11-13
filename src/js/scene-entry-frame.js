@@ -4,12 +4,22 @@
 // takes every button's hit target. The host writes a column of `state` only when its source
 // changes and reads the results from the arena; `refresh` follows any growth of memory (call
 // it before using the views after other native work).
-export const ENTRY_STATE = 76, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
+export const ENTRY_STATE = 85, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
+// A settled entry's frame: its overview flag and resolution are stored on it as
+// rust.scene_update_quality stores them, and the answer is whether that call has anything else
+// to do: the model is at another quality (scene_quality.rs `matches`), or a replacement or a
+// plant texture is under way. Every visible book and plant passes here in every frame.
+export function settledQualityWork(entry, overview, resolution) {
+  entry.overview = overview; entry.inspectionResolution = resolution;
+  const data = entry.model?.userData;
+  return Boolean(entry.plantQuality || entry.qualityReplacement ||
+    data && !(Boolean(data.overview) === overview && (data.inspectionResolution || 0) === resolution));
+}
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
   const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null,
-    prepare, bind, refresh, step, poses, settle, place, settled, hits, free };
+    prepare, bind, refresh, step, poses, settle, place, settled, hits, motionRest, motionBegin, motionPoses, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
     if (buffer === memory.buffer) return;
@@ -31,7 +41,7 @@ export function createSceneEntryFrame(rust) {
   // A layout's entries take the arena's rows in their new order. A retained entry (`row` is
   // its former place) keeps its state, a new one starts from zeros; `reset` clears every
   // landing and preview, as a committed layout does. Each row is marked as not yet held by
-  // the host, so the next frame hands over its whole pose.
+  // the host, so the next frame hands over its whole pose, rectangle and hit target.
   function bind(entries, reset) {
     const held = count > 0 ? (refresh(), frame.state.slice()) : null;
     prepare(entries.length);
@@ -41,7 +51,7 @@ export function createSceneEntryFrame(rust) {
       if (held && entry.row >= 0) state.set(held.subarray(from, from + ENTRY_STATE), to);
       else state.fill(0, to, to + ENTRY_STATE);
       if (reset) state.fill(0, to + 9, to + 21);
-      state[to + 71] = 1; entry.row = index;
+      state[to + 71] = state[to + 73] = 1; entry.row = index;
     }
   }
   function step(motionFrame, scene, motion, transition, now, arranging, roomMatrix) {
@@ -64,6 +74,17 @@ export function createSceneEntryFrame(rust) {
     refresh(); room.set(roomMatrix.elements);
     const summary = native.settled(gravityFrame, gravity, motionFrame, scene, motion, transition, now, reduced, arranging); refresh();
     return summary;
+  }
+  // The shared room's local motion (the entries' local poses stay in the state arena): the poses
+  // at rest, the start of a gesture, and a gesture's frame as the rows the room publishes,
+  // `[key, shelf, x, y, z, quaternion, scale]` for every entry of a key the gesture has moved.
+  function motionRest(motionFrame) { native.motion_rest(motionFrame.native); }
+  function motionBegin() { native.motion_begin(); }
+  function motionPoses(motionFrame) {
+    const count = native.motion_publish(motionFrame.native), rows = new Float64Array(memory.buffer, native.published_ptr(), count * 10), poses = [];
+    for (let at = 0; at < rows.length; at += 10)
+      poses.push([motionFrame.name(rows[at]), rows[at+1], rows[at+2], rows[at+3], rows[at+4], rows[at+5], rows[at+6], rows[at+7], rows[at+8], rows[at+9]]);
+    return poses;
   }
   function hits(projectionFrame, scene) { refresh(); native.hits(projectionFrame, scene); refresh(); }
   function free() {

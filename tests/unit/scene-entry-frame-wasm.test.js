@@ -109,7 +109,7 @@ it('takes every button target and style write of the former per-entry hit, after
  const scene=new rust.RustScene(390,1200,390,180,false,false,0),motionFrame=createSceneMotionFrame(rust,key),frame=createSceneEntryFrame(rust);
  const before=perEntryProjection(rust),after=createSceneProjectionFrame(rust),motion=new rust.RustRoomMotion(),bridge=new rust.RustRoomTransition();
  const room=new THREE.Object3D(),surface=new THREE.Object3D(),inverse=new Float64Array([0,0,0,1]),seen=new Set();
- let entries=Array.from({length:14},(_,i)=>entry(i)),stable=0;
+ let entries=Array.from({length:14},(_,i)=>entry(i)),stable=0,movedCount=0;
  try{
   for(let tick=0;tick<900;tick++){
    if(tick===300||tick===600)entries=entries.toReversed();
@@ -138,15 +138,20 @@ it('takes every button target and style write of the former per-entry hit, after
     return [dirty,...bits(before.hitOutput.slice(33,49))];
    });
    if(tick%97===0)shelfWasm.memory.grow(1);
+   // 8192 says the sixteen numbers differ from the ones this row held (or its styles were reset):
+   // the host then copies them into its rectangles, and leaves them alone otherwise.
+   frame.refresh();const held=frame.hitOutput.slice(),resets=Array.from(frame.hitInput).filter((_,k)=>k%HIT_INPUT===0).map(v=>Boolean(v&8));
    frame.hits(after.native,scene);
    entries.forEach((e,i)=>{
     frame.refresh();const v=frame.hitOutput,h=i*HIT_OUTPUT;
-    if(!expected[i])return;
-    const actual=[v[h],...bits(v.slice(h+1,h+17))];seen.add(actual[0]);if(actual[0]===0)stable++;
+    if(!expected[i]){expect(bits(v.slice(h,h+HIT_OUTPUT))).toEqual(bits(held.slice(h,h+HIT_OUTPUT)));return;}
+    const numbers=bits(v.slice(h+1,h+17)),moved=resets[i]||numbers.join()!==bits(held.slice(h+1,h+17)).join();
+    const actual=[v[h]&8191,...numbers];seen.add(actual[0]);if(v[h]===0)stable++;if(moved)movedCount++;
     expect(actual).toEqual(expected[i]);
+    expect(Boolean(v[h]&8192),`moved ${tick}/${i}`).toBe(moved);
    });
   }
-  expect(stable).toBeGreaterThan(2000);expect(seen.size).toBeGreaterThan(8);
+  expect(stable).toBeGreaterThan(2000);expect(movedCount).toBeGreaterThan(500);expect(seen.size).toBeGreaterThan(8);
  }finally{frame.free();motionFrame.free();before.free();after.free();scene.free();motion.free();bridge.free();}
 });
 

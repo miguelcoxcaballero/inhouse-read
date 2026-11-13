@@ -64,6 +64,17 @@ pub fn scene_trash_texts(position:&[f64],scale:f64,rotation:&[f64],foot_y:f64,fl
 
 #[wasm_bindgen]
 impl RustScene{
+ /// `scene_trash_texts` for a frame, from one packed row `[position (3), scale, rotation (3),
+ /// foot y, floor y, foot in the world (3), floor contact in the world (3), radius, height]`:
+ /// the texts only when one of the numbers differs from the previous call's (`undefined`
+ /// otherwise: the host keeps the texts it holds).
+ #[wasm_bindgen(js_name=trashTexts)]
+ pub fn trash_texts(&mut self,numbers:&[f64])->Option<Array>{
+  if numbers.len()<17{return Some(Array::new());}
+  if self.trash_text_key.len()==numbers.len()&&self.trash_text_key.iter().zip(numbers).all(|(held,value)|*held==value.to_bits()){return None;}
+  self.trash_text_key.clear();self.trash_text_key.extend(numbers.iter().map(|value|value.to_bits()));
+  Some(scene_trash_texts(&numbers[0..3],numbers[3],&numbers[4..7],numbers[7],numbers[8],&numbers[9..12],&numbers[12..15],numbers[15],numbers[16]))
+ }
  /// The bin is not shown in this view: only the diagonal view at its end shows it.
  #[wasm_bindgen(js_name=trashViewHidden)]
  pub fn trash_view_hidden(&self)->bool{!self.isometric||self.progress<0.86}

@@ -132,11 +132,11 @@ describe('compiled scene view against the frozen JavaScript', () => {
   }
 
   it('runs 300 random sessions of turns, fits, inspection and viewport sizes alike', () => {
-    const out = new Float64Array(8), sizes = new Float64Array(4)
-    let transforms = 0
+    const out = new Float64Array(8), out2 = new Float64Array(8), sizes = new Float64Array(4)
+    let transforms = 0, freshTexts = 0, keptTexts = 0
     for (let session = 0; session < 300; session++) {
       const g = generator(100 + session), { rust, state } = makePair(g)
-      let now = 0
+      let now = 0, heldTexts = null
       for (let step = 0; step < 40; step++) {
         const kind = g.random.int(0, 8), label = `session ${session} step ${step} kind ${kind}`
         if (kind === 0) {
@@ -200,6 +200,13 @@ describe('compiled scene view against the frozen JavaScript', () => {
           check([expected.yaw, expected.pitch, expected.zoom, expected.x, expected.y, expected.reserve, expected.stageHeight, expected.inFrame ? 1 : 0], out, label)
           check(expected.texts, [...texts], label)
           check(state.panX, rust.panX, label); check(state.panY, rust.panY, label)
+          // The frame's form formats the diagnostics only when a number they show moved: the same
+          // fit, the same texts when it answers, nothing when the texts it last gave still stand.
+          const fresh = rust.transformFresh(new Float64Array(bin), rooftop, floorVisible, unitCount, out2)
+          check([...out], [...out2], label)
+          if (fresh) { check([...texts], [...fresh], label); heldTexts = [...fresh]; freshTexts++ } else { check([...texts], heldTexts, label); keptTexts++ }
+          check(undefined, rust.transformFresh(new Float64Array(bin), rooftop, floorVisible, unitCount, out2), label)
+          check([...out], [...out2], label)
           transforms++
         } else {
           const rows = Array.from({ length: g.random.int(1, 4) }, (_, index) => ({ top:index * 200, bottom:index * 200 + 180, ...(g.random.chance(.3) ? { ceiling:index * 200 - 8 } : {}), ...(g.random.chance(.3) ? { left:12 } : {}) }))
@@ -228,6 +235,7 @@ describe('compiled scene view against the frozen JavaScript', () => {
       rust.free()
     }
     expect(transforms).toBeGreaterThan(500)
+    expect(freshTexts).toBeGreaterThan(300); expect(keptTexts).toBeGreaterThan(10)
   })
 
   it('places a retained image and the pointer view like the original', () => {
@@ -309,7 +317,7 @@ describe('compiled scene view against the frozen JavaScript', () => {
       check([frame.visible ? 1 : 0, frame.inFrame ? 1 : 0, frame.hitLeft, frame.hitTop, frame.hitWidth, frame.hitHeight], out, `frame ${trial}`)
       rust.free()
     }
-    const g2 = generator(17)
+    const g2 = generator(17), memo = new rustShelf.RustScene(390, 700, 390, 150, false, true, 0)
     for (let trial = 0; trial < 3000; trial++) {
       const v = () => new THREE.Vector3(g2.num(500), g2.num(500), g2.num(500))
       const inputs = { position:v(), scale:g2.num(3), rotation:new THREE.Euler(g2.num(3), g2.num(3), g2.num(3)), footY:g2.num(400), floorY:g2.num(400),
@@ -317,7 +325,14 @@ describe('compiled scene view against the frozen JavaScript', () => {
       const texts = rustShelf.scene_trash_texts([inputs.position.x, inputs.position.y, inputs.position.z], inputs.scale, [inputs.rotation.x, inputs.rotation.y, inputs.rotation.z],
         inputs.footY, inputs.floorY, [inputs.footWorld.x, inputs.footWorld.y, inputs.footWorld.z], [inputs.floorContact.x, inputs.floorContact.y, inputs.floorContact.z], inputs.radius, inputs.height)
       check(ref.trashTexts(inputs), [...texts], `texts ${trial}`)
+      // The frame's form takes one packed row and answers only when a number moved.
+      const packed = new Float64Array([inputs.position.x, inputs.position.y, inputs.position.z, inputs.scale, inputs.rotation.x, inputs.rotation.y, inputs.rotation.z,
+        inputs.footY, inputs.floorY, inputs.footWorld.x, inputs.footWorld.y, inputs.footWorld.z, inputs.floorContact.x, inputs.floorContact.y, inputs.floorContact.z, inputs.radius, inputs.height])
+      check([...texts], [...memo.trashTexts(packed)], `packed texts ${trial}`)
+      check(undefined, memo.trashTexts(packed), `packed texts ${trial} again`)
+      if (trial % 7 === 0) { packed[trial % 17] = packed[trial % 17] === 12345 ? 54321 : 12345; check(true, Array.isArray(memo.trashTexts(packed)), `packed texts ${trial} moved`) }
     }
+    memo.free()
   })
 
   it('places the catalogue booklet, its tap box and its face exactly', () => {

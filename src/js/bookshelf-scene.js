@@ -3,7 +3,7 @@ import { createSceneCountFrame } from './scene-count-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
-import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
+import { createSceneEntryFrame, settledQualityWork, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -168,6 +168,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const rust = needRustShelf();
   const countFrame = createSceneCountFrame(rust);
   const [canvas, context] = rust.scene_canvas(0);
+  // The canvas' diagnostics as this scene last wrote them. Nothing else writes them, so a value
+  // that stands is known without asking the DOM: a steady frame reads none of its data attributes.
+  const shownData = new Map();
+  const showData = (key, value) => {
+    if (shownData.get(key) === value) return;
+    shownData.set(key, value); setData(canvas,key,value);
+  };
+  const hideData = key => { if (shownData.delete(key)) delete canvas.dataset[key]; };
   if (!context) return null;
   let originalHeight = stage.style.height;
   let originalTop = stage.style.top;
@@ -246,7 +254,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   const freshEntry = (entry, index) => {
     const fresh = { ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(), row:-1, stale:true,
-    lift:null, state:'', rect:null, hitRect:null, insertion:null,
+    lift:null, state:'', rect:null, hitRect:null, insertion:null, posed:null,
     overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
     // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
     classText:null, flags:NO_FLAGS, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
@@ -261,7 +269,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const roomMotion = new rust.RustRoomMotion();
   const roomTransition = new rust.RustRoomTransition();
   let motionExpiry = null, motionGesture = null, motionSequence = 0, motionSentAt = -Infinity;
-  let motionRest = new Map(), motionAffected = new Set(), motionBase = null;
+  let motionBase = null;
   let roomCheckpoint = '', roomRevision = '', installedRoom = null;
   try { roomCheckpoint = localStorage.getItem('inhouse-read-shelf-physics-v1') || ''; } catch {}
   const roomRecords = () => bookEntries.filter(e => e.book).map(e => e.book);
@@ -283,28 +291,24 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (arranging && !motionGesture) {
       acknowledgeRoom(roomCheckpoint);
       roomMotion.clear(''); installedRoom = null; pendingCloudPhysics = null;
-      motionBase = roomRevision; motionAffected.clear();
+      motionBase = roomRevision; entryFrame.motionBegin();
       motionGesture = crypto.randomUUID(); motionSequence = 0; motionSentAt = -Infinity;
     }
     if (!motionGesture) {
-      if (quiet && !roomMotion.active(now)) motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose]));
+      // The entries' local poses (kept in the entry arena) become the poses at rest.
+      if (quiet && !roomMotion.active(now)) entryFrame.motionRest(sceneMotionFrame);
       return;
     }
     const end = !arranging && quiet;
     if (!end && now - motionSentAt < 50) return;
-    const poses = [];
-    for (const entry of bookEntries) {
-      const row = entry.localMotionPose, previous = motionRest.get(motionKey(entry));
-      if (row && (!previous || entry.bits & 6 || row.some((v,i) => i && Math.abs(v - previous[i]) > .000001))) motionAffected.add(row[0]);
-      // Each frame is a complete replacement for this gesture's affected set,
-      // including a neighbour that moved and then returned to its starting pose.
-      if (row && motionAffected.has(row[0])) poses.push(row);
-    }
+    // Each frame is a complete replacement for this gesture's affected set,
+    // including a neighbour that moved and then returned to its starting pose.
+    const poses = entryFrame.motionPoses(sceneMotionFrame);
     globalThis.dispatchEvent(new CustomEvent('inhouse-room-motion-local', {detail:{gesture:motionGesture,
       sequence:++motionSequence, phase:end ? 'end' : 'frame', shelfType, poses,
       base:motionBase || undefined, commit:end && motionBase ? roomRevision : undefined}}));
     motionSentAt = now;
-    if (end) { motionGesture = null; motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose])); }
+    if (end) { motionGesture = null; entryFrame.motionRest(sceneMotionFrame); }
   }
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
   let physicsStarted = false, physicsInteracted = false, pendingCloudPhysics = null;
@@ -636,6 +640,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (cached?.parent && cached.name === name) return cached;
     return model.userData.hitSurface = model.getObjectByName(name);
   }
+  // `Object3D#updateWorldMatrix(true, false)` for an object inside the room whose ancestors from
+  // the room upwards were already walked in this frame: the same calls on the same objects, in
+  // the same order, without composing the room and the scene again for every entry.
+  function refreshWorldBelowRoom(object) {
+    const parent = object.parent;
+    if (parent !== null && parent !== furniture) refreshWorldBelowRoom(parent);
+    if (object.matrixAutoUpdate) object.updateMatrix();
+    if (object.matrixWorldAutoUpdate === true) {
+      if (parent === null) object.matrixWorld.copy(object.matrix);
+      else object.matrixWorld.multiplyMatrices(parent.matrixWorld, object.matrix);
+    }
+  }
   // The stand-in hit box of a culled model only changes with its slot box.
   const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
   const insertedIds = [], exclusionRects = [];
@@ -780,6 +796,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
     if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+    entry.posed = null;
     entry.lampHull?.free(); entry.lampHull = null;
     const foliage = semanticFoliage.get(entry.node);
     if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
@@ -791,18 +808,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (!entry.trashDrop) return;
     inspectionOverview = null;
     if (rust.scene_cancel_trash_drop(entry, restore, furniture, trashNode, canvas)) casterListDirty = true;
+    // It removed the drop's diagnostics from the canvas.
+    for (const key of ['trashDropProgress', 'trashingBookId', 'trashingObjectId', 'trashingObjectKind']) shownData.delete(key);
   }
 
   // The bin's diagnostics are mirrored on its semantic node and on the canvas.
-  const trashData = (key, value) => { setData(trashNode, key, value); setData(canvas, key, value); };
+  const trashData = (key, value) => { setData(trashNode, key, value); showData(key, value); };
 
   const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
-  const scrollerClip = new Float64Array(4), trashRect0 = {};
+  const scrollerClip = new Float64Array(4), trashRect0 = {}, trashNumbers = new Float64Array(17);
+  let trashTexts = null, viewTexts = null;
   function updateTrash(scroll, now, finishedDrops) {
     if (!trash || !trashNode) {
       for (const key of ['trash3d', 'trashHover', 'trashVisible', 'trashViewHidden', 'trashLocalPosition', 'trashLocalScale',
         'trashLocalRotation', 'trashFootY', 'cabinetFloorY', 'trashCameraInFrame', 'trashFootWorld', 'floorContactWorld'])
-        delete canvas.dataset[key];
+        hideData(key);
       return false;
     }
     const scrollerBounds = frameLayout.scroller;
@@ -848,10 +868,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       const value = t.toFixed(4);
       setData(trashNode, 'trashDropProgress', value); setData(trashNode, 'dropProgress', value);
-      setData(canvas, 'trashDropProgress', value);
-      setData(canvas, 'trashingBookId', String(dropEntry.book?.id ?? ''));
-      setData(canvas, 'trashingObjectId', String(dropEntry.node?.dataset.objectId ?? dropEntry.key));
-      setData(canvas, 'trashingObjectKind', dropEntry.kind === 'plant' || dropEntry.kind === 'lamp' ? dropEntry.kind : 'book');
+      showData('trashDropProgress', value);
+      showData('trashingBookId', String(dropEntry.book?.id ?? ''));
+      showData('trashingObjectId', String(dropEntry.node?.dataset.objectId ?? dropEntry.key));
+      showData('trashingObjectKind', dropEntry.kind === 'plant' || dropEntry.kind === 'lamp' ? dropEntry.kind : 'book');
       moving ||= t < 1;
       if (t === 1 && !drop.complete) {
         drop.complete = true;
@@ -890,14 +910,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(trashNode, 'trash3d', 'true');
     setData(trashNode, 'trashVisible', String(visible)); setData(trashNode, 'trashViewHidden', String(viewHidden));
     setData(trashNode, 'trashHover', hover); setData(trashNode, 'hover', hover);
-    setData(canvas, 'trash3d', 'true'); setData(canvas, 'trashHover', hover);
-    setData(canvas, 'trashVisible', String(visible)); setData(canvas, 'trashViewHidden', String(viewHidden));
+    showData('trash3d', 'true'); showData('trashHover', hover);
+    showData('trashVisible', String(visible)); showData('trashViewHidden', String(viewHidden));
     const footY = trash.position.y + trashBounds.min.y * trash.scale.y;
     const footWorld = furniture.localToWorld(footPoint.set(trash.position.x, footY, trash.position.z));
     const floorContact = furniture.localToWorld(floorPoint.set(trash.position.x, floorY, trash.position.z));
-    const { position, rotation } = trash;
-    const texts = rust.scene_trash_texts([position.x, position.y, position.z], trash.scale.x, [rotation.x, rotation.y, rotation.z], footY, floorY,
-      [footWorld.x, footWorld.y, footWorld.z], [floorContact.x, floorContact.y, floorContact.z], trash.userData.radius, trash.userData.height);
+    const { position, rotation } = trash, n = trashNumbers;
+    n[0] = position.x; n[1] = position.y; n[2] = position.z; n[3] = trash.scale.x; n[4] = rotation.x; n[5] = rotation.y; n[6] = rotation.z;
+    n[7] = footY; n[8] = floorY; n[9] = footWorld.x; n[10] = footWorld.y; n[11] = footWorld.z;
+    n[12] = floorContact.x; n[13] = floorContact.y; n[14] = floorContact.z; n[15] = trash.userData.radius; n[16] = trash.userData.height;
+    // Formatted again only when one of the numbers moved; the texts held are written otherwise.
+    const texts = trashTexts = sceneView.trashTexts(n) || trashTexts;
     trashData('trashLocalPosition', texts[0]);
     trashData('trashLocalScale', texts[1]); trashData('trashLocalRotation', texts[2]);
     trashData('trashFootY', texts[3]); trashData('cabinetFloorY', texts[4]);
@@ -1134,7 +1157,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const { min, max } = trashBounds, { position } = trash;
       binBox.set([min.x, min.y, min.z, max.x, max.y, max.z, position.x, position.y, position.z]);
     }
-    const texts = sceneView.transform(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame);
+    // The diagnostics are formatted again only when a number they show moved; the texts held are written otherwise.
+    const texts = viewTexts = sceneView.transformFresh(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
     // The fitted room: turned, scaled and placed as the Rust view decided.
     furniture.rotation.set(viewFrame[1], viewFrame[0], 0); furniture.scale.setScalar(viewFrame[2]);
     furniture.position.set(viewFrame[3], viewFrame[4], 0);
@@ -1143,20 +1167,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // each entry updates its new pose and the renderer walks the scene again.
     furniture.updateWorldMatrix(false, false);
     stage.style.height = `${viewFrame[6]}px`;
-    setData(canvas, 'shelfView', texts[0]);
-    setData(canvas, 'viewProgress', texts[1]);
-    setData(canvas, 'yaw', texts[2]);
-    setData(canvas, 'pitch', texts[3]);
-    setData(canvas, 'zoom', texts[4]);
-    setData(canvas, 'inspectionZoom', texts[5]);
-    setData(canvas, 'inspectionMoving', texts[6]);
-    setData(canvas, 'inspectionPan', texts[7]);
-    setData(canvas, 'cabinetWidth', texts[8]); setData(canvas, 'trashReserve', texts[9]);
-    setData(canvas, 'shelfType', shelfType);
-    setData(canvas, 'shelfUnits', texts[10]);
-    setData(canvas, 'shelfDimensions', SHELF_DIMENSIONS[shelfType]);
-    setData(canvas, 'sceneFitHeight', texts[11]); setData(canvas, 'floorVisible', texts[12]);
-    setData(canvas, 'fullCabinetInFrame', texts[13]);
+    showData('shelfView', texts[0]);
+    showData('viewProgress', texts[1]);
+    showData('yaw', texts[2]);
+    showData('pitch', texts[3]);
+    showData('zoom', texts[4]);
+    showData('inspectionZoom', texts[5]);
+    showData('inspectionMoving', texts[6]);
+    showData('inspectionPan', texts[7]);
+    showData('cabinetWidth', texts[8]); showData('trashReserve', texts[9]);
+    showData('shelfType', shelfType);
+    showData('shelfUnits', texts[10]);
+    showData('shelfDimensions', SHELF_DIMENSIONS[shelfType]);
+    showData('sceneFitHeight', texts[11]); showData('floorVisible', texts[12]);
+    showData('fullCabinetInFrame', texts[13]);
     inverseRotation.copy(furniture.quaternion).invert();
     return viewFrame[2];
   }
@@ -1165,7 +1189,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const catalogCover = new Float64Array(3), catalogStage = new Float64Array(2), catalogInner = new Float64Array(2);
   function updateCatalog(scroll) {
     if (!catalog || !catalogNode) {
-      delete canvas.dataset.catalog3d; delete canvas.dataset.catalogVisible;
+      hideData('catalog3d'); hideData('catalogVisible');
       return;
     }
     const first = rows[0] || { top:20, bottom:220 };
@@ -1211,7 +1235,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     written.fixed = true;
     setData(catalogNode, 'catalog3d', 'true'); setData(catalogNode, 'catalogVisible', String(visible));
     setData(catalogNode, 'catalogViewHidden', String(viewHidden));
-    setData(canvas, 'catalog3d', 'true'); setData(canvas, 'catalogVisible', String(visible));
+    showData('catalog3d', 'true'); showData('catalogVisible', String(visible));
   }
 
   const projectionFrame = createSceneProjectionFrame(rust);
@@ -1339,6 +1363,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if(sounds){const stride=bookGravity.sound_stride?.()||3;for(let at=0;at+2<sounds.length;at+=stride)playShelfSound(stride>3?sounds[at+3]:3,sounds[at],sounds[at+1],sounds[at+2]);}
     }
     moving = Boolean(summary & 1); shelfMoving = Boolean(summary & 2); previewing = Boolean(summary & 4); previewed = Math.floor(summary / 8);
+    let roomWalked = false;
     for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
       const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
@@ -1355,7 +1380,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         pose.scale.setScalar(state[row + 35]);
       }
       if (usePhysics && !decorative && node) writeLean(entry, node, state[row + 69]);
-      if (liveFlags & 1) entry.localMotionPose = [sceneMotionFrame.key(entryIndex),live[at+1],live[at+2],live[at+3],live[at+4],live[at+5],live[at+6],live[at+7],live[at+8],live[at+9]];
       if (liveFlags & 2) {
         pose.position.set(live[at+10],live[at+11],live[at+12]);
         pose.quaternion.set(live[at+13],live[at+14],live[at+15],live[at+16]);pose.scale.setScalar(live[at+17]);
@@ -1369,12 +1393,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Object3D#updateMatrix, already taken natively (the room's multiply stays in the arena for the hits).
       if (changed & 2) { pose.matrix.fromArray(live, at + 26); pose.matrixWorldNeedsUpdate = true; }
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
-      const rect = entry.rect || (entry.rect = {});
-      rect.left = live[at + 58]; rect.right = live[at + 59]; rect.top = live[at + 60]; rect.bottom = live[at + 61];
-      rect.width = live[at + 62]; rect.height = live[at + 63]; rect.closest = live[at + 64];
+      // Its projected rectangle is copied only when it moved (or the entry holds none yet).
+      if (changed & 4 || !entry.rect) {
+        const rect = entry.rect || (entry.rect = {});
+        rect.left = live[at + 58]; rect.right = live[at + 59]; rect.top = live[at + 60]; rect.bottom = live[at + 61];
+        rect.width = live[at + 62]; rect.height = live[at + 63]; rect.closest = live[at + 64];
+      }
       const visible = live[at + 65] === 1, modelVisible = live[at + 69] === 1;
       if (live[at + 66] === 1) {
-        rust.scene_update_quality(entry,qualityHost,live[at + 67] === 1,live[at + 68]);
+        // Every settled, visible book and plant passes here in every frame. Its overview flag and
+        // resolution are stored as scene_update_quality stores them, and Rust is called only for
+        // an entry with work to do: a model at another quality (scene_quality.rs `matches`), a
+        // replacement or a plant texture under way. The call per entry cost more than the frame.
+        const overview = live[at + 67] === 1, resolution = live[at + 68];
+        if (settledQualityWork(entry, overview, resolution)) rust.scene_update_quality(entry,qualityHost,overview,resolution);
       }
       let created = null;
       if (visible && !entry.model) {
@@ -1388,9 +1420,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry.model.visible !== modelVisible) casterListDirty = true;
         entry.model.visible = modelVisible;
         if (trashDrop) {
+          entry.posed = null;
           moving ||= !trashDrop.complete;
           shelfMoving ||= !trashDrop.complete;
         } else if (insertion) {
+          entry.posed = null;
           // The first depth pass can take longer while a mobile GPU warms up.
           // Advance in bounded frame steps instead of skipping the whole
           // insertion after one delayed frame.
@@ -1400,17 +1434,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           const t = insertionIo[2];
           shelfBookInsertion(insertion.slot, entry.width, insertionIo[3])
             .decompose(entry.model.position, entry.model.quaternion, entry.model.scale);
-          setData(canvas, 'returnProgress', t.toFixed(4));
+          showData('returnProgress', t.toFixed(4));
           moving ||= t < 1;
           shelfMoving ||= t < 1 && !insertion.overlayCanvas;
           if (t === 1 && !insertion.complete) {
             insertion.complete = true;
             finishedInsertions.push(insertion.resolve);
           }
-        } else {
-          entry.model.position.copy(entry.pose.position);
-          entry.model.rotation.copy(entry.pose.rotation);
-          entry.model.scale.copy(entry.pose.scale);
+        } else if (entry.posed !== entry.model || changed & 1 || liveFlags & 6) {
+          // A model already at its entry's pose keeps it: nothing else moves a shelf model.
+          entry.posed = entry.model;
+          entry.model.position.copy(pose.position);
+          entry.model.rotation.copy(pose.rotation);
+          entry.model.scale.copy(pose.scale);
         }
         if (!decorative && (!away || insertion)) activeBooks++;
       }
@@ -1428,7 +1464,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         let placed = 32;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
-          surface.updateWorldMatrix(true, false);
+          // The room's own matrices are walked once per frame; every other surface starts below them.
+          if (roomWalked) refreshWorldBelowRoom(surface);
+          else { surface.updateWorldMatrix(true, false); for (let above = surface.parent; above; above = above.parent) if (above === furniture) { roomWalked = true; break; } }
           const { min, max } = surface.geometry.boundingBox;
           hits[h + 2] = min.x; hits[h + 3] = min.y; hits[h + 4] = min.z; hits[h + 5] = max.x; hits[h + 6] = max.y; hits[h + 7] = max.z;
           hits.set(surface.matrixWorld.elements, h + 8); placed = 0;
@@ -1454,28 +1492,34 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = bookEntries[entryIndex], node = entry.node;
       if (!node) continue;
       const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
-      const rect = entry.rect, written = entry.written;
       entryFrame.refresh();
       const hit = entryFrame.hitOutput, h = entryIndex * HIT_OUTPUT, dirtyStyle = hit[h];
-      const hitRect = entry.hitRect || (entry.hitRect = {});
-      hitRect.left = hit[h + 1]; hitRect.right = hit[h + 2]; hitRect.top = hit[h + 3]; hitRect.bottom = hit[h + 4];
-      hitRect.width = hit[h + 5]; hitRect.height = hit[h + 6]; hitRect.closest = hit[h + 7];
+      // An entry whose hit target and styles stand as written has nothing to copy or restyle
+      // (a button without its cover span is always dirty: scene_projection.rs).
+      const hull = usePhysics && lamp && !undershelf && entry.model;
+      if (dirtyStyle === 0 && !hull && entry.hitRect) continue;
+      const rect = entry.rect, written = entry.written;
       const tapLeft = hit[h + 8], tapTop = hit[h + 9], tapWidth = hit[h + 10], tapHeight = hit[h + 11];
       const zIndex = hit[h + 12], coverLeft = hit[h + 13], coverTop = hit[h + 14], coverShown = hit[h + 15], coverEvents = hit[h + 16];
+      if (dirtyStyle & 8192 || !entry.hitRect) {
+        const hitRect = entry.hitRect || (entry.hitRect = {});
+        hitRect.left = hit[h + 1]; hitRect.right = hit[h + 2]; hitRect.top = hit[h + 3]; hitRect.bottom = hit[h + 4];
+        hitRect.width = hit[h + 5]; hitRect.height = hit[h + 6]; hitRect.closest = hit[h + 7];
+      }
       // The button covers the hit surface, but a real-scale spine is only 5-13 px
       // thick: a book's button is padded to the minimum tap width around the
       // spine's centre (hitRect keeps the drawn surface). A lamp's switch is
       // padded to a finger-sized square around its light: a MITTLED puck is
       // a few pixels tall and often sits behind a board. Plants are not thin,
       // so their button is the hit surface itself.
-      if (!plant) {
+      if (!plant && (dirtyStyle & 8192 || !entry.tapRect)) {
         const tapRect = entry.tapRect || (entry.tapRect = {});
         tapRect.left = tapLeft; tapRect.top = tapTop; tapRect.width = tapWidth; tapRect.height = tapHeight;
       }
       // A frame that moves nothing restyles nothing: only numbers that differ
       // from the last written ones reach the DOM, in the same order as a first write.
       // The style objects are fetched only when something is written to them.
-      if (usePhysics && lamp && !undershelf && entry.model) {
+      if (hull) {
         entry.model.updateMatrixWorld(true);
         // Rebuilt in Rust only when a mesh, its matrix or the tap corner moved; undefined is "as before".
         const clip = (entry.lampHull ||= new rust.RustLampHull()).outline(entry.model, tapLeft, tapTop, written.clip === undefined);
@@ -1528,13 +1572,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // restyling (the loop wrote only left/top/width/height/z-index of observed
     // nodes): it carries no class or drag-variable change to react to.
     mutations.takeRecords();
-    setData(canvas, 'activeBooks', String(activeBooks));
-    setData(canvas, 'previewAnimating', String(previewing));
-    setData(canvas, 'previewObjects', String(previewed));
-    setData(canvas, 'returningBooks', insertedIds.join(','));
-    setData(canvas, 'returningBookId', insertedIds.length === 1 ? insertedIds[0] : '');
-    setData(canvas, 'returnRenderer', overlaying ? 'shared-depth-overlay' : 'shelf');
-    if (!insertedIds.length) delete canvas.dataset.returnProgress;
+    showData('activeBooks', String(activeBooks));
+    showData('previewAnimating', String(previewing));
+    showData('previewObjects', String(previewed));
+    showData('returningBooks', insertedIds.join(','));
+    showData('returningBookId', insertedIds.length === 1 ? insertedIds[0] : '');
+    showData('returnRenderer', overlaying ? 'shared-depth-overlay' : 'shelf');
+    if (!insertedIds.length) hideData('returnProgress');
     return { moving:moving || roomMotion.moving(now) || roomTransition.moving(now), shelfMoving:shelfMoving || roomMotion.moving(now) || roomTransition.moving(now), localMoving:moving };
   }
 
@@ -1901,7 +1945,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     inspectionCanvas.style.display = 'none';
     inspectionOverviewCanvas.style.display = 'none';
     canvas.style.visibility = '';
-    setData(canvas, 'inspectionCacheActive', 'false');
+    showData('inspectionCacheActive', 'false');
   }
 
   function paintInspectionSnapshot() {
@@ -1910,8 +1954,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       (lastSceneMoving ? 16 : 0) | (lighting.settling && !sceneView.shadowRefit ? 32 : 0) |
       (sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.progress !== 1 ? 64 : 0) | (sceneView.hasDrop ? 128 : 0));
     if (miss) {
-      setData(canvas, 'inspectionCacheMissReason', miss);
-      setData(canvas, 'inspectionCacheMissSource', canvas.dataset.inspectionDirtySource || '');
+      showData('inspectionCacheMissReason', miss);
+      showData('inspectionCacheMissSource', canvas.dataset.inspectionDirtySource || '');
       return false;
     }
     const placement = new Float64Array(4);
@@ -1921,7 +1965,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     };
     const { scale, left, top, covers } = project(snapshot);
     const overview = inspectionOverview && project(inspectionOverview);
-    if (!covers && !overview?.covers) { setData(canvas, 'inspectionCacheMissReason', 'coverage'); return false; }
+    if (!covers && !overview?.covers) { showData('inspectionCacheMissReason', 'coverage'); return false; }
     let nativeCompositor=false;
     if(!sceneView.moving && nativeRoomLease && nativeFrameCache.validFrame(snapshot.nativeFrame) && (!overview?.covers || nativeFrameCache.validFrame(inspectionOverview.nativeFrame))) {
       const clip={left:0,top:0,right:sceneWidth,bottom:sceneView.viewportHeight},layers=[];
@@ -1967,14 +2011,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     } else inspectionCanvas.style.display = 'none';
     canvas.style.visibility = 'hidden';
     inspectionSnapshotVisible = true;
-    setData(canvas, 'inspectionCacheActive', 'true');
-    setData(canvas, 'inspectionCacheMissReason', '');
-    setData(canvas, 'inspectionCompositorFrames', String(++compositorFrames));
-    setData(canvas, 'inspectionMoving', 'true'); setData(canvas, 'animating', 'true');
-    setData(canvas, 'inspectionZoom', sceneView.zoom.toFixed(4));
-    setData(canvas, 'inspectionPan', JSON.stringify([sceneView.panX, sceneView.panY]));
-    setData(canvas, 'zoom', (snapshot.furnitureZoom * scale).toFixed(4));
-    setData(canvas, 'renderCount', String(++renderCount));
+    showData('inspectionCacheActive', 'true');
+    showData('inspectionCacheMissReason', '');
+    showData('inspectionCompositorFrames', String(++compositorFrames));
+    showData('inspectionMoving', 'true'); showData('animating', 'true');
+    showData('inspectionZoom', sceneView.zoom.toFixed(4));
+    showData('inspectionPan', JSON.stringify([sceneView.panX, sceneView.panY]));
+    showData('zoom', (snapshot.furnitureZoom * scale).toFixed(4));
+    showData('renderCount', String(++renderCount));
     return true;
   }
 
@@ -2094,7 +2138,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           // Compilation changes the real program cache without painting. Report
           // it now so the next resize/gesture does not appear to create programs
           // that were already prepared in the background. No extra render.
-          setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
+          showData('scenePrograms', String(renderer.info?.programs?.length || 0));
         }
       }).catch(error => console.warn('No se pudo preparar la inserción 3D:', error));
     }
@@ -2216,7 +2260,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
             width:inspectionCanvas.style.width, height:inspectionCanvas.style.height });
           inspectionOverview = { ...inspectionSnapshot,nativeFrame:overviewFrame };
         }
-        setData(canvas, 'inspectionSnapshotResolution', JSON.stringify([inspectionCanvas.width, inspectionCanvas.height]));
+        showData('inspectionSnapshotResolution', JSON.stringify([inspectionCanvas.width, inspectionCanvas.height]));
       } else {
         inspectionSnapshot = null;
         if(!nativeFrame)context.drawImage(renderer.domElement,0,0,canvas.width,canvas.height);
@@ -2237,13 +2281,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
             owner.role==='shelf-insertion' && owner.transferTo(nativeRoomLease);
           if(!presented && (!owner || owner===nativeRoomLease))throw new Error('Native room cannot preserve its viewport');
         }
-        setData(canvas,'nativeRoomPresentation','true');
-      } else setData(canvas,'nativeRoomPresentation','false');
+        showData('nativeRoomPresentation','true');
+      } else showData('nativeRoomPresentation','false');
       completedLegacyInsertionLeases.clear();
       });
       releaseUnusedNativeRoomFrames();
-      setData(canvas, 'snapshotRenderCount', String(++shelfSnapshotRenders));
-      setData(canvas, 'sceneDrawCalls', String(renderer.info?.render.calls || 0));
+      showData('snapshotRenderCount', String(++shelfSnapshotRenders));
+      showData('sceneDrawCalls', String(renderer.info?.render.calls || 0));
       shelfSnapshotDirty = false;
       paintedModalView = { progress:sceneView.progress, inspectionZoom:sceneView.zoom, panX:sceneView.panX, panY:sceneView.panY };
       // Record only a completed room transaction, after GPU/native/legacy
@@ -2253,33 +2297,33 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         !entry.insertion && !entry.trashDrop) paintedAwayEntries.add(entry);
     }
     for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
-    setData(canvas, 'renderCount', String(++renderCount));
+    showData('renderCount', String(++renderCount));
     // One pass over the entries serves every count below, taken in Rust.
     const resolutionText = countFrame.sample(bookEntries, countOut);
     const [plants, highPlants, lamps, overview, detailed, highBooks, pending] = countOut;
-    setData(canvas, 'activePlants', String(plants));
-    setData(canvas, 'highResolutionPlants', String(highPlants));
-    setData(canvas, 'activeLamps', String(lamps));
-    setData(canvas, 'lampLightCount', String(lampLighting.activeCount));
-    setData(canvas, 'activeLampLights', String(lampLighting.activeCount));
-    setData(canvas, 'lampShadowCount', String(lampLighting.shadowCount));
-    setData(canvas, 'lampLightTemperature', '2700');
-    setData(canvas, 'overviewBooks', String(overview));
-    setData(canvas, 'highResolutionBooks', String(highBooks));
-    setData(canvas, 'bookTextureResolutions', resolutionText);
-    setData(canvas, 'sceneGeometries', String(renderer.info?.memory?.geometries || 0));
-    setData(canvas, 'sceneTextures', String(renderer.info?.memory?.textures || 0));
-    setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
-    setData(canvas, 'inspectionOverviewReady', String(Boolean(inspectionOverview)));
-    setData(canvas, 'pixelRatio', String(ratio));
-    setData(canvas, 'detailedBooks', String(detailed));
-    setData(canvas, 'bookQualityPending', String(pending));
-    setData(canvas, 'shadowMapSize', '1024');
+    showData('activePlants', String(plants));
+    showData('highResolutionPlants', String(highPlants));
+    showData('activeLamps', String(lamps));
+    showData('lampLightCount', String(lampLighting.activeCount));
+    showData('activeLampLights', String(lampLighting.activeCount));
+    showData('lampShadowCount', String(lampLighting.shadowCount));
+    showData('lampLightTemperature', '2700');
+    showData('overviewBooks', String(overview));
+    showData('highResolutionBooks', String(highBooks));
+    showData('bookTextureResolutions', resolutionText);
+    showData('sceneGeometries', String(renderer.info?.memory?.geometries || 0));
+    showData('sceneTextures', String(renderer.info?.memory?.textures || 0));
+    showData('scenePrograms', String(renderer.info?.programs?.length || 0));
+    showData('inspectionOverviewReady', String(Boolean(inspectionOverview)));
+    showData('pixelRatio', String(ratio));
+    showData('detailedBooks', String(detailed));
+    showData('bookQualityPending', String(pending));
+    showData('shadowMapSize', '1024');
     let cabinet = null;
     for (const object of furniture.children) if (object.userData.furniture) { cabinet = object; break; }
-    setData(canvas, 'furnitureMeshes', String(cabinet?.children.length || 0));
-    setData(canvas, 'plantGeometry', 'catalog-3d');
-    setData(canvas, 'animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
+    showData('furnitureMeshes', String(cabinet?.children.length || 0));
+    showData('plantGeometry', 'catalog-3d');
+    showData('animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
     lastSceneMoving = Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving);
     lastLocalSceneMoving = Boolean(sceneView.turning || sceneView.reordering || localMoving || trashMoving);
     if (settleBooks && physicsReady && !roomMotion.active(now) && !lastSceneMoving && !sceneView.moving &&
@@ -2341,7 +2385,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function noteInspectionDirty(source) {
-    setData(canvas, 'inspectionDirtySource', source);
+    showData('inspectionDirtySource', source);
     canvas.dataset.inspectionDirtyCount = String(++inspectionDirtyCount);
   }
 
@@ -2483,7 +2527,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const finished = new Promise(done => { resolve = done; });
     const now = performance.now();
     const drop = rust.scene_trash_drop_record(THREE, resolve, now, reducedMotion.matches, duration, entry.model, trash);
-    entry.trashDrop = drop; if (!entry.model.visible) casterListDirty = true; entry.model.visible = true; inspectionOverview = null;
+    entry.trashDrop = drop; entry.posed = null; if (!entry.model.visible) casterListDirty = true; entry.model.visible = true; inspectionOverview = null;
     shelfSnapshotDirty = shadowDirty = true;
     cancelAnimationFrame(raf); raf = 0; draw(now);
     drop.lastFrame = performance.now();
@@ -2707,7 +2751,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         insertion.nativeLease = createNativeInsertionLease(insertion);
         if (!insertion.nativeLease) return null;
       }
-      entry.insertion = insertion;
+      entry.insertion = insertion; entry.posed = null;
       settleLift(entry, insertion.started);
       // Paint the same dock position before the caller hides its overlay.
       // Neighbors and wood now occlude the moving book in one depth buffer.

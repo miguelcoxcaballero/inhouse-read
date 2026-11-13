@@ -27,11 +27,14 @@ use super::projection::RustSceneProjectionFrame;
 /// - 56 the pose's Euler order (0 `XYZ`, 1 `ZYX`), which a frame without rigid bodies keeps;
 /// - 57-60 the pose's quaternion (`Quaternion#setFromEuler`, recomputed when the Euler moved);
 /// - 61-68 the pose last handed to the host; 69 the lean; 70 out: 1 the pose differs from the
-///   one the host holds, 2 its matrix differs; 71 in: the host holds nothing of this row yet;
-/// - 72 the previous frame's motion flags.
-const STATE:usize=76;
+///   one the host holds, 2 its matrix differs, 4 its projected rectangle differs; 71 in: the
+///   host holds nothing of this row yet;
+/// - 72 the previous frame's motion flags; 73 in: the host holds no hit target of this row yet;
+/// - 74 the number of the shared key the entry's local pose was sampled under (0: it has none
+///   yet) and 76-84 that pose, as the room publishes it: `[shelf, x, y, z, quaternion, scale]`.
+const STATE:usize=85;
 const HOST:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
-const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;
+const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
 /// Per entry in: pose position, quaternion `[x, y, z, w]` and scale; the projection's kind,
 /// flags, drop, insertion, model, overview, drop complete and overlay; the slot box.
@@ -44,16 +47,21 @@ const OUTPUT:usize=70;
 /// written styles, 16 fresh cover, 32 use the placed matrix), the button's flags, the hit
 /// surface's box and its world matrix.
 const HIT_INPUT:usize=24;
-/// Per entry hit out: the style dirty bits, the hit rectangle (7), the tap rectangle (4), the
-/// z-index, the cover's left and top, whether it shows and whether it takes pointer events.
-const HIT_OUTPUT:usize=17;
+/// Per entry hit out: the style dirty bits (and `HIT_MOVED` when one of the sixteen numbers
+/// after it differs from the ones the host holds), the hit rectangle (7), the tap rectangle (4),
+/// the z-index, the cover's left and top, whether it shows and whether it takes pointer events.
+const HIT_OUTPUT:usize=17;const HIT_MOVED:u32=8192;
 
 #[wasm_bindgen]
-pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit_input:Vec<f64>,hit_output:Vec<f64>,room:Box<[f64;16]>}
+pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit_input:Vec<f64>,hit_output:Vec<f64>,room:Box<[f64;16]>,
+ /// The shared room's local motion: each key's pose at rest (nine numbers, valid when its stamp
+ /// is the current generation), the keys a gesture has moved and the rows last published.
+ rest:Vec<f64>,rest_stamp:Vec<u32>,rest_generation:u32,affected:Vec<bool>,published:Vec<f64>}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
- pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16])}}
+ pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16]),
+  rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new()}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);
@@ -134,10 +142,15 @@ impl RustSceneEntryFrame{
    input[16..22].copy_from_slice(&row[BOX..BOX+6]);
    let mut held=[0u64;16];
    for (bits,value) in held.iter_mut().zip(&output[26..42]){*bits=value.to_bits();}
+   let mut rect=[0u64;7];
+   for (bits,value) in rect.iter_mut().zip(&output[58..65]){*bits=value.to_bits();}
    let flags=place_entry(index,input,output,&room,motion_frame,scene,motion,transition,now,arranging);
    let matrix_changed=fresh||held.iter().zip(&output[26..42]).any(|(bits,value)|*bits!=value.to_bits());
-   row[CHANGED]=f64::from(u32::from(pose_changed)|u32::from(matrix_changed)<<1);
+   let rect_changed=fresh||rect.iter().zip(&output[58..65]).any(|(bits,value)|*bits!=value.to_bits());
+   row[CHANGED]=f64::from(u32::from(pose_changed)|u32::from(matrix_changed)<<1|u32::from(rect_changed)<<2);
    row[FRESH]=0.0;row[LIVE]=f64::from(flags);
+   // The entry's local pose in the shared room, kept until it is sampled again.
+   if flags&1!=0{row[LOCAL..LOCAL+9].copy_from_slice(&output[1..10]);row[LOCAL_KEY]=f64::from(motion_frame.id(index));}
   }
   f64::from(u32::from(moving)|u32::from(shelf_moving)<<1|u32::from(previewing)<<2|previewed<<3)
  }
@@ -147,8 +160,8 @@ impl RustSceneEntryFrame{
  /// the one `step` projected.
  pub fn hits(&mut self,projection:&mut RustSceneProjectionFrame,scene:&RustScene){
   let entries=self.hit_input.chunks_exact(HIT_INPUT).zip(self.hit_output.chunks_exact_mut(HIT_OUTPUT))
-   .zip(self.input.chunks_exact(INPUT).zip(self.output.chunks_exact(OUTPUT)));
-  for (index,((hit,out),(input,output))) in entries.enumerate(){
+   .zip(self.input.chunks_exact(INPUT).zip(self.output.chunks_exact(OUTPUT))).zip(self.state.chunks_exact_mut(STATE));
+  for (index,(((hit,out),(input,output)),row)) in entries.enumerate(){
    let bits=hit[0] as u32;
    if bits&1==0{continue;}
    let mut io=[0.0;49];
@@ -156,9 +169,53 @@ impl RustSceneEntryFrame{
    io[4..11].copy_from_slice(&output[58..65]);io[11..17].copy_from_slice(&hit[2..8]);
    io[17..33].copy_from_slice(if bits&32!=0{&output[42..58]}else{&hit[8..24]});
    let dirty=projection.hit_io(scene,index,bits&8!=0,bits&16!=0,&mut io);
-   out[0]=f64::from(dirty);out[1..17].copy_from_slice(&io[33..49]);
+   // The host copies the numbers into its objects only when they moved (or it holds none yet).
+   let moved=row[HIT_FRESH]!=0.0||bits&8!=0||out[1..17].iter().zip(&io[33..49]).any(|(a,b)|a.to_bits()!=b.to_bits());
+   row[HIT_FRESH]=0.0;
+   out[0]=f64::from(dirty|if moved{HIT_MOVED}else{0});out[1..17].copy_from_slice(&io[33..49]);
   }
  }
+}
+
+/// The shared room's local motion, formerly a pose array per entry per frame, a map of the
+/// poses at rest rebuilt in every quiet frame and a set of moved keys in the host.
+#[wasm_bindgen]
+impl RustSceneEntryFrame{
+ /// Every entry's local pose becomes its key's pose at rest: the keys are the ones registered
+ /// now (an entry without one shares number 0), a later entry replaces an earlier one with the
+ /// same key, and nothing is kept of the previous rest.
+ pub fn motion_rest(&mut self,motion_frame:&RustSceneMotionFrame){
+  self.rest_generation+=1;
+  for (index,row) in self.state.chunks_exact(STATE).enumerate(){
+   if row[LOCAL_KEY]==0.0{continue;}
+   let id=motion_frame.id(index) as usize;
+   if self.rest_stamp.len()<=id{self.rest_stamp.resize(id+1,0);self.rest.resize((id+1)*9,0.0);}
+   self.rest[id*9..id*9+9].copy_from_slice(&row[LOCAL..LOCAL+9]);self.rest_stamp[id]=self.rest_generation;
+  }
+ }
+ /// A gesture begins: no key has moved yet.
+ pub fn motion_begin(&mut self){self.affected.clear();}
+ /// A gesture's frame: an entry whose key has no pose at rest, that is lifted or dragged, or
+ /// whose local pose is more than a millionth from its key's pose at rest joins the moved keys
+ /// (under the key its pose was sampled with), and every entry of a moved key is listed, in
+ /// order, as `[key number, shelf, x, y, z, quaternion, scale]` at `published_ptr`. Returns
+ /// how many.
+ pub fn motion_publish(&mut self,motion_frame:&RustSceneMotionFrame)->usize{
+  self.published.clear();
+  for (index,row) in self.state.chunks_exact(STATE).enumerate(){
+   if row[LOCAL_KEY]==0.0{continue;}
+   let (key,id)=(row[LOCAL_KEY] as usize,motion_frame.id(index) as usize);
+   let local=&row[LOCAL..LOCAL+9];
+   let rested=self.rest_generation!=0&&self.rest_stamp.get(id)==Some(&self.rest_generation);
+   if !rested||(row[2] as u32)&6!=0||local.iter().zip(&self.rest[id*9..id*9+9]).any(|(value,rest)|(value-rest).abs()>0.000001){
+    if self.affected.len()<=key{self.affected.resize(key+1,false);}
+    self.affected[key]=true;
+   }
+   if self.affected.get(key)==Some(&true){self.published.push(row[LOCAL_KEY]);self.published.extend_from_slice(local);}
+  }
+  self.published.len()/10
+ }
+ pub fn published_ptr(&self)->usize{self.published.as_ptr() as usize}
 }
 
 /// One entry of `step`: the motion sample, the pose matrix, its place in the room and the projection.

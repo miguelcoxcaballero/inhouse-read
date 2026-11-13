@@ -83,6 +83,28 @@ afterEach(() => {
 });
 
 describe('per-frame cost of the retained shelf scene', () => {
+  it('asks the canvas for its diagnostics only when one changes, and still leaves every value a rewrite would', () => {
+    settle();
+    const canvas = shelf.canvas, dataset = canvas.dataset;
+    let asked = 0;
+    Object.defineProperty(canvas, 'dataset', { configurable:true, get() { asked++; return dataset; } });
+    const frame = () => { clock += 16; shelf.invalidate(); shelf.flush({ force:true }); };
+    frame(); frame();
+    asked = 0; frame();
+    // A steady frame moves its two render counters (a read and a write each); the seventy other
+    // values stand as the scene wrote them and are not looked up.
+    expect(asked).toBeLessThanOrEqual(8);
+    const steady = { ...dataset };
+    expect(Object.keys(steady).length).toBeGreaterThan(55);
+    // A view change moves many of them: every one reaches the canvas.
+    shelf.setMode('spine', { animate:false }); frame();
+    expect(dataset.shelfView).not.toBe(steady.shelfView);
+    shelf.setMode('isometric', { animate:false }); frame();
+    const { renderCount, snapshotRenderCount, inspectionDirtyCount, sceneDrawCalls, ...back } = { ...dataset };
+    const { renderCount:a, snapshotRenderCount:b, inspectionDirtyCount:c, sceneDrawCalls:d, ...before } = steady;
+    expect(back).toEqual(before);
+    delete canvas.dataset;
+  });
   it('retains an unchanged plant model/projected triangles while replacing its outgoing native target', () => {
     settle();
     const svg = plantNode.querySelector('.ihr-plant-foliage'), path = svg.querySelector('path[fill="transparent"]');

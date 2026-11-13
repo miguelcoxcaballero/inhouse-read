@@ -147,6 +147,8 @@ pub struct RustScene{
  pub(crate) entry_now:f64,pub(crate) entry_reduced:bool,pub(crate) entry_zoom:f64,pub(crate) entry_q:[f64;4],
  pub(crate) entry_ratio:f64,pub(crate) entry_window:f64,pub(crate) entry_scroll:f64,pub(crate) entry_lamp_tap:f64,
  pub(crate) trash_hover:bool,pub(crate) trash_openness:f64,pub(crate) trash_transition:Option<(f64,f64,f64)>,
+ // The numbers the view's and the bin's diagnostics were last formatted from (`transformFresh`, `trashTexts`).
+ text_key:Vec<u64>,pub(crate) trash_text_key:Vec<u64>,
 }
 
 fn full_bounds(width:f64,height:f64,depth:f64,baggebo:bool)->Box3{
@@ -163,7 +165,7 @@ impl RustScene{
    progress:if isometric{1.0}else{0.0},isometric,frontal_scroll:if isometric{0.0}else{scroll_top},transition:None,reorder_started:None,
    fit_height:1.0,edge_to_edge:false,viewport_height:1.0,zoom:1.0,pan_x:0.0,pan_y:0.0,moving:false,shadow_refit:false,drop:None,
    entry_now:0.0,entry_reduced:false,entry_zoom:1.0,entry_q:[0.0,0.0,0.0,1.0],entry_ratio:1.0,entry_window:0.0,entry_scroll:0.0,entry_lamp_tap:44.0,
-   trash_hover:false,trash_openness:0.0,trash_transition:None}
+   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new()}
  }
  /// A new semantic layout: the sizes and the furniture's bounds change, the view does not.
  pub fn configure(&mut self,width:f64,height:f64,scene_width:f64,depth:f64,baggebo:bool){
@@ -245,6 +247,25 @@ impl RustScene{
  /// `[yaw, pitch, zoom, x, y, reserve, stage height, in frame]` into `out` and returns the
  /// canvas diagnostics as text, in the order the scene writes them.
  pub fn transform(&mut self,trash:&[f64],rooftop:f64,floor_visible:bool,unit_count:f64,out:&mut [f64])->Array{
+  let numbers=self.transform_numbers(trash,rooftop,floor_visible,unit_count,out);
+  self.transform_texts(&numbers)
+ }
+ /// `transform` for a frame: the same numbers into `out`, and the diagnostics only when one of
+ /// the numbers they are formatted from differs from the previous call's (`undefined`
+ /// otherwise: the host keeps the texts it holds). Formatting them costs more than the fit.
+ #[wasm_bindgen(js_name=transformFresh)]
+ pub fn transform_fresh(&mut self,trash:&[f64],rooftop:f64,floor_visible:bool,unit_count:f64,out:&mut [f64])->Option<Array>{
+  let numbers=self.transform_numbers(trash,rooftop,floor_visible,unit_count,out);
+  if self.text_key.len()==numbers.len()&&self.text_key.iter().zip(&numbers).all(|(held,value)|*held==value.to_bits()){return None;}
+  self.text_key.clear();self.text_key.extend(numbers.iter().map(|value|value.to_bits()));
+  Some(self.transform_texts(&numbers))
+ }
+}
+impl RustScene{
+ /// The fit itself; returns what the diagnostics are formatted from: `[isometric, progress,
+ /// zoom, inspection zoom, moving, pan x, pan y, width, reserve, units, fit height, floor
+ /// visible, in frame]`.
+ fn transform_numbers(&mut self,trash:&[f64],rooftop:f64,floor_visible:bool,unit_count:f64,out:&mut [f64])->[f64;13]{
   let progress=self.progress;
   let yaw=-std::f64::consts::PI/6.0*progress;
   let pitch=14.0*std::f64::consts::PI/180.0*progress;
@@ -285,19 +306,27 @@ impl RustScene{
   let in_frame=world[0]>=-0.01&&world[1]<=self.scene_width+0.01&&world[2]>=-0.01&&world[3]<=self.fit_height+0.01;
   let values=[yaw,pitch,zoom,x,y,reserve,stage_height,if in_frame{1.0}else{0.0}];
   for (slot,value) in out.iter_mut().zip(values){*slot=value;}
+  let flag=|value:bool|if value{1.0}else{0.0};
+  [flag(self.isometric),progress,zoom,self.zoom,flag(self.moving),self.pan_x,self.pan_y,self.width,reserve,unit_count,self.fit_height,flag(floor_visible),flag(in_frame)]
+ }
+ fn transform_texts(&self,numbers:&[f64;13])->Array{
+  let [isometric,progress,zoom,inspection_zoom,moving,pan_x,pan_y,width,reserve,unit_count,fit_height,floor_visible,in_frame]=*numbers;
   let fixed=|value:f64,digits:u8|js_sys::Number::from(value).to_fixed(digits).ok().and_then(|text|text.as_string()).unwrap_or_default();
-  let json=js_sys::JSON::stringify(&Array::of2(&JsValue::from_f64(self.pan_x),&JsValue::from_f64(self.pan_y))).ok().and_then(|text|text.as_string()).unwrap_or_default();
+  let json=js_sys::JSON::stringify(&Array::of2(&JsValue::from_f64(pan_x),&JsValue::from_f64(pan_y))).ok().and_then(|text|text.as_string()).unwrap_or_default();
   let texts=Array::new();
   for text in [
-   if self.isometric{"isometric".to_string()}else{"spine".to_string()},
+   if isometric!=0.0{"isometric".to_string()}else{"spine".to_string()},
    // String(Number(progress.toFixed(4)))
    number_string(num(&JsValue::from_str(&fixed(progress,4)))),
-   fixed(-30.0*progress,3),fixed(14.0*progress,3),fixed(zoom,4),fixed(self.zoom,4),
-   self.moving.to_string(),json,number_string(self.width),fixed(reserve,3),
-   number_string(unit_count),number_string(self.fit_height),floor_visible.to_string(),in_frame.to_string(),
+   fixed(-30.0*progress,3),fixed(14.0*progress,3),fixed(zoom,4),fixed(inspection_zoom,4),
+   (moving!=0.0).to_string(),json,number_string(width),fixed(reserve,3),
+   number_string(unit_count),number_string(fit_height),(floor_visible!=0.0).to_string(),(in_frame!=0.0).to_string(),
   ]{texts.push(&JsValue::from_str(&text));}
   texts
  }
+}
+#[wasm_bindgen]
+impl RustScene{
 
  /// How the canvas is sized: `[viewport height, ratio, base ratio, the height the pixel origin is searched for]`.
  #[wasm_bindgen(js_name=sizeViewport)]
