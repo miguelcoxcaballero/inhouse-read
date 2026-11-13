@@ -11,6 +11,7 @@ use crate::decor_contacts::{Description,Solid};
 #[path="book_gravity_snapshot.rs"]mod snapshot;
 use snapshot::RestPose;
 #[path="book_gravity_frame.rs"] mod frame;
+pub(crate) use frame::RustGravityFrame;
 #[path="book_gravity_audio.rs"]mod audio;
 struct GentleSideContacts;
 impl PhysicsHooks for GentleSideContacts{

@@ -57,3 +57,32 @@ fn compose_presentations(states:&mut[f64],physics:&[f64],metadata:&mut[f64],widt
   meta[2]=((state[2] as u32)|if output[3]!=0.0&&!output[3].is_nan(){16}else{0}|if output[0].abs()>0.001{32}else{0}) as f64;
  }
 }
+
+impl RustGravityFrame {
+ /// The same frame for a host whose entries live in the scene's own arena (`stride` numbers per
+ /// entry, `scene_entry_frame.rs`): each row's 29 inputs and its nine geometry numbers (columns
+ /// 40-48) enter the solver's records, and only what the host formerly read back returns to the
+ /// row: the lift, a finished landing, the preview's offset and activity, the pose and its bits,
+ /// the three presentation numbers and the lean (column `lean`). A standing plant or lamp
+ /// always has its collision stamp by the time it is stepped.
+ #[allow(clippy::too_many_arguments)]
+ pub(crate) fn advance_rows(&mut self,gravity:&mut RustBookGravity,scene:&RustScene,now:f64,reduced:bool,rows:&mut[f64],stride:usize,lean:usize){
+  let count=self.names.len();
+  if rows.len()<count*stride{return;}
+  for (index,row) in rows.chunks_exact(stride).take(count).enumerate(){
+   self.states[index*37..index*37+29].copy_from_slice(&row[..29]);
+   self.geometry[index*9..index*9+9].copy_from_slice(&row[40..49]);
+   self.presentation[index*3]=if (row[0]==1.0||row[0]==2.0)&&row[1]==0.0{1.0}else{0.0};
+  }
+  self.advance(gravity,scene,now,reduced);
+  for (index,row) in rows.chunks_exact_mut(stride).take(count).enumerate(){
+   let state=&self.states[index*37..index*37+37];
+   row[5..9].copy_from_slice(&state[5..9]);
+   if state[9]==0.0{row[9]=0.0;}
+   row[13]=state[13];row[14]=state[14];row[20]=state[20];
+   row[29..37].copy_from_slice(&state[29..37]);
+   row[37..40].copy_from_slice(&self.presentation[index*3..index*3+3]);
+   row[lean]=self.output[index*4];
+  }
+ }
+}
