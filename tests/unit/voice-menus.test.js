@@ -4,7 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
 // Device voices are not part of the product any more: their normaliser is the frozen original.
 import { normalizeVoices } from './helpers/reference-voice-catalog.js'
-import { languageOptions, orderLanguages, voiceOptions } from '../../src/js/readers/voice-menus.js'
+import { languageOptions, orderLanguages, voiceOptions } from './helpers/live-voice-menus.js'
 
 const system = list => normalizeVoices(list.map(([voiceURI, name, lang, quality = 400, extra = {}]) => ({ voiceURI, name, lang, quality, network:false, installed:true, ...extra })))
 const neural = (piperId, lang, name, installed = false, quality = 'medium') => normalizeNeuralVoice({ id:`piper:${piperId}`, piperId, lang, name, quality, sizeMB:63 }, installed ? [`piper:${piperId}`] : [])

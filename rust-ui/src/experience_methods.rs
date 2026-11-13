@@ -39,7 +39,12 @@ pub fn experience_method(host: JsValue, name: &str, args: Array, kit: JsValue, u
             let message = or(a(1), || Ok(JsValue::from_str("")))?;
             done(reader_experience_mini_player(&host, &state, &message, &the_kit()?))
         }
-        "updateBookmarkButton" => done(reader_experience_bookmark(&host, &k("places.isBookmarked")?)),
+        "updateBookmarkButton" => {
+            // Was the kit's isBookmarked, a JavaScript forwarder back to reading_marked.
+            let marked = crate::reading_places::marked(&read(&host, "bookmarks")?, &read(&host, "location")?)?;
+            method(&read(&host, "view")?, "updateBookmarkButton", &[&marked.into()])?;
+            Ok(JsValue::UNDEFINED)
+        }
         "queueNavigation" => reader_experience_queue(&host, &a(0), &the_kit()?),
         // returnToReading(index = 0)
         "returnToReading" => reader_experience_return(&host, &or(a(0), || Ok(JsValue::from_f64(0.0)))?, &the_kit()?),

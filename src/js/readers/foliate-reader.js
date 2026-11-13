@@ -21,7 +21,6 @@ import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
-import { speechHold } from './speech-hold.js'
 import { FoliateSpeechCursor } from './foliate-speech-cursor.js'
 import { measureBookLength } from '../book-length.js'
 import { readerUI, rustMethods } from './rust-ui-required.js'
@@ -42,7 +41,7 @@ Overlayer.outline = (rects, options) => readerUI().foliate_outline(rects, option
 const snapshotKit = { settlePageLayout, renderedPageFilter, snapshotDOMPage, compositePageSnapshots, themes:READING_THEMES }
 // What foliate_open.rs mounts a book with. canSwipe (every pointer move), theme (every spoken sentence) and the snap
 // guard (any number of arguments) stay arrows.
-const kit = { attach:attachSwipeNavigation, hold:speechHold, SpeechCursor:FoliateSpeechCursor, pageBreaks:speechPageBreaks, readingCSS,
+const kit = { attach:attachSwipeNavigation, SpeechCursor:FoliateSpeechCursor, pageBreaks:speechPageBreaks, readingCSS,
   announce:announceSpeechLayout, get Overlayer() { return Overlayer },
   canSwipe:s => () => s.preferences.flow !== 'scrolled', theme:s => () => s.preferences.theme,
   guardSnap:(ui, s, snap) => (...args) => ui.foliate_snap_skipped(s) ? undefined : snap(...args) }

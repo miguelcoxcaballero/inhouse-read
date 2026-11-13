@@ -39,22 +39,36 @@ pub fn reader_voice_base(host:JsValue,voices:Array,lang_base:Function,declared:F
  }
  Ok(book)
 }
+/// The menus built by two JavaScript functions over `{bookLang,deviceLang}` (the differential tests' doorway).
 #[wasm_bindgen]
 pub fn reader_populate_voices(host:JsValue,list:Function,device:Function,lang_base:Function,languages:Function,options:Function)->Result<(),JsValue>{
+ let locale=|book:&JsValue,device:&JsValue|->Result<JsValue,JsValue>{let locale=Object::new();set(&locale,"bookLang",book)?;set(&locale,"deviceLang",device)?;Ok(locale.into())};
+ populate(host,list,device,lang_base,&|voices,book,device|languages.call2(&JsValue::UNDEFINED,voices,&locale(book,device)?),
+  &|voices,shown,book,device|options.call3(&JsValue::UNDEFINED,voices,shown,&locale(book,device)?))
+}
+/// The menus built here (voice_menus.rs) with the tag and name helpers of readers/voice-catalog.js: what the reader runs.
+#[wasm_bindgen]
+pub fn reader_populate_voices_catalog(host:JsValue,list:Function,device:Function,catalog:JsValue)->Result<(),JsValue>{
+ let lang_base:Function=get(&catalog,"langBase")?.unchecked_into();
+ populate(host,list,device,lang_base,&|voices,book,device|crate::voice_menus::languages(voices,book,device,&catalog).map(Into::into),
+  &|voices,shown,book,device|crate::voice_menus::voices(voices,shown,book,device,&catalog).map(Into::into))
+}
+type Languages<'a>=&'a dyn Fn(&JsValue,&JsValue,&JsValue)->Result<JsValue,JsValue>;
+type Options<'a>=&'a dyn Fn(&JsValue,&JsValue,&JsValue,&JsValue)->Result<JsValue,JsValue>;
+fn populate(host:JsValue,list:Function,device:Function,lang_base:Function,languages:Languages,options:Options)->Result<(),JsValue>{
  let voices=list.call0(&JsValue::UNDEFINED)?;
  let book=call(&host,"bookLanguage")?;let device=device.call0(&JsValue::UNDEFINED)?;
  let requested=one(&host,"voiceBase",&voices)?;let book_base=base(&lang_base,&book)?;
  let mut selected_base=JsValue::from_str("");
  for voice in voices.unchecked_ref::<Array>().iter(){if get(&voice,"base")?==requested{selected_base=requested.clone();break;}}
  set(&host,"voiceBaseShown",&selected_base)?;
- let locale=Object::new();set(&locale,"bookLang",&book)?;set(&locale,"deviceLang",&device)?;
- let language_rows=languages.call2(&JsValue::UNDEFINED,&voices,&locale)?;
+ let language_rows=languages(&voices,&book,&device)?;
  let preferred=get(&get(&host,"preferences")?,"voiceLang")?;
  let picked=if preferred.is_truthy(){preferred}else if selected_base.is_truthy()&&selected_base!=book_base{selected_base.clone()}else{"".into()};
  two(&get(&host,"languageMenu")?,"setOptions",&language_rows,&picked)?;
  let label=if picked==JsValue::from_str(""){JsString::from("Automática · ").concat(&get(&language_rows.unchecked_ref::<Array>().get(0),"hint")?.unchecked_into()).into()}else{JsValue::from_str("")};
  one(&get(&host,"languageMenu")?,"setValueText",&label)?;
- let rows=options.call3(&JsValue::UNDEFINED,&voices,&selected_base,&locale)?;
+ let rows=options(&voices,&selected_base,&book,&device)?;
  let preferred=get(&get(&host,"preferences")?,"voice")?;
  let mut saved=JsValue::from_str("");
  for option in rows.unchecked_ref::<Array>().iter(){if get(&option,"value")?==preferred{saved=preferred.clone();break;}}

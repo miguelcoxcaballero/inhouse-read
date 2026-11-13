@@ -3,9 +3,9 @@ import {rustUI as ui} from './helpers/rust-ui-ready.js'
 import {referenceExperiencePolicy} from './helpers/reference-reader-experience-policy.js'
 import {normalizeReadingPreferences,rateLabel} from '../../src/js/readers/reading-preferences.js'
 import {clonePlace} from '../../src/js/readers/reading-state.js'
-import {isBookmarked} from '../../src/js/readers/reading-places.js'
+import {isBookmarked} from './helpers/live-reading-places.js'
 import {displayBookTitle} from '../../src/js/book-title.js'
-import {readerIcon} from '../../src/js/readers/reader-interface.js'
+import {readerIcon} from './helpers/live-reader-interface.js'
 
 const Reference=referenceExperiencePolicy({normalizeReadingPreferences,clonePlace,isBookmarked,displayBookTitle,rateLabel,readerIcon,readerUI:()=>ui})
 const kit={title:displayBookTitle,rate:rateLabel,icon:readerIcon,

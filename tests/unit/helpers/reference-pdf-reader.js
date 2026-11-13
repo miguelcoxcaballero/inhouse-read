@@ -21,7 +21,7 @@ import { prepareSnapshotPaperTones, sharePaperTone } from '../../../src/js/page-
 import { registerPageRaster } from '../../../src/js/page-raster.js'
 import { encodePdfCover } from '../../../src/js/readers/cover-encode.js'
 import { mapTextLayer, mapTextNodes } from '../../../src/js/readers/speech-map.js'
-import { speechHold } from '../../../src/js/readers/speech-hold.js'
+import { speechHold } from './reference-speech-hold.js'
 import { clearPDFReflow, pdfImageRects, preparePDFReflow } from '../../../src/js/readers/pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from '../../../src/js/readers/pdf-text.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './live-speech-highlight.js'

@@ -25,7 +25,6 @@ import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js
 import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
-import { speechHold } from './speech-hold.js'
 import { pdfPlaceFigures } from './pdf-figures-wasm.js'
 import { pdfImageRects } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
@@ -91,7 +90,7 @@ export class PdfReader {
         }
       },
       gestures:() => attachSwipeNavigation(container, {
-        ...speechHold(container.ownerDocument),
+        ...ui.speech_hold(ui, container.ownerDocument),
         onNext: () => { onUserNavigation?.(); return this.next() },
         onPrev: () => { onUserNavigation?.(); return this.prev() },
         onManualPan: () => onUserNavigation?.(),

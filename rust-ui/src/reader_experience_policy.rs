@@ -156,7 +156,7 @@ pub fn reader_experience_place_tab(host:&JsValue,name:&JsValue)->R<()>{set(host,
 pub fn reader_experience_mini_player(host:&JsValue,state:&JsValue,message:&JsValue,kit:&JsValue)->R<()>{
  let shown=if truthy(state){state.clone()}else{"".into()};let title=method(kit,"title",&[&read(host,"book")?])?;
  let rate=method(kit,"rate",&[&read(&read(host,"preferences")?,"rate")?])?;let has_book=truthy(&read(host,"book")?);
- let icon=method(kit,"icon",&[&if *state==JsValue::from_str("playing"){JsValue::from_str("pause")}else{"play".into()}])?;
+ let icon:JsValue=crate::reader_markup::icon(if *state==JsValue::from_str("playing"){"pause"}else{"play"}).into();
  method(&read(host,"view")?,"updateMiniPlayer",&[&shown,message,&title,&rate,&has_book.into(),&icon])?;method(host,"updateReadingMetrics",&[])?;Ok(())
 }
 #[wasm_bindgen]
@@ -200,7 +200,7 @@ pub fn reader_experience_places(host:&JsValue,kit:&JsValue)->R<()>{
  method(host,"updateBookmarkButton",&[])?;method(host,"updateReturnButton",&[])?;
  let mut groups=Vec::new();for name in ["history","bookmarks","quotes"]{groups.push((JsValue::from_str(name),read(host,name)?));}
  for(name,places)in groups{
-  let labels=method(kit,"labels",&[host,&places])?;let select=method(kit,"select",&[host,&name])?;let remove=method(kit,"remove",&[host,&name,&places])?;let icon=method(kit,"icon",&[&"close".into()])?;
+  let labels=method(kit,"labels",&[host,&places])?;let select=method(kit,"select",&[host,&name])?;let remove=method(kit,"remove",&[host,&name,&places])?;let icon:JsValue=crate::reader_markup::icon("close").into();
   method(&read(host,"lists")?,"renderPlaces",&[&name,&places,&labels,&select,&remove,&icon])?;
  }
  Ok(())

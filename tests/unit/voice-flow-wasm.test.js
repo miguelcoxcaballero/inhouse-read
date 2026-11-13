@@ -5,7 +5,8 @@ import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {LegacyVoiceFlow} from './helpers/reference-voice-flow.js'
 const fixture=vi.hoisted(()=>({voices:[]}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralVoiceList:()=>fixture.voices}))
-import {langBase,declaredLanguage} from '../../src/js/readers/voice-catalog.js'
+import * as catalog from '../../src/js/readers/voice-catalog.js'
+const {langBase,declaredLanguage}=catalog
 import {languageOptions,voiceOptions} from './helpers/reference-voice-menus.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const device=()=>navigator.language
@@ -26,7 +27,7 @@ function setup(native,trial){
   host.bookLanguage=()=>ui.reader_book_language(host,device)
   host.voiceBase=voices=>ui.reader_voice_base(host,voices,langBase,declaredLanguage)
   host.chooseLanguage=value=>ui.reader_choose_language(host,value,langBase)
-  host.populateVoices=()=>ui.reader_populate_voices(host,()=>voices,device,langBase,languageOptions,voiceOptions)
+  host.populateVoices=()=>native===2?ui.reader_populate_voices(host,()=>voices,device,langBase,languageOptions,voiceOptions):ui.reader_populate_voices_catalog(host,()=>voices,device,catalog)
  }
  return{host,voices,events}
 }
@@ -34,13 +35,13 @@ it('preserves choices, automatic labels, installation state and menu effects in 
 let checks=0
 for(let trial=0;trial<500;trial++){
  const outputs=[]
- for(const native of [false,true]){
+ for(const native of [false,true,2]){
   const {host,voices,events}=setup(native,trial)
   const initialBase=host.voiceBase(voices);host.populateVoices();host.chooseLanguage(['','es','en','nl'][trial%4]);host.populateVoices()
   assert.equal(host.voiceCatalog.voices,voices)
   outputs.push({initialBase,events,preferences:host.preferences,catalog:host.voiceCatalog,shown:host.voiceBaseShown})
  }
- assert.deepEqual(outputs[1],outputs[0]);checks++
+ assert.deepEqual(outputs[1],outputs[0]);assert.deepEqual(outputs[2],outputs[0]);checks++
 }
 })
 it('keeps voice-menu command allocations bounded through 2000 cycles',()=>{

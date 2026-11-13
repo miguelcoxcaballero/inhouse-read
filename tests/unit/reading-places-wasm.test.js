@@ -1,7 +1,7 @@
 import {beforeAll,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {isBookmarked,toggleBookmark,prependHistory} from '../../src/js/readers/reading-places.js'
+import {isBookmarked,toggleBookmark,prependHistory} from './helpers/live-reading-places.js'
 import {isBookmarkedLegacy,toggleBookmarkLegacy,prependHistoryLegacy} from './helpers/reference-reading-places.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

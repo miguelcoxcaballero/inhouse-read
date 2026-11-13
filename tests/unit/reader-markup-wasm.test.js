@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { expect, it } from 'vitest'
-import { readerIcon, readerPanelMarkup } from '../../src/js/readers/reader-interface.js'
+import { readerIcon, readerPanelMarkup } from './helpers/live-reader-interface.js'
 import { readerIcon as originalIcon, readerPanelMarkup as originalMarkup } from './helpers/reference-reader-interface.js'
 import { RATE_STEPS, rateLabel } from '../../src/js/readers/reading-preferences.js'
 import { rustUI } from './helpers/rust-ui-ready.js'
