@@ -1,5 +1,5 @@
 import { getRustCoreModule } from './rust-core.js';
-import { needRustShelf } from './rust-shelf.js';
+import { getRustShelf, requireRustShelf } from './rust-shelf.js';
 // The client of the font-score Worker (one module Worker shared by every caller, one job and one request at a
 // time, the 3 s / 2 s / 30 s bounds and the validation of every reply) is rust-ui/src/font_score_client.rs.
 // This module only names the Worker, so the bundler ships it.
@@ -7,5 +7,8 @@ const createWorker = () => new Worker(new URL('./font-score-worker.js', import.m
 
 export async function openFontScoreJob(context, { factory = createWorker, events = globalThis } = {}) {
   if (factory === createWorker && typeof Worker !== 'function') return null;
-  return needRustShelf().font_score_open(context, factory, events, getRustCoreModule);
+  // A cover can be analysed before the first shelf render has loaded the module; without it the
+  // caller keeps its own sliced scorer.
+  const shelf = getRustShelf() || await requireRustShelf().catch(() => null);
+  return shelf ? shelf.font_score_open(context, factory, events, getRustCoreModule) : null;
 }
