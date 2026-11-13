@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import './helpers/rust-voice-ready.js'
-import { piperScales } from '../../src/js/readers/neural-voice/synth-flow.js'
+import { piperScales } from './helpers/live-synth-flow.js'
 import { lengthScaleFor } from './helpers/reference-pcm.js'
 import { synthesisRate } from './helpers/reference-speech-tempo.js'
 

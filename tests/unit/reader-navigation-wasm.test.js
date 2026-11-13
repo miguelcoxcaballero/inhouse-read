@@ -1,7 +1,7 @@
 import {beforeAll,beforeEach,describe,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {ReaderNavigation} from '../../src/js/readers/reader-navigation.js'
+import {ReaderNavigation} from './helpers/live-reader-navigation.js'
 import {LegacyReaderNavigation} from './helpers/reference-reader-navigation.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

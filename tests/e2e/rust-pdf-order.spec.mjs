@@ -3,7 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {rustPDFOrderLines} from '/inhouse-read/src/js/readers/pdf-order-wasm.js';
+import {rustPDFOrderLines} from '/inhouse-read/tests/unit/helpers/live-pdf-order.js';
 import {orderLines as reference} from '/inhouse-read/tests/unit/helpers/reference-pdf-order.js';
 // The JavaScript original lives with the frozen references now: it is the one both sides are timed against.
 const previous=reference;

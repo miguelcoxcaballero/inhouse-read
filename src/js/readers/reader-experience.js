@@ -8,13 +8,8 @@ import * as runtime from './neural-runtime.js'
 import * as preferences from './reading-preferences.js'
 import * as state from './reading-state.js'
 import { ReadingVoice } from './reading-voice.js'
-import { SelectMenu } from './select-menu.js'
-import { ReaderView } from './reader-view.js'
-import { ReaderLists } from './reader-lists.js'
 import { NeuralVoicePicker } from './neural-picker.js'
-import { ReaderNavigation } from './reader-navigation.js'
 import { ReaderActions } from './reader-actions.js'
-import { ReaderControls } from './reader-controls.js'
 import { displayBookTitle } from '../book-title.js'
 
 // Promise and callback adapters retain browser/engine identities. The reader
@@ -38,17 +33,18 @@ export class ReaderExperience {
   voiceFlow = new VoiceFlow(this)
   preferenceFlow = new PreferenceFlow(this)
   actions = new ReaderActions(this)
-  navigation = new ReaderNavigation()
+  navigation = new (readerUI().RustReaderNavigation)()
   get navigating() { return this.navigation.navigating }
 
   constructor(reader, { persist = async () => {}, onLengthMetadata = async () => {} } = {}) {
     this.reader = reader
     this.persist = persist
     this.onLengthMetadata = onLengthMetadata
-    readerUI().reader_experience_init(this, normalizeReadingPreferences)
+    const ui = readerUI()
+    ui.reader_experience_init(this, normalizeReadingPreferences)
     this.chrome.create()
-    this.view = new ReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
-    this.lists = new ReaderLists(this.panel)
+    this.view = new ui.RustReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
+    this.lists = new ui.RustReaderLists(this.panel)
     if (typeof ResizeObserver === 'function') {
       this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
       this.miniPlayerResizeObserver.observe(this.miniPlayer)
@@ -61,11 +57,13 @@ export class ReaderExperience {
     window.addEventListener('inhouse-reader-selection',event => readerUI().reader_experience_remember_selection(this,event.detail))
     this.voice = new ReadingVoice(reader, (state,message) => this.chrome.voiceState(state,message))
     this.voice.onProgress = () => this.updateReadingMetrics()
-    this.controls = new ReaderControls(this)
+    // The Rust controls hold the experience weakly: it owns them, not the reverse.
+    const self = typeof WeakRef === 'function' ? new WeakRef(this) : { deref:() => this }
+    this.controls = new ui.RustReaderControls(() => self.deref(), this.panel, this.miniPlayer)
     // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
     // the downloadable natural voices of the chosen language live at the end of the voice list.
-    this.languageMenu = new SelectMenu({ label:'Idioma', onChange:value => this.chooseLanguage(value) })
-    this.voiceMenu = new SelectMenu({ label:'Voz', extra:this.panel.querySelector('[data-neural]'), onChange:value => this.setPreference('voice', value) })
+    this.languageMenu = new ui.RustSelectMenu('Idioma', null, value => this.chooseLanguage(value))
+    this.voiceMenu = new ui.RustSelectMenu('Voz', this.panel.querySelector('[data-neural]'), value => this.setPreference('voice', value))
     this.panel.querySelector('[data-voice-menus]').append(this.languageMenu.root, this.voiceMenu.root)
     this.neuralPicker = new NeuralVoicePicker(this)
     this.populateVoices()

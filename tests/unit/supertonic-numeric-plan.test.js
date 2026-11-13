@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {supertonicRuntimeConfig,supertonicTextIds,supertonicLocalMarks,supertonicNoise,createSupertonicPcmJoin,createSupertonicState,supertonicStyleValid} from '../../src/js/readers/neural-voice/supertonic-plan.js';
+import {supertonicRuntimeConfig,supertonicTextIds,supertonicLocalMarks,supertonicNoise,createSupertonicPcmJoin,createSupertonicState,supertonicStyleValid} from './helpers/live-supertonic-plan.js';
 import {loadedRustVoiceCore} from '../../src/js/rust-voice-core.js';
 
 const config={ae:{sample_rate:24000,base_chunk_size:512},ttl:{chunk_compress_factor:6,latent_dim:24}};

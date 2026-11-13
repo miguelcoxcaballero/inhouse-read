@@ -8,9 +8,10 @@
 // single byte arrives (CORS, proxies), makes it start again cleanly instead. Sizes are checked against Content-Length and,
 // when it can be reached, against the catalogue (voices.json) of the voice repository. A connection that goes silent without
 // closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
-// The download, the listing and the reads are rust-ui (voice_store.rs); this class keeps the injected browser services.
+// The download, the listing and the reads are rust-ui (voice_store.rs, answered by store_methods.rs); this class keeps the
+// injected browser services.
 import { DEFAULT_VOICE_BASE, neuralVoiceBase, piperVoices } from './catalog.js'
-import { readerUI as ui } from '../rust-ui-required.js'
+import { readerUI as ui, rustMethods } from '../rust-ui-required.js'
 
 export const CACHE_NAME = 'inhouse-neural-voices-v1'
 
@@ -39,23 +40,8 @@ export class VoiceStore {
 
   get supported() { return !!this.caches && typeof this.fetchFn === 'function' }
   urls(piperId) { return voiceUrls(piperId, this.baseFn()) }
-  /** piperIds whose model AND config are both stored. */
-  list() { return ui().store_list(this, piperVoices) }
-  has(piperId) { return ui().store_has(this, piperId) }
-  /** The voice's .onnx.json, parsed. */
-  readConfig(piperId) { return ui().store_read_config(this, piperId) }
-  /** The model bytes (a fresh ArrayBuffer each time, so it can be transferred to the worker). */
-  readModel(piperId) { return ui().store_read_model(this, piperId) }
-  /** The Hebrew pointing model is installed with the voice and never fetched during playback. */
-  readPhonemizerModel(piperId) { return ui().store_read_phonemizer(this, piperId) }
-  remove(piperId) { return ui().store_remove(this, piperId) }
-  /** Asks the browser not to evict the voices under storage pressure. Best effort, never throws. */
-  persist() { return ui().store_persist(this) }
-  /** Size the repository's catalogue promises for the model, or 0 when unknown (offline mirror, slow, or not listed). */
-  expectedSize(piperId, signal) { return ui().store_expected_size(this, piperId, signal) }
-  /**
-   * Downloads a voice into the cache. `onProgress({received,total,fraction})` is called as bytes arrive (total is 0
-   * while unknown). Resolves with {bytes}. Rejects with an Error whose `code` is 'offline' | 'http' | 'storage' | 'aborted'.
-   */
-  download(piperId, options) { return ui().store_download(this, piperId, options) }
 }
+// list, has, the reads, remove, persist, expectedSize(piperId, signal) and download(piperId, {signal, onProgress}), which
+// rejects with an Error whose `code` is 'offline' | 'http' | 'storage' | 'aborted': documented in voice_store.rs.
+rustMethods(VoiceStore, 'store_method', 'list has readConfig readModel readPhonemizerModel remove persist expectedSize download',
+  { part:'piper', voices:piperVoices })

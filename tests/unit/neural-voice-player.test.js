@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { GaplessPlayer, safeToStart } from '../../src/js/readers/neural-voice/player.js'
+import { GaplessPlayer, safeToStart } from './helpers/live-player.js'
 import { fakeAudioContext, advance } from './neural-fakes.js'
 
 const pcm = seconds => new Float32Array(Math.round(seconds * 22050)).fill(0.1)

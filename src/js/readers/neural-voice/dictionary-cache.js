@@ -4,12 +4,6 @@
 // download); this file is the synthesis worker's doorway to them.
 import { loadedRustVoiceUI } from '../../rust-voice-ui.js'
 
-export const DICTIONARY_CACHE_NAME = 'inhouse-neural-dictionaries-v1'
-export const PACKAGED_DICTIONARIES = Object.freeze(['ca', 'cs', 'da', 'de', 'en', 'es', 'fi', 'fr', 'hu', 'it', 'nl', 'pl', 'pt', 'ro', 'sv', 'tr'])
-
-/** null for an embedded/unknown language; the config's actual espeak voice determines its dictionary. */
-export const dictionaryNeeded = espeakVoice => loadedRustVoiceUI().voice_dictionary_needed(espeakVoice)
-
 export const dictionaryUrl = (base, name) => `${base}dict/${name}_dict`
 
 /**

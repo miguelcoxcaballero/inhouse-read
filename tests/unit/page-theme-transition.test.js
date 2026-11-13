@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { createBookModel, mixPaperTone, sampleBookMotion } from '../../src/js/book-model.js'
 import { PDF_PAGE_FILTERS, READING_THEMES } from '../../src/js/readers/reading-preferences.js'
-import { compositePageSnapshots, renderedPageFilter, sameColor, snapshotCanvas, snapshotDOMPage } from '../../src/js/readers/page-snapshot.js'
+import { compositePageSnapshots, renderedPageFilter, sameColor, snapshotCanvas, snapshotDOMPage } from './helpers/live-page-snapshot.js'
 
 const rect = (left, top, width, height) => ({ left, top, width, height, right:left + width, bottom:top + height })
 const book = { title:'A printed cover', author:'An author', format:'EPUB' }

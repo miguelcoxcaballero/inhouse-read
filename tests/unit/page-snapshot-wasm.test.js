@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import * as rust from '../../src/js/readers/page-snapshot.js'
+import * as rust from './helpers/live-page-snapshot.js'
 import * as original from './helpers/reference-page-snapshot.js'
 
 // The Rust snapshot is compared with the frozen JavaScript original on random pages:

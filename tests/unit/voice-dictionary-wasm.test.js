@@ -3,7 +3,7 @@ import './helpers/rust-ui-ready.js'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import * as moved from '../../src/js/readers/neural-voice/dictionary-cache.js'
+import * as moved from './helpers/live-dictionary-cache.js'
 import * as frozen from './helpers/reference-dictionary-cache.js'
 import { rustUI } from './helpers/rust-ui-ready.js'
 

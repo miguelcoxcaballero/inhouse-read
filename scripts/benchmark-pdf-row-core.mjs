@@ -23,8 +23,11 @@ const tracked={...compiled,pdf_row_lines(...args){calls++;return compiled.pdf_ro
 globalThis.__benchmarkCore=()=>core
 // The production modules themselves, with the one getter import (bare Node cannot load ?url) pointed at this core.
 const directory=await mkdtemp(join(tmpdir(),'pdf-row-bench-'))
-const modules=['pdf-text','pdf-row-layout-wasm','pdf-order-wasm','pdf-stream-wasm','core-required']
-const sources=Object.fromEntries(await Promise.all(modules.map(async name=>[name,await read(`../src/js/readers/${name}.js`)])))
+// The row wrapper is the test harness of the row kernel (production runs the whole page in one pass, pdf_page_text).
+const modules=['pdf-text','pdf-row-layout-wasm','core-required','host-math','rust-ui-required']
+const home={'pdf-row-layout-wasm':'../tests/unit/helpers/live-pdf-row-layout.js','host-math':'../src/js/host-math.js'}
+const sources=Object.fromEntries(await Promise.all(modules.map(async name=>[name,name==='rust-ui-required'?'export const readerUI=()=>{throw new Error("no ui")}\n'
+ :(await read(home[name]||`../src/js/readers/${name}.js`)).replaceAll("'../../../src/js/readers/core-required.js'","'./core-required.js'").replaceAll("'../../../src/js/rust-core.js'","'./rust-core.js'").replaceAll("'../host-math.js'","'./host-math.js'")])))
 await writeFile(join(directory,'rust-core.js'),'export const getRustCore=()=>globalThis.__benchmarkCore()\n')
 for(const name of modules)await writeFile(join(directory,`${name}.js`),sources[name].replaceAll("'../rust-core.js'","'./rust-core.js'"))
 const {pdfRowLines:_rows,rustPDFRowLines}=await import(pathToFileURL(join(directory,'pdf-row-layout-wasm.js')))

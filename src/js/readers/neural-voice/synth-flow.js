@@ -8,10 +8,6 @@ import { loadedRustVoiceUI as voice } from '../../rust-voice-ui.js'
 /** `ms` of silence. */
 export const silence = (sampleRate, ms) => new Float32Array(Math.max(0, Math.round(sampleRate * ms / 1000)))
 
-/** length_scale for a speaking rate: Piper stretches time, so a faster voice is a smaller scale. */
-export const lengthScaleFor = (base, rate) => voice().voice_host_length_scale(base, rate)
-/** The speed the model itself is asked for: never faster than its natural pace. */
-export const synthesisRate = rate => voice().voice_host_synthesis_rate(rate)
 /** The float32 `scales` of one Piper run at the speaking `rate`: the config's inference values, else the model defaults. */
 export const piperScales = (inference, rate) => voice().voice_host_piper_scales(inference, rate)
 /** Drops the ids a voice trained with fewer symbols does not know, with their pads. */

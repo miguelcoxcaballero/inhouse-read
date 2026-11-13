@@ -6,8 +6,6 @@ import { readerUI as ui } from '../rust-ui-required.js'
 let epochSequence = 0
 const audio = { nativeAudio, pauseNativeAudio, stopNativeAudio }
 
-export const encodePcm = (pcm, encode = globalThis.btoa) => ui().native_encode_pcm(pcm, encode)
-
 export class NativePcmPlayer {
   constructor({ env = globalThis, onStart = () => {}, onEnd = () => {}, onMark = () => {}, onError = () => {} } = {}) {
     Object.assign(this, { env, onStart, onEnd, onMark, onError })

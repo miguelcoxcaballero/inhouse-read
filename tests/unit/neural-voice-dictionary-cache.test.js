@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { DICTIONARY_CACHE_NAME, PACKAGED_DICTIONARIES, dictionaryNeeded, dictionaryUrl, fetchDictionary } from '../../src/js/readers/neural-voice/dictionary-cache.js'
+import { DICTIONARY_CACHE_NAME, PACKAGED_DICTIONARIES, dictionaryNeeded, dictionaryUrl, fetchDictionary } from './helpers/live-dictionary-cache.js'
 import { createPhonemizer } from '../../src/js/readers/neural-voice/phonemizer.js'
 
 const BASE = 'https://site.test/inhouse-read/neural-voice/phon/'

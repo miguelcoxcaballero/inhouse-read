@@ -7,7 +7,7 @@ vi.mock('../../src/js/rust-voice-core.js', async original => {
   const real = await original()
   return { ...real, loadedRustVoiceCore: () => state.core || real.loadedRustVoiceCore() }
 })
-import { hebrewToIpa, nakdimonInputIds, mergeNiqqud } from '../../src/js/readers/neural-voice/hebrew.js'
+import { hebrewToIpa, nakdimonInputIds, mergeNiqqud } from './helpers/live-hebrew.js'
 import * as reference from './helpers/reference-hebrew.js'
 
 // The Hebrew rules and the Nakdimon pre/post-processing (hebrew.rs in the voice core) against the frozen JavaScript

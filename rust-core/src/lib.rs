@@ -89,6 +89,8 @@ mod pdf_figures;
 #[cfg(feature = "app")]
 mod pdf_stream;
 #[cfg(feature = "app")]
+mod pdf_page_text;
+#[cfg(feature = "app")]
 mod timber;
 #[cfg(feature = "app")]
 mod cabinet_model;

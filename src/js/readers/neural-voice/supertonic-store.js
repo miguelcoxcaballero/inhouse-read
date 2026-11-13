@@ -1,5 +1,5 @@
 import { SUPERTONIC_ASSETS, SUPERTONIC_LEGACY_ASSETS, supertonicBase, supertonicAssetUrl, SUPERTONIC_REVISION } from './supertonic-catalog.js';
-import { readerUI as ui } from '../rust-ui-required.js';
+import { readerUI as ui, rustMethods } from '../rust-ui-required.js';
 
 export const SUPERTONIC_CACHE = 'inhouse-supertonic3-v1';
 
@@ -13,10 +13,6 @@ export class SupertonicStore {
     Object.assign(this,{caches,fetchFn:fetch,storage,crypto,base,assets,legacyAssets,stallMs});
     this.marker=base+'.inhouse-complete.json';this.manifest=ui().supertonic_manifest(assets,base);this.job=null;this.generation=0;this.controller=null;
   }
-  cache() { return ui().supertonic_cache(this); }
-  committedAssets() { return ui().supertonic_committed(this,SUPERTONIC_REVISION); }
-  installed() { return ui().supertonic_installed(this,SUPERTONIC_REVISION); }
-  availableStyles() { return ui().supertonic_styles(this,SUPERTONIC_REVISION); }
   install({signal,onProgress=()=>{}}={}) {
     if(this.job)return this.job;
     const controller=new AbortController(),generation=this.generation;
@@ -26,7 +22,5 @@ export class SupertonicStore {
       .finally(()=>{signal?.removeEventListener('abort',abort);if(this.job===promise){this.job=null;this.controller=null;}});
     this.job=promise;return promise;
   }
-  readAssets() { return ui().supertonic_read_assets(this,SUPERTONIC_REVISION); }
-  readConfig() { return ui().supertonic_read_config(this,SUPERTONIC_REVISION); }
-  remove() { return ui().supertonic_remove(this); }
 }
+rustMethods(SupertonicStore,'store_method','cache committedAssets installed availableStyles readAssets readConfig remove',{part:'supertonic',revision:SUPERTONIC_REVISION});

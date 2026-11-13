@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeAll, it, expect, vi } from 'vitest'
 import { speechTempoJS, speedUpSpeech as referenceSpeedUp } from './helpers/reference-speech-tempo.js'
-import { speedUpSpeech, synthesisRate } from '../../src/js/readers/neural-voice/synth-flow.js'
+import { speedUpSpeech, synthesisRate } from './helpers/live-synth-flow.js'
 import { kernelTempo as rustSpeechTempo } from './helpers/voice-kernels.js'
 // The tempo (speech_tempo in the voice core, finished into chunks by synth_flow.rs) against the frozen JavaScript it replaced.
 let core

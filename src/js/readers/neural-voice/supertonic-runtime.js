@@ -11,19 +11,9 @@ const KIT={noise:supertonicNoise,speedUp:speedUpSpeech,always:()=>true,noop:()=>
 // <1 RTF in the recorded single-thread desktop WASM benchmark, unlike FP32/8.
 export const SUPERTONIC_STEPS = 6;
 
-/**
- * Never squeeze the model's latent below its normal predicted duration.
- * Faster playback is applied to complete speech, with pitch-preserving tempo
- * processing, after inference. A percentage margin still lost words at 2x.
- */
-export const supertonicSeconds=(predicted,rate)=>voice().voice_host_supertonic_seconds(+predicted,rate);
 /** `<es>text.</es>` for the model, or '' when nothing speakable is left. The cleanup is Rust (rust-core supertonic_text.rs, through
  * the voice module); the compatibility decomposition of Unicode is the browser's. */
 export const normalizeSupertonicText=(text,lang)=>voice().voice_supertonic_normalize(text,lang,KIT);
-
-/** Small chunks bound latent/audio memory. Upstream recommends <=300 chars
- * (120 for Korean/Japanese); the reader usually already supplies one sentence. */
-export const supertonicTextChunks=(text,lang)=>voice().voice_host_supertonic_chunks(String(text||''),['ko','ja'].includes(lang)?120:300);
 
 /** ONNX Runtime is injected by the existing synthesis worker. Four sessions,
  * one active utterance; no engine/download/UI dependency enters this module. The sessions, the chunks, the inference

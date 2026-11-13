@@ -1,7 +1,7 @@
 import {beforeAll,beforeEach,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {ReaderLists} from '../../src/js/readers/reader-lists.js'
+import {ReaderLists} from './helpers/live-reader-lists.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let panel,lists

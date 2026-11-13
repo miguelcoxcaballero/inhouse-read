@@ -40,9 +40,3 @@ export class GaplessPlayer {
   _released(source) { return () => { try { source.disconnect() } catch { /* already */ } } }
 }
 
-/**
- * Is it safe to start talking now? `ready` are the durations (s) of the chunks in hand, `pending` the predicted durations of
- * the chunks still being computed, `rtf` the compute seconds per audio second. We may start once every pending chunk
- * will be finished (within `slack`) before the audio in front of it runs out; otherwise the voice would stop mid-sentence.
- */
-export const safeToStart = ({ ready = [], pending = [], rtf = 0.7, slack = 0.3 }) => ui().player_safe_to_start(ready, pending, rtf, slack)
