@@ -310,16 +310,26 @@ pub fn studio_plan(kind: f64) -> R<JsValue> {
 /// exposure (the filament lamp's area strips, a cone, a bulb), the same as the former bulb light.
 #[wasm_bindgen]
 pub fn studio_lamp_stage(undershelf: bool, width: f64) -> R<JsValue> {
-    let surface = |kind: &str, size: &[f64], color: &str, y: f64, cast: bool| field_object(&[("kind", kind.into()), ("size", numbers(size)),
-        ("color", color.into()), ("y", y.into()), ("cast", cast.into())]);
+    let stage = lamp_stage(undershelf, width);
+    let surfaces = stage.surfaces.iter().map(|surface| field_object(&[("kind", (if surface.round { "circle" } else { "box" }).into()),
+        ("size", numbers(if surface.round { &surface.size[..2] } else { &surface.size[..] })), ("color", surface.color.into()), ("y", surface.y.into()),
+        ("cast", surface.cast.into())])).collect::<R<Vec<JsValue>>>()?;
+    field_object(&[("surfaces", surfaces.into_iter().collect::<Array>().into()), ("camera", numbers(&stage.camera)),
+        ("filament", stage.filament.into()), ("cone", stage.cone.into()), ("bulb", stage.bulb.into())])
+}
+/// One surface of the lamp's stand: a disc (`size`: radius, segments) or a box (width, height, depth).
+pub(crate) struct StandSurface { pub round: bool, pub size: [f64; 3], pub color: &'static str, pub y: f64, pub cast: bool }
+pub(crate) struct LampStage { pub surfaces: Vec<StandSurface>, pub camera: [f64; 3], pub filament: f64, pub cone: f64, pub bulb: f64 }
+/// The stage as numbers, for the set-up that builds it (catalog_lamp.rs).
+pub(crate) fn lamp_stage(undershelf: bool, width: f64) -> LampStage {
     let (surfaces, camera) = if undershelf {
-        (vec![surface("box", &[width * 2.1, 4.0, width * 1.65], "#dbd1bc", 2.0, true)?, surface("circle", &[width * 0.85, 64.0], "#e6dfd0", -width * 1.35, false)?],
+        (vec![StandSurface { round: false, size: [width * 2.1, 4.0, width * 1.65], color: "#dbd1bc", y: 2.0, cast: true },
+              StandSurface { round: true, size: [width * 0.85, 64.0, 0.0], color: "#e6dfd0", y: -width * 1.35, cast: false }],
          [0.0, -230.0, 650.0])
     } else {
-        (vec![surface("circle", &[width * 0.82, 64.0], "#e6dfd3", -0.2, false)?], [0.0, 75.0, 850.0])
+        (vec![StandSurface { round: true, size: [width * 0.82, 64.0, 0.0], color: "#e6dfd3", y: -0.2, cast: false }], [0.0, 75.0, 850.0])
     };
-    field_object(&[("surfaces", surfaces.into_iter().collect::<Array>().into()), ("camera", numbers(&camera)),
-        ("filament", 0.4.into()), ("cone", 0.55.into()), ("bulb", 0.4.into())])
+    LampStage { surfaces, camera, filament: 0.4, cone: 0.55, bulb: 0.4 }
 }
 
 // ---- The three.js side of one studio (formerly src/js/catalog-studio.js's openStudio) ----

@@ -5,6 +5,7 @@
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Map,Object,Promise,Set,Uint8Array};
 use crate::host::*;
+use crate::plant_recipe::{fresh,g,object_tag,p,r,thing,Plain,Thing};
 type R<T> = Result<T,JsValue>;
 const ERROR:&str="Las texturas de la planta no se pudieron calcular. Recarga la página.";
 fn val(value:f64)->JsValue{value.into()}
@@ -70,35 +71,47 @@ pub fn plant_surface_release(base:&JsValue,texture:&JsValue)->R<()>{
  Ok(())
 }
 
-fn clone_texture(host:&JsValue,base:&JsValue,name:&str)->R<JsValue>{
- let original=read(base,name)?;let source=read(&original,"source")?;let version=read(&source,"version")?;
- let copy=method(&original,"clone",&[])?;set(&read(&copy,"source")?,"version",&version)?;
- let clones=read(base,"clones")?;
- if !absent(&clones){array(base,"clones").push(&copy);method(host,"watchDispose",&[base,&copy])?;}
+fn clone_texture(host:&JsValue,base:&JsValue,name:&str,texture:fn(&Thing)->R<JsValue>)->R<JsValue>{
+ let original=r(base,name,texture)?;let version=r(&r(&original,"source",Thing::source)?,"version",Thing::version)?;
+ let copy=thing(&original).clone_object()?;thing(&r(&copy,"source",Thing::source)?).set_version(&version)?;
+ let clones=r(base,"clones",Thing::clones)?;
+ if !absent(&clones){clones.unchecked_ref::<Array>().push(&copy);thing(host).watch_dispose(base,&copy)?;}
  Ok(copy)
 }
 
-#[wasm_bindgen]
-pub fn plant_surface(state:&JsValue,host:&JsValue,key:&JsValue,width:u32,height:u32,repeat:bool,spec:&JsValue,refresh:&JsValue)->R<JsValue>{
- let surfaces=map(state,"surfaces");let mut base=surfaces.get(key);
- let saved=if truthy(&base){JsValue::NULL}else{method(host,"savedSurface",&[key,&val(width as f64),&val(height as f64)])?};
+/// A surface's two textures (pigment map, data map) for one more user: shared images, painted once. `spec` is
+/// only asked for when the surface has to be painted.
+#[allow(clippy::too_many_arguments)]
+pub fn surface_maps(state:&JsValue,host:&JsValue,key:&JsValue,width:u32,height:u32,repeat:bool,spec:&dyn Fn()->JsValue,refresh:&JsValue)->R<(JsValue,JsValue)>{
+ let surfaces:Map=g(state,Thing::surfaces).unchecked_into();let mut base=surfaces.get(key);
+ let saved=if truthy(&base){JsValue::NULL}else{thing(host).saved_surface(key,width as f64,height as f64)?};
  if truthy(&saved){
-  let pigment=read(&saved,"pigment")?;let data=read(&saved,"data")?;
+  let pigment=r(&saved,"pigment",Thing::pigment)?;let data=r(&saved,"data",Thing::data)?;
   base=new_base(host,&pigment,&data,width,height,repeat,false)?;surfaces.set(key,&base);
  }else if !truthy(&base){
   let pigment:JsValue=Uint8Array::new_with_length(width*height*4).into();let data:JsValue=Uint8Array::new_with_length(width*height*4).into();
-  if !truthy(&method(host,"lattice",&[spec,&val(width as f64),&val(height as f64),&repeat.into(),&pigment,&data])?){return Err(js_sys::Error::new(ERROR).into());}
+  let spec=spec();
+  if !truthy(&thing(host).lattice(&spec,width as f64,height as f64,repeat,&pigment,&data)?){return Err(js_sys::Error::new(ERROR).into());}
   base=new_base(host,&pigment,&data,width,height,repeat,true)?;surfaces.set(key,&base);
-  let queue=array(state,"queue");queue.push(&obj(&[("base",base.clone()),("key",key.clone()),("width",val(width as f64)),("height",val(height as f64)),("row",val(0.0)),("spec",spec.clone()),("pigment",pigment),("data",data)])?);
-  if queue.length()==1{method(host,"schedule",&[])?;}
+  let queue:Array=g(state,Thing::queue).unchecked_into();
+  let job=fresh();job.set_base(&base);job.set_key(key);job.set_width(width as f64);job.set_height(height as f64);job.set_row(0.0);job.set_spec(&spec);job.set_pigment(&pigment);job.set_data(&data);
+  queue.push(job.as_ref());
+  if queue.length()==1{thing(host).schedule()?;}
  }
- if truthy(refresh)&&!absent(&get(&base,"waiting")){array(&base,"waiting").push(refresh);}
- let image=clone_texture(host,&base,"map")?;let data=clone_texture(host,&base,"data")?;
+ if truthy(refresh){let waiting=g(&base,Thing::waiting);if !absent(&waiting){waiting.unchecked_ref::<Array>().push(refresh);}}
+ let image=clone_texture(host,&base,"map",Thing::map)?;let data=clone_texture(host,&base,"data",Thing::data)?;
+ Ok((image,data))
+}
+#[wasm_bindgen]
+pub fn plant_surface(state:&JsValue,host:&JsValue,key:&JsValue,width:u32,height:u32,repeat:bool,spec:&JsValue,refresh:&JsValue)->R<JsValue>{
+ let (image,data)=surface_maps(state,host,key,width,height,repeat,&||spec.clone(),refresh)?;
  obj(&[("map",image),("data",data)])
 }
 fn new_base(host:&JsValue,pigment:&JsValue,data:&JsValue,width:u32,height:u32,repeat:bool,pending:bool)->R<JsValue>{
- let texture=|bytes:&JsValue,color:bool|method(host,"texture",&[bytes,&val(width as f64),&val(height as f64),&color.into(),&repeat.into()]);
- obj(&[("map",texture(pigment,true)?),("data",texture(data,false)?),("clones",if pending{Array::new().into()}else{JsValue::NULL}),("waiting",if pending{Array::new().into()}else{JsValue::NULL})])
+ let texture=|bytes:&JsValue,color:bool|thing(host).texture(bytes,width as f64,height as f64,color,repeat);
+ let base=fresh();base.set_map(&texture(pigment,true)?);base.set_data(&texture(data,false)?);
+ base.set_clones(&if pending{Array::new().into()}else{JsValue::NULL});base.set_waiting(&if pending{Array::new().into()}else{JsValue::NULL});
+ Ok(base.into())
 }
 
 #[wasm_bindgen]
@@ -132,30 +145,46 @@ pub fn plant_bake_record(state:&JsValue)->R<JsValue>{
  }
  obj(&[("models",models.into()),("surfaces",Array::from(painted.as_ref()).into())])
 }
-fn finite_array(value:&JsValue,length:u32)->bool{Array::is_array(value)&&{let a:Array=value.clone().unchecked_into();a.length()==length&&a.iter().all(|v|finite(&v))}}
+/// `Array.isArray(value) && value.length === length && value.every(Number.isFinite)`, the engine testing the numbers.
+fn finite_array(value:&JsValue,length:u32)->bool{Array::is_array(value)&&{let a:&Array=value.unchecked_ref();a.length()==length&&crate::plant_recipe::every_finite(a)}}
 fn integer(value:&JsValue)->bool{value.as_f64().is_some_and(|v|v.is_finite()&&v.fract()==0.0)}
-fn typed_name(value:&JsValue)->String{
- let prototype=get(&get(&global(),"Object"),"prototype");let to_string=get(&prototype,"toString");
- method(&to_string,"call",&[value]).ok().map(|v|text_of(&v)).unwrap_or_default()
-}
+/// The names a bake may use, as JavaScript values: a name read from a record is looked up in them by the engine
+/// (`KINDS.includes(kind)`, as the original did) instead of being copied into the module to be compared here.
+struct BakeNames{kinds:Array,group:JsValue,roles:Array,attributes:Array,indices:Array}
+fn names(list:&[&str])->Array{list.iter().map(|name|JsValue::from_str(name)).collect()}
+thread_local!{static BAKE_NAMES:BakeNames=BakeNames{kinds:names(&["mesh","lines","group"]),group:JsValue::from_str("group"),
+ roles:names(&["clay","soil","leaf","stem","mineral","green","needles"]),
+ // `/^(Float32|U?Int(8|16|32))Array$/` and `/^Uint(16|32)Array$/` over `Object.prototype.toString.call(value).slice(8, -1)`.
+ attributes:names(&["[object Float32Array]","[object Int8Array]","[object Int16Array]","[object Int32Array]","[object UInt8Array]","[object UInt16Array]","[object UInt32Array]"]),
+ indices:names(&["[object Uint16Array]","[object Uint32Array]"])};}
+/// `Object.prototype.toString.call(value)`: typed arrays read back from IndexedDB may come from another realm.
+fn typed_name(value:&JsValue)->JsValue{object_tag(value).unwrap_or(JsValue::UNDEFINED)}
+/// Whether a bake read back from disk can be used: every object's kind, name, transform, place and parent, and for
+/// a mesh or lines its role and geometry arrays. Read through declared accessors: this runs once per kept plant
+/// at start-up, over every object of its bake.
 #[wasm_bindgen]
 pub fn plant_valid_bake(bake:&JsValue)->bool{
- let parts=get(bake,"parts");let objects=get(bake,"objects");if !Array::is_array(&parts)||!Array::is_array(&objects){return false;}
+ let parts=p(bake,Plain::parts);let objects=p(bake,Plain::objects);if !Array::is_array(&parts)||!Array::is_array(&objects){return false;}
  let all:Array=objects.unchecked_into();
- all.iter().all(|object|{
-  let kind=get(&object,"kind");let kind=kind.as_string().unwrap_or_default();
-  if !["mesh","lines","group"].contains(&kind.as_str())||get(&object,"name").as_string().is_none()||!finite_array(&get(&object,"position"),3)||!finite_array(&get(&object,"scale"),3)||!finite_array(&get(&object,"quaternion"),4)||!integer(&get(&object,"place")){return false;}
-  let rotation=get(&object,"rotation");if !Array::is_array(&rotation){return false;}let rotation:Array=rotation.unchecked_into();if !finite_array(&rotation.slice(0,3).into(),3){return false;}
-  let parent=get(&object,"parent");if parent.as_f64()!=Some(-1.0)&&!text(&get(&get(&all,&text_of(&parent)),"kind"),"group"){return false;}
-  if kind=="group"{return true;}
-  if !["clay","soil","leaf","stem","mineral","green","needles"].contains(&text_of(&get(&object,"role")).as_str()){return false;}
-  let geometry=get(&object,"geometry");let attributes=get(&geometry,"attributes");let position=get(&attributes,"position");if !truthy(&position){return false;}
-  let count=num(&get(&get_at(&position,0),"length"))/num(&get_at(&position,1));if !count.is_finite()||count.fract()!=0.0{return false;}
-  let Ok(entries)=method(&get(&global(),"Object"),"values",&[&attributes])else{return false;};
-  for attribute in Array::from(&entries).iter(){let data=get_at(&attribute,0);let size=get_at(&attribute,1);let name=typed_name(&data);
-   if !["[object Float32Array]","[object Int8Array]","[object Int16Array]","[object Int32Array]","[object UInt8Array]","[object UInt16Array]","[object UInt32Array]"].contains(&name.as_str())||!integer(&size)||num(&size)<=0.0||num(&get(&data,"length"))!=count*num(&size){return false;}
+ BAKE_NAMES.with(|known|all.iter().all(|object|{
+  let kind=p(&object,Plain::kind);
+  if !known.kinds.includes(&kind,0)||!p(&object,Plain::name).is_string()||!finite_array(&p(&object,Plain::position),3)||!finite_array(&p(&object,Plain::scale),3)||!finite_array(&p(&object,Plain::quaternion),4)||!integer(&p(&object,Plain::place)){return false;}
+  let rotation=p(&object,Plain::rotation);if !Array::is_array(&rotation){return false;}let rotation:Array=rotation.unchecked_into();if !finite_array(&rotation.slice(0,3).into(),3){return false;}
+  let parent=p(&object,Plain::parent);
+  if parent.as_f64()!=Some(-1.0){
+   // `all[parent]`: a number is its own property key.
+   let owner=if parent.as_f64().is_some(){js_sys::Reflect::get(all.as_ref(),&parent).unwrap_or(JsValue::UNDEFINED)}else{get(&all,&text_of(&parent))};
+   if p(&owner,Plain::kind)!=known.group{return false;}
   }
-  let index=get(&geometry,"index");if !index.is_null()&&!["[object Uint16Array]","[object Uint32Array]"].contains(&typed_name(&index).as_str()){return false;}
-  let bounds=get(&geometry,"box");Array::is_array(&get(&geometry,"groups"))&&(bounds.is_null()||Array::is_array(&bounds)&&num(&get(&bounds,"length"))==6.0)
- })
+  if kind==known.group{return true;}
+  // The role must be one of the seven strings themselves (the original's `ROLES.includes(role)`).
+  if !known.roles.includes(&p(&object,Plain::role),0){return false;}
+  let geometry=p(&object,Plain::geometry);let attributes=p(&geometry,Plain::attributes);let position=p(&attributes,Plain::position);if !truthy(&position){return false;}
+  let count=num(&p(&get_at(&position,0),Plain::length))/num(&get_at(&position,1));if !count.is_finite()||count.fract()!=0.0{return false;}
+  for attribute in Object::values(attributes.unchecked_ref()).iter(){let data=get_at(&attribute,0);let size=get_at(&attribute,1);
+   if !known.attributes.includes(&typed_name(&data),0)||!integer(&size)||num(&size)<=0.0||num(&p(&data,Plain::length))!=count*num(&size){return false;}
+  }
+  let index=p(&geometry,Plain::index);if !index.is_null()&&!known.indices.includes(&typed_name(&index),0){return false;}
+  let bounds=p(&geometry,Plain::bounds);Array::is_array(&p(&geometry,Plain::groups))&&(bounds.is_null()||Array::is_array(&bounds)&&bounds.unchecked_ref::<Array>().length()==6)
+ }))
 }

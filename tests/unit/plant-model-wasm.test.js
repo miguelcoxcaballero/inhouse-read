@@ -7,7 +7,16 @@ const state=vi.hoisted(()=>({loaded:true,calls:0,randoms:0,bakes:[]}));
 vi.mock('../../src/js/rust-shelf.js',async importOriginal=>{
  const actual=await importOriginal();
  const counted=new Proxy(actual.needRustShelf(),{get(target,name){
-  if(name==='plant_bake_build')return(...args)=>{state.calls++;if(state.bakes.length<60)state.bakes.push(args);return target.plant_bake_build(...args);};
+  // A plant is one recipe call (rust-ui/src/plant_recipe.rs), which draws the bake inside the module; what the host
+  // used to pass to plant_bake_build is rebuilt here from the same appearance, for the packet comparison below.
+  if(name==='plant_recipe')return(...args)=>{
+   state.calls++;
+   if(state.bakes.length<60){
+    const [,,entry,geometry,potColor,persist,soilFraction]=args,look=target.plant_appearance(entry,geometry,potColor,persist),{real,unit}=geometry;
+    state.bakes.push([look.units,look.skip,look.variant,geometry.potId??'',geometry.potModelId??'',Boolean(geometry.catalogPlant),look.detailed,
+     [look.width,look.radius,look.potHeight,soilFraction,real.foliageHeight*unit,real.referenceHeight*unit,geometry.height]]);
+   }
+   return target.plant_recipe(...args);};
   if(name==='plant_random')return(...args)=>{state.randoms++;return target.plant_random(...args);};
   return target[name];}});
  return{...actual,needRustShelf:()=>{if(!state.loaded)throw new Error('El módulo de la estantería no está cargado.');return counted;}};
@@ -145,8 +154,18 @@ describe('shelf plants from the Rust shelf module',()=>{
   }
  });
  it('serves a plant from its bake without drawing it again',()=>{
-  const entry=fresh({catalogId:'sansevieria',potId:POT_CATALOG[0].id,height:170}),first=createShelfPlant(entry,{persist:true}),before=state.calls;
+  // The bake is drawn inside the recipe call, so a second drawing cannot be counted from outside: it would be a new
+  // record with new arrays. The remembered record and every geometry array must be the very same objects.
+  const entry=fresh({catalogId:'sansevieria',potId:POT_CATALOG[0].id,height:170}),first=createShelfPlant(entry,{persist:true}),remembered=shelfPlantBakeRecord().models.at(-1)[1];
   const second=createShelfPlant(entry,{persist:true});
-  try{expect(state.calls).toBe(before);}finally{first.userData.dispose();second.userData.dispose();}
+  try{
+   expect(shelfPlantBakeRecord().models.at(-1)[1]).toBe(remembered);
+   const arrays=plant=>{const list=[];plant.traverse(object=>{if(object.geometry)list.push(...Object.values(object.geometry.attributes).map(attribute=>attribute.array),object.geometry.index?.array);});return list;};
+   const mine=arrays(first),again=arrays(second);
+   expect(mine.length).toBeGreaterThan(4);expect(again.length).toBe(mine.length);
+   mine.forEach((array,i)=>expect(again[i]).toBe(array));
+   const other=createShelfPlant(fresh(entry),{persist:true});
+   try{arrays(other).forEach((array,i)=>{if(array)expect(array).not.toBe(mine[i]);});}finally{other.userData.dispose();}
+  }finally{first.userData.dispose();second.userData.dispose();}
  });
 });

@@ -64,3 +64,43 @@ it('closes target iterators on abrupt completion and leaves no native handles af
  }
  expect(closed).toBe(15);expect(shelf.shelf_live_handles()).toBe(before);
 });
+it('copies a table record exactly like the original spread: key order, symbols, getters read once in order, an own __proto__ field, and what the scale reads',()=>{
+ const shelf=needRustShelf(),has=(table,key)=>typeof key==='string'&&Object.hasOwn(table,key);
+ // The frozen expressions of reference-plant-dimensions-policy.js over any tables.
+ const frozen={
+  standard:(tables,id)=>has(tables.standardClasses,id)?{...tables.standardClasses[id]}:null,
+  dimensions:(tables,id,pot)=>has(tables.dimensions,id)?{...tables.dimensions[id][has(tables.potSizes,pot)?pot:'']}:null,
+  scene:(tables,id,pot,scale)=>{const size=frozen.dimensions(tables,id,pot);return size?{width:size.width*scale,height:size.height*scale,depth:size.depth*scale}:null;}
+ };
+ const symbol=Symbol('note');
+ function tables(log){
+  const record=(name,extra={})=>{
+   const value={};
+   Object.defineProperty(value,'height',{enumerable:true,get(){log.push(`${name}.height`);return 300;}});
+   value.width=120;value[symbol]=name;value[2]='two';value.depth={valueOf(){log.push(`${name}.depth-number`);return 90;}};
+   Object.defineProperty(value,'hidden',{enumerable:false,value:'not copied'});
+   Object.assign(value,extra);return value;
+  };
+  const proto=record('proto');Object.defineProperty(proto,'__proto__',{value:{inherited:true},enumerable:true,writable:true,configurable:true});
+  const dimensions={plain:{'':record('plain-default'),pot:record('plain-pot')},proto:{'':proto,pot:proto},primitive:{'':'abc',pot:7},empty:{'':undefined,pot:null}};
+  return{dimensions,standardClasses:{plain:record('class'),proto,primitive:'xy',empty:null},potSizes:{pot:{}}};
+ }
+ const shape=value=>value===null?null:{keys:Reflect.ownKeys(value).map(String),prototype:Object.getPrototypeOf(value)===Object.prototype,
+  own:Object.hasOwn(value,'__proto__'),descriptors:Reflect.ownKeys(value).map(key=>{const d=Object.getOwnPropertyDescriptor(value,key);return[d.enumerable,d.writable,d.configurable,typeof d.value];}),
+  values:Reflect.ownKeys(value).map(key=>{const item=value[key];return item&&typeof item==='object'?Object.keys(item).join():item;})};
+ let compared=0;
+ for(const id of ['plain','proto','primitive','empty','missing',7,null])for(const pot of ['pot','other','',undefined]){
+  const mine=[],theirs=[];
+  expect(shape(shelf.plant_standard_class(tables(mine),id)),`class ${String(id)}`).toEqual(shape(frozen.standard(tables(theirs),id)));
+  expect(shape(shelf.plant_dimensions_lookup(tables(mine),id,pot)),`dimensions ${String(id)}/${pot}`).toEqual(shape(frozen.dimensions(tables(theirs),id,pot)));
+  for(const scale of [.5,'2',{valueOf(){return 3;}}]){
+   const a=shelf.plant_scene_dimensions(tables(mine),id,pot,scale),b=frozen.scene(tables(theirs),id,pot,scale);
+   expect(shape(a),`scene ${String(id)}/${pot}`).toEqual(shape(b));
+  }
+  expect(mine,`reads ${String(id)}/${pot}`).toEqual(theirs);compared++;
+ }
+ expect(compared).toBe(28);
+ const before=shelf.shelf_live_handles();
+ for(let n=0;n<200;n++){shelf.plant_dimensions_lookup(tables([]),'proto','pot');shelf.plant_scene_dimensions(tables([]),'plain','pot',2);}
+ expect(shelf.shelf_live_handles()).toBe(before);
+});

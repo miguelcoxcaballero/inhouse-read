@@ -1,6 +1,11 @@
 // Frozen original of src/js/shelf-lamp-lighting.js as it was before the lamps' light decisions and light parameters moved to the
 // Rust shelf module (lamp_light.rs). Only the two import paths differ. The differential tests run this and the new module
 // on the same scripted scenes and compare every light, bit for bit.
+//
+// Two later, deliberate changes of the manager's contract (1.7.3xx, "Cache shelf lamps outside render loop" and "Restore
+// catalogue lamp updates while keeping shelf entries prepared") are followed here, marked PREPARED: `prepare` always
+// announces a change to the next update, and with `preparedEntries` the entries are those of the last `prepare` (the
+// shelf scene scans its entries when the layout changes, not on every frame).
 import * as THREE from 'three';
 import { tintColor } from '../../../src/js/lamp-kelvin.js';
 import { getCatalogLamp } from '../../../src/js/lamp-catalog-data.js';
@@ -114,7 +119,8 @@ const byPriority = (a, b) => priority(a) - priority(b) || String(a.key).localeCo
  * keeps its slot until another lamp needs it, so its cached cone shadow is
  * still valid when it is switched on again.
  */
-export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false } = {}) {
+export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false, preparedEntries = false } = {}) {
+  let preparedList = []; // PREPARED
   const kindOf = entry => lampKind(entry, filamentAreas);
   const slots = [], kinds = [], counts = new Map(), quota = new Map(), ranks = new Map();
   let disposed = false, shadowRefresh = false, prepared = false;
@@ -169,6 +175,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   // Every kind of lamp the library owns gets one slot before any gets a
   // second, in a fixed order: the pool never depends on the entries' order.
   function reconcile(entries) {
+    preparedList = [...entries]; // PREPARED
     for (const kind of kinds) counts.set(kind, 0);
     for (const entry of entries) {
       if (entry.kind !== 'lamp') continue;
@@ -301,7 +308,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     /** Build the pool from the library's lamps alone, before their models
      * exist, so programs linked ahead of the first frame see its final lights. */
     prepare(entries) {
-      if (!disposed && reconcile(entries)) prepared = true;
+      if (!disposed) { reconcile(entries); prepared = true; } // PREPARED
     },
     update(entries, { scroll = 0, viewportHeight = Infinity, shadowDirty = false, transform = null } = {}) {
       if (disposed) return false;
@@ -309,7 +316,8 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       if (rootMatrix) inverseRoot.copy(rootMatrix).invert();
       middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
       shadowRefresh = false;
-      let changed = reconcile(entries) || prepared;
+      let changed = (!preparedEntries && reconcile(entries)) || prepared; // PREPARED
+      if (preparedEntries) entries = preparedList; // PREPARED
       prepared = false;
       candidates.length = 0;
       litKeys = new Set(slots.filter(slot => slot.lit).map(slot => slot.key));

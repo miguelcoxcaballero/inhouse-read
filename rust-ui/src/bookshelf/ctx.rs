@@ -22,6 +22,9 @@ pub struct Ctx{
  /// One weak dispatcher; per-node forwarding closures and data belong to the DOM/JS collector.
  pub input_callbacks:Callbacks,
  pub input_dispatcher:RefCell<JsValue>,
+ /// The names of `env` with the JavaScript strings it is read by (sorted): a part's call into another module
+ /// builds no key string. Empty when `env` is not an object.
+ env_keys:Vec<(String,JsValue)>,
 }
 impl Drop for Ctx{
  fn drop(&mut self){
@@ -31,7 +34,9 @@ impl Drop for Ctx{
 }
 impl Ctx{
  pub fn new(parts:JsValue)->Result<Ctx,JsValue>{
-  Ok(Ctx{state:read(&parts,"state")?,opts:read(&parts,"opts")?,options:read(&parts,"options")?,env:read(&parts,"env")?,
+  let env=read(&parts,"env")?;let mut env_keys:Vec<(String,JsValue)>=if env.is_object(){js_sys::Object::keys(env.unchecked_ref()).iter().filter_map(|key|key.as_string().map(|name|(name,key))).collect()}else{Vec::new()};
+  env_keys.sort_by(|a,b|a.0.cmp(&b.0));
+  Ok(Ctx{state:read(&parts,"state")?,opts:read(&parts,"opts")?,options:read(&parts,"options")?,env,env_keys,
    legacy:read(&parts,"legacy")?,root:read(&parts,"root")?,scroller:read(&parts,"scroller")?,container:read(&parts,"container")?,parts,
    keepalive_slot:RefCell::new(Vec::new()),timers:RefCell::new(HashMap::new()),frames:RefCell::new(HashMap::new()),opening_click:RefCell::new(Vec::new()),preview:RefCell::new(None),input_callbacks:Callbacks::new(),input_dispatcher:RefCell::new(undef())})
  }
@@ -81,8 +86,13 @@ impl Ctx{
  /// The opening callback captured once by the host constructor, called without a receiver.
  pub fn initial_on_open(&self)->JsValue{get(&self.parts,"onOpen")}
  /// `env[name](...args)`.
- pub fn env(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(&self.env,name)?,name,args)}
- pub fn env_value(&self,name:&str)->JsValue{get(&self.env,name)}
+ pub fn env(&self,name:&str,args:&[&JsValue])->R<JsValue>{
+  let function=match self.env_key(name){Some(key)=>js_sys::Reflect::get(&self.env,key)?,None=>read(&self.env,name)?};
+  call(&function,name,args)
+ }
+ pub fn env_value(&self,name:&str)->JsValue{match self.env_key(name){Some(key)=>js_sys::Reflect::get(&self.env,key).unwrap_or(JsValue::UNDEFINED),None=>get(&self.env,name)}}
+ /// The ready key of a name `env` had when the shelf was built: reading it builds no string.
+ fn env_key(&self,name:&str)->Option<&JsValue>{self.env_keys.binary_search_by(|(known,_)|known.as_str().cmp(name)).ok().map(|at|&self.env_keys[at].1)}
  /// Optional cosmetic transport: unavailable audio must never cancel a book action.
  pub fn sound(&self,kind:f64,strength:f64){self.sound_of(kind as u32,0,strength);}
  /// `playShelfSound(kind, material, strength, 0)`: an event of cozy_synth (material is the surface, lamp or pot).

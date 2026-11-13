@@ -100,8 +100,6 @@ function restoreContent(bake, content, materialFor, track) {
 
 // Keep the latest twelve shelf bakes, validate late disk records and collect
 // only completed surface images. Those decisions share the Rust queue state.
-const shelfBake = key => needRustShelf().plant_bake_get(state(),paintHost,key);
-const rememberBake = (key,entry) => needRustShelf().plant_bake_remember(state(),paintHost,key,entry);
 export const shelfPlantBakeRecord = () => paintState
   ? needRustShelf().plant_bake_record(paintState) : { models:[], surfaces:[] };
 
@@ -117,58 +115,40 @@ addShelfBakeSource({ collect:shelfPlantBakeRecord, settled:plantSurfacesReady })
  * makes the materials and the objects from it.
  */
 export function createShelfPlant(entry, { persist = false } = {}) {
-  const geometry = plantGeometrySpec(entry), {catalogPlant,potId,potModelId,real,height,unit} = geometry;
+  const geometry = plantGeometrySpec(entry), {catalogPlant,potId,potModelId,height} = geometry;
   const shelf = needRustShelf(), potColor = getPotColor(potId,entry.potColorId);
-  const appearance = shelf.plant_appearance(entry,geometry,potColor,persist);
-  const {quality,variant,seed,width,radius,potHeight,detailed,units,clayColor,soilKind,bakeKey} = appearance;
   const group = new THREE.Group(), content = new THREE.Group();
   content.position.y = -height / 2; group.add(content);
   const textures = new Set(), materials = new Set(), geometries = new Set();
-  const lifecycle = shelf.plant_lifecycle_state(potColor,textures,materials,geometries);
+  // The plant's look, its three shared surfaces, its material options and its bake, in one call
+  // (rust-ui/src/plant_recipe.rs); `refresh` is only kept there for a surface still being painted.
+  let lifecycle;
   const refresh = () => shelf.plant_refresh(lifecycle);
-  const own = maps => shelf.plant_own_maps(lifecycle,maps);
-  const soilFraction = POT_SOIL_FRACTION;
-  const finish = shelf.plant_finish_material(potModelId ?? '');
+  const recipe = shelf.plant_recipe(state(),paintHost,entry,geometry,potColor,persist,POT_SOIL_FRACTION,textures,materials,geometries,refresh);
+  const {variant,seed,quality,detailed,clayColor,soilKind,bakeKey,extra} = recipe;
+  lifecycle = recipe.lifecycle;
   const potKey = (level,color = lifecycle.potColor) => shelf.plant_pot_key(potId,color.hex,clayColor,level);
   const potSurface = (level,notify,color = lifecycle.potColor) => plannedSurface(shelf.plant_pot_surface(potId,potModelId ?? '',color.hex,clayColor,level),notify);
-  const potMaps = own(potSurface(quality, refresh));
-  // Texels stay roughly square on the outer wall, whatever the pot proportions.
-  potMaps.map.repeat.x = potMaps.data.repeat.x = appearance.repeat;
-  potMaps.map.offset.x = potMaps.data.offset.x = appearance.offset;
-  const { bumpScale, ...finishOptions } = finish;
-  const clay = new THREE.MeshPhysicalMaterial({ map:potMaps.map, roughnessMap:potMaps.data, bumpMap:potMaps.data, bumpScale,
-    vertexColors:true, roughness:1, metalness:0, clearcoat:0, clearcoatRoughness:.3, ...finishOptions });
-  // A shelf plant made earlier (this session or the last) is rebuilt from its
-  // bake: its meshes depend on none of the colours or surface levels.
-  const baked = bakeKey ? shelfBake(bakeKey) : null;
+  const clay = new THREE.MeshPhysicalMaterial(recipe.clay);
   const mineral = new THREE.MeshStandardMaterial({ color:'#b7ae9c', roughness:1 });
   const stemMaterial = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.72 });
   const leafSurface = (level, notify) => plannedSurface(shelf.plant_leaf_surface(variant,level),notify);
-  const leafMaps = detailed ? own(leafSurface(quality, refresh)) : null;
-  const leafMaterial = new THREE.MeshPhysicalMaterial({ map:leafMaps?.map ?? null, bumpMap:leafMaps?.data ?? null, roughnessMap:leafMaps?.data ?? null,
-    ...shelf.plant_leaf_material(variant,width), side:THREE.DoubleSide });
-  const extra = shelf.plant_extra_materials(baked,variant);
+  const leafMaterial = new THREE.MeshPhysicalMaterial(recipe.leaf);
   const green = extra & 1 ? cactusMaterial() : null, needles = extra & 2 ? needleMaterial() : null;
   const soilSurface = (level,notify) => plannedSurface(shelf.plant_soil_surface(soilKind,level),notify);
-  const soilMaps = own(soilSurface(quality, refresh));
-  const soil = new THREE.MeshStandardMaterial({ map:soilMaps.map, roughnessMap:soilMaps.data, bumpMap:soilMaps.data,
-    bumpScale:soilKind === 'grit' ? 1.4 : 1.1, roughness:1, vertexColors:true });
+  const soil = new THREE.MeshStandardMaterial(recipe.soil);
   const roleMaterials = { clay, soil, leaf:leafMaterial, stem:stemMaterial, mineral, green, needles };
-  const bake = baked ? baked.bake : shelf.plant_bake_build(units, appearance.skip, variant, potId ?? '', potModelId ?? '', Boolean(catalogPlant), detailed,
-    [width, radius, potHeight, soilFraction, real.foliageHeight * unit, real.referenceHeight * unit, height]);
-  const parts = restoreContent(bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
+  const parts = restoreContent(recipe.bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
   // Each shelf plant keeps its bake and its level-1 surfaces for the next launch.
   const levelOneSurfaces = () => shelf.plant_surface_keys(potKey(1),detailed,variant,soilKind);
-  let shelfEntry = baked;
-  if (bakeKey && !shelfEntry) shelfEntry = { bake, surfaces:null };
-  if (shelfEntry) { shelfEntry.surfaces = levelOneSurfaces(); rememberBake(bakeKey, shelfEntry); }
+  const shelfEntry = shelf.plant_recipe_keep(state(),paintHost,lifecycle,recipe,geometry,[stemMaterial,leafMaterial,mineral]);
   group.userData.variant = variant; group.userData.seed = seed;
   group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId; group.userData.potColorId = potColor.id;
   group.userData.parts = parts;
   group.userData.inspectionResolution = entry.inspectionResolution || 0;
   if (quality > 1) group.userData.ready = plantSurfacesReady().then(() => !lifecycle.disposed);
   const surfaceBindings = [{ material:clay, create:potSurface }, { material:soil, create:soilSurface }];
-  if (leafMaps && materials.has(leafMaterial)) surfaceBindings.push({ material:leafMaterial, create:leafSurface });
+  if (detailed && materials.has(leafMaterial)) surfaceBindings.push({ material:leafMaterial, create:leafSurface });
   // GC-owned callback adapters: Rust owns cancellation, readiness, map swaps,
   // colour commits and disposal, including reentrant texture dispose events.
   lifecycle.host = {
@@ -181,7 +161,6 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   group.userData.updatePotColor = colorId => shelf.plant_update_pot_color(lifecycle,colorId);
   group.userData.prepareSurfaceQuality = resolution => shelf.plant_prepare_quality(lifecycle,resolution);
   group.userData.dispose = () => shelf.plant_dispose(lifecycle);
-  shelf.plant_dispose_unused(lifecycle,[stemMaterial,leafMaterial,mineral]);
   return group;
 }
 

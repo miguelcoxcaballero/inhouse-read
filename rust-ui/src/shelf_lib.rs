@@ -9,6 +9,7 @@ mod shelf_trash;
 mod shelf_models;
 mod shelf_catalog;
 mod catalog_studio;
+mod catalog_lamp;
 mod studio_environment;
 mod shelf_light_rig;
 mod bookshelf_return;
@@ -96,6 +97,7 @@ mod book_projection;
 mod foliage;
 mod packet_host;
 mod plant_build;
+mod plant_recipe;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

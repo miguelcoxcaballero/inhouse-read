@@ -54,6 +54,16 @@ function model(kind) {
       group.userData.setTint = tint => log.entries.push(['setTint', group.name, ...tint]);
       group.userData.dispose = () => log.entries.push(['model.dispose', group.name]);
       group.userData.updatePotColor = color => { log.entries.push(['recolour', group.name, color]); return color !== 'blue'; };
+      // Lamps also carry what the studio's set-up reads (rust-ui/src/catalog_lamp.rs): clear glass, textured
+      // parts, a part with several materials, a transmissive one and a line, which is not a mesh.
+      if (kind === 'lamp') {
+        const textured = () => new three.MeshStandardMaterial({ map:new three.Texture(), bumpMap:new three.Texture(), roughnessMap:serial % 2 ? new three.Texture() : null });
+        const part = (name, material, y) => { const mesh = new three.Mesh(new three.BoxGeometry(10, 10, 10), material); mesh.name = name; mesh.position.y = y; mesh.castShadow = true; return mesh; };
+        group.add(part('glass', new three.MeshPhysicalMaterial({ transparent:true, map:new three.Texture() }), 40));
+        group.add(part('shade', [textured(), new three.MeshPhysicalMaterial({ transmission:serial % 3 ? .4 : 0 })], 60));
+        group.children[0].add(part('base', textured(), -20));
+        const line = new three.Line(new three.BufferGeometry(), new three.LineBasicMaterial({ transparent:true })); line.castShadow = true; group.add(line);
+      }
       // Lamps: a filament lamp, a cone and a bulb, in turn.
       if (kind === 'lamp') group.userData.lightEmitter = [{ position:[0, 10, 0], color:0xffd19a, intensity:40, distance:300, decay:2, filaments:[] },
         { position:[0, -2, 0], color:0xffc890, intensity:80, distance:400, decay:2, direction:[0, -1, 0], angle:.8, penumbra:.5 },
@@ -99,7 +109,14 @@ function snapshot(host, renderer) {
     object.intensity ?? null, object.color?.getHex?.() ?? null, object.castShadow, object.receiveShadow,
     object.isLight && object.shadow ? [object.shadow.bias, object.shadow.normalBias, object.shadow.mapSize.x, object.shadow.camera.left, object.shadow.camera.far] : null,
     object.material && !Array.isArray(object.material) ? [object.material.color?.getHex(), object.material.roughness] : null,
-    object.geometry?.type ?? null, object.geometry?.parameters ? JSON.stringify(object.geometry.parameters) : null]));
+    object.geometry?.type ?? null, object.geometry?.parameters ? JSON.stringify(object.geometry.parameters) : null,
+    // The order three numbered the objects in, a light's own shape and aim, and what a lamp's set-up left on its materials.
+    object.id - scene.id, object.isLight ? [object.distance ?? null, object.angle ?? null, object.penumbra ?? null, object.decay ?? null,
+      object.target ? [object.target.id - scene.id, object.target.parent?.type ?? null, ...object.target.position.toArray()] : null] : null,
+    object.material ? [].concat(object.material).map(material => [material.type, material.transparent, material.transmission ?? null,
+      ...['map', 'bumpMap', 'roughnessMap'].map(name => material[name]?.anisotropy ?? null)]) : null,
+    object.userData?.invalidate ? typeof object.userData.invalidate : null, object.userData?.lightEmitter?.intensity ?? null,
+    object.matrixWorld.elements.join()]));
   return { frames:frames.size, timers:vi.getTimerCount(), dataset:{ ...host.dataset }, text:host.textContent, children:host.childNodes.length,
     environment:scene?.environmentIntensity ?? null, shadow:renderer ? { ...renderer.shadowMap } : null,
     exposure:renderer ? [renderer.toneMapping, renderer.toneMappingExposure] : null, graph };
@@ -135,15 +152,28 @@ describe.each(Object.keys(factories))('%s studio against the frozen JavaScript',
   it('does the same thing at every step of 60 random scripts', () => {
     const [frozen, production] = factories[kind];
     const seen = { render:0, create:0, 'model.dispose':0, setSize:0, setTint:0, recolour:0 };
+    const set = { textured:0, glass:0, opaque:0, cones:0, bulbs:0, stand:0 };
     for (let seed = 1; seed <= 60; seed++) {
       const expected = run(kind, frozen, seed, 80), actual = run(kind, production, seed, 80);
       for (let step = 0; step < expected.length; step++) expect(actual[step], `${kind} seed ${seed} step ${step} ${expected[step][0]}`).toEqual(expected[step]);
       for (const step of actual.slice(1)) for (const [name] of step[2]) if (name in seen) seen[name]++;
+      // What the lamp's set-up leaves was really in the compared scenes: textures given the renderer's
+      // anisotropy, glass that no longer casts, a cone aimed at its target, a bulb, and the stand.
+      if (kind === 'lamp') for (const step of actual.slice(1)) for (const row of step[1].graph) {
+        const [type, name] = row, materials = row.at(-4), light = row.at(-5);
+        if (materials?.some(material => material.slice(3).includes(4))) set.textured++;
+        if (name === 'glass' && row[11] === false) set.glass++;
+        if (name === 'base' && row[11] === true) set.opaque++;
+        if (type === 'SpotLight' && light?.[4]?.[1] === 'Group') set.cones++;
+        if (type === 'PointLight' && light) set.bulbs++;
+        if (row[12] === true && (row[15] === 'CircleGeometry' || row[15] === 'BoxGeometry')) set.stand++;
+      }
     }
     // Not an empty comparison: models were built, drawn, resized, replaced (and tinted or recoloured).
     console.log(kind, JSON.stringify(seen)); expect(seen.render).toBeGreaterThan(100); expect(seen.create).toBeGreaterThan(40);
     expect(seen['model.dispose']).toBeGreaterThan(20); expect(seen.setSize).toBeGreaterThan(20);
     if (kind === 'lamp') expect(seen.setTint).toBeGreaterThan(40);
+    if (kind === 'lamp') { console.log(JSON.stringify(set)); for (const count of Object.values(set)) expect(count).toBeGreaterThan(20); }
     if (kind === 'plant') expect(seen.recolour).toBeGreaterThan(5);
   });
 
