@@ -60,7 +60,8 @@ describe('Piper duration output from the Rust voice core', () => {
       if (kind === 'rewritten') same(result.bytes)
     }
     for (const kind of ['untouched', 'exposed', 'rewritten']) expect(outcomes.get(kind)).toBeGreaterThan(30)
-  })
+    // 300 generated models through both implementations: about 11 s on CI, more on a busy machine.
+  }, 120_000)
   it('matches on malformed varints, field numbers, wire types and names that are not UTF-8', () => {
     const cases = [[], [255], [58, 127], [58, 4, 8, 255, 255, 255], [0, 0], [8, 128, 128, 128, 128, 128, 128, 128, 128, 1],
       [58, 0], [56, 1], [57, 1, 2, 3, 4, 5, 6, 7, 8], [61, 1, 2, 3], [59], [60], [8, 255, 255, 255, 255, 255, 255, 255, 15]]
