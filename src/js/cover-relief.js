@@ -18,17 +18,17 @@
  * family records remain readable and render their first real dominant color;
  * the original record is only replaced by an explicit new user selection.
  *
- * The numeric core is the only implementation of the maps, the palette and the
- * shading (there is no JavaScript twin: the frozen originals live in
- * tests/unit/helpers/reference-relief-*.js). The old family detectors (lettering,
- * foil, frame, emblem, band, varnish) had no production caller and live there too.
+ * The shelf module is the only implementation of the maps, the palette and the
+ * shading: every pass is a job of rust-ui/src/relief_job.rs, stepped here so the
+ * main thread gets its pauses (there is no JavaScript twin: the frozen originals
+ * live in tests/unit/helpers/reference-relief-*.js, the frozen bridge to the
+ * numeric core in reference-cover-relief-wasm.js). The old family detectors
+ * (lettering, foil, frame, emblem, band, varnish) had no production caller and
+ * live there too.
  */
 import { runInSlices } from './cover-appearance.js';
-import { getRustCore, loadRustCore } from './rust-core.js';
-import { needRustShelf } from './rust-shelf.js';
+import { needRustShelf, loadRustShelf } from './rust-shelf.js';
 import { bookDataModule } from './book-data-native.js';
-import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes,
-  wasmAnalyze, wasmMaps, wasmRenderRelief } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -80,16 +80,16 @@ function* abortable(task, signal) {
   } finally { task.return?.(); }
 }
 
-// The numeric core has no JavaScript twin. The page awaits it before its first
-// shelf render, and every public entry point below waits for it as well; a
-// kernel that rejects its input is an error, never a silent second path.
+// The passes have no JavaScript twin. The page awaits the shelf module before its
+// first shelf render, and every public entry point below waits for it as well; a
+// job that rejects its input is an error, never a silent second path.
 const unavailable = () => new Error('El módulo numérico no se pudo cargar. Recarga la página.');
-const rust = () => getRustCore() ?? (() => { throw unavailable(); })();
-async function ready() { if (!await loadRustCore()) throw unavailable(); }
-function* native(task) {
-  const result = yield* task;
-  if (result === null) throw new TypeError('El núcleo de relieve no admite estos datos');
-  return result;
+async function ready() { if (!await loadRustShelf()) throw unavailable(); }
+/** Step a job of the shelf module to its end, pausing where it asks; it is freed however this ends. */
+function* run(make) {
+  const job = make(needRustShelf().ReliefJob);
+  try { while (job.step()) yield; return job.result(); }
+  finally { job.free(); }
 }
 
 /** Run in main-thread slices; reports the longest slice and the slice count. */
@@ -118,11 +118,7 @@ const validateRaster = image => needRustShelf().relief_validate_raster(image);
  * inter-center distance, so all generated choices remain disjoint even when recreated independently from
  * persistence. Membership is recalculated from real pixels (no dilation/blur can include a pixel whose color is
  * outside the stored ball) and falls toward zero inside its radius, never over an adjacent ink. */
-export function* analyzePixels(image) {
-  validateRaster(image);
-  const found = yield* native(wasmAnalyze(rust(), image));
-  return needRustShelf().relief_analysis_result(found);
-}
+export function* analyzePixels(image) { return yield* run(Job => Job.analysis(image)); }
 
 export function* buildMapsFromPixels(work, hires, selection) {
   validateRaster(work); validateRaster(hires);
@@ -137,7 +133,7 @@ export function* buildMapsFromPixels(work, hires, selection) {
   const out = { width, height, heightMap:new Uint8Array(count), foil:new Uint8Array(count),
     gloss:new Uint8Array(count), mask:new Uint8Array(count), preserveInk:true, foilColor:null };
   if (!choice) return out;
-  Object.assign(out, yield* native(wasmMaps(rust(), hires, [{ color:choice.color, tolerance:choice.tolerance }], true)));
+  Object.assign(out, yield* run(Job => Job.maps(hires, [{ color:choice.color, tolerance:choice.tolerance }], true)));
   out.color = choice.color; out.tolerance = choice.tolerance;
   return out;
 }
@@ -150,8 +146,8 @@ function* buildColorLayerMaps(image, selection) {
   // A pixel belongs to exactly one selected pigment; contributions cannot add brightness/height or spill into
   // another pigment on overlap. The unscaled physical height keeps float precision: quantizing before the
   // per-colour strength would round two distinct coatings to one height.
-  const { owners, baseMask, baseHeight } = yield* native(wasmMaps(rust(), image,
-    needRustShelf().relief_classification_layers(layers), false));
+  const classified = needRustShelf().relief_classification_layers(layers);
+  const { owners, baseMask, baseHeight } = yield* run(Job => Job.maps(image, classified, false));
   // Classification is complete; composition needs only owned maps.
   return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
     owners,baseMask,baseHeight,layers }, selection);
@@ -160,10 +156,7 @@ function* buildColorLayerMaps(image, selection) {
 /** Reuse the classified colour ownership while adjusting a layer's intensity.
  * Only three bounded output planes are allocated; no image decode, clustering
  * or per-layer GPU textures are needed on slider updates. */
-export function* composeReliefLayerPixels(maps, selection) {
-  const layers = needRustShelf().relief_selected_layers(maps, selection);
-  return yield* native(wasmComposeReliefLayers(rust(), maps, layers));
-}
+export function* composeReliefLayerPixels(maps, selection) { return yield* run(Job => Job.compose(maps, selection)); }
 
 // ---- shading: the preview card and the material maps ----------------------------------
 
@@ -171,21 +164,20 @@ export function* composeReliefLayerPixels(maps, selection) {
 export function* heightToNormals(maps, { gain = 1, selectionAlpha = false } = {}) {
   const { width, height } = maps;
   const unit = needRustShelf().relief_normal_unit(width, height, gain);
-  return yield* native(wasmHeightToNormals(rust(), maps, unit, { selectionAlpha }));
+  return yield* run(Job => Job.normals(maps, unit, selectionAlpha));
 }
 
 /** Packed R clearcoat, G roughness ratio, B metalness, A clearcoat-roughness
  * ratio. Color masks use B=0 and leave the original ink/base finish intact.
  * Generic old map fixtures retain their foil channel and opaque alpha. */
 export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clearcoatRoughness = .18 } = {}) {
-  return yield* native(wasmComposeMaterialMap(rust(), maps,
-    needRustShelf().relief_material_options(maps.layers, clearcoat, roughness, clearcoatRoughness)));
+  return yield* run(Job => Job.material(maps, clearcoat, roughness, clearcoatRoughness));
 }
 
 /** Shaded preview, lit from the top-left, as RGBA bytes (pure; the browser
  * wrapper only turns it into a data URL). Foil zones glint, gloss zones shine. */
 export function* shadePreview(image, maps, { slope = 7 } = {}) {
-  return yield* native(wasmShadePreview(rust(), image, maps, needRustShelf().relief_shade_scale(slope)));
+  return yield* run(Job => Job.preview(image, maps, slope));
 }
 
 // ---- browser wrapper ----------------------------------------------------------------------
@@ -293,7 +285,7 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
   const work = needRustShelf().relief_map_mode(choice) !== 0 ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
   const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
   const unit = needRustShelf().relief_normal_unit(maps.width, maps.height, 1);
-  const planes = await runSliced(native(wasmRenderRelief(rust(), maps, unit, { selectionAlpha, rgba:true })), { signal, stats });
+  const planes = await runSliced(run(Job => Job.render(maps, unit, selectionAlpha, true, null)), { signal, stats });
   const { normal } = planes;
   return { height: new ImageData(planes.height, maps.width, maps.height),
     foil: new ImageData(planes.foil, maps.width, maps.height), gloss: new ImageData(planes.gloss, maps.width, maps.height),
@@ -309,17 +301,12 @@ export async function updateReliefMapStrengths(built, selection, { signal } = {}
   const maps = built.pixels;
   const layers = needRustShelf().relief_selected_layers(maps, selection);
   const unit = needRustShelf().relief_normal_unit(maps.width, maps.height, 1);
-  const { pixels, normal } = await runSliced(native(wasmRenderRelief(rust(), maps, unit,
-    { layers, selectionAlpha:built.normalSelectionAlpha === true })), { signal });
+  const { pixels, normal } = await runSliced(run(Job => Job.render(maps, unit, built.normalSelectionAlpha === true, false, layers)), { signal });
   return { ...built,pixels,normal };
 }
 
 /** Convert the three material planes together without changing their pixel data. */
-export function reliefPlanesToRgba(maps) {
-  const planes = wasmReliefRgbaPlanes(rust(), maps);
-  if (!planes) throw new TypeError('El núcleo de relieve no admite estos datos');
-  return planes;
-}
+export const reliefPlanesToRgba = maps => needRustShelf().relief_planes_rgba(maps);
 
 /** Pure steps the tests reach into: the colour naming. */
 export const internals = { colorName, raster };
