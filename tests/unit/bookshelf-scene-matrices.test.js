@@ -55,6 +55,7 @@ function makeShelf({ lamp = false } = {}) {
     rows:[{ top:20,bottom:220 },{ top:260,bottom:460 },{ top:500,bottom:700 }] });
   shelf.canvas.getBoundingClientRect = () => rect(390,700); shelf.flush(); drain();
 }
+function hitSurfacePart() { return gpu.scene.getObjectByName('book:4').getObjectByName('binding'); }
 function staticBookPart() { return gpu.scene.getObjectByName('book:4').getObjectByName('static-part-0'); }
 function expectCurrentWorldMatrices({ foliage = true } = {}) {
   const before = new Map();
@@ -97,16 +98,20 @@ describe('world matrices of a retained shelf',() => {
 
   it('updates book children for hit projection and rendering, without an earlier walk at the discarded pose',() => {
     makeShelf();
-    const update = vi.spyOn(staticBookPart(),'updateMatrix');
+    // The hit target reads one mesh: its own path is refreshed for the projection (765d87c1), the other
+    // parts of the book only by the renderer's walk. Neither is walked at the pose the frame discards.
+    const update = vi.spyOn(staticBookPart(),'updateMatrix'), surface = vi.spyOn(hitSurfacePart(),'updateMatrix');
     shelf.setMode('spine'); nextFrame();
-    expect(update).toHaveBeenCalledTimes(2);
+    expect(surface).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenCalledTimes(1);
     expectCurrentWorldMatrices();
   });
   it('keeps the lamp touch cache without walking all book children again on a power change',() => {
     makeShelf({ lamp:true });
-    const update = vi.spyOn(staticBookPart(),'updateMatrix');
+    const update = vi.spyOn(staticBookPart(),'updateMatrix'), surface = vi.spyOn(hitSurfacePart(),'updateMatrix');
     shelf.setLampPower(entries.at(-1).node,false,{ animate:false }); nextFrame();
-    expect(update).toHaveBeenCalledTimes(2);
+    expect(surface).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenCalledTimes(1);
     expectCurrentWorldMatrices();
   });
   it('refreshes every raycast mesh after moving the room, and preserves exact foliage and GPU matrices',() => {
