@@ -19,7 +19,7 @@ import { extractPDFText as beforeRowsPDFText } from '/inhouse-read/tests/unit/he
 import { PDF_ROW_BENCH_CASES,makePDFRowEntries,pdfContentFromEntries,PDF_ROW_VIEWPORT,assertExactPDFValue,
   assertPDFRowIdentities,assertPDFSourceIdentities } from '/inhouse-read/tests/helpers/pdf-row-cases.mjs';
 import { fragmentedRowsPDF } from '/inhouse-read/tests/e2e/fixtures/pdf-fragmented-rows.mjs';
-import { pdfImageRects,populatePDFReflow,clearPDFReflow } from '/inhouse-read/src/js/readers/pdf-reflow.js';
+import { pdfImageRects,populatePDFReflow,clearPDFReflow } from '/inhouse-read/tests/unit/helpers/live-pdf-reflow.js';
 import { getDocument,GlobalWorkerOptions,OPS } from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.mjs';
 import workerURL from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 GlobalWorkerOptions.workerSrc=workerURL;

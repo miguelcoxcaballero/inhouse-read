@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import * as rust from '../../src/js/readers/pdf-reflow.js'
+import * as rust from './helpers/live-pdf-reflow.js'
 import * as original from './helpers/reference-pdf-reflow.js'
 import { extractPDFText } from '../../src/js/readers/pdf-text.js'
 import { mapPDFTextLayer as rustMap } from '../../src/js/readers/pdf-text.js'
