@@ -10,9 +10,9 @@ import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';
 
 import { rustBookSurfacePixels, rustRibbonNotchPixels } from '../../../src/js/book-surface-wasm.js';
-import { rustBookmarkBuffers } from '../../../src/js/bookmark-wasm.js';
-import { rustBindingBuffers } from '../../../src/js/binding-wasm.js';
-import { rustPageBlockBuffers, rustLeafStackBuffers, rustBookPaperBuffers } from '../../../src/js/page-mesh-wasm.js';
+import { rustBookmarkBuffers } from './reference-bookmark-wasm.js';
+import { rustBindingBuffers } from './reference-binding-wasm.js';
+import { rustPageBlockBuffers, rustLeafStackBuffers, rustBookPaperBuffers } from './reference-page-mesh-wasm.js';
 import { reuseCoverRaster } from '../../../src/js/cover-raster-cache.js';
 import {acquireCoverImage} from '../../../src/js/book-cover-images.js';
 import { paperToneKey, readPaperTone } from '../../../src/js/page-paper-tone.js';

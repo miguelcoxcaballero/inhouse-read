@@ -4,7 +4,7 @@
 // Every number must match to the bit (NaN, infinities and signed zeros included).
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { getRustCore } from '../../src/js/rust-core.js';
+import { needRustShelf } from '../../src/js/rust-shelf.js';
 import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle,
   planPageBounds, planPageZoom, planReadingPose, planReturnFrame } from '../../src/js/book-view-wasm.js';
 import { fitCoverImage, planBookPageZoom, planReadingBookPose, projectBookBoardBounds, projectBookPageBounds } from '../../src/js/book-model.js';
@@ -276,7 +276,7 @@ describe('projection with real Three objects', () => {
 
 describe('memory', () => {
   it('survives memory growth between and during plans', () => {
-    const core = getRustCore();
+    const core = { memory:needRustShelf().book_mesh_memory() };
     const input = () => ({ compact: true, direct: true, adaptive: true, measureOnly: false, scale: 1, ratio: 2, viewportWidth: 390, viewportHeight: 844, coverOpen: 1,
       closedWidth: 192, openWidth: 576, height: 448, motion: { width: 0, height: 0 }, native: { width: 64, height: 64 } });
     const first = planReturnFrame(input(), () => [10, 20, 300, 400]);
@@ -287,7 +287,7 @@ describe('memory', () => {
     expect(planReadingPose(100, 200, 10, 390, 844, 100, 100).scale).toBeGreaterThan(0);
   });
   it('allocates nothing per call', () => {
-    const core = getRustCore();
+    const core = { memory:needRustShelf().book_mesh_memory() };
     planBookPose({ x: 1, y: 2, scale: 1, angle: 0 }, undefined, 0, 0, 100, 100, 1);
     const size = core.memory.buffer.byteLength;
     for (let n = 0; n < 200000; n++) {

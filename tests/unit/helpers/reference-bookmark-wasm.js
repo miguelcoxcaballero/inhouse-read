@@ -1,4 +1,7 @@
-import { resolveHostMath } from './host-math.js';
+// Frozen copy of src/js/bookmark-wasm.js as it was before these meshes became single calls of the shelf module
+// (rust-ui/src/book_mesh.rs). It drives the numeric core through its raw exports and is the reference the
+// production meshes are compared with, byte for byte.
+import { resolveHostMath } from '../../../src/js/host-math.js';
 
 // Host adapter of the ribbon (rust-core/src/bookmark.rs). The core plans the strip from the book
 // and the pose and builds the mesh; the engine's Math answers what it asks (two rounds, the

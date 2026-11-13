@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { createBindingRelief, rustBindingBuffers } from '../src/js/binding-wasm.js';
+import { createBindingRelief, rustBindingBuffers } from '../tests/unit/helpers/reference-binding-wasm.js';
 const { instance:{ exports:core } } = await WebAssembly.instantiate(readFileSync(new URL('../src/wasm/inhouse_read_core.wasm', import.meta.url)));
 const pixels = Uint8ClampedArray.from({length:256*1024*4},(_,index)=>index%4===3?((index>>>2)*73+(index>>>10)*29)%256:117);
 const callback=(u,v)=>pixels[(Math.min(1023,Math.floor((1-v)*1024))*256+Math.min(255,Math.floor(u*256)))*4+3]/255;

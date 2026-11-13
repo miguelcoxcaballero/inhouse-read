@@ -68,6 +68,21 @@ mod cover_seed;
 #[path="../../rust-core/src/cover_relief.rs"]
 mod relief_jobs;
 mod relief_job;
+// The book meshes planned with the engine's Math: the core's kernels, driven from book_mesh.rs in one call each.
+#[path="../../rust-core/src/host_math.rs"]
+mod host_math;
+#[path="../../rust-core/src/jsnum.rs"]
+mod jsnum;
+#[path="../../rust-core/src/page_mesh.rs"]
+mod page_mesh;
+#[path="../../rust-core/src/binding.rs"]
+mod binding;
+#[path="../../rust-core/src/bookmark.rs"]
+mod bookmark;
+mod book_mesh;
+#[path="../../rust-core/src/book_view.rs"]
+mod book_view;
+mod book_view_plan;
 mod cloud_host;
 mod bookshelf;
 mod book_paint;

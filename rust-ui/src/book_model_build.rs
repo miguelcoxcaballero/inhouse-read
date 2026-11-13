@@ -462,9 +462,9 @@ pub fn book_model_page_snapshot(s:&JsValue,snapshot:&JsValue,options:&JsValue)->
  }
  let (page_image,page_material)=(state(s,"pageImage"),state(s,"pageMaterial"));
  let (stock_image,stock_material)=(state(s,"stockImage"),state(s,"stockMaterial"));
- let fit=call(&host,"fit",&[&n(image_width),&n(image_height),&state(s,"pageWidth"),&state(s,"pageHeight")])?;
+ let fit=crate::book_view_plan::fit(image_width,image_height,num(&state(s,"pageWidth")),num(&state(s,"pageHeight")));
  call(&read(&page_image,"geometry")?,"dispose",&[])?;
- put(&page_image,"geometry",&make(&three,"PlaneGeometry",&[&read(&fit,"width")?,&read(&fit,"height")?])?)?;
+ put(&page_image,"geometry",&make(&three,"PlaneGeometry",&[&n(fit[2]),&n(fit[3])])?)?;
  let map=page_texture(&three,&bread(snapshot,"source")?)?;
  call_opt(&get(&page_material,"map"),"dispose",&[])?;put(&page_material,"map",&map)?;put(&page_material,"needsUpdate",&JsValue::TRUE)?;
  put(&page_image,"visible",&JsValue::TRUE)?;
@@ -547,9 +547,9 @@ pub fn book_model_cover_raster(s:&JsValue,image:&JsValue,dimensions:&JsValue,boo
  put(&canvas,"height",&read(dimensions,"height")?)?;put(&canvas,"width",&read(dimensions,"width")?)?;
  let c=call(&canvas,"getContext",&[&word("2d")])?;
  put(&c,"fillStyle",&bread(style,"color")?)?;call(&c,"fillRect",&[&n(0.0),&n(0.0),&get(&canvas,"width"),&get(&canvas,"height")])?;
- let fit=call(&host,"fit",&[&bread(image,"width")?,&bread(image,"height")?,&get(&canvas,"width"),&get(&canvas,"height")])?;
+ let fit=crate::book_view_plan::fit(num(&bread(image,"width")?),num(&bread(image,"height")?),num(&get(&canvas,"width")),num(&get(&canvas,"height")));
  put(&c,"imageSmoothingEnabled",&JsValue::TRUE)?;put(&c,"imageSmoothingQuality",&word("high"))?;
- call(&c,"drawImage",&[image,&read(&fit,"x")?,&read(&fit,"y")?,&read(&fit,"width")?,&read(&fit,"height")?])?;
+ call(&c,"drawImage",&[image,&n(fit[0]),&n(fit[1]),&n(fit[2]),&n(fit[3])])?;
  // A printed jacket is still paper over board: joint, edges, corners.
  let unit=num(&get(&canvas,"height"))/1024.0;
  crate::host::method_opt(&c,k("setTransform"),&[&n(unit),&n(0.0),&n(0.0),&n(unit),&n(0.0),&n(0.0)])?;
@@ -558,7 +558,7 @@ pub fn book_model_cover_raster(s:&JsValue,image:&JsValue,dimensions:&JsValue,boo
  let wear=!state(s,"level").as_string().is_some_and(|level|level=="overview");
  crate::book_paint::book_finish_board(c.unchecked_ref::<Canvas2d>(),design_width,random.unchecked_ref(),wear);
  let map=make(&three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(&three,"SRGBColorSpace")?)?;
- object(&[("map",map),("bounds",fit)])
+ object(&[("map",map),("bounds",object(&[("x",n(fit[0])),("y",n(fit[1])),("width",n(fit[2])),("height",n(fit[3]))])?)])
 }
 /// A decoded jacket arrived: the previous cover stays on the mesh until every new pixel is ready.
 #[wasm_bindgen]

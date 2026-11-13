@@ -8,7 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { cpus } from 'node:os';
 import * as THREE from 'three';
 import { referenceBookmarkGeometry } from '../tests/unit/helpers/reference-bookmark-geometry.js';
-import { rustBookmarkBuffers, releaseRustBookmarkBuffers } from '../src/js/bookmark-wasm.js';
+import { rustBookmarkBuffers, releaseRustBookmarkBuffers } from '../tests/unit/helpers/reference-bookmark-wasm.js';
 
 const WARMUPS=5, BATCHES=15;
 const fixtures=[

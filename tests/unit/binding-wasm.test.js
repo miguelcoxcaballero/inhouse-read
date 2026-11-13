@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { createBindingRelief, rustBindingBuffers } from '../../src/js/binding-wasm.js';
+import { createBindingRelief, rustBindingBuffers } from './helpers/reference-binding-wasm.js';
 import { bindingGeometry } from '../../src/js/book-model.js';
 import { referenceBindingGeometry } from './helpers/reference-binding-geometry.js';
 

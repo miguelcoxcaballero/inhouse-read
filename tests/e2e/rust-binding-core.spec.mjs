@@ -17,9 +17,10 @@ const fixtures = [
 const WARMUPS = 5, BATCHES = 15;
 const fixtureHtml = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body><script>addEventListener('error', event => window.rustBindingFailure = event.message);addEventListener('unhandledrejection', event => window.rustBindingFailure = String(event.reason));</script><script type="module">
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import { loadRustCore, getRustCore } from '/inhouse-read/src/js/rust-core.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
-import { rustBindingBuffers } from '/inhouse-read/src/js/binding-wasm.js';
+import { rustBindingBuffers } from '/inhouse-read/tests/unit/helpers/reference-binding-wasm.js';
 import { bindingGeometry } from '/inhouse-read/src/js/book-model.js';
 import { referenceBindingGeometry } from '/inhouse-read/tests/unit/helpers/reference-binding-geometry.js';
 const started = performance.now();
