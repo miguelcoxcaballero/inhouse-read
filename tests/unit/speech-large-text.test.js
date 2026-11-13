@@ -5,7 +5,7 @@ import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {sentenceEnds as referenceEnds} from './helpers/reference-sentence-ends.js'
 import {planSpeech as referencePlan} from './helpers/reference-speech-plan.js'
 import {normalizeSpeech,planSpeech} from '../../src/js/readers/speech-text.js'
-import {sentenceEnds} from '../../src/js/readers/sentence-ends.js'
+import {sentenceEnds} from './helpers/live-sentence-ends.js'
 import {invoke as invokePlan} from '../helpers/speech-plan-cases.js'
 import {invoke as invokeEnds} from '../helpers/sentence-ends-cases.js'
 
@@ -14,7 +14,7 @@ import {invoke as invokeEnds} from '../helpers/sentence-ends-cases.js'
 // the frozen original on texts well past the old limit, including surrogate pairs.
 const fixture=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
-vi.mock('../../src/js/readers/sentence-ends.js',async()=>{
+vi.mock('./helpers/live-sentence-ends.js',async()=>{
  const reference=(await import('./helpers/reference-sentence-ends.js')).sentenceEnds
  return {sentenceEnds:(...args)=>reference(...args)}
 })

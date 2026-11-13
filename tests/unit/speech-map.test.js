@@ -7,7 +7,7 @@ beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.w
 
 import { mapSpeechText, mapTextLayer, mapTextNode } from '../../src/js/readers/speech-map.js'
 import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from '../../src/js/readers/speech-text.js'
-import { installSpeechStyle, paintSpeechRange, clearSpeechRange, SPEECH_HIGHLIGHT, speechCSS } from '../../src/js/readers/speech-highlight.js'
+import { installSpeechStyle, paintSpeechRange, clearSpeechRange, SPEECH_HIGHLIGHT, speechCSS } from './helpers/live-speech-highlight.js'
 
 const html = markup => { const doc = new DOMParser().parseFromString(`<body>${markup}</body>`, 'text/html'); return doc }
 const spoken = (map, start, end) => map.rangeFor(start, end).toString()

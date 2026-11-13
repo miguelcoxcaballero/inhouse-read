@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { describe, expect, it, vi } from 'vitest'
-import { hasUntrackedPDFImages, paintPDFTheme } from '../../src/js/readers/pdf-page-theme.js'
+import { hasUntrackedPDFImages, paintPDFTheme } from './helpers/live-pdf-page-theme.js'
 
 function setup() {
   const ctx = Object.fromEntries(['clearRect','save','restore','beginPath','moveTo','lineTo','closePath','clip'].map(name => [name,vi.fn()]))

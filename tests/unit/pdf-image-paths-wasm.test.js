@@ -5,7 +5,7 @@ import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
 import {rustPDFImagePaths} from '../../src/js/readers/pdf-images-wasm.js';
-import {paintPDFTheme} from '../../src/js/readers/pdf-page-theme.js';
+import {paintPDFTheme} from './helpers/live-pdf-page-theme.js';
 import {referenceImagePaths,referencePaintTheme} from './helpers/reference-pdf-image-paths.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;state.core=core;expect(typeof core.pdf_image_paths).toBe('function');});

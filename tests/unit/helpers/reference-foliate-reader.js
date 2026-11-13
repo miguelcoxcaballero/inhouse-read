@@ -22,7 +22,7 @@ import { speechHold } from '../../../src/js/readers/speech-hold.js'
 import { FoliateSpeechCursor } from '../../../src/js/readers/foliate-speech-cursor.js'
 import { stablePageHeight, MINI_PLAYER_RESERVE } from './reference-page-box.js'
 import { measureBookLength } from '../../../src/js/book-length.js'
-import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from '../../../src/js/readers/speech-highlight.js'
+import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './live-speech-highlight.js'
 
 // Tells the audiobook that pages broke anew (see ReadingVoice.refreshPageBreaks),
 // once the paginator has laid the chapter out again.

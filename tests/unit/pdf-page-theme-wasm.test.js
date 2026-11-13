@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { expect, it } from 'vitest'
-import { hasUntrackedPDFImages, paintPDFTheme } from '../../src/js/readers/pdf-page-theme.js'
+import { hasUntrackedPDFImages, paintPDFTheme } from './helpers/live-pdf-page-theme.js'
 import { hasUntrackedPDFImages as originalUntracked, paintPDFTheme as originalPaint } from './helpers/reference-pdf-page-theme.js'
 
 // The compiled painter is compared with the frozen original on a large pseudo-random corpus: every

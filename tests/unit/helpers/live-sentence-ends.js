@@ -1,5 +1,6 @@
-import {readerUI} from './rust-ui-required.js'
-import {properties,units} from './speech-plan.js'
+// Test harness: the argument defaults the readers' callers used to get from src/js/readers. Production calls the Rust export directly.
+import {readerUI} from '../../../src/js/readers/rust-ui-required.js'
+import {properties,units} from '../../../src/js/readers/speech-plan.js'
 // Rust answers any length. It leaves boundaries it cannot trust (not integers inside the text)
 // unanswered instead of coercing them; the normalizer never produces such a list.
 export function sentenceEnds(text,breaks=[]){
