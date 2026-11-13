@@ -1,5 +1,17 @@
 # inhouse read
 
+## 1.7.327 — Estantería más fluida en Rust
+
+Sin cambios visibles. El estado de animación de cada libro (elevación, caída,
+vista previa, desplazamiento y pose) vive ahora en memoria de Rust y el
+fotograma de la estantería hace una sola llamada nativa: entre un 17 % y un
+45 % menos de tiempo por fotograma en reposo o levantando un libro, e igual al
+arrastrar (medido en Node, no en teléfono). También pasan a Rust el relieve de
+las portadas (a la misma velocidad), el sombreado de las lámparas, la carpeta
+recordada y los menús de voz. Se corrige un repintado de la sala de más tras
+colocar un libro sin tocar las lámparas, y se reparan pruebas que llevaban
+tiempo en rojo. Detalle en [docs/rust-migration.md](docs/rust-migration.md).
+
 ## 1.7.326 — Más de la app en Rust
 
 Sin cambios visibles: la pantalla de lectura, el armazón de la app, la racha de
