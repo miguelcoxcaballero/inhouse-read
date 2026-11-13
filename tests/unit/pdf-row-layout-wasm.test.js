@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 const runtime = vi.hoisted(() => ({ core:null }))
 vi.mock('../../src/js/rust-core.js', () => ({ getRustCore:() => runtime.core }))
-import { rustPDFRowLines, pdfRowLines } from '../../src/js/readers/pdf-row-layout-wasm.js'
+import { rustPDFRowLines, pdfRowLines } from './helpers/live-pdf-row-layout.js'
 import { legacyPDFRowLines } from './helpers/reference-pdf-pipeline.js'
 import { extractPDFText, mapPDFTextLayer } from '../../src/js/readers/pdf-text.js'
 import { extractPDFText as referencePDFText } from './helpers/reference-pdf-text.js'
@@ -63,8 +63,9 @@ describe('actual Rust PDF row grouping and gutter segmentation',()=>{
     parity([entry('עברית',0,20,12,40,0,'rtl'),entry('English',42,20,12,42,1),entry(' العربية ',86,20,12,55,2,'rtl')])
   })
   it('keeps entire extraction, paragraphs, source metadata and UTF-16 spans exact',()=>{
+    // The whole page is one pass through the core (pdf_page_text chains the row kernel).
     let calls=0
-    runtime.core={...compiled,pdf_row_lines(...args){calls++;return compiled.pdf_row_lines(...args)}}
+    runtime.core={...compiled,pdf_page_text(...args){calls++;return compiled.pdf_page_text(...args)}}
     for(const kind of ['fragmented','columns','mixed']) {
       const content=pdfContentFromEntries(makePDFRowEntries(kind,256)),before=structuredClone(content)
       const expected=referencePDFText(content,PDF_ROW_VIEWPORT),actual=extractPDFText(content,PDF_ROW_VIEWPORT)

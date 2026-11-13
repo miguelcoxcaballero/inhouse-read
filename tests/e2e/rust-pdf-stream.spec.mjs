@@ -4,7 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {rustPDFTextStream} from '/inhouse-read/src/js/readers/pdf-stream-wasm.js';
+import {rustPDFTextStream} from '/inhouse-read/tests/unit/helpers/live-pdf-stream.js';
 import {assemble as reference} from '/inhouse-read/tests/unit/helpers/reference-pdf-stream.js';
 const core=await loadRustCore();if(!core?.pdf_text_stream)throw Error('Actual compiled text stream required');
 window.checkStream=()=>{

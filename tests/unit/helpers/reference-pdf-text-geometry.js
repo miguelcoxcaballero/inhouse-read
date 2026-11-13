@@ -4,9 +4,9 @@
 // not be its reading order. This page-local layout keeps every text item and
 // its source offsets: the same result feeds reflow, speech and the text layer.
 // No OCR, language model, repeated-line removal or guessed missing text.
-import { assemblePDFLines } from '../../../src/js/readers/pdf-stream-wasm.js'
-import { pdfOrderLines as orderLines } from '../../../src/js/readers/pdf-order-wasm.js'
-import { PDF_TEXT_ITEM_LIMIT, pdfRowLines } from '../../../src/js/readers/pdf-row-layout-wasm.js'
+import { assemblePDFLines } from './live-pdf-stream.js'
+import { pdfOrderLines as orderLines } from './live-pdf-order.js'
+import { PDF_TEXT_ITEM_LIMIT, pdfRowLines } from './live-pdf-row-layout.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const finite = value => Number.isFinite(Number(value))

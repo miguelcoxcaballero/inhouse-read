@@ -1,5 +1,5 @@
-import {getRustCore} from '../rust-core.js';
-import {coreRequired} from './core-required.js';
+import {getRustCore} from '../../../src/js/rust-core.js';
+import {coreRequired} from '../../../src/js/readers/core-required.js';
 const cjk=char=>/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(char||'');
 const listStart=text=>/^(?:[•●▪‣⁃]|\d{1,3}[.)]|[a-z][.)])\s/u.test(text.trimStart());
 // Cache only Unicode classifications of bounded boundary characters. Use the

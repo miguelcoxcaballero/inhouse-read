@@ -1,5 +1,5 @@
-import { getRustCore } from '../rust-core.js'
-import { coreRequired } from './core-required.js'
+import { getRustCore } from '../../../src/js/rust-core.js'
+import { coreRequired } from '../../../src/js/readers/core-required.js'
 
 // The most text items of one page the kernels order (the stream keeps the rest).
 export const PDF_TEXT_ITEM_LIMIT = 32768

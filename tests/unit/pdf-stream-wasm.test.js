@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
-import {rustPDFTextStream,assemblePDFLines} from '../../src/js/readers/pdf-stream-wasm.js';
+import {rustPDFTextStream,assemblePDFLines} from './helpers/live-pdf-stream.js';
 import {assemble as reference} from './helpers/reference-pdf-stream.js';
 import {extractPDFText} from '../../src/js/readers/pdf-text.js';
 import {extractPDFText as referenceExtraction} from './helpers/reference-pdf-text-stream.js';
@@ -75,7 +75,7 @@ for(const columns of [1,2,3])it(`routes complete ${columns}-column extraction th
   items.push({str,width:140,height:10,dir:'ltr',hasEOL:true,transform:[10,0,0,10,20+column*240,1550-row*9]});
  }
  const input={items:items.reverse()},before=structuredClone(input),expected=referenceExtraction(input,viewport);
- const native=vi.fn(core.pdf_text_stream);state.core={...core,pdf_text_stream:native};
+ const native=vi.fn(core.pdf_page_text);state.core={...core,pdf_page_text:native};
  expect(extractPDFText(input,viewport)).toEqual(expected);expect(native).toHaveBeenCalledOnce();expect(input).toEqual(before);
 });
 it('reports a missing core as an error rather than guessing a reading stream',()=>{
@@ -86,7 +86,7 @@ it('reports a missing core as an error rather than guessing a reading stream',()
  state.core={...core,pdf_text_stream:()=>-1};expect(()=>assemblePDFLines(lines)).toThrow('No se pudo calcular la página del PDF');
 });
 it('answers every size of page in the kernel, small ones included',()=>{
- const native=vi.fn(core.pdf_text_stream);state.core={...core,pdf_text_stream:native};
+ const native=vi.fn(core.pdf_page_text);state.core={...core,pdf_page_text:native};
  for(const rows of [1,2,5,40]){
   const items=Array.from({length:rows},(_,i)=>({str:'Line '+i,width:40,height:10,transform:[10,0,0,10,20,500-i*12]}));
   expect(extractPDFText({items})).toEqual(referenceExtraction({items}));

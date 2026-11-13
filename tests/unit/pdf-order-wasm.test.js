@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
 const observed=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>observed.core}));
-import {rustPDFOrderLines,pdfOrderLines} from '../../src/js/readers/pdf-order-wasm.js';
+import {rustPDFOrderLines,pdfOrderLines} from './helpers/live-pdf-order.js';
 import {orderLines as reference} from './helpers/reference-pdf-order.js';
 import {extractPDFText as referenceExtraction} from './helpers/reference-pdf-text.js';
 import {extractPDFText} from '../../src/js/readers/pdf-text.js';
@@ -49,6 +49,6 @@ it('rejects invalid geometry and native permutations without publishing partial 
 });
 it('preserves the complete PDF extraction, paragraphs and source spans',()=>{
  const items=Array.from({length:220},(_,i)=>({str:`Sentence ${i} with its original words.`,width:190,height:12,dir:'ltr',hasEOL:true,transform:[12,0,0,12,i%2*240,760-Math.floor(i/2)*6]}));
- const content={items},expected=referenceExtraction(content),calls=vi.fn(core.pdf_order_lines);observed.core={...core,pdf_order_lines:calls};
+ const content={items},expected=referenceExtraction(content),calls=vi.fn(core.pdf_page_text);observed.core={...core,pdf_page_text:calls};
  try{expect(expected.geometric).toBe(true);expect(extractPDFText(content)).toEqual(expected);expect(calls).toHaveBeenCalled();expect(reference([],false)).toEqual([]);}finally{observed.core=core;}
 });

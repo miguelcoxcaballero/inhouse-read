@@ -1,5 +1,5 @@
-import {getRustCore} from '../rust-core.js';
-import {coreRequired} from './core-required.js';
+import {getRustCore} from '../../../src/js/rust-core.js';
+import {coreRequired} from '../../../src/js/readers/core-required.js';
 const decoder=new TextDecoder(),STRIDE=7,MAX_LINES=32768,PATH_BYTES=80;
 const counter=text=>/^\s*(?:\d{1,5}|[ivxlcdm]{1,7})\s*$/i.test(text);
 /** The kernel returns a permutation and ASCII column paths. All text,

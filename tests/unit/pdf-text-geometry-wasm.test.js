@@ -84,8 +84,9 @@ describe('PDF item geometry in Rust', () => {
       for (let seed = 1; seed <= 50; seed++) { const { content, viewport } = page(seed); expect(isolated(content, viewport)).toEqual(frozen(content, viewport)) }
       expect(atan2).toHaveBeenCalled()
       const order = (a, b) => a[0] - b[0] || a[1] - b[1]
-      expect(allocated.length).toBeGreaterThan(50)
-      // pdf-row-layout-wasm.js deliberately keeps one bounded arena for the next page.
+      // pdf-text.js deliberately keeps one bounded arena for the pages that follow.
+      expect(allocated.length).toBeGreaterThan(0)
+      expect(allocated.length).toBeLessThan(8)
       const open = allocated.filter(([pointer, length]) => !freed.some(entry => entry[0] === pointer && entry[1] === length))
       expect(open.length).toBeLessThanOrEqual(1)
       expect(freed.sort(order)).toEqual(allocated.filter(entry => !open.includes(entry)).sort(order))
