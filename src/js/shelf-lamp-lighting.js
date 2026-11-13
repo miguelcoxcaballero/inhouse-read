@@ -267,7 +267,8 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     /** Build the pool from the library's lamps alone, before their models
      * exist, so programs linked ahead of the first frame see its final lights. */
     prepare(entries) {
-      if (!disposed && reconcile(entries)) prepared = true;
+      // Every prepare announces a change, whether or not the pool changed: a committed layout repaints the room once.
+      if (!disposed) { reconcile(entries); prepared = true; }
     },
     update(entries, { scroll = 0, viewportHeight = Infinity, shadowDirty = false, transform = null } = {}) {
       if (disposed) return false;
