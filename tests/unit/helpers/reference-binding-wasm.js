@@ -1,4 +1,7 @@
-import { resolveHostMath } from './host-math.js';
+// Frozen copy of src/js/binding-wasm.js as it was before these meshes became single calls of the shelf module
+// (rust-ui/src/book_mesh.rs). It drives the numeric core through its raw exports and is the reference the
+// production meshes are compared with, byte for byte.
+import { resolveHostMath } from '../../../src/js/host-math.js';
 
 // Host adapter for the curved binding (rust-core/src/binding.rs). The core plans the profile and
 // builds the mesh; the engine's Math answers the sines, cosines and lengths it asks for, in two

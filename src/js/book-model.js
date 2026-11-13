@@ -7,9 +7,6 @@ import { getRustCore, loadedRustCore } from './rust-core.js';
 import { needRustShelf } from './rust-shelf.js';
 
 import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
-import { rustBookmarkBuffers } from './bookmark-wasm.js';
-import { rustBindingBuffers } from './binding-wasm.js';
-import { rustPageBlockBuffers, rustLeafStackBuffers, rustBookPaperBuffers } from './page-mesh-wasm.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
@@ -39,23 +36,29 @@ const sharedTexture = (key, build) => needRustShelf().book_shared_texture(key, b
 const clothNormals = () => needRustShelf().book_model_tile_normals(modelHost(), 'cloth');
 const endpaperTexture = () => needRustShelf().book_model_endpaper(modelHost());
 
-// Numeric Rust meshes own their arrays; install them without another copy.
-function paperMeshGeometry(buffers) {
-  if (!buffers) return null;
+// A mesh of the shelf module (rust-ui/src/book_mesh.rs) is one owned record of words: vertices, indices, flags
+// (1 wide index, 2 colours, 4 changed normals, 8 groups), the first group's indices, then the arrays. Three
+// installs views of it without another copy; `at` is the record's first word.
+function meshGeometry(data, at = 0) {
+  if (!data.length) return null;
+  const vertices = data[at], count = data[at + 1], flags = data[at + 2], faces = data[at + 3], buffer = data.buffer;
+  let byte = (at + 8) * 4;
+  const floats = size => { const array = new Float32Array(buffer, byte, vertices * size); byte += array.byteLength; return new THREE.BufferAttribute(array, size); };
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
-  geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
-  geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
-  geometry.setAttribute('color', new THREE.BufferAttribute(buffers.colors, 3));
-  geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
-  for (const group of buffers.groups) geometry.addGroup(group.start, group.count, group.materialIndex);
+  geometry.setAttribute('position', floats(3));
+  geometry.setAttribute('normal', floats(3));
+  geometry.setAttribute('uv', floats(2));
+  if (flags & 2) geometry.setAttribute('color', floats(3));
+  geometry.setIndex(new THREE.BufferAttribute(new (flags & 1 ? Uint32Array : Uint16Array)(buffer, byte, count), 1));
+  if (flags & 8) { geometry.addGroup(0, faces, 0); if (faces < count) geometry.addGroup(faces, count - faces, 1); }
+  if (flags & 4) geometry.getAttribute('normal').needsUpdate = true;
   return geometry;
 }
 
 /** Text block of a rounded-and-backed binding: its back follows the round
  * inside the case, the fore-edge is concave, both ends are one crescent. */
 export function pageBlockGeometry(width, height, thickness, { board = height * .007, inset = height * .009, detail = false } = {}) {
-  const geometry = paperMeshGeometry(rustPageBlockBuffers(rustCore(), width, height, thickness, { board, inset, detail }));
+  const geometry = meshGeometry(needRustShelf().book_mesh_page_block(width, height, thickness, board, inset, Boolean(detail)));
   if (!geometry) throw new RangeError('Medidas de bloque de páginas no válidas.');
   return geometry;
 }
@@ -65,7 +68,7 @@ export function pageBlockGeometry(width, height, thickness, { board = height * .
  * Hinge coordinates (joint at x = 0, board centred on z = 0); the open face
  * looks toward -z until the board turns over. Only lifted copies build it. */
 export function leafStackGeometry(width, height, depth, { board = height * .007, inset = height * .009, columns = 14 } = {}) {
-  const geometry = paperMeshGeometry(rustLeafStackBuffers(rustCore(), width, height, depth, { board, inset, columns }));
+  const geometry = meshGeometry(needRustShelf().book_mesh_leaf_stack(width, height, depth, board, inset, columns));
   if (!geometry) throw new RangeError('Medidas de pila de hojas no válidas.');
   return geometry;
 }
@@ -121,14 +124,8 @@ export function bookCaseGeometries(width, height, board, thickness, { shelf = fa
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
 export function bindingGeometry(width, height, thickness, segments = 96, relief = null, reliefRows = 384) {
-  const buffers = rustBindingBuffers(rustCore(), width, height, thickness, segments, relief, reliefRows);
-  if (!buffers) throw new RangeError('Medidas de lomo no válidas.');
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
-  geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
-  geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
-  geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
-  if (buffers.normalVersion) geometry.getAttribute('normal').needsUpdate = true;
+  const geometry = meshGeometry(needRustShelf().book_mesh_binding(width, height, thickness, segments, relief, reliefRows));
+  if (!geometry) throw new RangeError('Medidas de lomo no válidas.');
   return geometry;
 }
 
@@ -138,10 +135,27 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
   return boardFrom(bookCase(width, height, depth, shelf, overview));
 }
 
+// The ribbon is built in the shelf module's own arenas, one set per section count, and read in place: the
+// views below are scratch (the next ribbon of that count rewrites them) and are remade when the memory grows.
+let ribbonMemory, ribbonBuffer, ribbonWords;
+const ribbonViews = new Map();
+function ribbonBuffers(width, height, thickness, progress, peek, open, withdraw, segments, seed, legacy) {
+  const rust = needRustShelf(), at = rust.book_mesh_ribbon(width, height, thickness, progress, peek, open, withdraw, segments, seed, Boolean(legacy));
+  if (!at) return null;
+  ribbonMemory ||= rust.book_mesh_memory();
+  if (ribbonBuffer !== ribbonMemory.buffer) { ribbonBuffer = ribbonMemory.buffer; ribbonWords = new Uint32Array(ribbonBuffer); ribbonViews.clear(); }
+  const word = at >> 2, count = ribbonWords[word];
+  let views = ribbonViews.get(count);
+  if (!views) ribbonViews.set(count, views = { positions:new Float32Array(ribbonBuffer, ribbonWords[word + 1], count * 12),
+    uvs:new Float32Array(ribbonBuffer, ribbonWords[word + 2], count * 8), normals:new Float32Array(ribbonBuffer, ribbonWords[word + 3], count * 12),
+    indices:new Uint16Array(ribbonBuffer, ribbonWords[word + 4], ribbonWords[word + 5]) });
+  return views;
+}
+
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
 export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
   { open = 0, withdraw = 0, segments = 32, seed = 0, geometry: target, legacy = false } = {}) {
-  const pixels = rustBookmarkBuffers(rustCore(), width, height, thickness, progress, peek, open, withdraw, segments, seed, legacy);
+  const pixels = ribbonBuffers(width, height, thickness, progress, peek, open, withdraw, segments, seed, legacy);
   if (!pixels) throw new RangeError('Medidas de cinta no válidas.');
   // Opening and withdrawing only bend the ribbon; its topology stays fixed.
   // Keep the same GPU buffers during the flight instead of deleting and
@@ -323,10 +337,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // Pastedown: wove endpaper inside the cloth turn-ins, darker where it bends into the joint.
   const turnIn = height * .028, joint = height * .004;
   const pasteWidth = width - turnIn - joint, pasteHeight = height - turnIn * 2;
-  const paperBuffers = rustBookPaperBuffers(rustCore(), pasteWidth, pasteHeight,
-    width - height * .009 * 2, height - height * .009 * 2, height * .009, overview);
-  if (!paperBuffers) throw new RangeError('Medidas de guardas no válidas.');
-  const pasteGeometry = paperMeshGeometry(paperBuffers.pastedown);
+  const paperBuffers = rust.book_mesh_paper_planes(pasteWidth, pasteHeight,
+    width - height * .009 * 2, height - height * .009 * 2, height * .009, Boolean(overview));
+  if (!paperBuffers.length) throw new RangeError('Medidas de guardas no válidas.');
+  const pasteGeometry = meshGeometry(paperBuffers);
   const endpaper = new THREE.MeshStandardMaterial({ color:'#ffffff', roughness:1, vertexColors:true,
     map:overview ? null : sharedTexture('endpaper', endpaperTexture) });
   endpaper.map?.repeat.set(3 * pasteWidth / pasteHeight, 3);
@@ -361,7 +375,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const pageWidth = s.pageWidth = width - inset * 2, pageHeight = s.pageHeight = height - inset * 2;
   const pageFront = thickness / 2 - board * 1.2 + board * .03;
   // The paper runs on into the joint, where the leaf bends down into shade.
-  const pagePaper = s.pagePaper = new THREE.Mesh(paperMeshGeometry(paperBuffers.paper),
+  const pagePaper = s.pagePaper = new THREE.Mesh(meshGeometry(paperBuffers, paperBuffers[7]),
     new THREE.MeshBasicMaterial({ color:'#ffffff', toneMapped:false, vertexColors:true }));
   pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
   // Fill depth with the opaque paper before shading the case beneath it.
@@ -581,7 +595,6 @@ function modelHost() {
     reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFinish, metal:METAL_COLORS,
     rememberedPatch, spineFadePatches:new Map(), reliefPatches:new Map(), constant:value => value,
     surfacePixels:kind => rustBookSurfacePixels(rustCore(), kind), notchPixels:(width, height) => rustRibbonNotchPixels(rustCore(), width, height),
-    paperBuffers:(...args) => rustBookPaperBuffers(rustCore(), ...args),
     pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
     silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, fit:fitCoverImage, paperTone, applyPageTheme,
     acquire:acquireCoverImage, reuse:reuseCoverRaster, random:seededRandom, paintCloth, paintWeave, drawDevice,

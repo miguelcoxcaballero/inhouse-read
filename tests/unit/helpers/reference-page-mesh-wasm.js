@@ -1,4 +1,7 @@
-import { resolveHostMath } from './host-math.js';
+// Frozen copy of src/js/page-mesh-wasm.js as it was before these meshes became single calls of the shelf module
+// (rust-ui/src/book_mesh.rs). It drives the numeric core through its raw exports and is the reference the
+// production meshes are compared with, byte for byte.
+import { resolveHostMath } from '../../../src/js/host-math.js';
 
 // Host adapter of the page block and the turned leaves (rust-core/src/page_mesh.rs). The core
 // plans each mesh and builds it; the engine's Math answers the powers and hypotenuses it asks

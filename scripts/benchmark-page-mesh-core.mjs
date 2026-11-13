@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { cpus } from 'node:os';
 import * as THREE from 'three';
-import { rustPageBlockBuffers, rustLeafStackBuffers } from '../src/js/page-mesh-wasm.js';
+import { rustPageBlockBuffers, rustLeafStackBuffers } from '../tests/unit/helpers/reference-page-mesh-wasm.js';
 import { referencePageBlockGeometry, referenceLeafStackGeometry } from '../tests/unit/helpers/reference-page-mesh.js';
 import { paperMeshCases } from '../tests/helpers/page-mesh-cases.mjs';
 

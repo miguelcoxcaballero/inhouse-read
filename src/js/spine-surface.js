@@ -1,4 +1,3 @@
-import { createBindingRelief } from './binding-wasm.js'
 import { getRustCore } from './rust-core.js'
 import { rustBookWeavePixels, rustBookClothPlan } from './book-surface-wasm.js'
 import * as THREE from 'three'
@@ -124,7 +123,8 @@ const host = {
   scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, random: seededRandom, paintCloth, paintWeave, paintField,
   surface: value => SURFACE_FINISHES[surfaceFinish(value, 'matte')],
   three: THREE, weavePixels: () => rustBookWeavePixels(getRustCore()), tiles: null,
-  bindingRelief: pixels => createBindingRelief(getRustCore(), pixels)
+  // The spine's relief as the binding samples it: the mesh reads `pixels` (256 x 1024 RGBA) in one pass.
+  bindingRelief: pixels => Object.assign((u, v) => pixels[needRustShelf().book_mesh_relief_index(u, v, 256, 1024)] / 255, { pixels })
 }
 
 // Colour and PBR channels share exactly the same glyph raster. Text never

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { beforeAll, expect, it } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { rustBookPaperBuffers } from '../../src/js/page-mesh-wasm.js';
+import { rustBookPaperBuffers } from './helpers/reference-page-mesh-wasm.js';
 let core;
 beforeAll(async () => { core = await loadRustCore({ bytes:readFileSync(new URL('../../src/wasm/inhouse_read_core.wasm', import.meta.url)) }); });
 const bytes = array => Buffer.from(array.buffer, array.byteOffset, array.byteLength);

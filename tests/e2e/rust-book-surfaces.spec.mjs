@@ -9,7 +9,7 @@ import {bookWeave} from '/inhouse-read/tests/unit/helpers/reference-book-weave.j
 import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import {paintWeave} from '/inhouse-read/src/js/spine-surface.js';
 import {createBookModel} from '/inhouse-read/src/js/book-model.js';
-import {releaseRustBookmarkBuffers} from '/inhouse-read/src/js/bookmark-wasm.js';
+import {releaseRustBookmarkBuffers} from '/inhouse-read/tests/unit/helpers/reference-bookmark-wasm.js';
 const core=await loadRustCore();if(!core?.book_surface_pixels)throw new Error('Compiled surface kernel required');
 const stats=window.surfaceStats;
 const hash=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');

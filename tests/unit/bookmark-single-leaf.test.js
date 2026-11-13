@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {expect,it} from 'vitest';
 import {rustCore} from './helpers/rust-core-ready.js';
-import {rustBookmarkBuffers,releaseRustBookmarkBuffers} from '../../src/js/bookmark-wasm.js';
+import {rustBookmarkBuffers,releaseRustBookmarkBuffers} from './helpers/reference-bookmark-wasm.js';
 const distance=(p,a,b)=>Math.hypot(...[0,1,2].map(k=>p[a+k]-p[b+k]));
 it('widens the silk by forty percent while preserving its fabric thickness',()=>{
  for(const thickness of [6,12,40,80])for(const progress of [0,.4,1]){

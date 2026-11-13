@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { cpus } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import * as THREE from 'three';
-import { rustBindingBuffers } from '../src/js/binding-wasm.js';
+import { rustBindingBuffers } from '../tests/unit/helpers/reference-binding-wasm.js';
 import { referenceBindingGeometry } from '../tests/unit/helpers/reference-binding-geometry.js';
 
 const WARMUPS = 5, BATCHES = 15;

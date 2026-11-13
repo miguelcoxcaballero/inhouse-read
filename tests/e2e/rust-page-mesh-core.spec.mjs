@@ -6,7 +6,7 @@ import { paperMeshCases } from '../helpers/page-mesh-cases.mjs';
 const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
 import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
-import { rustPageBlockBuffers, rustLeafStackBuffers } from '/inhouse-read/src/js/page-mesh-wasm.js';
+import { rustPageBlockBuffers, rustLeafStackBuffers } from '/inhouse-read/tests/unit/helpers/reference-page-mesh-wasm.js';
 import { pageBlockGeometry, leafStackGeometry } from '/inhouse-read/src/js/book-model.js';
 import { referencePageBlockGeometry, referenceLeafStackGeometry } from '/inhouse-read/tests/unit/helpers/reference-page-mesh.js';
 const core = await loadRustCore();

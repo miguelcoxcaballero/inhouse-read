@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { rustPageBlockBuffers, rustLeafStackBuffers } from '../../src/js/page-mesh-wasm.js';
+import { rustPageBlockBuffers, rustLeafStackBuffers } from './helpers/reference-page-mesh-wasm.js';
 import { referencePageBlockGeometry, referenceLeafStackGeometry } from './helpers/reference-page-mesh.js';
 import { paperMeshCases } from '../helpers/page-mesh-cases.mjs';
 
