@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.7.326 — Más de la app en Rust
+
+Sin cambios visibles: la pantalla de lectura, el armazón de la app, la racha de
+lectura, la voz neuronal, los lectores, el montaje de los libros y parte de la
+escena de la estantería corren ahora en Rust (WebAssembly), sin ningún camino
+más lento que antes. Detalle en [docs/rust-migration.md](docs/rust-migration.md).
+
 ## 1.7.325 / Android 1.1.25 — Compartir libros
 
 La tarjeta del libro (la misma pantalla que lo guarda en Google Drive) tiene un
