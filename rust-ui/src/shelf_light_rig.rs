@@ -62,6 +62,103 @@ float getPanelShadow( sampler2D map, vec2 size, float intensity, float bias, flo
 #endif", fixed(3.6, 2)?, lines.join("\n")))
 }
 
+/// `String.prototype.replace(needle, replacement)` with a string pattern: the first occurrence only, and the
+/// replacement's `$$`, `$&`, `` $` `` and `$'` patterns expanded (a string pattern has no captures, so `$1` and
+/// `$<name>` stay as written). The text is returned unchanged when the needle is absent.
+fn js_replace(text: &str, needle: &str, replacement: &str) -> String {
+    let Some(at) = text.find(needle) else { return text.to_owned() };
+    let (before, after) = (&text[..at], &text[at + needle.len()..]);
+    let mut out = String::with_capacity(text.len() + replacement.len());
+    out.push_str(before);
+    let mut rest = replacement;
+    while let Some(dollar) = rest.find('$') {
+        out.push_str(&rest[..dollar]);
+        let tail = &rest[dollar + 1..];
+        let (expanded, used) = match tail.as_bytes().first() {
+            Some(b'$') => ("$", 1), Some(b'&') => (needle, 1), Some(b'`') => (before, 1), Some(b'\'') => (after, 1),
+            _ => ("$", 0),
+        };
+        out.push_str(expanded);
+        rest = &tail[used..];
+    }
+    out.push_str(rest);
+    out.push_str(after);
+    out
+}
+
+/// The back panel's fragment shader: its wide shadow after three's shadow chunk, the light loop inlined with
+/// the key light's shadow read through it, and the room's bounce and reflections dimmed (deep inside the
+/// carcass, sides and shelves hide much of the room). Guarded string patches: a later three without these
+/// lines compiles its stock shader. `lights_begin` is three's `lights_fragment_begin` chunk as it is now.
+#[wasm_bindgen]
+pub fn shelf_panel_fragment(fragment: &str, lights_begin: &str, taps: u32) -> Result<String, JsValue> {
+    const SHADOW: &str = "#include <shadowmap_pars_fragment>";
+    const AO: &str = "#include <aomap_fragment>";
+    let fragment = js_replace(fragment, SHADOW, &format!("{SHADOW}\n{}", shelf_panel_shadow(taps)?));
+    let lights = js_replace(lights_begin, "getShadow( directionalShadowMap[ i ]", "getPanelShadow( directionalShadowMap[ i ]");
+    let fragment = js_replace(&fragment, "#include <lights_fragment_begin>", &lights);
+    Ok(js_replace(&fragment, AO, &format!("{AO}
+        reflectedLight.indirectDiffuse *= .8; reflectedLight.indirectSpecular *= .72;")))
+}
+
+/// The back panel's program cache key.
+#[wasm_bindgen]
+pub fn shelf_panel_key() -> String { "walnut-panel-penumbra".into() }
+
+/// The lamp occlusion test added to three's light declarations. Loop-free and without indexed uniforms: the
+/// lamp's compartment lies between the nearest boards below and above it. `1000000.0` is the height given to an
+/// unused board (shelf-light-occlusion.js fills the uniform with it).
+const LAMP_OCCLUSION_PARS: &str = "
+uniform vec4 shelfLampCabinet[ 5 ];
+uniform vec4 shelfLampBoards[ 2 ];
+vec3 shelfLampLocal( const in vec3 position ) {
+	vec3 offset = position - shelfLampCabinet[ 3 ].xyz;
+	return vec3( dot( offset, shelfLampCabinet[ 0 ].xyz ), dot( offset, shelfLampCabinet[ 1 ].xyz ), dot( offset, shelfLampCabinet[ 2 ].xyz ) );
+}
+// point: the surface in the cabinet's frame, computed once per pixel.
+float shelfLampOcclusion( const in vec3 point, const in vec3 lampPosition ) {
+	if ( shelfLampCabinet[ 0 ].w < 0.5 ) return 1.0;
+	vec3 lamp = shelfLampLocal( lampPosition );
+	if ( any( greaterThan( abs( lamp ), shelfLampCabinet[ 4 ].xyz ) ) ) return 1.0;
+	vec4 lowA = step( shelfLampBoards[ 0 ], vec4( lamp.y ) ), lowB = step( shelfLampBoards[ 1 ], vec4( lamp.y ) );
+	vec4 belowA = mix( vec4( -1000000.0 ), shelfLampBoards[ 0 ], lowA ), belowB = mix( vec4( -1000000.0 ), shelfLampBoards[ 1 ], lowB );
+	vec4 aboveA = mix( shelfLampBoards[ 0 ], vec4( 1000000.0 ), lowA ), aboveB = mix( shelfLampBoards[ 1 ], vec4( 1000000.0 ), lowB );
+	vec4 belowAll = max( belowA, belowB ), aboveAll = min( aboveA, aboveB );
+	float below = max( max( belowAll.x, belowAll.y ), max( belowAll.z, belowAll.w ) );
+	float above = min( min( aboveAll.x, aboveAll.y ), min( aboveAll.z, aboveAll.w ) );
+	float through = shelfLampCabinet[ 4 ].w, inner = shelfLampCabinet[ 1 ].w, front = shelfLampCabinet[ 2 ].w;
+	if ( point.y > below && point.y < above ) {
+		// A walnut cabinet's solid sides and back.
+		return shelfLampCabinet[ 3 ].w > 0.5 && ( abs( point.x ) > inner && point.z < front || point.z < - shelfLampCabinet[ 4 ].z ) ? through : 1.0;
+	}
+	if ( point.z <= front || lamp.z >= front ) return through;
+	vec2 crossing = mix( lamp.xy, point.xy, ( front - lamp.z ) / ( point.z - lamp.z ) );
+	return crossing.y > below && crossing.y < above && abs( crossing.x ) < inner ? 1.0 : through;
+}
+";
+
+/// three's two light chunks with the lamp occlusion test added: `[lights_pars_begin, lights_fragment_begin]`.
+/// `None` when a later three renamed a light's line (its own lighting stays unchanged); the second entry is
+/// undefined when only the surface position's line is missing (the declarations were already added then, and
+/// the uniforms are not installed).
+#[wasm_bindgen]
+pub fn shelf_lamp_occlusion_patch(pars_begin: &str, fragment_begin: &str) -> Option<js_sys::Array> {
+    const POINT: &str = "getPointLightInfo( pointLight, geometryPosition, directLight );";
+    const SPOT: &str = "getSpotLightInfo( spotLight, geometryPosition, directLight );";
+    const AREA: &str = "rectAreaLight = rectAreaLights[ i ];";
+    const POSITION: &str = "vec3 geometryPosition = - vViewPosition;";
+    if ![POINT, SPOT, AREA].iter().all(|part| fragment_begin.contains(part)) { return None; }
+    let patched = js_sys::Array::new();
+    patched.push(&JsValue::from_str(&format!("{pars_begin}{LAMP_OCCLUSION_PARS}")));
+    if !fragment_begin.contains(POSITION) { patched.push(&JsValue::UNDEFINED); return Some(patched); }
+    let begin = js_replace(fragment_begin, POSITION, &format!("{POSITION}\nvec3 shelfLampSurface = shelfLampLocal( geometryPosition );"));
+    let begin = js_replace(&begin, POINT, &format!("{POINT}\n\t\tdirectLight.color *= shelfLampOcclusion( shelfLampSurface, pointLight.position );"));
+    let begin = js_replace(&begin, SPOT, &format!("{SPOT}\n\t\tdirectLight.color *= shelfLampOcclusion( shelfLampSurface, spotLight.position );"));
+    let begin = js_replace(&begin, AREA, &format!("{AREA}\n\t\trectAreaLight.color *= shelfLampOcclusion( shelfLampSurface, rectAreaLight.position );"));
+    patched.push(&JsValue::from_str(&begin));
+    Some(patched)
+}
+
 /// The occluding role of a cabinet part by its name: 1 a solid board (`shelf-<n>-board`, `top-cap`), 2 an
 /// expanded-metal shelf (`shelf-<n>-mesh`, `top-mesh`), 3 an upright (`left-upright`, `right-upright`), else 0.
 fn part_kind(name: &str) -> f64 {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { Blob as NodeBlob, File as NodeFile } from 'node:buffer'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import { collect } from './helpers/collect.js'
+import { IDBFactory } from 'fake-indexeddb'
 
 // The cloud and folder ports hand callbacks and host objects to Rust. Whatever they retain must be
 // released when the work ends: an importer that is stopped, a sync that is reset, a client that is dropped,
@@ -70,20 +71,38 @@ describe('the Rust cloud ports leave nothing behind', () => {
         }
       }
     }
+    const factory = globalThis.indexedDB, ownWindow = !('window' in globalThis)
     await steady(async index => {
       names.clear()
-      const sanitize = text => String(text).replace(/[\\/:*?"<>|]+/g, '_')
-      const first = await ui.saveFileIntoFolder(folder, file('book: one?.pdf', 'content'), sanitize)
-      const second = await ui.saveFileIntoFolder(folder, file('book: one?.pdf', 'other content!'), sanitize)
+      const first = await ui.saveFileIntoFolder(folder, file('book: one?.pdf', 'content'))
+      const second = await ui.saveFileIntoFolder(folder, file('book: one?.pdf', 'other content!'))
       expect(second).not.toBe(first)
       expect(await ui.resolveNonCollidingName(folder, first, 1)).not.toBe(first)
       expect(await ui.readFileFromFolder(folder, first)).toBeTruthy()
       expect(await ui.readFileFromFolder(folder, `gone${index}.pdf`)).toBeNull()
       expect(await ui.ensureFolderPermission(folder)).toBe(true)
       expect(await ui.ensureFolderPermission(null)).toBe(false)
-      expect(await ui.getOrChooseFolder(async () => folder, async () => { throw new Error('not needed') })).toBe(folder)
-      const refused = { ...folder, requestPermission: async () => { throw new Error('needs a gesture') } }
-      expect(await ui.getOrChooseFolder(async () => refused, async () => folder)).toBe(folder)
+      expect(ui.sanitizeFileName(`  book ${index}: one?.pdf `)).toBe(`book ${index}_ one_.pdf`)
+      expect(ui.sanitizeFileName(`\ud800${index}/`)).toBe(`\ud800${index}_`)
+      // The remembered handle and the picker: a first open that makes the store, later ones that do not, a
+      // stored handle (a structured clone, so without its methods), a picker that answers and one that refuses.
+      globalThis.indexedDB = new IDBFactory()
+      globalThis.window = globalThis
+      try {
+        expect(await ui.folderSavedHandle()).toBeNull()
+        globalThis.showDirectoryPicker = async () => ({ name: `picked ${index}` })
+        expect(await ui.getOrChooseFolder(false)).toEqual({ name: `picked ${index}` })
+        expect(await ui.folderSavedHandle()).toEqual({ name: `picked ${index}` })
+        await expect(ui.getOrChooseFolder(true)).rejects.toThrow()
+        expect(await ui.chooseFolder()).toEqual({ name: `picked ${index}` })
+        globalThis.showDirectoryPicker = async () => { throw new DOMException('closed', 'AbortError') }
+        await expect(ui.chooseFolder()).rejects.toThrow('closed')
+        await expect(ui.getOrChooseFolder(false)).rejects.toThrow('closed')
+        globalThis.showDirectoryPicker = async () => ({ open() {} })
+        await expect(ui.chooseFolder()).rejects.toThrow()
+        delete globalThis.showDirectoryPicker
+        await expect(ui.chooseFolder()).rejects.toThrow(TypeError)
+      } finally { delete globalThis.showDirectoryPicker; if (ownWindow) delete globalThis.window; globalThis.indexedDB = factory }
     }, { rounds: 100 })
   })
 

@@ -7,12 +7,18 @@ import * as frozenOcclusion from './helpers/reference-shelf-light-occlusion.js'
 import { applyBookReflectionSurface } from '../../src/js/book-reflection-surface.js'
 import { applyBookReflectionSurface as frozenReflection } from './helpers/reference-book-reflection-surface.js'
 import { rustShelf } from './helpers/rust-shelf-ready.js'
+import { installShelfLightOcclusion as frozenOcclusionPatch } from './helpers/reference-shelf-light-occlusion-patch.js'
+import { readFileSync } from 'node:fs'
 import { prng } from './helpers/pointer-harness.js'
 
 // The key light's rig, the variance light-bleed patch, the back panel's Vogel disk, the cabinet parts the lamp
 // occlusion reads and the clamps of the cover reflection's setters run in Rust (rust-ui/src/shelf_light_rig.rs,
 // book_reflection.rs). Each is compared with its frozen original.
 afterEach(() => vi.unstubAllGlobals())
+// three's two light chunks as it ships them: the imported module's own are already patched.
+const threeBuild = readFileSync('node_modules/three/build/three.module.js', 'utf8')
+const stockChunk = name => JSON.parse(threeBuild.match(new RegExp(`^var ${name} = (".*");$`, 'm'))[1])
+const stockLightsBegin = stockChunk('lights_fragment_begin'), stockLightsPars = stockChunk('lights_pars_begin')
 const screens = [[1024, 768], [390, 844], [599, 1200], [600, 600], [0, 0], [undefined, 700], [1280, 599]]
 
 describe('shelf light rig against the frozen JavaScript', () => {
@@ -84,6 +90,121 @@ describe('lamp occluders against the frozen JavaScript', () => {
         .toEqual([...expected.centre.toArray(), ...expected.half.toArray(), expected.inner, expected.front, expected.through, expected.solidSides, ...expected.boards])
     }
     expect(described).toBeGreaterThan(100)
+  })
+})
+
+describe('shader text against the frozen JavaScript', () => {
+  // The frozen patch on a stand-in for three: stock chunks and one uniform table per lit program.
+  const stock = (begin = stockLightsBegin, pars = stockLightsPars, missing = []) => ({
+    ShaderChunk:{ lights_fragment_begin:begin, lights_pars_begin:pars },
+    ShaderLib:Object.fromEntries(['standard', 'physical', 'lambert', 'phong', 'toon', 'basic'].filter(name => !missing.includes(name)).map(name => [name, { uniforms:{} }]))
+  })
+  // What production does with the module's answer (src/js/shelf-light-occlusion.js), on the same stand-in.
+  const production = three => {
+    const patched = rustShelf.shelf_lamp_occlusion_patch(three.ShaderChunk.lights_pars_begin, three.ShaderChunk.lights_fragment_begin)
+    if (!patched) return false
+    three.ShaderChunk.lights_pars_begin = patched[0]
+    if (patched[1] === undefined) return false
+    three.ShaderChunk.lights_fragment_begin = patched[1]
+    return true
+  }
+
+  it('patched the real three exactly as the frozen patch patches stock chunks', () => {
+    const three = stock(), cabinet = new Float32Array(20), boards = new Float32Array(8)
+    frozenOcclusionPatch(three, cabinet, boards)
+    expect(three.ShaderChunk.lights_fragment_begin).not.toBe(stockLightsBegin)
+    expect(THREE.ShaderChunk.lights_fragment_begin).toBe(three.ShaderChunk.lights_fragment_begin)
+    expect(THREE.ShaderChunk.lights_pars_begin).toBe(three.ShaderChunk.lights_pars_begin)
+    const uniforms = occlusion.shelfOcclusionUniforms()
+    for (const name of Object.keys(THREE.ShaderLib)) {
+      const lit = Boolean(three.ShaderLib[name]?.uniforms.shelfLampCabinet)
+      expect(THREE.ShaderLib[name].uniforms.shelfLampCabinet?.value, name).toBe(lit ? uniforms.cabinet : undefined)
+      expect(THREE.ShaderLib[name].uniforms.shelfLampBoards?.value, name).toBe(lit ? uniforms.boards : undefined)
+    }
+    // Installing again changes nothing.
+    occlusion.installShelfLightOcclusion()
+    expect(THREE.ShaderChunk.lights_pars_begin).toBe(three.ShaderChunk.lights_pars_begin)
+  })
+
+  it('patches a page whose shelf module arrives after the app\'s modules, the moment it arrives', async () => {
+    // three itself is not reloaded with the app's modules: it is put back as shipped for the fresh copy.
+    const three = THREE, patched = { begin:THREE.ShaderChunk.lights_fragment_begin, pars:THREE.ShaderChunk.lights_pars_begin }
+    const lit = ['standard', 'physical', 'lambert', 'phong', 'toon'], uniforms = lit.map(name => [THREE.ShaderLib[name].uniforms.shelfLampCabinet, THREE.ShaderLib[name].uniforms.shelfLampBoards])
+    const restore = () => {
+      THREE.ShaderChunk.lights_fragment_begin = patched.begin; THREE.ShaderChunk.lights_pars_begin = patched.pars
+      lit.forEach((name, index) => { [THREE.ShaderLib[name].uniforms.shelfLampCabinet, THREE.ShaderLib[name].uniforms.shelfLampBoards] = uniforms[index] })
+    }
+    vi.resetModules()
+    try {
+      THREE.ShaderChunk.lights_fragment_begin = stockLightsBegin; THREE.ShaderChunk.lights_pars_begin = stockLightsPars
+      for (const name of lit) { delete THREE.ShaderLib[name].uniforms.shelfLampCabinet; delete THREE.ShaderLib[name].uniforms.shelfLampBoards }
+      // The page head's compile, still running while the app's modules are evaluated.
+      let arrive
+      globalThis.__inhouseShelfReady = new Promise(resolve => { arrive = resolve })
+      const late = await import('../../src/js/shelf-light-occlusion.js'), loader = await import('../../src/js/rust-shelf.js')
+      expect(loader.getRustShelf()).toBeNull()
+      late.installShelfLightOcclusion()
+      expect(three.ShaderChunk.lights_fragment_begin).toBe(stockLightsBegin)
+      expect(three.ShaderChunk.lights_pars_begin).toBe(stockLightsPars)
+      arrive(new WebAssembly.Module(readFileSync('src/wasm/shelf/inhouse_read_shelf_bg.wasm')))
+      // Whatever awaited the module resumes after its waiters ran: the chunks are patched by then.
+      expect(await loader.requireRustShelf()).toBe(loader.getRustShelf())
+      expect(three.ShaderChunk.lights_fragment_begin).toBe(patched.begin)
+      expect(three.ShaderChunk.lights_pars_begin).toBe(patched.pars)
+      expect(three.ShaderLib.physical.uniforms.shelfLampCabinet.value).toBe(late.shelfOcclusionUniforms().cabinet)
+      expect(three.ShaderLib.toon.uniforms.shelfLampBoards.value).toBe(late.shelfOcclusionUniforms().boards)
+      expect(three.ShaderLib.basic.uniforms.shelfLampCabinet).toBeUndefined()
+    } finally { delete globalThis.__inhouseShelfReady; restore(); vi.resetModules() }
+  })
+
+  it('writes the same chunks for a later three that renamed, repeated or lost any of the lines', () => {
+    const lines = ['getPointLightInfo( pointLight, geometryPosition, directLight );', 'getSpotLightInfo( spotLight, geometryPosition, directLight );',
+      'rectAreaLight = rectAreaLights[ i ];', 'vec3 geometryPosition = - vViewPosition;']
+    const variants = [stockLightsBegin, '', lines.join('\n'), [...lines].reverse().join(' '), stockLightsBegin + stockLightsBegin, `$& $$ $\` $' ${stockLightsBegin} $1`]
+    for (const line of lines) {
+      variants.push(stockLightsBegin.replace(line, line.replace('Light', 'Lamp').replace('geometryPosition =', 'position =')))
+      variants.push(stockLightsBegin.replace(line, ''), stockLightsBegin.replace(line, `${line}\n${line}`))
+    }
+    const random = prng(77)
+    for (let trial = 0; trial < 300; trial++) {
+      let text = stockLightsBegin
+      for (const line of lines) if (random.chance(.3)) text = text.replace(line, random.chance(.5) ? '' : `${line} ${random.pick(lines)}`)
+      const cut = random.int(0, text.length)
+      variants.push(random.chance(.3) ? text.slice(0, cut) : random.chance(.5) ? text.slice(cut) + text.slice(0, cut) : text)
+    }
+    let whole = 0, declarations = 0, untouched = 0
+    for (const [index, begin] of variants.entries()) {
+      for (const pars of [stockLightsPars, '', 'é — 𝛑 $&']) {
+        const theirs = stock(begin, pars), mine = stock(begin, pars)
+        frozenOcclusionPatch(theirs, new Float32Array(20), new Float32Array(8))
+        const installed = production(mine)
+        expect(mine.ShaderChunk, `variant ${index}`).toEqual(theirs.ShaderChunk)
+        expect(installed, `variant ${index}`).toBe(Boolean(theirs.ShaderLib.standard.uniforms.shelfLampCabinet))
+        if (installed) whole++; else if (mine.ShaderChunk.lights_pars_begin !== pars) declarations++; else untouched++
+      }
+    }
+    expect(Math.min(whole, declarations, untouched)).toBeGreaterThan(10)
+  })
+
+  it('writes the same back-panel shader whatever three\'s shader and light chunk hold', () => {
+    const original = THREE.ShaderChunk.lights_fragment_begin, stockFragment = THREE.ShaderLib.physical.fragmentShader
+    const includes = ['#include <shadowmap_pars_fragment>', '#include <lights_fragment_begin>', '#include <aomap_fragment>']
+    const chunks = [original, stockLightsBegin, '', 'getShadow( directionalShadowMap[ i ] getShadow( directionalShadowMap[ i ]', `$& $$ $\` $' $1 $< ${original} $`, 'no shadow $$ here $']
+    const fragments = [stockFragment, '', includes.join('\n'), [...includes].reverse().join(' x '), stockFragment + stockFragment, `é 𝛑 ${stockFragment}`]
+    for (const include of includes) fragments.push(stockFragment.replace(include, ''), stockFragment.replace(include, `${include} ${include}`))
+    try {
+      for (const [width, height] of [[1024, 768], [390, 844]]) {
+        vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', height)
+        const mine = lighting.widePenumbra(new THREE.MeshStandardMaterial()), theirs = frozenLighting.widePenumbra(new THREE.MeshStandardMaterial())
+        for (const [c, chunk] of chunks.entries()) for (const [f, fragmentShader] of fragments.entries()) {
+          THREE.ShaderChunk.lights_fragment_begin = chunk
+          const a = { fragmentShader, uniforms:{} }, b = { fragmentShader, uniforms:{} }
+          mine.onBeforeCompile(a); theirs.onBeforeCompile(b)
+          expect(a.fragmentShader, `chunk ${c}, fragment ${f}`).toBe(b.fragmentShader)
+        }
+        expect(mine.customProgramCacheKey()).toBe(theirs.customProgramCacheKey())
+      }
+    } finally { THREE.ShaderChunk.lights_fragment_begin = original }
   })
 })
 
