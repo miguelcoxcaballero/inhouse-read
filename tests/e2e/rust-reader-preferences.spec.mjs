@@ -38,8 +38,13 @@ test('compiled mobile reader retains exact paragraph layout and appearance contr
    const page=await context.newPage();await page.emulateMedia({reducedMotion:'reduce'})
    await page.addInitScript(enabled=>{
     localStorage.setItem('inhouse-read-reading-preferences',JSON.stringify({theme:'amoled',font:'sans',fontSize:23,lineHeight:1.7,margin:12,fontWeight:500,rate:1.25}))
-    window.readerRustProof={available:false,normalize:0,css:0}
-    const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reader_css)return result
+    window.readerRustProof={available:false,normalize:0,css:0,policy:0}
+    const observe=result=>{const instance=result.instance||result,actual=instance.exports
+     // The reader's CSS is made by the UI module's policy (reading_preferences_policy.rs) from the rules it shares with
+     // app-core; app-core only supplies the numbers. Count the policy in both runs; it has no JavaScript twin to switch to.
+     if(actual.reading_preferences_css){const exports={...actual,reading_preferences_css:(...args)=>{window.readerRustProof.policy++;return actual.reading_preferences_css(...args)}}
+      const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy}
+     if(!actual.reader_css)return result
      window.readerRustProof.available=true;const exports={...actual}
      for(const [name,counter] of [['reader_preferences','normalize'],['reader_css','css'],['reader_nearest_rate',null]])exports[name]=enabled?(...args)=>{if(counter)window.readerRustProof[counter]++;return actual[name](...args)}:undefined
      const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
@@ -62,7 +67,10 @@ test('compiled mobile reader retains exact paragraph layout and appearance contr
     return {preferences:JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')),paragraphs:[...doc.querySelectorAll('p')].map(p=>{const r=p.getBoundingClientRect(),s=doc.defaultView.getComputedStyle(p);return{text:p.textContent,box:[r.x,r.y,r.width,r.height],font:s.fontFamily,size:s.fontSize,lineHeight:s.lineHeight,color:s.color}}),proof:window.readerRustProof}
    })
    expect(result.paragraphs.length).toBeGreaterThan(0);expect(errors).toEqual([])
-   if(enabled){expect(result.proof.normalize).toBeGreaterThan(0);expect(result.proof.css).toBeGreaterThan(0)}else expect(result.proof.css).toBe(0)
+   expect(result.proof.policy).toBeGreaterThan(0)
+   if(enabled)expect(result.proof.normalize).toBeGreaterThan(0);else{expect(result.proof.normalize).toBe(0);expect(result.proof.css).toBe(0)}
+   // What the person chose is what the frozen original styles (reference-reading-preferences.js): sepia ink #483825, the mono face, 26 px.
+   for(const paragraph of result.paragraphs)expect({font:paragraph.font,size:paragraph.size,color:paragraph.color}).toEqual({font:'monospace',size:'26px',color:'rgb(72, 56, 37)'})
    results.push(result)
   }finally{await context.close()}
  }
