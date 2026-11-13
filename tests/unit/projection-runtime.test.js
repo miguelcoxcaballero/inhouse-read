@@ -19,7 +19,9 @@ vi.mock('../../src/js/foliage-projection-legacy.js',async importOriginal=>{
 })
 const bookLegacy=(await vi.importActual('../../src/js/book-projection-legacy.js')).visibleBounds
 const foliageLegacy=(await vi.importActual('../../src/js/foliage-projection-legacy.js')).projectPlantFoliage
-const observed=(module,prefix)=>({
+// The app's getters hand out the whole module (plants also ask Shelf whether start-up work may run),
+// so the observed one is the real module with only the two projection doors counted.
+const observed=(module,prefix)=>({...module,
  book_projection_bounds:(...args)=>{runtime[prefix+'Book']++;return module.book_projection_bounds(...args)},
  foliage_path:(...args)=>{runtime[prefix+'Foliage']++;return module.foliage_path(...args)},
 })
