@@ -3,9 +3,12 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {sniffBytes} from '/inhouse-read/src/js/format-detect.js';
 import {sniffBytes as original} from '/inhouse-read/tests/unit/helpers/reference-format-detect.js';
 const core=await loadRustCore();if(!core?.sniff_book_format)throw Error('Actual format kernel required');
+// The decisions around the kernel live in the shelf module, which the app loads before any import.
+if(!await loadRustShelf())throw Error('Actual shelf module required');
 window.checkFormat=()=>{
  const ascii=s=>Uint8Array.from(s,c=>c.charCodeAt(0)), mobi=new Uint8Array(200);mobi.set(ascii('BOOKMOBI'),60);
  const fixtures={pdf:ascii('%PDF-1.7'),zip:Uint8Array.of(80,75,3,4),mobi,fb2:ascii('<?xml version="1.0"?><FictionBook/>'),unknown:new Uint8Array(200)},result=[];

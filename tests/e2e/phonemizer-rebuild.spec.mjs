@@ -10,14 +10,13 @@ test('real espeak renews its heap beyond 120 calls offline without fetching its 
   await page.route('**/phonemizer-harness/**',async route=>{
     const name=new URL(route.request().url()).pathname.split('/').at(-1)
     if(name==='index.html')return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Real phonemizer rebuild</title>'})
-    if(name==='voice.wasm')return route.fulfill({contentType:'application/wasm',body:readFileSync(resolve('src/wasm/inhouse_read_voice.wasm'))})
-    const shared=['rust-voice-core.js','rust-loader.js'].includes(name)
-    if(!shared&&!['phonemizer.js','phonemizer-plan.js','phonemizer-assets.js','dictionary-cache.js'].includes(name))throw new Error('Unknown phonemizer harness module')
-    let body=readFileSync(resolve(shared?'src/js':'src/js/readers/neural-voice',name),'utf8')
+    if(name==='inhouse_read_voice_ui_bg.wasm')return route.fulfill({contentType:'application/wasm',body:readFileSync(resolve('src/wasm/voice',name))})
+    const shared=name==='rust-voice-ui.js',glue=name==='inhouse_read_voice_ui.js'
+    if(!shared&&!glue&&!['phonemizer.js','phonemizer-assets.js','dictionary-cache.js'].includes(name))throw new Error('Unknown phonemizer harness module')
+    let body=readFileSync(resolve(glue?'src/wasm/voice':shared?'src/js':'src/js/readers/neural-voice',name),'utf8')
     // This raw-module fixture performs only the URL rewriting Vite would do;
     // readiness, runtime decisions and the actual voice WASM stay production.
-    body=body.replaceAll("'../../rust-voice-core.js'","'./rust-voice-core.js'")
-    if(name==='rust-voice-core.js')body=body.replace("import voiceUrl from '../wasm/inhouse_read_voice.wasm?url'","const voiceUrl = new URL('./voice.wasm', import.meta.url).href")
+    body=body.replaceAll("'../../rust-voice-ui.js'","'./rust-voice-ui.js'").replace("'../wasm/voice/inhouse_read_voice_ui.js'","'./inhouse_read_voice_ui.js'")
     return route.fulfill({contentType:'text/javascript',body})
   })
   await page.goto('phonemizer-harness/index.html')

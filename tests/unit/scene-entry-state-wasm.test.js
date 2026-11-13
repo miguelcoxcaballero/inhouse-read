@@ -1,5 +1,9 @@
 // @vitest-environment node
-import {expect,it} from 'vitest';
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+// The solver's first step warms up against an 80 ms wall-clock budget (book_gravity.rs): two instances only agree bit for
+// bit when neither runs out of it, so the clock stands still here. The steps themselves take no time from it.
+beforeEach(()=>{vi.spyOn(Date,'now').mockReturnValue(1_700_000_000_000);});
+afterEach(()=>{vi.restoreAllMocks();});
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
 import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
