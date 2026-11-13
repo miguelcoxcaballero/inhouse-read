@@ -80,6 +80,9 @@ mod binding;
 #[path="../../rust-core/src/bookmark.rs"]
 mod bookmark;
 mod book_mesh;
+#[path="../../rust-core/src/book_view.rs"]
+mod book_view;
+mod book_view_plan;
 mod cloud_host;
 mod bookshelf;
 mod book_paint;
