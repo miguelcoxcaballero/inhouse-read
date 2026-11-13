@@ -3,7 +3,7 @@ import { createSceneCountFrame } from './scene-count-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
-import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
+import { createSceneEntryFrame, settledQualityWork, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -1401,7 +1401,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       const visible = live[at + 65] === 1, modelVisible = live[at + 69] === 1;
       if (live[at + 66] === 1) {
-        rust.scene_update_quality(entry,qualityHost,live[at + 67] === 1,live[at + 68]);
+        // Every settled, visible book and plant passes here in every frame. Its overview flag and
+        // resolution are stored as scene_update_quality stores them, and Rust is called only for
+        // an entry with work to do: a model at another quality (scene_quality.rs `matches`), a
+        // replacement or a plant texture under way. The call per entry cost more than the frame.
+        const overview = live[at + 67] === 1, resolution = live[at + 68];
+        if (settledQualityWork(entry, overview, resolution)) rust.scene_update_quality(entry,qualityHost,overview,resolution);
       }
       let created = null;
       if (visible && !entry.model) {

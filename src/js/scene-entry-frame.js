@@ -5,6 +5,16 @@
 // changes and reads the results from the arena; `refresh` follows any growth of memory (call
 // it before using the views after other native work).
 export const ENTRY_STATE = 85, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
+// A settled entry's frame: its overview flag and resolution are stored on it as
+// rust.scene_update_quality stores them, and the answer is whether that call has anything else
+// to do: the model is at another quality (scene_quality.rs `matches`), or a replacement or a
+// plant texture is under way. Every visible book and plant passes here in every frame.
+export function settledQualityWork(entry, overview, resolution) {
+  entry.overview = overview; entry.inspectionResolution = resolution;
+  const data = entry.model?.userData;
+  return Boolean(entry.plantQuality || entry.qualityReplacement ||
+    data && !(Boolean(data.overview) === overview && (data.inspectionResolution || 0) === resolution));
+}
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
