@@ -261,7 +261,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const roomMotion = new rust.RustRoomMotion();
   const roomTransition = new rust.RustRoomTransition();
   let motionExpiry = null, motionGesture = null, motionSequence = 0, motionSentAt = -Infinity;
-  let motionRest = new Map(), motionAffected = new Set(), motionBase = null;
+  let motionBase = null;
   let roomCheckpoint = '', roomRevision = '', installedRoom = null;
   try { roomCheckpoint = localStorage.getItem('inhouse-read-shelf-physics-v1') || ''; } catch {}
   const roomRecords = () => bookEntries.filter(e => e.book).map(e => e.book);
@@ -283,28 +283,24 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (arranging && !motionGesture) {
       acknowledgeRoom(roomCheckpoint);
       roomMotion.clear(''); installedRoom = null; pendingCloudPhysics = null;
-      motionBase = roomRevision; motionAffected.clear();
+      motionBase = roomRevision; entryFrame.motionBegin();
       motionGesture = crypto.randomUUID(); motionSequence = 0; motionSentAt = -Infinity;
     }
     if (!motionGesture) {
-      if (quiet && !roomMotion.active(now)) motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose]));
+      // The entries' local poses (kept in the entry arena) become the poses at rest.
+      if (quiet && !roomMotion.active(now)) entryFrame.motionRest(sceneMotionFrame);
       return;
     }
     const end = !arranging && quiet;
     if (!end && now - motionSentAt < 50) return;
-    const poses = [];
-    for (const entry of bookEntries) {
-      const row = entry.localMotionPose, previous = motionRest.get(motionKey(entry));
-      if (row && (!previous || entry.bits & 6 || row.some((v,i) => i && Math.abs(v - previous[i]) > .000001))) motionAffected.add(row[0]);
-      // Each frame is a complete replacement for this gesture's affected set,
-      // including a neighbour that moved and then returned to its starting pose.
-      if (row && motionAffected.has(row[0])) poses.push(row);
-    }
+    // Each frame is a complete replacement for this gesture's affected set,
+    // including a neighbour that moved and then returned to its starting pose.
+    const poses = entryFrame.motionPoses(sceneMotionFrame);
     globalThis.dispatchEvent(new CustomEvent('inhouse-room-motion-local', {detail:{gesture:motionGesture,
       sequence:++motionSequence, phase:end ? 'end' : 'frame', shelfType, poses,
       base:motionBase || undefined, commit:end && motionBase ? roomRevision : undefined}}));
     motionSentAt = now;
-    if (end) { motionGesture = null; motionRest = new Map(bookEntries.filter(e => e.localMotionPose).map(e => [motionKey(e), e.localMotionPose])); }
+    if (end) { motionGesture = null; entryFrame.motionRest(sceneMotionFrame); }
   }
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
   let physicsStarted = false, physicsInteracted = false, pendingCloudPhysics = null;
@@ -1369,7 +1365,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         pose.scale.setScalar(state[row + 35]);
       }
       if (usePhysics && !decorative && node) writeLean(entry, node, state[row + 69]);
-      if (liveFlags & 1) entry.localMotionPose = [sceneMotionFrame.key(entryIndex),live[at+1],live[at+2],live[at+3],live[at+4],live[at+5],live[at+6],live[at+7],live[at+8],live[at+9]];
       if (liveFlags & 2) {
         pose.position.set(live[at+10],live[at+11],live[at+12]);
         pose.quaternion.set(live[at+13],live[at+14],live[at+15],live[at+16]);pose.scale.setScalar(live[at+17]);

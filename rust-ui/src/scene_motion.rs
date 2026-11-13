@@ -6,18 +6,21 @@ use crate::room_motion::{RustRoomMotion,RustRoomTransition};
 
 #[wasm_bindgen]
 pub struct RustSceneMotionFrame {
- keys:Vec<Option<String>>, shelves:Vec<f64>, rows:Vec<f64>,
+ keys:Vec<Option<String>>, ids:Vec<u32>, shelves:Vec<f64>, rows:Vec<f64>,
  input:Box<[f64;10]>, output:Box<[f64;25]>,
  frame_now:u64, frame_arranging:bool, remote_active:bool, transition_active:bool,
 }
 #[wasm_bindgen]
 impl RustSceneMotionFrame {
  #[wasm_bindgen(constructor)]
- pub fn new()->Self{Self{keys:Vec::new(),shelves:Vec::new(),rows:Vec::new(),input:Box::new([0.0;10]),output:Box::new([0.0;25]),frame_now:u64::MAX,frame_arranging:false,remote_active:false,transition_active:false}}
+ pub fn new()->Self{Self{keys:Vec::new(),ids:Vec::new(),shelves:Vec::new(),rows:Vec::new(),input:Box::new([0.0;10]),output:Box::new([0.0;25]),frame_now:u64::MAX,frame_arranging:false,remote_active:false,transition_active:false}}
  pub fn register(&mut self,keys:&Array,shelves:&[f64]){
   self.keys=keys.iter().map(|key|key.as_string().filter(|key|!key.is_empty())).collect();
   self.shelves.clear();self.shelves.extend_from_slice(shelves);
  }
+ /// The host's number for each registered key (0 for an entry without one): the same key has
+ /// the same number in every layout, so what the scene remembers per key survives a reorder.
+ pub fn identify(&mut self,ids:&[u32]){self.ids.clear();self.ids.extend_from_slice(ids);}
  pub fn resize_rows(&mut self,count:usize){self.rows.resize(count*3,0.0);}
  pub fn memory(&self)->JsValue{wasm_bindgen::memory()}
  pub fn input_ptr(&self)->usize{self.input.as_ptr() as usize}
@@ -73,6 +76,8 @@ impl RustSceneMotionFrame {
  }
 }
 impl RustSceneMotionFrame {
+ /// The number of the key registered for this entry, 0 without one.
+ pub(super) fn id(&self,index:usize)->u32{self.ids.get(index).copied().unwrap_or(0)}
  fn row(&self,index:f64)->Option<[f64;2]>{
   if !index.is_finite()||index<0.0||index.fract()!=0.0{return None;}
   let at=(index as usize).checked_mul(3)?;

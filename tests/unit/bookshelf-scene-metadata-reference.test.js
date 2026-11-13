@@ -88,18 +88,32 @@ describe('scene metadata adoption validates a complete clean batch before mutati
     expect(JSON.stringify({ ...shelf.canvas.dataset })).toBe(before); expect(shelf.flush()).toBe(false);
   });
   it('refreshes live identities learned after the scene was prepared without mutating prior snapshots', async () => {
-    books = nextBooks().map(book => ({ ...book, driveFileId:`drive-${book.id}` }));
-    for (let i = 0; i < books.length; i++) shelf.updateEntry(entries[i].node, books[i], entries[i].style);
-    await Promise.resolve(); await Promise.resolve();
-    shelf.invalidate(); shelf.flush({ force:true }); drain();
-    const next = books.map(book => ({ ...book, progressUpdatedAt:13 })); expect(adopt(books, next)).toBe(true);
-    shelf.invalidate(); shelf.flush({ force:true }); drain();
-    const entry = model('a').userData.entry, before = entry.localMotionPose, snapshot = [...before];
-    expect(before[0]).toBe('book:drive:drive-a');
-    shelf.updateEntry(entries[0].node, { ...next[0], driveFileId:'replacement-drive' }, entries[0].style);
-    shelf.invalidate(); shelf.flush({ force:true }); drain();
-    expect(model('a').userData.entry.localMotionPose[0]).toBe('book:drive:replacement-drive');
-    expect(before).toEqual(snapshot);
+    // The entries' local poses live in the entry arena; what the room publishes while a book is
+    // dragged in an arrangement shows the key each pose was sampled under.
+    shelf.dispose();
+    const room = document.createElement('div'); room.className = 'ihr-bookshelf'; document.body.append(room); room.append(scroller);
+    shelf = createBookshelfScene({ stage, scroller, entries, width:390, height:500,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }] });
+    shelf.canvas.getBoundingClientRect = () => rect(20, 60, 390, height);
+    await Promise.resolve(); shelf.flush({ force:true }); drain();
+    const packets = [], listen = event => packets.push(event.detail);
+    globalThis.addEventListener('inhouse-room-motion-local', listen);
+    try {
+      books = nextBooks().map(book => ({ ...book, driveFileId:`drive-${book.id}` }));
+      for (let i = 0; i < books.length; i++) shelf.updateEntry(entries[i].node, books[i], entries[i].style);
+      await Promise.resolve(); await Promise.resolve();
+      shelf.invalidate(); shelf.flush({ force:true }); drain();
+      const next = books.map(book => ({ ...book, progressUpdatedAt:13 })); expect(adopt(books, next)).toBe(true);
+      shelf.invalidate(); shelf.flush({ force:true }); drain();
+      room.classList.add('is-arranging'); entries[0].node.classList.add('is-dragging');
+      clock += 100; shelf.invalidate(); shelf.flush({ force:true });
+      const before = packets.at(-1).poses.find(row => row[0] === 'book:drive:drive-a'), snapshot = [...before];
+      expect(before).toHaveLength(10);
+      shelf.updateEntry(entries[0].node, { ...next[0], driveFileId:'replacement-drive' }, entries[0].style);
+      clock += 100; shelf.invalidate(); shelf.flush({ force:true });
+      expect(packets.at(-1).poses.some(row => row[0] === 'book:drive:replacement-drive')).toBe(true);
+      expect(before).toEqual(snapshot);
+    } finally { globalThis.removeEventListener('inhouse-room-motion-local', listen); }
   });
   it('rejects stale, malformed, visual/order/unknown and disconnected batches without partially adopting another book', () => {
     const next = nextBooks();
