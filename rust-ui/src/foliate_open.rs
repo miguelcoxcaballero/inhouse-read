@@ -5,7 +5,7 @@
 //! (`ui[name].bind(null, ...)`), so they keep no Rust closure alive and are collected with the view,
 //! as the arrow functions they replace were. The JavaScript method keeps its awaits (`view.open`,
 //! `view.init`) so the number of microtasks before `open()` settles is unchanged. `kit` holds the
-//! doorways the module imported: attachSwipeNavigation, the speech cursor class,
+//! doorways the module imported: attachSwipeNavigation, speechHold, the speech cursor class,
 //! speechPageBreaks, readingCSS, announceSpeechLayout, Overlayer (read when used) and the two
 //! arrows that stay JavaScript because they run on every pointer move or spoken sentence
 //! (canSwipe, theme) or forward any number of arguments (the snap guard). The frozen original is
@@ -101,7 +101,7 @@ pub fn foliate_load_event(s: &JsValue, gestures: &JsValue, tap_zone: &JsValue, k
     let element = read(&doc, "documentElement")?;
     let options: JsValue = Object::new().into();
     Object::assign(options.unchecked_ref(), gestures.unchecked_ref());
-    let hold = crate::speech_hold::speech_hold(ui, &doc)?;
+    let hold = call(&door(kit, "hold")?, "speechHold", &[&doc])?;
     Object::assign(options.unchecked_ref(), hold.unchecked_ref());
     set(&options, "tapZone", tap_zone)?;
     let detach = call(&door(kit, "attach")?, "attachSwipeNavigation", &[&element, &options])?;

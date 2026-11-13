@@ -60,7 +60,6 @@ mod reader_actions;
 mod progress_queue;
 mod reader_navigation;
 mod reading_places;
-mod speech_hold;
 mod speech_highlight;
 mod speech_map;
 mod speech_pages;

@@ -3,12 +3,14 @@ import {it,vi,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {LegacyVoiceFlow} from './helpers/reference-voice-flow.js'
-const fixture=vi.hoisted(()=>({voices:[]}))
+const fixture=vi.hoisted(()=>({voices:[],ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralVoiceList:()=>fixture.voices}))
 import * as catalog from '../../src/js/readers/voice-catalog.js'
 const {langBase,declaredLanguage}=catalog
 import {languageOptions,voiceOptions} from './helpers/reference-voice-menus.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+fixture.ui=ui
 const device=()=>navigator.language
 function setup(native,trial){
  const voices=['es-ES','es-MX','en-GB','en-US','nl-NL'].map((lang,i)=>({id:'voice'+i,lang,base:langBase(lang),region:lang.split('-')[1],name:'Voice '+i,installed:trial%(i+2)!==0,neural:true,tier:'high',recommended:i===2}))
