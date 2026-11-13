@@ -5,6 +5,7 @@
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Map,Object,Promise,Set,Uint8Array};
 use crate::host::*;
+use crate::plant_recipe::{fresh,g,r,thing,Thing};
 type R<T> = Result<T,JsValue>;
 const ERROR:&str="Las texturas de la planta no se pudieron calcular. Recarga la página.";
 fn val(value:f64)->JsValue{value.into()}
@@ -70,35 +71,47 @@ pub fn plant_surface_release(base:&JsValue,texture:&JsValue)->R<()>{
  Ok(())
 }
 
-fn clone_texture(host:&JsValue,base:&JsValue,name:&str)->R<JsValue>{
- let original=read(base,name)?;let source=read(&original,"source")?;let version=read(&source,"version")?;
- let copy=method(&original,"clone",&[])?;set(&read(&copy,"source")?,"version",&version)?;
- let clones=read(base,"clones")?;
- if !absent(&clones){array(base,"clones").push(&copy);method(host,"watchDispose",&[base,&copy])?;}
+fn clone_texture(host:&JsValue,base:&JsValue,name:&str,texture:fn(&Thing)->R<JsValue>)->R<JsValue>{
+ let original=r(base,name,texture)?;let version=r(&r(&original,"source",Thing::source)?,"version",Thing::version)?;
+ let copy=thing(&original).clone_object()?;thing(&r(&copy,"source",Thing::source)?).set_version(&version)?;
+ let clones=r(base,"clones",Thing::clones)?;
+ if !absent(&clones){clones.unchecked_ref::<Array>().push(&copy);thing(host).watch_dispose(base,&copy)?;}
  Ok(copy)
 }
 
-#[wasm_bindgen]
-pub fn plant_surface(state:&JsValue,host:&JsValue,key:&JsValue,width:u32,height:u32,repeat:bool,spec:&JsValue,refresh:&JsValue)->R<JsValue>{
- let surfaces=map(state,"surfaces");let mut base=surfaces.get(key);
- let saved=if truthy(&base){JsValue::NULL}else{method(host,"savedSurface",&[key,&val(width as f64),&val(height as f64)])?};
+/// A surface's two textures (pigment map, data map) for one more user: shared images, painted once. `spec` is
+/// only asked for when the surface has to be painted.
+#[allow(clippy::too_many_arguments)]
+pub fn surface_maps(state:&JsValue,host:&JsValue,key:&JsValue,width:u32,height:u32,repeat:bool,spec:&dyn Fn()->JsValue,refresh:&JsValue)->R<(JsValue,JsValue)>{
+ let surfaces:Map=g(state,Thing::surfaces).unchecked_into();let mut base=surfaces.get(key);
+ let saved=if truthy(&base){JsValue::NULL}else{thing(host).saved_surface(key,width as f64,height as f64)?};
  if truthy(&saved){
-  let pigment=read(&saved,"pigment")?;let data=read(&saved,"data")?;
+  let pigment=r(&saved,"pigment",Thing::pigment)?;let data=r(&saved,"data",Thing::data)?;
   base=new_base(host,&pigment,&data,width,height,repeat,false)?;surfaces.set(key,&base);
  }else if !truthy(&base){
   let pigment:JsValue=Uint8Array::new_with_length(width*height*4).into();let data:JsValue=Uint8Array::new_with_length(width*height*4).into();
-  if !truthy(&method(host,"lattice",&[spec,&val(width as f64),&val(height as f64),&repeat.into(),&pigment,&data])?){return Err(js_sys::Error::new(ERROR).into());}
+  let spec=spec();
+  if !truthy(&thing(host).lattice(&spec,width as f64,height as f64,repeat,&pigment,&data)?){return Err(js_sys::Error::new(ERROR).into());}
   base=new_base(host,&pigment,&data,width,height,repeat,true)?;surfaces.set(key,&base);
-  let queue=array(state,"queue");queue.push(&obj(&[("base",base.clone()),("key",key.clone()),("width",val(width as f64)),("height",val(height as f64)),("row",val(0.0)),("spec",spec.clone()),("pigment",pigment),("data",data)])?);
-  if queue.length()==1{method(host,"schedule",&[])?;}
+  let queue:Array=g(state,Thing::queue).unchecked_into();
+  let job=fresh();job.set_base(&base);job.set_key(key);job.set_width(width as f64);job.set_height(height as f64);job.set_row(0.0);job.set_spec(&spec);job.set_pigment(&pigment);job.set_data(&data);
+  queue.push(job.as_ref());
+  if queue.length()==1{thing(host).schedule()?;}
  }
- if truthy(refresh)&&!absent(&get(&base,"waiting")){array(&base,"waiting").push(refresh);}
- let image=clone_texture(host,&base,"map")?;let data=clone_texture(host,&base,"data")?;
+ if truthy(refresh){let waiting=g(&base,Thing::waiting);if !absent(&waiting){waiting.unchecked_ref::<Array>().push(refresh);}}
+ let image=clone_texture(host,&base,"map",Thing::map)?;let data=clone_texture(host,&base,"data",Thing::data)?;
+ Ok((image,data))
+}
+#[wasm_bindgen]
+pub fn plant_surface(state:&JsValue,host:&JsValue,key:&JsValue,width:u32,height:u32,repeat:bool,spec:&JsValue,refresh:&JsValue)->R<JsValue>{
+ let (image,data)=surface_maps(state,host,key,width,height,repeat,&||spec.clone(),refresh)?;
  obj(&[("map",image),("data",data)])
 }
 fn new_base(host:&JsValue,pigment:&JsValue,data:&JsValue,width:u32,height:u32,repeat:bool,pending:bool)->R<JsValue>{
- let texture=|bytes:&JsValue,color:bool|method(host,"texture",&[bytes,&val(width as f64),&val(height as f64),&color.into(),&repeat.into()]);
- obj(&[("map",texture(pigment,true)?),("data",texture(data,false)?),("clones",if pending{Array::new().into()}else{JsValue::NULL}),("waiting",if pending{Array::new().into()}else{JsValue::NULL})])
+ let texture=|bytes:&JsValue,color:bool|thing(host).texture(bytes,width as f64,height as f64,color,repeat);
+ let base=fresh();base.set_map(&texture(pigment,true)?);base.set_data(&texture(data,false)?);
+ base.set_clones(&if pending{Array::new().into()}else{JsValue::NULL});base.set_waiting(&if pending{Array::new().into()}else{JsValue::NULL});
+ Ok(base.into())
 }
 
 #[wasm_bindgen]

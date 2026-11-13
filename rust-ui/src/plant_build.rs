@@ -17,7 +17,13 @@ use crate::packet_host::{Packet, R};
 pub fn plant_bake_build(units: &JsValue, skip: f64, variant: &str, pot_id: &str, pot_model: &str, catalog: bool, detailed: bool, dims: &[f64]) -> R<JsValue> {
     let seed: Vec<u16> = units.dyn_ref::<Uint16Array>().map(Uint16Array::to_vec)
         .unwrap_or_else(|| Array::from(units).iter().map(|unit| num(&unit) as u16).collect());
-    let packet = Packet::open(crate::plant_model(&seed, skip as u32, variant, pot_id, pot_model, catalog, detailed, dims))?;
+    bake_build(&seed, skip as u32, variant, pot_id, pot_model, catalog, detailed, dims)
+}
+
+/// The same from the seed's UTF-16 units (the plant's recipe draws it without leaving the module).
+#[allow(clippy::too_many_arguments)]
+pub fn bake_build(seed: &[u16], skip: u32, variant: &str, pot_id: &str, pot_model: &str, catalog: bool, detailed: bool, dims: &[f64]) -> R<JsValue> {
+    let packet = Packet::open(crate::plant_model(seed, skip, variant, pot_id, pot_model, catalog, detailed, dims))?;
     let objects = Array::new();
     for record in Array::from(&read(&packet.header, "objects")?).iter() {
         // `{ ...object, rotation: [...rotation, 'XYZ'], geometry }`: the record's own fields keep their order.
