@@ -2,7 +2,10 @@
 import { expect, it } from 'vitest';
 import * as THREE from 'three';
 import { rustShelf, shelfWasm } from './helpers/rust-shelf-ready.js';
-import { createGravityFrame } from '../../src/js/gravity-frame.js';
+// The marshalling adapter is frozen (the scene now steps its own arena: scene-entry-state-wasm.test.js);
+// it still guards RustGravityFrame#advance, which the arena path runs.
+import { createGravityFrame } from './helpers/reference-gravity-frame.js';
+import { createGravityFrame as createLiveGravityFrame } from '../../src/js/gravity-frame.js';
 
 const bay={left:0,right:600,bottom:300,ceiling:10};
 function entry(key,x,kind='book') { return {key,kind,x,y:200,width:150,height:200,depth:150,depthInset:0,thickness:20,shelf:0,
@@ -103,7 +106,7 @@ it('retains direct inputs across memory growth and publishes stable outputs acro
 it('releases registered JS identities on disposal and does not retain prior layouts',()=>{
  const before=rustShelf.shelf_live_handles();
  for(let i=0;i<40;i++){
-  const frame=createGravityFrame(rustShelf);
+  const frame=(i%2?createGravityFrame:createLiveGravityFrame)(rustShelf);
   frame.prepare([entry('one\ud800',80),entry('two\udfff',140)]);
   frame.prepare([entry('replacement',200)]);frame.free();
  }

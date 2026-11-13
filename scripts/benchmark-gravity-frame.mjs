@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import * as rust from '../src/wasm/shelf/inhouse_read_shelf.js';
-import { createGravityFrame } from '../src/js/gravity-frame.js';
+import { createGravityFrame } from '../tests/unit/helpers/reference-gravity-frame.js';
 rust.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});
 const rotation=new Float64Array([0,0,0,1]),median=a=>a.toSorted((a,b)=>a-b)[Math.floor(a.length/2)];
 const results=[];
