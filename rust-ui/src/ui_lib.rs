@@ -72,6 +72,7 @@ mod voice_store;
 mod voice_urls;
 mod supertonic_store;
 mod package_store;
+mod store_methods;
 mod synth_client;
 mod native_synth_client;
 mod native_ort;
