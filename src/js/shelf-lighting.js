@@ -22,17 +22,10 @@ export function widePenumbra(material) {
   // Phones shade many more device pixels: fewer taps, fixed for the session.
   const shelf = needRustShelf(), taps = shelf.shelf_panel_taps();
   material.defines = { ...material.defines, PANEL_TAPS:taps };
-  material.onBeforeCompile = shader => {
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <shadowmap_pars_fragment>', `#include <shadowmap_pars_fragment>\n${shelf.shelf_panel_shadow(taps)}`)
-      .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin
-        .replace('getShadow( directionalShadowMap[ i ]', 'getPanelShadow( directionalShadowMap[ i ]'))
-      // Deep inside the carcass, sides and shelves hide much of the room:
-      // its bounce and reflections reach the panel dimmed.
-      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
-        reflectedLight.indirectDiffuse *= .8; reflectedLight.indirectSpecular *= .72;`);
-  };
-  material.customProgramCacheKey = () => 'walnut-panel-penumbra';
+  // The three guarded patches are Rust (shelf_panel_fragment); three's light chunk is read when the program compiles.
+  material.onBeforeCompile = shader => { shader.fragmentShader = shelf.shelf_panel_fragment(shader.fragmentShader, THREE.ShaderChunk.lights_fragment_begin, taps); };
+  const key = shelf.shelf_panel_key();
+  material.customProgramCacheKey = () => key;
   return material;
 }
 
