@@ -1,4 +1,7 @@
-import { needRustShelf } from './rust-shelf.js';
+// Frozen copy of src/js/cover-relief-wasm.js as it was before the relief passes became jobs of the shelf module
+// (rust-ui/src/relief_job.rs). It drives the numeric core through its raw exports and is the reference the
+// production jobs are compared with, byte for byte and pause for pause.
+import { needRustShelf } from '../../../src/js/rust-shelf.js';
 
 // Rust kernels share one aligned allocation per generator. Array inputs are
 // copied once; views are recreated after every yield because another WASM task

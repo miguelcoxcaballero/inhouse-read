@@ -59,11 +59,14 @@ test.beforeEach(async({page})=>{
   await page.addInitScript(()=>{
     window.paletteStats={jobs:0,liveJobs:0,releases:0};
     const observe=result=>{
-      const instance=result.instance||result,actual=instance.exports;if(!actual?.relief_analysis_new)return result;
-      // Only the analysis jobs are the palette route (the map jobs of the previews share the free export).
+      const instance=result.instance||result,actual=instance.exports;if(typeof actual?.reliefjob_analysis!=='function')return result;
+      // The analysis is a job of the shelf module (rust-ui/src/relief_job.rs): it is observed at the module's own
+      // exports, where the page makes it (`ReliefJob.analysis` answers pointer, error, is-error at the return
+      // pointer) and where it frees it. The map jobs of the previews share the free export and are not counted.
       const stats=window.paletteStats,analysis=new Set(),exports={...actual,
-        relief_analysis_new(...args){const p=actual.relief_analysis_new(...args);if(p){analysis.add(p);stats.jobs++;stats.liveJobs++;}return p;},
-        relief_job_free(p){actual.relief_job_free(p);if(analysis.delete(p)){stats.releases++;stats.liveJobs--;}}};
+        reliefjob_analysis(retptr,...args){actual.reliefjob_analysis(retptr,...args);const view=new DataView(actual.memory.buffer);
+          if(!view.getInt32(retptr+8,true)){analysis.add(view.getInt32(retptr,true)>>>0);stats.jobs++;stats.liveJobs++;}},
+        __wbg_reliefjob_free(p,...rest){actual.__wbg_reliefjob_free(p,...rest);if(analysis.delete(p>>>0)){stats.releases++;stats.liveJobs--;}}};
       const wrapped=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
       return result.instance?{...result,instance:wrapped}:wrapped;
     };

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
-import {wasmReliefRgbaPlanes} from '../../src/js/cover-relief-wasm.js';
+import {wasmReliefRgbaPlanes} from './helpers/reference-cover-relief-wasm.js';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
 import {reliefPlanesToRgba} from '../../src/js/cover-relief.js';
@@ -38,9 +38,14 @@ it('frees rejected or trapped kernels and handles allocation failure',()=>{
  free.mockClear();expect(wasmReliefRgbaPlanes({...core,alloc_f64:()=>0,free_f64:free},maps)).toBeNull();expect(free).not.toHaveBeenCalled();
 });
 
-it('uses one native call for every map size and reports an unavailable or rejecting core',()=>{
- // The JavaScript conversion (and its 4096-pixel threshold) is gone: small maps use the kernel too.
- const maps=fixture(64,64),call=vi.fn(core.relief_rgba_planes);state.core={...core,relief_rgba_planes:call};exact(reliefPlanesToRgba(maps),maps);expect(call).toHaveBeenCalledOnce();
- call.mockClear();const small=fixture(17,19);exact(reliefPlanesToRgba(small),small);expect(call).toHaveBeenCalledOnce();
- for(const engine of [null,{...core,relief_rgba_planes:()=>0}]){state.core=engine;expect(()=>reliefPlanesToRgba(maps)).toThrow();}
+it('converts every map size in the shelf module and reports planes it cannot take',()=>{
+ // The JavaScript conversion (and its 4096-pixel threshold) is gone: production is one call of the shelf module,
+ // compared here with the frozen bridge to the numeric core.
+ for(const [w,h] of [[1,1],[17,19],[64,64],[288,384],[1024,1024]]){
+  const maps=fixture(w,h),out=reliefPlanesToRgba(maps),expected=wasmReliefRgbaPlanes(core,maps);exact(out,maps);
+  expect(Object.keys(out)).toEqual(Object.keys(expected));for(const key of Object.keys(expected))expect(Buffer.compare(Buffer.from(out[key].buffer),Buffer.from(expected[key].buffer))).toBe(0);
+  expect(new Set([out.height.buffer,out.foil.buffer,out.gloss.buffer]).size).toBe(3);
+ }
+ const maps=fixture(17,19);
+ for(const bad of [{...maps,width:0},{...maps,height:1.5},{...maps,width:2048,height:2048},{...maps,foil:new Uint8Array(1)},{...maps,gloss:[]}])expect(()=>reliefPlanesToRgba(bad)).toThrow(/núcleo de relieve/);
 });

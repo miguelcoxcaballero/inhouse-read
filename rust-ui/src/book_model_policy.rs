@@ -7,8 +7,12 @@ use crate::host::{absent, jmax, jmin, js_round, num, truthy};
 // Every name and level sent from here is a literal sent again for each book (several materials and
 // plans per model): interned, so the page keeps one string for it instead of decoding it each time.
 fn key(name: &'static str) -> &'static str { wasm_bindgen::intern(name) }
-fn get(value: &JsValue, name: &'static str) -> JsValue { crate::host::get(value, key(name)) }
-fn set(value: &JsValue, name: &'static str, next: &JsValue) -> Result<(), JsValue> { crate::host::set(value, key(name), next) }
+// Objects are read and written directly with a remembered key (one crossing each); anything else as the host does.
+fn get(value: &JsValue, name: &'static str) -> JsValue {
+    if value.is_object() { return crate::book_model_build::with_key(name, |k| js_sys::Reflect::get(value, k)).unwrap_or(JsValue::UNDEFINED); }
+    crate::host::get(value, key(name))
+}
+fn set(value: &JsValue, name: &'static str, next: &JsValue) -> Result<(), JsValue> { crate::book_model_build::with_key(name, |k| js_sys::Reflect::set(value, k, next))?; Ok(()) }
 fn method(target: &JsValue, name: &'static str, args: &[&JsValue]) -> Result<JsValue, JsValue> { crate::host::method(target, key(name), args) }
 fn word(text: &'static str) -> JsValue { JsValue::from_str(key(text)) }
 

@@ -73,7 +73,11 @@ fn txt(x:&str)->JsValue{JsValue::from_str(x)}
 fn lit(x:&'static str)->JsValue{JsValue::from_str(wasm_bindgen::intern(x))}
 fn ctx(value:&JsValue)->&Ctx{value.unchecked_ref()}
 /// `value[key]` and `target?.name?.(...args)` with an interned key.
-fn rd(value:&JsValue,key:&'static str)->R<JsValue>{read(value,wasm_bindgen::intern(key))}
+/// An object is read directly with a remembered key (one crossing); anything else as the host reads it.
+fn rd(value:&JsValue,key:&'static str)->R<JsValue>{
+ if value.is_object(){return crate::book_model_build::with_key(key,|name|Reflect::get(value,name));}
+ read(value,wasm_bindgen::intern(key))
+}
 fn optional(target:&JsValue,name:&'static str,args:&[&JsValue])->R<Option<JsValue>>{method_opt(target,wasm_bindgen::intern(name),args)}
 /// `host[name](...args)` for arguments that read nothing (the host's member is read first).
 fn host_call(host:&JsValue,name:&'static str,args:&[&JsValue])->R<JsValue>{call(&rd(host,name)?,name,args)}
@@ -217,13 +221,15 @@ fn paint_field_with<F:FnMut()->R<f64>>(c:&JsValue,width:&JsValue,height:&JsValue
  // Real ImageData uses one bulk copy instead of four JS property writes per pixel.
  let typed=data.dyn_ref::<js_sys::Uint8ClampedArray>();
  let mut pixels=typed.map(|array|array.to_vec());
+ // The channel and the pixel buffer stay what they are for the whole field: tested once, not per pixel.
+ let (channel_on,has_data)=(truthy(&channel),truthy(&data));
  let mut i=0.0;
  while i<cw*ch{
   let r=next()?;
-  let v=if truthy(&channel){jround(r*spread)}else{
+  let v=if channel_on{jround(r*spread)}else{
    let r=r-0.5;jround(128.0+r*2.0*spread)};
-  if truthy(&data){
-   let z=if truthy(&channel){0.0}else{v};
+  if has_data{
+   let z=if channel_on{0.0}else{v};
    if let Some(bytes)=pixels.as_mut(){
     let at=i as usize*4;
     if at+3<bytes.len(){bytes[at..at+4].copy_from_slice(&[z as u8,v as u8,z as u8,255]);}

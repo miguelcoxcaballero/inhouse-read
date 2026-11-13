@@ -21,7 +21,7 @@ thread_local!{
 }
 /// A getter or setter that calls back into this module only nests shared borrows; a key first met
 /// inside one is used without being remembered.
-fn with_key<T>(name:&'static str,f:impl FnOnce(&JsValue)->T)->T{
+pub(crate) fn with_key<T>(name:&'static str,f:impl FnOnce(&JsValue)->T)->T{
  KEYS.with(|keys|{
   if let Ok(known)=keys.try_borrow(){if let Some(key)=known.get(name){return f(key);}}
   let key=JsValue::from_str(name);

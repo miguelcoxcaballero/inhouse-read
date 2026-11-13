@@ -4,8 +4,9 @@ import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
 import {shadePreview} from '../../src/js/cover-relief.js';
+import {needRustShelf} from '../../src/js/rust-shelf.js';
 import {shadePreview as reference} from './helpers/reference-relief-preview.js';
-let core;
+let core;const shelf=needRustShelf();
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.relief_preview_rows).toBe('function');state.core=core;});
 afterEach(()=>{state.core=core;});
 function drain(task){let yields=0;for(;;){const step=task.next();if(step.done)return {out:step.value,yields};yields++;}}
@@ -16,24 +17,26 @@ function fixture(w,h,mw=w,mh=h,preserve=false,seed=17){
  const maps={width:mw,height:mh,heightMap:Uint8Array.from({length:mw*mh},random),foil:Uint8Array.from({length:mw*mh},random),gloss:Uint8Array.from({length:mw*mh},random),mask:Uint8Array.from({length:mw*mh},()=>random()>90?255:0),preserveInk:preserve};return {image,maps};
 }
 for(const [w,h,mw,mh] of [[1,1,1,1],[17,7,19,11],[17,8,9,5],[19,17,23,11],[288,384,512,512],[512,512,288,384]])for(const preserve of [false,true])it(`keeps every RGBA byte and safe point ${w}x${h}/${mw}x${mh}, ink ${preserve}`,()=>{
- const {image,maps}=fixture(w,h,mw,mh,preserve),call=vi.fn(core.relief_preview_rows);state.core={...core,relief_preview_rows:call};const expected=drain(reference(image,maps)),actual=drain(shadePreview(image,maps));exact(actual,expected);expect(call).toHaveBeenCalledTimes(Math.ceil(h/8));expect(actual.yields).toBe(Math.floor(h/8));
+ const {image,maps}=fixture(w,h,mw,mh,preserve),made=shelf.relief_jobs_made();const expected=drain(reference(image,maps)),actual=drain(shadePreview(image,maps));exact(actual,expected);expect(shelf.relief_jobs_made()-made).toBe(1);expect(shelf.relief_jobs_live()).toBe(0);expect(actual.yields).toBe(Math.floor(h/8));
 });
 for(const slope of [0,2.2,7,-1,1000])it(`preserves highlights and resampled borders at slope ${slope}`,()=>{for(let seed=0;seed<20;seed++){const {image,maps}=fixture(1+seed*3,1+seed%17,7+seed,5+seed%13,seed%2===0,seed);exact(drain(shadePreview(image,maps,{slope})),drain(reference(image,maps,{slope})));}});
 it('preserves original transparent ink byte-for-byte when no pigment is selected',()=>{
  const {image,maps}=fixture(127,33,45,55,true);maps.mask.fill(0);const out=drain(shadePreview(image,maps));exact(out,{out:image.data,yields:4});
 });
-it('frees cancelled generators and copies results across interleaved jobs and growth',()=>{
- const free=vi.fn(core.free_f64);state.core={...core,free_f64:free};const first=fixture(127,33,45,55,true),second=fixture(45,55,129,17,false);
- const cancelled=shadePreview(first.image,first.maps);expect(cancelled.next().done).toBe(false);expect(free).not.toHaveBeenCalled();cancelled.return();expect(free).toHaveBeenCalledOnce();free.mockClear();
+it('frees cancelled jobs and copies results across interleaved jobs and growth',()=>{
+ // The pass is a job of the shelf module: it is counted there, alive while its generator is, gone after it.
+ const first=fixture(127,33,45,55,true),second=fixture(45,55,129,17,false);
+ const cancelled=shadePreview(first.image,first.maps);expect(cancelled.next().done).toBe(false);expect(shelf.relief_jobs_live()).toBe(1);cancelled.return();expect(shelf.relief_jobs_live()).toBe(0);
  const tasks=[shadePreview(first.image,first.maps),shadePreview(second.image,second.maps)],results=[null,null],counts=[0,0];
  while(results.some(v=>v===null))for(let i=0;i<2;i++)if(results[i]===null){const step=tasks[i].next();if(step.done)results[i]={out:step.value,yields:counts[i]};else{counts[i]++;core.memory.grow(1);}}
- exact(results[0],drain(reference(first.image,first.maps)));exact(results[1],drain(reference(second.image,second.maps)));expect(free).toHaveBeenCalledTimes(2);const saved=results[0].out.slice();drain(shadePreview(second.image,second.maps));exact(results[0],{out:saved,yields:counts[0]});
+ exact(results[0],drain(reference(first.image,first.maps)));exact(results[1],drain(reference(second.image,second.maps)));expect(shelf.relief_jobs_live()).toBe(0);const saved=results[0].out.slice();drain(shadePreview(second.image,second.maps));exact(results[0],{out:saved,yields:counts[0]});
 });
-it('reports an error without leaking scratch space when the native pass is unavailable or rejected',()=>{
- // The JavaScript shading pass is gone (frozen in helpers/reference-relief-preview.js): a core that cannot
- // run is a clear error, and the scratch space of a kernel that did start is released.
- const {image,maps}=fixture(19,17,23,11,true);
- for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,relief_preview_rows:()=>0},{...core,relief_preview_rows:()=>{throw Error('trap');}}]){
-  const free=vi.fn(core.free_f64);state.core=engine?{...engine,free_f64:free}:null;expect(()=>drain(shadePreview(image,maps))).toThrow();if(engine?.relief_preview_rows&&engine.alloc_f64===core.alloc_f64)expect(free).toHaveBeenCalledOnce();
- }
+it('reports an error without making a job when the planes are not what the pass takes',()=>{
+ // There is no JavaScript shading pass (frozen in helpers/reference-relief-preview.js) and no second path:
+ // planes the job cannot take are a clear error.
+ const {image,maps}=fixture(19,17,23,11,true),made=shelf.relief_jobs_made();
+ for(const [picture,planes] of [[{...image,width:0},maps],[{...image,data:new Uint8ClampedArray(3)},maps],[image,{...maps,heightMap:new Uint8Array(1)}],[image,{...maps,mask:null}],[image,{...maps,width:2048,height:2048}]])
+  expect(()=>drain(shadePreview(picture,planes))).toThrow(/núcleo de relieve/);
+ expect(()=>drain(shadePreview(image,maps,{slope:Infinity}))).toThrow();
+ expect(shelf.relief_jobs_made()).toBe(made);expect(shelf.relief_jobs_live()).toBe(0);
 });

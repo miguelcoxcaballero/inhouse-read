@@ -3,7 +3,7 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {performance} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
-import {wasmRenderRelief,wasmHeightToNormals,wasmComposeReliefLayers,wasmReliefRgbaPlanes} from '../src/js/cover-relief-wasm.js';
+import {wasmRenderRelief,wasmHeightToNormals,wasmComposeReliefLayers,wasmReliefRgbaPlanes} from '../tests/unit/helpers/reference-cover-relief-wasm.js';
 import {mapsFor,layers} from '../tests/helpers/cover-relief-reference.mjs';
 const wasm=readFileSync(new URL('../src/wasm/inhouse_read_core.wasm',import.meta.url));
 const previousWasm=process.argv[3]?readFileSync(process.argv[3]):wasm;

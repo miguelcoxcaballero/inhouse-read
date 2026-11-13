@@ -56,6 +56,18 @@ mod spine_surface;
 mod cover_editor;
 mod book_reflection;
 mod cover_relief;
+// The numeric core's relief kernels and jobs, compiled into this module so a pass is plain Rust calls.
+#[path="../../rust-core/src/relief.rs"]
+mod relief;
+#[path="../../rust-core/src/relief_palette.rs"]
+mod relief_palette;
+#[path="../../rust-core/src/color_mask.rs"]
+mod color_mask;
+#[path="../../rust-core/src/cover_seed.rs"]
+mod cover_seed;
+#[path="../../rust-core/src/cover_relief.rs"]
+mod relief_jobs;
+mod relief_job;
 mod cloud_host;
 mod bookshelf;
 mod book_paint;

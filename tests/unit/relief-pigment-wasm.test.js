@@ -4,6 +4,8 @@ import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
 import {buildMapsFromPixels} from '../../src/js/cover-relief.js';
+import {needRustShelf} from '../../src/js/rust-shelf.js';
+const shelf=needRustShelf();
 import {wasmPigmentMaps} from './helpers/reference-relief-bridge.js';
 import {referencePigment} from './helpers/reference-relief-pigment.js';
 import {buildMapsFromPixels as referenceBuild} from './helpers/reference-relief-color.js';
@@ -40,15 +42,15 @@ it('matches empty, solid and boundary-rounding memberships',()=>{
   for(const prev of [null,previous(63,65)])exact(drain(wasmPigmentMaps(core,input,63,65,prev)),drain(referencePigment(core,input,63,65,prev)));
  }
 });
-it('builds the whole single and multicolour maps inside one native job each',()=>{
+it('builds the whole single maps inside one native job, the multicolour ones in a classification and a composition job',()=>{
  const width=71,height=113,data=new Uint8ClampedArray(width*height*4),colors=[[35,80,181],[212,169,60],[255,250,240]];
  for(let i=0;i<width*height;i++)data.set([...colors[Math.floor(i/width)%3],255],i*4);
  const image={width,height,data};
  for(const choice of [{id:'color-1',color:'#2350b5',tolerance:6,strength:.7},{layers:[{id:'color-1',color:'#2350b5',tolerance:6,strength:.7},{id:'color-2',color:'#d4a93c',tolerance:5,strength:.4},{id:'color-3',color:'#fffaf0',tolerance:4,strength:1}]}]){
   // The frozen original (pure JavaScript pigment passes) is the expected result.
   const expected=drain(referenceBuild(image,image,choice));
-  const made=vi.fn(core.relief_maps_new),steps=vi.fn(core.relief_job_step);state.core={...core,relief_maps_new:made,relief_job_step:steps};
-  const actual=drain(buildMapsFromPixels(image,image,choice));exact(actual,expected,{safePoints:false});expect(made).toHaveBeenCalledOnce();expect(steps).toHaveBeenCalled();
+  const made=shelf.relief_jobs_made();
+  const actual=drain(buildMapsFromPixels(image,image,choice));exact(actual,expected,{safePoints:false});expect(shelf.relief_jobs_made()-made).toBe(choice.layers?2:1);expect(actual.yields).toBeGreaterThan(0);expect(shelf.relief_jobs_live()).toBe(0);
  }
 });
 it('frees cancelled jobs at every stage and retains source/output ownership across memory growth',()=>{
@@ -70,16 +72,14 @@ it('rejects malformed input before allocation',()=>{
  for(const args of [[new Float32Array(1),0,1],[new Float32Array(4),2,3],[[],2,2],[new Float32Array(4),2,2,{...previous(2,2),owner:11}]])expect(drain(wasmPigmentMaps(engine,...args)).out).toBeNull();expect(alloc).not.toHaveBeenCalled();
 });
 
-it('frees the job and the arena and reports the error when a later layer fails after writing a partial pass',()=>{
- // There is no JavaScript recovery path: the failing step is a clear error and nothing leaks.
+it('frees the job when the build stops inside a later layer, and the next build is whole',()=>{
+ // There is no JavaScript recovery path. A build abandoned at pause 60 (inside the second layer, its
+ // classification half done) leaves no job behind and does not disturb the next one.
  const width=71,height=113,data=new Uint8ClampedArray(width*height*4),colors=[[35,80,181],[212,169,60],[255,250,240]];
  for(let i=0;i<width*height;i++)data.set([...colors[Math.floor(i/width)%3],255],i*4);
  const image={width,height,data},choice={layers:['#2350b5','#d4a93c','#fffaf0'].map((color,i)=>({id:'color-'+(i+1),color,tolerance:6,strength:.7}))};
- const expected=drain(referenceBuild(image,image,choice));let failed=false,live=0,jobs=0,steps=0;
- state.core={...core,alloc_f64(n){const p=core.alloc_f64(n);if(p)live+=n;return p;},free_f64(p,n){core.free_f64(p,n);live-=n;},
-  relief_maps_new(...args){const job=core.relief_maps_new(...args);if(job)jobs++;return job;},relief_job_free(job){core.relief_job_free(job);if(job)jobs--;},
-  // Step 60 of 78 lands inside the second layer: its classification is half done when the trap fires.
-  relief_job_step:job=>{if(++steps===60){failed=true;throw Error('partial second layer');}return core.relief_job_step(job);}};
- expect(()=>drain(buildMapsFromPixels(image,image,choice))).toThrow('partial second layer');expect(failed).toBe(true);expect(live).toBe(0);expect(jobs).toBe(0);
- state.core=core;exact(drain(buildMapsFromPixels(image,image,choice)),expected,{safePoints:false});
+ const expected=drain(referenceBuild(image,image,choice));
+ const task=buildMapsFromPixels(image,image,choice);for(let i=0;i<60;i++)expect(task.next().done).toBe(false);
+ expect(shelf.relief_jobs_live()).toBe(1);task.return();expect(shelf.relief_jobs_live()).toBe(0);
+ exact(drain(buildMapsFromPixels(image,image,choice)),expected,{safePoints:false});expect(shelf.relief_jobs_live()).toBe(0);
 });

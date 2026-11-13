@@ -24,7 +24,7 @@ fn parse_int16(text:&[u16])->f64{
 }
 /// `hex.slice(from, to)` for in-range indices over UTF-16 units.
 fn slice(units:&[u16],from:usize,to:usize)->&[u16]{&units[from.min(units.len())..to.min(units.len())]}
-fn rgb_of(hex:&str)->[f64;3]{let units:Vec<u16>=hex.encode_utf16().collect();[1,3,5].map(|at|parse_int16(slice(&units,at,at+2)))}
+pub(crate) fn rgb_of(hex:&str)->[f64;3]{let units:Vec<u16>=hex.encode_utf16().collect();[1,3,5].map(|at|parse_int16(slice(&units,at,at+2)))}
 
 /// `LINEAR_RGB[channel]`: the sRGB curve of a byte; anything that is not a byte index reads `undefined`, which is NaN in the sums.
 fn linear(channel:f64)->f64{
