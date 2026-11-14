@@ -56,6 +56,23 @@ extern "C" {
     #[wasm_bindgen(method, getter, structural, js_name = baseHeight)] fn base_height(this: &Fields) -> JsValue;
     #[wasm_bindgen(method, getter, structural)] fn layers(this: &Fields) -> JsValue;
     #[wasm_bindgen(method, getter, structural)] fn strength(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn color(this: &Fields) -> JsValue;
+    #[wasm_bindgen(method, getter, structural)] fn tolerance(this: &Fields) -> JsValue;
+    // The plain maps of one colour, written as plain property stores in the original's key order.
+    #[wasm_bindgen(method, setter, structural)] fn set_width(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_height(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural, js_name = heightMap)] fn set_height_map(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_foil(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_gloss(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_mask(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural, js_name = preserveInk)] fn set_preserve_ink(this: &Fields, value: bool);
+    #[wasm_bindgen(method, setter, structural, js_name = foilColor)] fn set_foil_color(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_color(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_tolerance(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_owners(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural, js_name = baseMask)] fn set_base_mask(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural, js_name = baseHeight)] fn set_base_height(this: &Fields, value: &JsValue);
+    #[wasm_bindgen(method, setter, structural)] fn set_layers(this: &Fields, value: &JsValue);
 }
 /// `value[key]`; `undefined` for `null` and `undefined`, like the optional reads of the original.
 #[inline(always)]
@@ -143,6 +160,44 @@ struct Compose { owners: Vec<u8>, mask: Vec<u8>, height: Vec<f32>, strengths: Ve
 struct Preview { image: Vec<u8>, height: Vec<u8>, foil: Vec<u8>, gloss: Vec<u8>, mask: Vec<u8>, coefficients: [f64; 7], out: Vec<u8>,
     width: u32, rows: u32, map_width: u32, map_height: u32, from: u32, preserve: u32 }
 struct Render { job: *mut ReliefRender, count: usize, compose: bool, maps: JsValue, layers: JsValue, output: Object, pixels: JsValue }
+/// The maps of one saved choice, job after job (`buildMapsFromPixels`): 0 the palette of a legacy record, 1 the
+/// maps of its one colour, 2 the classification of several layers, 3 their composition. One job lives at a time.
+struct Build { stage: u8, inner: Option<Box<ReliefJob>>, hires: JsValue, choice: JsValue, layers: JsValue, done: JsValue }
+impl Build {
+    fn single(&mut self) -> Result<(), JsValue> {
+        let choice: &Fields = self.choice.unchecked_ref();
+        let colour = choice.color().as_string().ok_or_else(refused)?;
+        let mut fields = [0.0; 5];
+        fields[..3].copy_from_slice(&crate::cover_relief::rgb_of(&colour));
+        fields[3] = num(&choice.tolerance());
+        self.inner = Some(Box::new(ReliefJob::classify(&self.hires, &fields, true)?));
+        self.stage = 1;
+        Ok(())
+    }
+    /// `{ width, height, heightMap, foil, gloss, mask, preserveInk:true, foilColor:null }`, then the colour.
+    fn plain(&self, maps: Option<&JsValue>) -> JsValue {
+        let (width, height) = (get(&self.hires, "width"), get(&self.hires, "height"));
+        let count = (num(&width) * num(&height)) as u32;
+        let zero = || JsValue::from(Uint8Array::new_with_length(count));
+        let plane = |key: &str| maps.map_or_else(zero, |maps| get(maps, key));
+        let value = JsValue::from(Object::new());
+        let out: &Fields = value.unchecked_ref();
+        out.set_width(&width);
+        out.set_height(&height);
+        out.set_height_map(&plane("heightMap"));
+        out.set_foil(&zero());
+        out.set_gloss(&plane("gloss"));
+        out.set_mask(&plane("mask"));
+        out.set_preserve_ink(true);
+        out.set_foil_color(&JsValue::NULL);
+        if maps.is_some() {
+            let choice: &Fields = self.choice.unchecked_ref();
+            out.set_color(&choice.color());
+            out.set_tolerance(&choice.tolerance());
+        }
+        value
+    }
+}
 
 enum Work {
     Analysis(*mut Job, usize),
@@ -152,15 +207,16 @@ enum Work {
     Material(Material),
     Compose(Compose),
     Preview(Preview),
+    Build(Build),
     Done,
 }
 
 #[wasm_bindgen]
-pub struct ReliefJob { work: Work, result: JsValue, error: JsValue }
+pub struct ReliefJob { work: Work, result: JsValue, error: JsValue, quiet: bool }
 
 impl Drop for ReliefJob {
     fn drop(&mut self) {
-        LIVE.fetch_sub(1, Ordering::Relaxed);
+        if !self.quiet { LIVE.fetch_sub(1, Ordering::Relaxed); }
         unsafe {
             match self.work {
                 Work::Analysis(job, _) | Work::Maps(job, _, _) => relief_job_free(job),
@@ -171,7 +227,7 @@ impl Drop for ReliefJob {
     }
 }
 
-fn job(work: Work) -> ReliefJob { LIVE.fetch_add(1, Ordering::Relaxed); MADE.fetch_add(1, Ordering::Relaxed); ReliefJob { work, result: JsValue::UNDEFINED, error: JsValue::UNDEFINED } }
+fn job(work: Work) -> ReliefJob { LIVE.fetch_add(1, Ordering::Relaxed); MADE.fetch_add(1, Ordering::Relaxed); ReliefJob { work, result: JsValue::UNDEFINED, error: JsValue::UNDEFINED, quiet: false } }
 
 /// Jobs made and not yet freed (lifetime tests).
 #[wasm_bindgen]
@@ -224,9 +280,34 @@ impl ReliefJob {
             let height_mm = get(&layer, "heightMM");
             fields.push(if height_mm.is_null() || height_mm.is_undefined() { 0.0 } else { num(&height_mm) });
         }
-        let made = unsafe { relief_maps_new(data.as_ptr(), width, height, fields.as_ptr(), layers.length() as usize, u32::from(single)) };
-        if made.is_null() { return Err(refused()); }
-        Ok(job(Work::Maps(made, width * height, single)))
+        Self::classified(width, height, data, &fields, single)
+    }
+
+    /// The maps of one relief choice from the working raster and the map raster: a saved colour is classified
+    /// at once, several layers are classified and composed, and a legacy record takes the first colour found.
+    /// The jobs it runs are the ones above, one after the other (they are the ones counted, this is not).
+    pub fn build(work: &JsValue, hires: &JsValue, selection: &JsValue) -> Result<ReliefJob, JsValue> {
+        use crate::cover_relief::{relief_classification_layers, relief_map_mode, relief_sorted_layers, relief_validate_raster};
+        relief_validate_raster(work)?;
+        relief_validate_raster(hires)?;
+        let choice = crate::cover_relief_portable::normalize_cover_relief(selection)?;
+        if !truthy(&choice) { return Err(js_sys::TypeError::new("Color de relieve no válido").into()); }
+        let mode = relief_map_mode(&choice)?;
+        let mut build = Build { stage: 0, inner: None, hires: hires.clone(), choice, layers: JsValue::UNDEFINED, done: JsValue::UNDEFINED };
+        match mode {
+            2 => {
+                // Canonical order makes overlapping tolerances resolve independently of the order they were ticked in.
+                let layers = relief_sorted_layers(&build.choice)?;
+                let classified = relief_classification_layers(layers.as_ref())?;
+                build.inner = Some(Box::new(ReliefJob::maps(hires, classified.as_ref(), false)?));
+                build.layers = layers.into();
+                build.stage = 2;
+            }
+            // The old record id is kept until the user chooses a colour: it renders the first actual colour.
+            0 => build.inner = Some(Box::new(ReliefJob::analysis(work)?)),
+            _ => build.single()?,
+        }
+        Ok(ReliefJob { work: Work::Build(build), result: JsValue::UNDEFINED, error: JsValue::UNDEFINED, quiet: true })
     }
 
     /// Composition (with `layers`), normals and, with `rgba`, the grey planes of `maps` in one job.
@@ -374,6 +455,17 @@ impl ReliefJob {
 impl ReliefJob {
     fn failed(&mut self, error: JsValue) -> i32 { self.error = error; -1 }
 
+    /// The maps job of `fields` (r, g, b, tolerance, height in mm per layer) over a raster.
+    fn classified(width: usize, height: usize, data: Vec<u8>, fields: &[f64], single: bool) -> Result<ReliefJob, JsValue> {
+        let made = unsafe { relief_maps_new(data.as_ptr(), width, height, fields.as_ptr(), fields.len() / 5, u32::from(single)) };
+        if made.is_null() { return Err(refused()); }
+        Ok(job(Work::Maps(made, width * height, single)))
+    }
+    fn classify(image: &JsValue, fields: &[f64], single: bool) -> Result<ReliefJob, JsValue> {
+        let (width, height, data) = raster(image).ok_or_else(refused)?;
+        Self::classified(width, height, data, fields, single)
+    }
+
     fn advance(&mut self) -> Result<u32, JsValue> {
         unsafe {
             match &mut self.work {
@@ -443,6 +535,35 @@ impl ReliefJob {
                         if full { return Ok(1); }
                     }
                 }
+                Work::Build(build) => loop {
+                    let Some(inner) = build.inner.as_mut() else { break };
+                    match inner.step() { 0 => {} 1 => return Ok(1), _ => return Err(inner.error()) }
+                    let made = inner.result();
+                    // Freed before the next job is made.
+                    build.inner = None;
+                    match build.stage {
+                        0 => {
+                            let first = crate::host::get(&get(&made, "chosen"), "0");
+                            if truthy(&first) { build.choice = first; build.single()?; } else { build.done = build.plain(None); }
+                        }
+                        1 => build.done = build.plain(Some(&made)),
+                        2 => {
+                            let value = JsValue::from(Object::new());
+                            let (maps, made): (&Fields, &Fields) = (value.unchecked_ref(), made.unchecked_ref());
+                            maps.set_width(&get(&build.hires, "width"));
+                            maps.set_height(&get(&build.hires, "height"));
+                            maps.set_preserve_ink(true);
+                            maps.set_foil_color(&JsValue::NULL);
+                            maps.set_owners(&made.owners());
+                            maps.set_base_mask(&made.base_mask());
+                            maps.set_base_height(&made.base_height());
+                            maps.set_layers(&build.layers);
+                            build.inner = Some(Box::new(ReliefJob::compose(&value, &build.choice)?));
+                            build.stage = 3;
+                        }
+                        _ => build.done = made,
+                    }
+                },
                 Work::Done => return Ok(0),
             }
         }
@@ -507,6 +628,7 @@ impl ReliefJob {
                 Work::Material(w) => clamped(&w.out),
                 Work::Preview(w) => clamped(&w.out),
                 Work::Compose(w) => composed(&w.maps, &w.layers, &w.out, w.count as usize),
+                Work::Build(build) => build.done.clone(),
                 Work::Done => JsValue::UNDEFINED,
             }
         };

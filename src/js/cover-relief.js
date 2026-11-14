@@ -112,7 +112,6 @@ export const fitDimensions = (width, height, long) => needRustShelf().relief_fit
 // each colour and builds the pigment maps (rust-core/src/cover_relief.rs). Distances are Euclidean OKLab * 100
 // (Delta-E OK), not CIEDE2000 or RGB channel units.
 const colorName = hex => needRustShelf().relief_color_name(hex);
-const validateRaster = image => needRustShelf().relief_validate_raster(image);
 
 /** Up to ten distinct supported colors, never fabricated family suggestions. Radii are less than half every
  * inter-center distance, so all generated choices remain disjoint even when recreated independently from
@@ -120,38 +119,9 @@ const validateRaster = image => needRustShelf().relief_validate_raster(image);
  * outside the stored ball) and falls toward zero inside its radius, never over an adjacent ink. */
 export function* analyzePixels(image) { return yield* run(Job => Job.analysis(image)); }
 
-export function* buildMapsFromPixels(work, hires, selection) {
-  validateRaster(work); validateRaster(hires);
-  let choice = normalizeCoverRelief(selection);
-  if (!choice) throw new TypeError('Color de relieve no válido');
-  const mode = needRustShelf().relief_map_mode(choice);
-  if (mode === 2) return yield* buildColorLayerMaps(hires, choice);
-  // Preserve the old record id until the user chooses a color. Its renderer
-  // uses the stable first actual color, never its old geometric/noise fallback.
-  if (mode === 0) choice = (yield* analyzePixels(work)).chosen[0];
-  const { width, height } = hires, count = width * height;
-  const out = { width, height, heightMap:new Uint8Array(count), foil:new Uint8Array(count),
-    gloss:new Uint8Array(count), mask:new Uint8Array(count), preserveInk:true, foilColor:null };
-  if (!choice) return out;
-  Object.assign(out, yield* run(Job => Job.maps(hires, [{ color:choice.color, tolerance:choice.tolerance }], true)));
-  out.color = choice.color; out.tolerance = choice.tolerance;
-  return out;
-}
-
-function* buildColorLayerMaps(image, selection) {
-  const { width, height } = image;
-  // Canonical order makes overlapping externally supplied tolerances resolve
-  // deterministically, independently of the order in which boxes were ticked.
-  const layers = needRustShelf().relief_sorted_layers(selection);
-  // A pixel belongs to exactly one selected pigment; contributions cannot add brightness/height or spill into
-  // another pigment on overlap. The unscaled physical height keeps float precision: quantizing before the
-  // per-colour strength would round two distinct coatings to one height.
-  const classified = needRustShelf().relief_classification_layers(layers);
-  const { owners, baseMask, baseHeight } = yield* run(Job => Job.maps(image, classified, false));
-  // Classification is complete; composition needs only owned maps.
-  return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
-    owners,baseMask,baseHeight,layers }, selection);
-}
+/** The maps of one choice: a saved colour is classified at map resolution, several layers are classified
+ * (each pixel belongs to exactly one pigment) and composed, a legacy record takes the first colour found. */
+export function* buildMapsFromPixels(work, hires, selection) { return yield* run(Job => Job.build(work, hires, selection)); }
 
 /** Reuse the classified colour ownership while adjusting a layer's intensity.
  * Only three bounded output planes are allocated; no image decode, clustering
