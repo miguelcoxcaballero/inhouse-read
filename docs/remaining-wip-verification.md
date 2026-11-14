@@ -1,3 +1,10 @@
+# 1.7.329 — papelera y lámparas en reposo, luces de lámpara, lomos y trabajador de voz (tanda integ-bar-8)
+
+- Unitarias: 9136 pasan, 4 omitidas (bancos de medida), 0 fallos, en cuatro tandas.
+- Capturas (antes de añadir los dos bloques de voz, que no tocan la escena): 25 estados comparados con la 1.7.325, 16 idénticos bit a bit, máximo 1/255; los estados 13/14/16 siguen sin capturarse en este contenedor.
+- Navegador, en local: 14 de 14 en rust-book-cloth, rust-book-surfaces y phonemizer-rebuild (reescritas por los agentes sin ejecutarlas), rust-book-format, rust-timber, reader-power, rust-speech-highlight, rust-voice-options, shelf-plant-lifecycle y rust-foliage-projection. No se pasó la suite completa en local: se compara el run de CI de esta entrega con el 43544384425 (aa1077be), que dejó 32 pruebas rojas en las tandas 1, 2 y 6 y el resto verde.
+- Sin verificar: teléfono real; tiempos en navegador; las voces reales solo en CI.
+
 # 1.7.328 — fotograma de la estantería sin trabajo para los libros en reposo, mallas del libro, texto de PDF y plantas (tanda integ-bar-7)
 
 Changelog: «Estantería y PDF más rápidos».
