@@ -1,48 +1,14 @@
-// The one AudioContext of the neural voices. It has to be created (or resumed) synchronously inside a user gesture
-// (the play tap) or the browser keeps it suspended, so this tiny module is loaded with the app and the heavy engine is not.
+// The one audio output of the neural voices: the shared AudioContext or, in the Android app, the native PCM session.
+// The state and every decision are rust-ui (neural_audio.rs); these are the names the voice modules import.
+import { readerUI as ui } from '../rust-ui-required.js'
 
-let context = null
-let native = null
-let sequence = 0
-
-export function nativePcmBridge(env = globalThis) {
-  const bridge = env.InhousePcm
-  try { return bridge && Number(bridge.getProtocol()) === 1 ? bridge : null } catch { return null }
-}
-export const nativeAudio = () => native
-export function stopNativeAudio() {
-  const previous = native; native = null
-  if (context?.native) context = null
-  if (previous) try { previous.bridge.stop(previous.session) } catch { /* bridge already closed */ }
-}
-export function pauseNativeAudio() {
-  const previous = native
-  if (previous) previous.paused = true
-  if (context?.native) context = null
-  if (previous) try { previous.bridge.pause(previous.session) } catch { /* bridge already closed */ }
-}
-
+export const nativePcmBridge = env => ui().audio_bridge(env)
+export const nativeAudio = () => ui().audio_native()
+export const stopNativeAudio = () => ui().audio_stop_native()
+export const pauseNativeAudio = () => ui().audio_pause_native()
 /** Creates/resumes the shared AudioContext. Call it synchronously from a click/tap handler. Returns it (or null without Web Audio). */
-export function unlockAudio(env = globalThis) {
-  const bridge = nativePcmBridge(env)
-  if (bridge) {
-    if (!native || native.paused) {
-      const session = `${Date.now()}-${++sequence}`
-      bridge.begin(session, 'Audiolibro')
-      native = { bridge, session }
-      context = { native:true, state:'running', session, currentTime:0 }
-    }
-    return context
-  }
-  const Context = env.AudioContext || env.webkitAudioContext
-  if (!Context) return null
-  if (!context || context.state === 'closed') context = new Context({ latencyHint: 'playback' })
-  if (context.state !== 'running') { try { Promise.resolve(context.resume()).catch(() => {}) } catch { /* resumes with the next gesture */ } }
-  return context
-}
-
+export const unlockAudio = env => ui().audio_unlock(env)
 /** The shared context, if unlock() has created one. */
-export const audioContext = () => context
-
+export const audioContext = () => ui().audio_context()
 /** Forget the context (tests). */
-export const resetAudio = () => { context = null; native = null }
+export const resetAudio = () => ui().audio_reset()

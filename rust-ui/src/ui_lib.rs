@@ -68,6 +68,7 @@ mod voice_menus;
 mod neural_view;
 mod neural_engine;
 mod neural_engine_flows;
+mod neural_audio;
 mod neural_engine_shell;
 mod neural_facade;
 mod quick_wait;

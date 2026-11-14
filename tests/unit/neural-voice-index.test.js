@@ -61,7 +61,7 @@ describe('the contract (index.js)', () => {
     for (const file of ['catalog.js', 'audio.js']) {
       const text = readFileSync(new URL(`../../src/js/readers/neural-voice/${file}`, import.meta.url), 'utf8')
       const imports = [...text.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
-      expect(imports).toEqual(file === 'catalog.js' ? ['./supertonic-catalog.js'] : [])
+      expect(imports).toEqual(file === 'catalog.js' ? ['./supertonic-catalog.js'] : ['../rust-ui-required.js'])
     }
     // The catalogue's tables come from the app core the page already compiled for the shelf: only its loader, no engine.
     const sharedData=readFileSync(new URL('../../src/js/readers/neural-voice/supertonic-catalog.js',import.meta.url),'utf8')
