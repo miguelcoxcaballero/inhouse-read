@@ -33,11 +33,11 @@ for(const count of [40,120,300]){
  const cell=(entry,column)=>(frame.refresh(),frame.state[entry.row*S+column]);
  const easing=entry=>{frame.refresh();const at=entry.row*S;return frame.state[at+9]!==0||frame.state[at+20]!==0;};
  let censusStale=true;
- const tellHeld=()=>{if(censusStale){censusStale=false;frame.hold(entries);}},heldStill=()=>(tellHeld(),frame.still());
+ const tellHeld=()=>{if(censusStale){censusStale=false;frame.hold(entries);}},heldStill=asked=>(tellHeld(),frame.still(asked));
  // hasOngoingMotion's part over the entries: after every painted frame (the arena already holds what the frame told it).
  const ongoingFrozen=()=>entries.some(entry=>entry.insertion&&!entry.insertion.complete||entry.trashDrop&&!entry.trashDrop.complete);
- const ongoing=()=>Boolean(heldStill()&2);
- const ongoingStale=()=>{censusStale=true;return Boolean(heldStill()&2);};
+ const ongoing=()=>Boolean(heldStill(2));
+ const ongoingStale=()=>{censusStale=true;return Boolean(heldStill(2));};
  assert.equal(ongoing(),ongoingFrozen());
  compare(`ongoing motion, ${count} entries`,'us',{frozen:ongoingFrozen,'arena':ongoing,'arena after a change':ongoingStale});
  // beginInspectionGesture's scans (without the buttons' classes and the lamps, which stay with the host).
@@ -46,7 +46,7 @@ for(const count of [40,120,300]){
    [cell(entry,5),cell(entry,6),cell(entry,7)].every(value=>Math.abs(value)<=.220001));
   return stationary&&entries.some(entry=>cell(entry,5)||cell(entry,6)||cell(entry,7));
  };
- const gesture=()=>{censusStale=true;const held=heldStill();return !(held&5)&&Boolean(held&8);};
+ const gesture=()=>{censusStale=true;const held=heldStill(13);return !(held&5)&&Boolean(held&8);};
  assert.equal(gesture(),gestureFrozen());
  compare(`a gesture's start, ${count} entries`,'us',{frozen:gestureFrozen,'arena after a change':gesture},21,1000);
  frame.free();

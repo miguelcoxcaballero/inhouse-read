@@ -43,21 +43,21 @@ impl RustSceneEntryFrame{
   summary
  }
  pub fn census_ptr(&self)->usize{self.census.as_ptr() as usize}
- /// What the entries hold, asked outside a frame (after the host told what it holds): 1 an entry
- /// returns, flies to the bin, lands or previews; 2 a return or a flight has not ended; 4 a lift
- /// is beyond a press' own (0.22); 8 an entry is lifted at all.
- pub fn still(&self)->u32{
+ /// What the entries hold, asked outside a frame (after the host told what it holds). Of the
+ /// bits `asked`: 1 an entry returns, flies to the bin, lands or previews; 2 a return or a flight
+ /// has not ended; 4 a lift is beyond a press' own (0.22); 8 an entry is lifted at all.
+ pub fn still(&self,asked:u32)->u32{
   let mut summary=0;
   for row in self.state.chunks_exact(STATE){
    let held=row[HOSTED] as u32;
-   if held&(INSERTION|DROP)!=0||row[9]!=0.0||row[20]!=0.0{summary|=1;}
    if held&(INSERTION|RETURNED)==INSERTION||held&(DROP|DROPPED)==DROP{summary|=2;}
-   for lift in &row[5..8]{
+   if asked&1!=0&&(held&(INSERTION|DROP)!=0||row[9]!=0.0||row[20]!=0.0){summary|=1;}
+   if asked&12!=0{for lift in &row[5..8]{
     if !(lift.abs()<=0.220001){summary|=4;}
     if *lift!=0.0&&!lift.is_nan(){summary|=8;}
-   }
+   }}
   }
-  summary
+  summary&asked
  }
  /// A gesture on the room takes every press' lift at once.
  #[wasm_bindgen(js_name=settleLifts)]

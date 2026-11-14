@@ -729,9 +729,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // What the entries hold (model, visibility, quality, return, drop) may have changed: the entry arena is told again.
   let censusStale = true;
   const tellHeld = () => { if (censusStale) { censusStale = false; entryFrame.hold(bookEntries); } };
-  // Outside a frame: 1 an entry returns, flies, lands or previews; 2 a return or a flight has not ended;
-  // 4 a lift beyond a press' own; 8 any lift (rust-ui/src/scene_census.rs).
-  const heldStill = () => (tellHeld(), entryFrame.still());
+  // Outside a frame, of the bits asked: 1 an entry returns, flies, lands or previews; 2 a return or a
+  // flight has not ended; 4 a lift beyond a press' own; 8 any lift (rust-ui/src/scene_census.rs).
+  const heldStill = asked => (tellHeld(), entryFrame.still(asked));
 
   // What a book's materials are compared by, per book and record (JavaScript: through Rust it measured
   // about 14 times slower, 10 ms for 300 books). A plant's or a lamp's model key: rust-ui/src/scene_dom.rs.
@@ -2427,7 +2427,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const selected = modalDeferredEntry || (!canPresent() ? inactiveModalEntry : null);
     if (!selected || !bookEntries.includes(selected) || !cell(selected, 88) ||
       !selected.node?.classList.contains('is-away') || !selected.model || selected.model.visible ||
-      heldStill() & 1 || programsReady !== true || paintHeld || unpainted.length ||
+      heldStill(1) || programsReady !== true || paintHeld || unpainted.length ||
       lighting.settling || sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.moving || sceneView.hasDrop ||
       !paintedModalView || paintedModalView.progress !== sceneView.progress ||
       paintedModalView.inspectionZoom !== sceneView.zoom || paintedModalView.panX !== sceneView.panX || paintedModalView.panY !== sceneView.panY ||
@@ -2477,7 +2477,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // owns the screen completely: retain poses/resources and resume on return,
   // without advancing physics or painting an invisible room.
   function hasOngoingMotion() {
-    return Boolean(sceneView.turning || sceneView.reordering || sceneView.trashEasing || lastSceneMoving || lighting.settling || heldStill() & 2);
+    return Boolean(sceneView.turning || sceneView.reordering || sceneView.trashEasing || lastSceneMoving || lighting.settling || heldStill(2));
   }
 
   function presentationChanged() {
@@ -2646,7 +2646,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // A second finger changes a tentative book tap into navigation. Cancel
       // only the tiny pressure feedback; held books, returns, previews and
       // lamp fades keep their actual physics and demand frames.
-      const held = heldStill();
+      const held = heldStill(13);
       if (held & 5 || bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging') || entry.lampTint?.moving() ||
         entry.lampPower?.duration && entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return;
       if (held & 8) inspectionSnapshot = null;
@@ -2860,7 +2860,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (owner && owner !== nativeRoomLease) return false;
       const books = bookEntries.filter(entry => !isDecor(entry));
       if (!Array.isArray(records) || records.length !== books.length ||
-          heldStill() & 1 || bookEntries.some(entry => entry.replacement || entry.plantQuality))
+          heldStill(1) || bookEntries.some(entry => entry.replacement || entry.plantQuality))
         return false;
       const byId = new Map(books.map(entry => [String(entry.book?.id), entry]));
       if (byId.size !== books.length || !canAdoptShelfMetadata(previous, records)) return false;

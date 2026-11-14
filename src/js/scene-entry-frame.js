@@ -9,7 +9,7 @@ export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
   const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part), showEntries:(active, summary) => native.showEntries(active, summary),
-    hold, census, still:() => native.still(), settleLifts:started => native.settleLifts(started), painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
+    hold, census, still:asked => native.still(asked), settleLifts:started => native.settleLifts(started), painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
     prepare, bind, refresh, step, poses, settle, place, settled, hits, exclusions, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
