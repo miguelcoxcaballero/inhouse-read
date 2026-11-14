@@ -9,6 +9,9 @@ test('real espeak renews its heap beyond 120 calls offline without fetching its 
   page.on('requestfailed',request=>{if(request.url().includes('/neural-voice/phon/'))failures.push({url:request.url(),error:request.failure()})})
   await page.route('**/phonemizer-harness/**',async route=>{
     const name=new URL(route.request().url()).pathname.split('/').at(-1)
+    // The voice module's glue imports its own inline snippet (the one-crossing host access) from beside it.
+    const snippet=new URL(route.request().url()).pathname.match(/\/(snippets\/[\w-]+\/inline\d+\.js)$/)
+    if(snippet)return route.fulfill({contentType:'text/javascript',body:readFileSync(resolve('src/wasm/voice',snippet[1]),'utf8')})
     if(name==='index.html')return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Real phonemizer rebuild</title>'})
     if(name==='inhouse_read_voice_ui_bg.wasm')return route.fulfill({contentType:'application/wasm',body:readFileSync(resolve('src/wasm/voice',name))})
     const shared=name==='rust-voice-ui.js',glue=name==='inhouse_read_voice_ui.js'
