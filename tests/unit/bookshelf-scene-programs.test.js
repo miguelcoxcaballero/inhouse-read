@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 import { getBookRenderer } from '../../src/js/book-model.js';
+import { censusAudit } from './helpers/scene-census-audit.js'
+// Every census that does not walk the entries is checked against a walk (helpers/scene-census-audit.js).
+vi.mock('../../src/js/scene-entry-frame.js', async actual => (await import('./helpers/scene-census-audit.js')).auditedEntryFrame(actual))
 
 // The renderer double links programs "in the background": they report ready
 // only once the test says so, like KHR_parallel_shader_compile's completion.
@@ -47,6 +50,10 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
+  // The solver settles a saved room inside its first frame within 80 ms of wall time (book_gravity.rs)
+  // and animates what is left: on a loaded machine that budget ran out and the scene painted more
+  // frames than this file counts. The wall clock stands still here, like the frame clock.
+  vi.spyOn(Date, 'now').mockImplementation(() => 0);
   vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation(() => new THREE.Texture());
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
     createImageData:(width, height) => ({ data:new Uint8ClampedArray(width * height * 4) }),
@@ -60,6 +67,7 @@ beforeEach(() => {
   stage.getBoundingClientRect = () => rect(0, 60, 390, parseFloat(stage.style.height) || 715);
 });
 afterEach(() => {
+  expect(censusAudit.misses.splice(0)).toEqual([]);
   shelf?.dispose(); shelf = null; document.body.innerHTML = '';
   vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });

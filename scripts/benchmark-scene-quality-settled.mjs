@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 const dir=resolve(process.argv[2]||'src/wasm/shelf');
 const rust=await import(pathToFileURL(dir+'/inhouse_read_shelf.js').href);
 rust.initSync({module:readFileSync(dir+'/inhouse_read_shelf_bg.wasm')});
-const {settledQualityWork}=await import('../src/js/scene-entry-frame.js');
+const {settledQualityWork}=await import('../tests/unit/helpers/reference-scene-quality-settled.js');
 const median=a=>a.toSorted((x,y)=>x-y)[Math.floor(a.length/2)],results=[];
 function side(count){
  const log=[];
