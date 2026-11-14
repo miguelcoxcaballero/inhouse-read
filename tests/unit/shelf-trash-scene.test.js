@@ -938,4 +938,81 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(new THREE.Box3().setFromObject(model).max.x).toBeLessThanOrEqual(390);
     motion.cancel();
   });
+
+  // A bin whose lid, room and place stand keeps its lid's pose, its world matrices and its box on
+  // screen, and its button's data stands as written (bookshelf-scene.js updateTrash).
+  const frame = () => { clock += 16; shelf.invalidate(); shelf.flush({ force:true }); };
+  const binRecord = () => {
+    const bin = binModel(), lid = bin.userData.lid, held = [bin.matrixWorld.toArray(), lid.matrixWorld.toArray()];
+    bin.updateMatrixWorld(true);
+    return { style:trashNode.getAttribute('style'), data:{ ...trashNode.dataset }, hidden:trashNode.hidden,
+      lid:[lid.rotation.x, lid.rotation.z], held, fresh:[bin.matrixWorld.toArray(), lid.matrixWorld.toArray()] };
+  };
+  it('poses a still bin and takes its box once, and again when its lid or the room moves', () => {
+    showTrash(); frame();
+    const bin = binModel(), setState = bin.userData.setState;
+    let posed = 0, boxed = 0;
+    bin.userData.setState = state => { posed++; setState(state); };
+    const setFromObject = THREE.Box3.prototype.setFromObject;
+    vi.spyOn(THREE.Box3.prototype, 'setFromObject').mockImplementation(function (object, precise) { if (object === bin) boxed++; return setFromObject.call(this, object, precise); });
+    frame(); frame(); frame();
+    expect([posed, boxed]).toEqual([0, 0]);
+    const still = binRecord();
+    // The matrices it holds are the ones a full update gives.
+    expect(still.held).toEqual(still.fresh);
+    // The lid opens: every frame of the ease poses it and takes the box.
+    shelf.setTrashHover(true); frame();
+    expect(posed).toBe(1); expect(boxed).toBe(1);
+    flushFrames(400); frame();
+    const open = binRecord();
+    expect(open.lid[0]).toBeLessThan(-1.4); expect(open.held).toEqual(open.fresh);
+    posed = boxed = 0; frame(); frame();
+    expect([posed, boxed]).toEqual([0, 0]);
+    // The room moves under a zoom: the box follows it.
+    shelf.zoomTo(1.6, 200, 300); frame();
+    expect(boxed).toBe(1);
+    const zoomed = binRecord();
+    expect(zoomed.style).not.toBe(open.style); expect(zoomed.held).toEqual(zoomed.fresh);
+    shelf.zoomTo(1, 200, 300); frame(); shelf.setInspectionView({ zoom:1, panX:0, panY:0 }); frame();
+    shelf.setTrashHover(false); flushFrames(400); frame();
+    // Back where it stood: the same pose, matrices, box and data as before the round trip.
+    expect(binRecord()).toEqual(still);
+  });
+
+  it('closes the lid without its wobble after a drop is called off at any moment', () => {
+    showTrash(); frame();
+    const rest = binRecord();
+    for (const cancelAt of [16, 120, 300, 480, 640, 760, 820, 848, 900, 1200]) {
+      bookNode.classList.add('is-dragging'); bookNode.style.setProperty('--ihr-drag-x', '75px'); shelf.flush();
+      const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
+      bookNode.classList.remove('is-dragging'); bookNode.style.removeProperty('--ihr-drag-x'); bookNode.classList.add('is-away');
+      flushFrames(cancelAt);
+      motion.cancel(); bookNode.classList.remove('is-away'); shelf.flush(); flushFrames(); frame();
+      const after = binRecord();
+      expect(after.lid, `called off after ${cancelAt} ms`).toEqual(rest.lid);
+      expect(after.held).toEqual(after.fresh); expect(after.style).toBe(rest.style); expect(after.data).toEqual(rest.data);
+    }
+  });
+
+  it('writes the bin\'s data on a replacement button, and a drop\'s progress again after the last one was called off', () => {
+    showTrash(); frame();
+    const before = { ...trashNode.dataset }, style = trashNode.getAttribute('style');
+    expect(Object.keys(before).length).toBeGreaterThanOrEqual(14);
+    const former = trashNode, next = document.createElement('button');
+    stage.append(next); trashNode = next;
+    shelf.updateLayout({ stage, width:390, sceneWidth:390, height:750, trashNode:next,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }],
+      entries:[{ node:bookNode, book:{ id:'a', title:'Book', author:'Author' }, style:{ color:'#3c6548', width:28 },
+        x:60, y:130, width:100, height:180, thickness:28 }] });
+    frame();
+    expect({ ...next.dataset }).toEqual(before); expect(next.getAttribute('style')).toBe(style);
+    expect(former.dataset.trash3d).toBeUndefined();
+    // Two drops called off at once show the same progress: the second one's reaches the button too.
+    for (let round = 0; round < 2; round++) {
+      const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
+      expect(next.dataset.trashDropProgress).toBe('0.0000'); expect(next.dataset.dropProgress).toBe('0.0000');
+      motion.cancel();
+      expect(next.dataset.trashDropProgress).toBeUndefined();
+    }
+  });
 });

@@ -243,6 +243,60 @@ describe('per-frame cost of the retained shelf scene', () => {
     expect(lookups).not.toHaveBeenCalled();
   });
 
+  it('composes a hit surface\'s matrices again only when it, its model or the room moved', () => {
+    settle();
+    const frame = () => { clock += 16; shelf.invalidate(); shelf.flush({ force:true }); };
+    const bindings = nodes.map((_node, index) => gpu.scene.getObjectByName(`book:${index}`).getObjectByName('binding'));
+    const composed = bindings.map(() => 0);
+    bindings.forEach((binding, index) => { const update = binding.updateMatrix; binding.updateMatrix = function () { composed[index]++; return update.call(this); }; });
+    const taken = () => { const counts = [...composed]; composed.fill(0); return counts; };
+    const everyone = count => bindings.map(() => count), only = (index, count) => bindings.map((_b, other) => other === index ? count : 0);
+    // A model that has stood for three frames is asked whether its surface stands, and it does.
+    frame(); frame(); frame(); frame(); taken();
+    frame(); frame();
+    expect(taken()).toEqual(everyone(0));
+    const rest = styles(), world = bindings.map(binding => binding.matrixWorld.toArray());
+    // The matrices the surfaces hold are the ones a full update of the room gives.
+    gpu.scene.updateMatrixWorld(true);
+    expect(bindings.map(binding => binding.matrixWorld.toArray())).toEqual(world);
+    taken();
+    // Something else moves a surface inside its model: its matrices and its button follow in the next
+    // frame, and only its own.
+    bindings[3].position.x += 6; frame();
+    expect(taken()).toEqual(only(3, 1));
+    expect(nodes[3].getAttribute('style')).not.toBe(rest[3]);
+    expect(styles().filter((style, index) => style !== rest[index]).length).toBe(1);
+    bindings[3].position.x -= 6; frame();
+    expect(taken()).toEqual(only(3, 1));
+    expect(styles()).toEqual(rest);
+    bindings[7].scale.y = .5; frame(); expect(taken()).toEqual(only(7, 1));
+    bindings[7].scale.y = 1; bindings[2].rotation.z = .1; frame(); expect(taken()).toEqual(bindings.map((_b, index) => index === 7 || index === 2 ? 1 : 0));
+    bindings[2].rotation.z = 0; frame(); taken();
+    expect(styles()).toEqual(rest);
+    // A lifted book is taken while it moves and until it has stood for three frames; the others are not.
+    nodes[5].classList.add('is-lifted'); shelf.flush(); flushFrames(600);
+    for (let index = 0; index < 4; index++) frame();
+    const lifted = taken();
+    expect(lifted[5]).toBeGreaterThan(3); expect(lifted.filter(Boolean).length).toBe(1);
+    frame(); expect(taken()).toEqual(everyone(0));
+    nodes[5].classList.remove('is-lifted'); shelf.flush(); flushFrames(600);
+    for (let index = 0; index < 4; index++) frame();
+    taken(); frame(); expect(taken()).toEqual(everyone(0));
+    expect(styles()).toEqual(rest);
+    // The room moves under a zoom: every surface is taken in that frame and, to be remembered, in the
+    // first frame of the room at rest; none after that.
+    shelf.zoomTo(1.5, 200, 300); frame();
+    expect(taken()).toEqual(everyone(1));
+    frame(); expect(taken()).toEqual(everyone(1));
+    frame(); frame(); expect(taken()).toEqual(everyone(0));
+    shelf.setInspectionView({ zoom:1, panX:0, panY:0 }); frame();
+    expect(taken()).toEqual(everyone(1));
+    frame(); frame(); taken(); frame(); expect(taken()).toEqual(everyone(0));
+    expect(styles()).toEqual(rest);
+    gpu.scene.updateMatrixWorld(true);
+    expect(bindings.map(binding => binding.matrixWorld.toArray())).toEqual(world);
+  });
+
   it('reads the stage, scroller and canvas rectangles once per draw, before the nodes are restyled', () => {
     settle();
     reads.scroller = reads.stage = reads.canvas = 0;

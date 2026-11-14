@@ -77,12 +77,29 @@ export function bookModelMock() {
   }
 }
 
+// A lamp's emission as its model holds it at this render: the emitter's power and tint and every
+// emitting material's intensity and colour (what setPower and setTint write).
+function lampGlow(model) {
+  const glow = []
+  model.traverse(part => {
+    for (const material of [].concat(part.material || [])) if (material.emissive) glow.push(material.emissiveIntensity, material.emissive.r, material.emissive.g, material.emissive.b)
+  })
+  return [model.userData.lightEmitter.power, model.userData.lightEmitter.tint ?? null, glow]
+}
+
 function sceneDump(scene) {
   const dump = []
   scene.traverse(object => {
     if (object.userData.dropMarker || object.userData.entry || object.name === 'Library trash' || object.name?.startsWith('Shelf catalog') ||
       object === scene || object.userData.shelfLamp) {
-      dump.push([object.name, object.visible, Array.from(object.matrixWorld.elements), object.userData.shelfLamp ? [object.intensity, object.visible] : 0])
+      dump.push([object.name, object.visible, Array.from(object.matrixWorld.elements), object.userData.shelfLamp ? [object.intensity, object.visible] : 0,
+        object.userData.lightEmitter ? lampGlow(object) : 0])
+    }
+    // The bin as the renderer finds it (the mock does not update matrices): its world matrix, its
+    // lid's pose and world matrix and the opening it reports.
+    if (object.userData.trash) {
+      const lid = object.userData.lid
+      dump.push(['bin', object.visible, Array.from(object.matrixWorld.elements), lid.rotation.x, lid.rotation.z, Array.from(lid.matrixWorld.elements), object.userData.openness])
     }
   })
   return dump
@@ -120,8 +137,9 @@ function snapshot(run) {
 
 const CLASSES = ['is-away', 'is-pressed', 'is-lifted', 'is-dragging', 'is-press-pending']
 
-/** One reproducible session. `create` is the scene factory under test. Returns the transcript. */
-export async function runScenario(create, seed, { steps = 60, units } = {}) {
+/** One reproducible session. `create` is the scene factory under test. Returns the transcript.
+ * `weights` overrides how often each operation is drawn and `bin` gives every session a bin. */
+export async function runScenario(create, seed, { steps = 60, units, weights:emphasis = null, bin = false } = {}) {
   const random = mulberry32(seed * 7919 + 13)
   const pick = list => list[Math.floor(random() * list.length)]
   const between = (low, high) => low + random() * (high - low)
@@ -197,7 +215,7 @@ export async function runScenario(create, seed, { steps = 60, units } = {}) {
       return this.className === 'ihr-bookshelf-scene' ? canvasRect(this) : rect(0, 0, this.width, this.height)
     }))
 
-    const trashNode = random() < .75 ? document.createElement('button') : null
+    const trashNode = random() < .75 || bin ? document.createElement('button') : null
     const catalogNode = random() < .6 ? document.createElement('button') : null
     if (trashNode) { trashNode.className = 'ihr-shelf-trash'; stage.append(trashNode) }
     if (catalogNode) { catalogNode.className = 'ihr-shelf-catalog'; stage.append(catalogNode) }
@@ -306,6 +324,32 @@ export async function runScenario(create, seed, { steps = 60, units } = {}) {
         if (animation) animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
         return Boolean(animation)
       },
+      // A flight into the bin that is called off part of the way (drawn only where a session asks for it).
+      trashCancel: async () => {
+        const animation = run.shelf.animateObjectToTrash(pick(run.nodes), { duration: pick([0, 200, 850]) })
+        if (!animation) return false
+        animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
+        await drain(whole(0, 6)); animation.cancel(); return true
+      },
+      // Something other than the scene moves a part inside a model (its hit surface or an object between
+      // it and the model): the button must follow in the next frame, as when every matrix is taken again.
+      nudgePart: async () => {
+        const models = []
+        gpu.scene?.traverse(object => { if (object.userData.entry && object.parent) models.push(object) })
+        const model = pick(models); if (!model) return null
+        const surface = ['binding', 'ceramic-pot', 'lamp-base', 'warm-opal-diffuser', 'woven-linen-drum-shade'].map(name => model.getObjectByName(name)).find(Boolean)
+        if (!surface) return null
+        const chain = []
+        for (let object = surface; object && object !== model; object = object.parent) chain.push(object)
+        const part = pick(chain), kind = pick(['x', 'y', 'turn', 'scale', 'back'])
+        if (kind === 'x') part.position.x += between(-9, 9)
+        else if (kind === 'y') part.position.y += between(-9, 9)
+        else if (kind === 'turn') part.rotation.z += between(-.2, .2)
+        else if (kind === 'scale') part.scale.multiplyScalar(between(.8, 1.25))
+        else { part.position.set(0, 0, 0); part.rotation.set(0, 0, 0); part.scale.set(1, 1, 1) }
+        run.shelf.invalidate(random() < .5)
+        return [model.name, part.name, kind]
+      },
       trashThrough: async () => {
       const animation = run.shelf.animateObjectToTrash(pick(run.nodes), { duration: pick([200, 850]) })
       if (animation) animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
@@ -406,7 +450,7 @@ export async function runScenario(create, seed, { steps = 60, units } = {}) {
       }
     }
     const names = Object.keys(operations)
-    const weights = { frames: 10, advance: 3, mode: 4, scroll: 5, class: 5, drag: 3, release: 3, inspectView: 4, zoomTo: 2, query: 4, layout: 3 }
+    const weights = { frames: 10, advance: 3, mode: 4, scroll: 5, class: 5, drag: 3, release: 3, inspectView: 4, zoomTo: 2, query: 4, layout: 3, trashCancel: 0, nudgePart: 0, ...emphasis }
     const bag = names.flatMap(name => Array(weights[name] ?? 1).fill(name))
     // The scene starts in a known state, then the session wanders through it.
     run.shelf.setMode(startMode, { animate: false }); await drain()
