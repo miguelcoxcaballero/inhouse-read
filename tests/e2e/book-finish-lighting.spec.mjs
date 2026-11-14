@@ -3,6 +3,7 @@ import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 
 const BOOK_ID = 'finish:controlled-blue';
 const LAMP_KEY = 'inhouse-read-shelf-lamps';
+const PHYSICS_KEY = 'inhouse-read-shelf-physics-v1';
 const FINISHES = ['matte', 'satin', 'glossy'];
 const FINISH_CONTROLS = ['Brillo de la portada', 'Brillo del canto', 'Brillo del lomo'];
 test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 });
@@ -46,6 +47,18 @@ async function readBook(page) {
     db.close();
     return { cover:book.coverFinish, spine:book.spineSurfaceFinish, edge:book.pageEdgeFinish };
   }, BOOK_ID);
+}
+
+// The saved room keeps one row per solid: [key, kind, base, size, bay, x, y, angle, solid]. `base` is the centre of
+// the book standing in its slot; the board's contact surface is one millimetre above that nominal floor.
+async function standBook(page) {
+  return page.evaluate(key => {
+    const room = JSON.parse(localStorage.getItem(key) || 'null'), row = room?.[2]?.find(row => row[1] === 0);
+    if (!row) return false;
+    row[5] = row[2][0]; row[6] = row[2][1] + .001; row[7] = 0;
+    localStorage.setItem(key, JSON.stringify(room));
+    return true;
+  }, PHYSICS_KEY);
 }
 
 async function assertResting(scene) {
@@ -156,6 +169,13 @@ test('mate, satinado y brillante cambian el libro real en la estantería, reflej
   const scene = page.locator('.ihr-bookshelf-scene'), spine = page.locator(`.ihr-spine[data-book-id="${BOOK_ID}"]`);
   const lamp = page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');
   await expect(spine).toBeVisible(); await assertResting(scene);
+  // Since the rigid-body shelf (1.7.260) a fresh book with free board on a side is seeded just beyond its tipping
+  // point and lies down when the shelf first settles; this lone book then shows its cover at a grazing angle. The
+  // comparison is about a cover facing the lamp, so stand the book where it is, the way a careful placement leaves
+  // it: upright on its board in the saved room, which the next load restores without reseeding it.
+  await expect.poll(() => standBook(page), { timeout:30_000 }).toBe(true);
+  await page.reload(); await expect(spine).toBeVisible(); await assertResting(scene);
+  expect(await page.evaluate(key => Math.abs(JSON.parse(localStorage.getItem(key))[2].find(row => row[1] === 0)[7]), PHYSICS_KEY)).toBeLessThan(.01);
   // Resolve the actual document cover/layout before fixing pixel coordinates.
   await spine.tap(); await expect(page.locator('.ihr-flyout__book')).toBeVisible();
   await page.getByRole('button', { name:'Cerrar', exact:true }).click();
