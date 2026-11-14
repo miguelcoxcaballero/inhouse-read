@@ -89,6 +89,7 @@ mod page_box;
 mod promises;
 mod foliate_reader;
 mod foliate_open;
+mod foliate_members;
 mod pdf_reader;
 mod pdf_speech;
 mod reader_controller;
