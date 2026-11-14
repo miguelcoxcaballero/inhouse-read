@@ -28,3 +28,26 @@ export function referencePaintedAway(entries, painted) {
   for (const entry of entries) if (entry.flags.away && entry.model && !entry.model.visible &&
     !entry.insertion && !entry.trashDrop) painted.add(entry);
 }
+// The diagnostics a painted frame wrote after its counts, in this order (`showData` skipped a value that stood).
+export function referenceShow(showData, [plants, highPlants, lamps, overview, detailed, highBooks, pending], resolutionText, lampLighting, renderer, inspectionOverview, ratio, cabinet) {
+  showData('activePlants', String(plants));
+  showData('highResolutionPlants', String(highPlants));
+  showData('activeLamps', String(lamps));
+  showData('lampLightCount', String(lampLighting.activeCount));
+  showData('activeLampLights', String(lampLighting.activeCount));
+  showData('lampShadowCount', String(lampLighting.shadowCount));
+  showData('lampLightTemperature', '2700');
+  showData('overviewBooks', String(overview));
+  showData('highResolutionBooks', String(highBooks));
+  showData('bookTextureResolutions', resolutionText);
+  showData('sceneGeometries', String(renderer.info?.memory?.geometries || 0));
+  showData('sceneTextures', String(renderer.info?.memory?.textures || 0));
+  showData('scenePrograms', String(renderer.info?.programs?.length || 0));
+  showData('inspectionOverviewReady', String(Boolean(inspectionOverview)));
+  showData('pixelRatio', String(ratio));
+  showData('detailedBooks', String(detailed));
+  showData('bookQualityPending', String(pending));
+  showData('shadowMapSize', '1024');
+  showData('furnitureMeshes', String(cabinet?.children.length || 0));
+  showData('plantGeometry', 'catalog-3d');
+}

@@ -1,8 +1,7 @@
-// @vitest-environment node
 import {expect,it} from 'vitest';
 import {rustShelf as rust} from './helpers/rust-shelf-ready.js';
 import {createSceneEntryFrame,ENTRY_STATE as S} from '../../src/js/scene-entry-frame.js';
-import {referenceCounts,referenceCasters,referenceOverlay,referenceNative,referenceTouched,referenceBusy,referencePaintedAway} from './helpers/reference-scene-census.js';
+import {referenceCounts,referenceCasters,referenceOverlay,referenceNative,referenceTouched,referenceBusy,referencePaintedAway,referenceShow} from './helpers/reference-scene-census.js';
 
 // The frame's questions about its entries (counts, casters, loading, overlay and native insertion,
 // busy, touched, painted away, the quality hold) are answered by one census of the entry arena
@@ -35,8 +34,13 @@ const flags=(entries,frame)=>({
  touched:referenceTouched(entries,e=>frame.state[e.row*S+5])});
 
 it('answers what the frozen per-entry scans answered, over random rooms and layouts',()=>{
- const frame=createSceneEntryFrame(rust),painted=new Set();
- let entries=[],lastText=null,rebuilt=0;
+ const frame=createSceneEntryFrame(rust),painted=new Set(),dataset={},frozen={},shownData=new Map();
+ // The frozen `showData`, a plain object standing for the canvas' data; `writes` counts the values that reach it.
+ let writes=0,frozenWrites=0;
+ const showData=(key,value)=>{if(shownData.get(key)===value)return;shownData.set(key,value);if(frozen[key]!==value){frozen[key]=value;frozenWrites++;}};
+ // An element's data keeps String(value) of what it is given.
+ frame.shows(new Proxy(dataset,{set(target,key,value){writes++;target[key]=String(value);return true;}}));
+ let entries=[],rebuilt=0;
  try{
   for(let round=0;round<600;round++){
    if(round%7===0){
@@ -50,17 +54,28 @@ it('answers what the frozen per-entry scans answered, over random rooms and layo
    expect({loading:Boolean(held&2),overlay:Boolean(held&4),native:Boolean(held&8),busy:Boolean(held&16),touched:Boolean(held&32)}).toEqual(expected);
    expect(frame.counts[0]).toBe(referenceCasters(entries,trash));
    const counts=new Float64Array(8),text=referenceCounts(rust.scene_counts,entries,counts);
-   expect(frame.resolutions).toBe(text);
    expect(Array.from(frame.counts.subarray(1))).toEqual(Array.from(counts));
-   // The text is rebuilt only when a counted number differs.
-   if(held&1)rebuilt++;else expect(frame.resolutions).toBe(lastText);
-   lastText=frame.resolutions;
+   // The counts are rebuilt only when a counted number differs.
+   if(held&1)rebuilt++;
    expect(frame.census(entries,trash)&1).toBe(0);
+   if(chance(.8)){
+    // A painted frame: its diagnostics reach the canvas' data as the frozen writes did, in their order, and no more often.
+    const lampLighting={activeCount:pick([0,0,1,3]),shadowCount:pick([0,1])},overviewReady=pick([null,null,{}]),ratio=pick([1,1,1.5,2,2.625]);
+    const renderer={info:pick([undefined,{},{memory:{geometries:pick([0,12,12,40]),textures:pick([3,3,90])},programs:pick([undefined,[],[1,2,3]])}])};
+    const cabinet=pick([null,{children:[]},{children:[1,2,3,4]}]);
+    referenceShow(showData,counts,text,lampLighting,renderer,overviewReady,ratio,cabinet);
+    frame.refresh();
+    frame.shown.set([lampLighting.activeCount,lampLighting.shadowCount,renderer.info?.memory?.geometries||0,renderer.info?.memory?.textures||0,overviewReady?1:0,ratio,cabinet?.children.length||0]);
+    frame.show(0);dataset.scenePrograms=String(renderer.info?.programs?.length||0);frame.show(1);
+    expect(JSON.stringify(dataset)).toBe(JSON.stringify(frozen));
+    // (the programs' count, written above by the host, is the frozen side's only other write)
+    expect(writes).toBeLessThanOrEqual(frozenWrites);
+   }
    if(chance(.4)){frame.painted();referencePaintedAway(entries,painted);}
    frame.refresh();
    for(const e of entries)expect(frame.state[e.row*S+88]!==0).toBe(painted.has(e));
   }
-  expect(rebuilt).toBeGreaterThan(100);
+  expect(rebuilt).toBeGreaterThan(100);expect(writes).toBeGreaterThan(300);
  }finally{frame.free();}
 });
 
@@ -90,7 +105,10 @@ it('follows a growth of the memory',()=>{
   const entries=[{kind:'book',row:-1,model:{id:5,visible:true,userData:{inspectionResolution:1024}}}];
   frame.bind(entries,false);write(frame,entries);
   other.memory().grow(1);
+  const dataset=document.createElement('canvas').dataset;frame.shows(dataset);
   expect(frame.census(entries,true)&1).toBe(1);
-  expect(frame.resolutions).toBe('[1024]');expect(frame.counts[0]).toBe(36);expect(frame.counts[8]).toBe(1);
+  other.memory().grow(1);frame.refresh();frame.shown.fill(2);frame.show(0);frame.show(1);
+  expect(dataset.bookTextureResolutions).toBe('[1024]');expect(dataset.pixelRatio).toBe('2');expect(Object.keys(dataset).length).toBe(19);
+  expect(frame.counts[0]).toBe(36);expect(frame.counts[8]).toBe(1);
  }finally{frame.free();other.free();}
 });

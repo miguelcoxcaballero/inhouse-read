@@ -243,6 +243,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // An entry's lift, landing, preview, reorder offset and pose live in the entry arena, at `row`
   // (scene-entry-frame.js); `lift` reads it for whoever inspects an entry from outside the frame.
   const entryFrame = createSceneEntryFrame(rust);
+  entryFrame.shows(canvas.dataset);
   const cell = (entry, column) => (entryFrame.refresh(), entryFrame.state[entry.row * ENTRY_STATE + column]);
   const easing = entry => { entryFrame.refresh(); const at = entry.row * ENTRY_STATE; return entryFrame.state[at + 9] !== 0 || entryFrame.state[at + 20] !== 0; };
   function settleLift(entry, started) {
@@ -2389,30 +2390,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     if (overlayInsertion) for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     showData('renderCount', String(++renderCount));
-    entryFrame.refresh();
-    const [, plants, highPlants, lamps, overview, detailed, highBooks, pending] = entryFrame.counts;
-    showData('activePlants', String(plants));
-    showData('highResolutionPlants', String(highPlants));
-    showData('activeLamps', String(lamps));
-    showData('lampLightCount', String(lampLighting.activeCount));
-    showData('activeLampLights', String(lampLighting.activeCount));
-    showData('lampShadowCount', String(lampLighting.shadowCount));
-    showData('lampLightTemperature', '2700');
-    showData('overviewBooks', String(overview));
-    showData('highResolutionBooks', String(highBooks));
-    showData('bookTextureResolutions', entryFrame.resolutions);
-    showData('sceneGeometries', String(renderer.info?.memory?.geometries || 0));
-    showData('sceneTextures', String(renderer.info?.memory?.textures || 0));
-    showData('scenePrograms', String(renderer.info?.programs?.length || 0));
-    showData('inspectionOverviewReady', String(Boolean(inspectionOverview)));
-    showData('pixelRatio', String(ratio));
-    showData('detailedBooks', String(detailed));
-    showData('bookQualityPending', String(pending));
-    showData('shadowMapSize', '1024');
+    // The diagnostics that follow from the census and these numbers reach the canvas from Rust, when they change.
     let cabinet = null;
     for (const object of furniture.children) if (object.userData.furniture) { cabinet = object; break; }
-    showData('furnitureMeshes', String(cabinet?.children.length || 0));
-    showData('plantGeometry', 'catalog-3d');
+    entryFrame.refresh();
+    const shown = entryFrame.shown, info = renderer.info;
+    shown[0] = lampLighting.activeCount; shown[1] = lampLighting.shadowCount; shown[2] = info?.memory?.geometries || 0; shown[3] = info?.memory?.textures || 0;
+    shown[4] = inspectionOverview ? 1 : 0; shown[5] = ratio; shown[6] = cabinet?.children.length || 0;
+    entryFrame.show(0);
+    showData('scenePrograms', String(info?.programs?.length || 0));
+    entryFrame.show(1);
     showData('animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
     lastSceneMoving = Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving);
     lastLocalSceneMoving = Boolean(sceneView.turning || sceneView.reordering || localMoving || trashMoving);

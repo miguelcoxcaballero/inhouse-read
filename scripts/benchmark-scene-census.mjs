@@ -62,7 +62,7 @@ for(const count of [40,120,300]){
    for(const entry of entries)if(entry.insertion?.overlayCanvas)sink++;
    const text=countFrame.sample(entries,countOut);
    const busy=referenceBusy(entries,easing)||referenceBusy(entries,easing);
-   return [casterSignature,hold,overlay,refresh,busy,text,...countOut];
+   return [casterSignature,hold,overlay,refresh,busy,...countOut];
   }
   function census(now){
    const held=frame.census(entries,true),casters=frame.counts[0];
@@ -72,7 +72,7 @@ for(const count of [40,120,300]){
    if(overlay)for(const entry of entries)if(entry.insertion?.overlayCanvas)sink++;
    frame.refresh();
    const [,a,b,c,d,e,f,g,h]=frame.counts;
-   return [casters,hold,overlay,refresh,Boolean(held&16),frame.resolutions,a,b,c,d,e,f,g,h];
+   return [casters,hold,overlay,refresh,Boolean(held&16),a,b,c,d,e,f,g,h];
   }
   assert.deepEqual(census(1),frozen(1));
   const rounds=41,frames=4000,times={frozen:[],census:[]};
@@ -86,4 +86,45 @@ for(const count of [40,120,300]){
   console.log(`${String(count).padStart(3)} entries${inspecting?', retained image':'                '}: frozen ${a.toFixed(3)} µs  census ${b.toFixed(3)} µs  x${(a/b).toFixed(2)}`);
   frame.free();sceneOld.free();scene.free();
  }
+}
+
+// A painted frame's diagnostics after the census: the frozen twenty `showData` calls (a string and a
+// map lookup each) against seven numbers and two calls of `show`. `steady` changes nothing between
+// frames; `moving` changes the renderer's geometry count in every frame (one value written).
+{
+ const {referenceShow,referenceCounts}=await import('../tests/unit/helpers/reference-scene-census.js');
+ const entries=room(120),frame=createSceneEntryFrame(rust);
+ frame.bind(entries,false);
+ for(let i=0;i<entries.length;i++)frame.state[i*S]=entries[i].kind==='plant'?1:entries[i].kind==='lamp'?2:0;
+ frame.census(entries,true);
+ const counts=new Float64Array(8),text=referenceCounts(rust.scene_counts,entries,counts);
+ // An element's data keeps String(value) of what it is given: both sides write through the same stand-in.
+ const data=()=>new Proxy({},{set(target,key,value){target[key]=String(value);return true;}});
+ const frozenData=data(),liveData=data(),shownData=new Map(),lampLighting={activeCount:2,shadowCount:1},cabinet={children:new Array(31)};
+ const renderer={info:{memory:{geometries:140,textures:60},programs:new Array(22)}};
+ const showData=(key,value)=>{if(shownData.get(key)===value)return;shownData.set(key,value);if(frozenData[key]!==value)frozenData[key]=value;};
+ frame.shows(liveData);
+ for(const moving of [false,true]){
+  const frozen=index=>{if(moving)renderer.info.memory.geometries=140+index%7;referenceShow(showData,counts,text,lampLighting,renderer,null,2,cabinet);};
+  const live=index=>{
+   if(moving)renderer.info.memory.geometries=140+index%7;
+   frame.refresh();
+   const shown=frame.shown,info=renderer.info;
+   shown[0]=lampLighting.activeCount;shown[1]=lampLighting.shadowCount;shown[2]=info?.memory?.geometries||0;shown[3]=info?.memory?.textures||0;
+   shown[4]=0;shown[5]=2;shown[6]=cabinet?.children.length||0;
+   frame.show(0);showData('scenePrograms',String(info?.programs?.length||0));frame.show(1);
+  };
+  frozen(0);live(0);
+  const {scenePrograms,...rest}=frozenData;assert.deepEqual({...liveData},rest);
+  const rounds=41,frames=20000,times={frozen:[],live:[]};
+  for(let warm=0;warm<20000;warm++){frozen(warm);live(warm);}
+  for(let round=0;round<rounds;round++)for(const [name,run] of round%2?[['frozen',frozen],['live',live]]:[['live',live],['frozen',frozen]]){
+   const started=performance.now();
+   for(let index=0;index<frames;index++)run(index);
+   times[name].push((performance.now()-started)/frames*1000);
+  }
+  const a=median(times.frozen),b=median(times.live);
+  console.log(`diagnostics, ${moving?'one value moving':'steady          '}: frozen ${a.toFixed(3)} µs  show ${b.toFixed(3)} µs  x${(a/b).toFixed(2)}`);
+ }
+ frame.free();
 }

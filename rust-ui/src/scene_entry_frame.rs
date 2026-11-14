@@ -62,13 +62,16 @@ pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit
  rest:Vec<f64>,rest_stamp:Vec<u32>,rest_generation:u32,affected:Vec<bool>,published:Vec<f64>,
  /// The census: the counts' inputs as last counted, its nine numbers, the resolutions' text,
  /// whether a quality map was loading and the quality hold's deadline.
- counted:Vec<f64>,count_dirty:bool,census:Box<[f64;9]>,resolutions:String,loading:bool,paint_deadline:f64}
+ counted:Vec<f64>,count_dirty:bool,census:Box<[f64;9]>,resolutions:String,loading:bool,paint_deadline:f64,
+ /// The canvas' diagnostics: its data attributes, the host's numbers and what was written last.
+ dataset:Option<js_sys::Object>,shown_keys:Vec<JsValue>,shown:Box<[f64;7]>,shown_last:[u64;19],shown_text:String}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
  pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16]),
   rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
-  counted:Vec::new(),count_dirty:true,census:Box::new([0.0;9]),resolutions:String::new(),loading:false,paint_deadline:0.0}}
+  counted:Vec::new(),count_dirty:true,census:Box::new([0.0;9]),resolutions:String::new(),loading:false,paint_deadline:0.0,
+  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;19],shown_text:String::new()}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);
