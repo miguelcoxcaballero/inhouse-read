@@ -3,7 +3,6 @@ import { rustCoverColor } from './cover-color-wasm.js';
 import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from './font-glyph-wasm.js';
 import { createRustFontScorer } from './font-score-wasm.js';
 export { scoreFontMask } from './font-score-core.js';
-import { createRustFontWrapCache, rustFontSearchPlan, rustFontFamilyMax, rustFontFamilySelect } from './font-policy-wasm.js';
 import { shelfWorkReady } from './idle-startup.js';
 import { getRustShelf, loadRustShelf } from './rust-shelf.js';
 /*
@@ -15,8 +14,9 @@ import { getRustShelf, loadRustShelf } from './rust-shelf.js';
  * visible on the cover instead of assigning every book the same serif.
  *
  * The analysis itself (decode bounds, sample, colour, font loads, the single-flight search and its
- * slices) is rust-ui/src/cover_appearance.rs. This module hands it the numeric core's bridges, the
- * generator slice driver and the Worker client, and keeps the two values a page owns between analyses.
+ * slices, the title wraps and the choice of family) is rust-ui/src/cover_appearance.rs and font_policy.rs.
+ * This module hands it the core's colour, plane and score bridges, the generator slice driver and the
+ * Worker client, and keeps the two values a page owns between analyses.
  */
 
 // Relative modules cannot resolve when this self-contained analyzer is imported from a data URL.
@@ -109,8 +109,7 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
 
 const host = {
   core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, color: rustCoverColor, mask: fontMask,
-  prepare: rustPrepareCoverPixels, scorer: createRustFontScorer, wraps: createRustFontWrapCache, plan: rustFontSearchPlan,
-  max: rustFontFamilyMax, select: rustFontFamilySelect, open: openFontScoreJob, slices: runInSlices, yieldToMain,
+  prepare: rustPrepareCoverPixels, scorer: createRustFontScorer, open: openFontScoreJob, slices: runInSlices, yieldToMain,
   noop: () => {},
   // One cover is searched at a time; the six candidate faces are requested once per page.
   turn: Promise.resolve(), fonts: undefined

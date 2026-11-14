@@ -1,3 +1,5 @@
+// Frozen copy of src/js/font-policy-wasm.js as it was when the title-font policy moved into the shelf module
+// (rust-ui/src/font_policy.rs): the bridge to the numeric core that production used. Tests compare against it.
 // Canvas measurement and locale case conversion are browser operations. The
 // wrapping/search decisions and retained text state belong to the native core.
 const stringFromUnits = units => {

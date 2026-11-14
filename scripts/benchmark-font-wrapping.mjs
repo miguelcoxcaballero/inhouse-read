@@ -1,7 +1,7 @@
 import {chromium} from '@playwright/test';
 import {createServer} from 'vite';
 const html=`<!doctype html><meta charset="utf-8"><script type="module">
-import {createRustFontWrapCache} from '/inhouse-read/src/js/font-policy-wasm.js';
+import {createRustFontWrapCache} from '/inhouse-read/tests/unit/helpers/reference-font-policy-wasm.js';
 import {requireRustCore} from '/inhouse-read/src/js/rust-core.js';
 window.measure=async()=>{
  const core=await requireRustCore(),c=document.createElement('canvas').getContext('2d'),title='The curious case of the quiet garden and the little golden book';
