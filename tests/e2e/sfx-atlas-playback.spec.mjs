@@ -5,9 +5,9 @@ test('the published atlas plays recorded lamp and book events and parks audio af
  test.setTimeout(240_000);
  await page.emulateMedia({reducedMotion:'reduce'});
  await page.addInitScript(()=>{
-  window.recordedAudio={events:[],contexts:[],kinds:[]};
+  window.recordedAudio={events:[],contexts:[],kinds:[],clips:[]};
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.cozy_clip)return result;
-   const exports={...actual,cozy_clip:(...args)=>{window.recordedAudio.kinds.push(args.slice(-3)[0]);return actual.cozy_clip(...args)}};
+   const exports={...actual,cozy_clip:(...args)=>{const [kind,material]=args.slice(-3);window.recordedAudio.kinds.push(kind);window.recordedAudio.clips.push([kind,material]);return actual.cozy_clip(...args)}};
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy};
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}};
   class Node{gain={value:0,setTargetAtTime(){}};pan={value:0};connect(){}disconnect(){}}
@@ -32,7 +32,10 @@ test('the published atlas plays recorded lamp and book events and parks audio af
   await page.waitForTimeout(300);await page.mouse.move(x+24,y-4,{steps:5});await page.mouse.up();await quietShelf(page.locator('.ihr-bookshelf-scene'));
  }
  await info.attach('sound-event-kinds',{body:JSON.stringify(await page.evaluate(()=>window.recordedAudio.kinds)),contentType:'application/json'});
- await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(14)&&window.recordedAudio.kinds.some(k=>k===12||k===13)),{timeout:5000}).toBe(true);
+ // The pot's own sound when it is put down: its set-down or fall on a board (12, 13) or, in this fixture, a ceramic
+ // impact (kind 3 with the pot's material, 4): the book that leant on the plant falls flat where the plant stood, so
+ // the MUSKOT pot comes down on that book and never meets the board (book_gravity_audio.rs).
+ await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(14)&&window.recordedAudio.clips.some(([kind,material])=>kind===12||kind===13||kind===3&&material===4)),{timeout:5000}).toBe(true);
  await expect.poll(()=>page.evaluate(()=>window.recordedAudio.kinds.includes(22)&&window.recordedAudio.kinds.some(k=>k===9||k===10)),{timeout:5000}).toBe(true);
  expect(await page.evaluate(()=>window.recordedAudio.kinds.some(k=>[4,8,11,18].includes(k)))).toBe(false);
  const point=await visibleMiddleBookPoint(page);expect(point).not.toBeNull();await page.touchscreen.tap(point.x,point.y);

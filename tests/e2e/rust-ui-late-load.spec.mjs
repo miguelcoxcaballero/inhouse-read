@@ -10,7 +10,9 @@ test('a slow Rust download holds the reader until it arrives, then every operati
   window.lateRust={instances:0,paints:0,maps:0,views:0,preferences:0}
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.speech_paint)return result
    window.lateRust.instances++;const exports={...actual}
-   exports.speech_paint=(...args)=>{window.lateRust.paints++;return actual.speech_paint(...args)}
+   // The PDF source paints its sentence inside Rust (pdf_speech_highlight clears, then paints): speech_paint is no
+   // longer an export the page calls.
+   exports.pdf_speech_highlight=(...args)=>{window.lateRust.paints++;return actual.pdf_speech_highlight(...args)}
    exports.speech_map=(...args)=>{window.lateRust.maps++;return actual.speech_map(...args)}
    exports.rustreaderview_new=(...args)=>{window.lateRust.views++;return actual.rustreaderview_new(...args)}
    exports.rustreaderview_applyPreferences=(...args)=>{window.lateRust.preferences++;return actual.rustreaderview_applyPreferences(...args)}
@@ -42,6 +44,7 @@ test('a slow Rust download holds the reader until it arrives, then every operati
   await expect(page.locator('.pdf-reflow-page')).toBeVisible({timeout:30000})
   await page.getByRole('button',{name:'Escuchar el libro'}).click();await page.getByRole('button',{name:'Reproducir',exact:true}).click()
   await expect.poll(()=>page.evaluate(()=>window.lateRust.paints)).toBeGreaterThan(0)
+  await expect.poll(()=>page.evaluate(()=>[...(CSS.highlights.get('inhouse-speech')||[])].map(range=>range.toString()).join('').length)).toBeGreaterThan(0)
   const proof=await page.evaluate(()=>window.lateRust)
   expect(proof.instances).toBe(1);expect(proof.maps).toBeGreaterThan(0);expect(requests).toBe(1);expect(errors).toEqual([])
   await info.attach('late-module-adoption',{body:JSON.stringify(proof),contentType:'application/json'})
