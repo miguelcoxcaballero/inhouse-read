@@ -21,20 +21,9 @@ export class FoliateSpeechCursor {
   get active() { return Boolean(this.current) }
   reset() { ++this.epoch; this.current = null; this.browsing = false }
   browse() { this.browsing = true }
-  async returnToSpeech() { this.browsing = false; await this.reveal() }
-  close() { this.reset(); this.closed = true; this.env.removeEventListener('visibilitychange', this.onVisibility) }
-
-  wrap(source, map, index) { const ui = readerUI(); return ui.cursor_wrap(this, source, map, index, kit, ui) }
-
-  async next({ isActive = () => true } = {}) {
-    const ui = readerUI(), found = await ui.cursor_next(this, isActive, mapSpeechText)
-    return found?.state ? ui.cursor_source(this, found, isActive, kit, ui) : found
-  }
-
-  currentSource() {
-    const state = this.current
-    return state ? { ...state.source, start:state.offset } : null
-  }
 }
+// returnToSpeech, close, wrap, next and currentSource: rust-ui cursor_member (foliate_members.rs). reset and browse are
+// reached by every wheel tick while the audiobook plays and stay here.
+rustMethods(FoliateSpeechCursor,'cursor_member','!returnToSpeech close wrap !next currentSource',kit)
 // valid, remember and reveal (only the most recent audible CFI is shown): rust-ui foliate_cursor.rs via foliate_method.
 rustMethods(FoliateSpeechCursor,'foliate_method','valid remember reveal',{get Overlayer(){return Overlayer}})

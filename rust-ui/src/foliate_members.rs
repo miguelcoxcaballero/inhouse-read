@@ -10,7 +10,8 @@ use js_sys::{Array, Function, Object, Promise};
 use wasm_bindgen::prelude::*;
 use crate::eager::eager;
 use crate::quick_wait::wait;
-use crate::foliate_open::{foliate_open, foliate_opened, foliate_ready, foliate_speech_source};
+use crate::foliate_cursor::next_chapter;
+use crate::foliate_open::{cursor_source, cursor_wrap, foliate_open, foliate_opened, foliate_ready, foliate_speech_source};
 use crate::foliate_reader::{foliate_layout, foliate_reset_cursor, foliate_styles, foliate_turn, speech_prepare};
 use crate::host::{absent, call, method, method_opt, num, read, set};
 
@@ -151,5 +152,42 @@ pub fn foliate_reader_method(host: JsValue, name: &str, args: Array, kit: JsValu
             measured
         }
         _ => return Err(js_sys::TypeError::new(&format!("The foliate reader has no member {name}")).into()),
+    })
+}
+
+/// `FoliateSpeechCursor.prototype[name].apply(cursor, args)` for the members that were short JavaScript methods
+/// (foliate-speech-cursor.js): returning to the audible place, closing, wrapping the visible chapter's source, finding
+/// the next chapter and the source being spoken. `kit` holds foliate's SectionProgress and the text and page-break
+/// doorways. reset() and browse() stay JavaScript: a wheel tick during audio reaches them.
+#[wasm_bindgen]
+pub fn cursor_member(host: JsValue, name: &str, args: Array, kit: JsValue, ui: JsValue) -> R {
+    let (a0, a1, a2) = (args.get(0), args.get(1), args.get(2));
+    Ok(match name {
+        "returnToSpeech" => eager(async move {
+            set(&host, "browsing", &JsValue::FALSE)?;
+            wait(&method(&host, "reveal", &[])?).await?;
+            Ok(JsValue::UNDEFINED)
+        }).into(),
+        "close" => {
+            method(&host, "reset", &[])?;
+            set(&host, "closed", &JsValue::TRUE)?;
+            method(&read(&host, "env")?, "removeEventListener", &[&JsValue::from_str("visibilitychange"), &read(&host, "onVisibility")?])?;
+            JsValue::UNDEFINED
+        }
+        "wrap" => cursor_wrap(&host, &a0, &a1, &a2, &kit, &ui)?,
+        "next" => eager(async move {
+            let is_active = option(&a0, "isActive")?;
+            let is_active: JsValue = if is_active.is_undefined() { always().into() } else { is_active };
+            let found = next_chapter(host.clone(), is_active.clone().unchecked_into(), read(&kit, "mapText")?.unchecked_into()).await?;
+            if opt(&found, "state")?.is_truthy() { cursor_source(&host, &found, &is_active, &kit, &ui) } else { Ok(found) }
+        }).into(),
+        "currentSource" => {
+            let state = read(&host, "current")?;
+            if !state.is_truthy() { return Ok(JsValue::NULL); }
+            let source = Object::assign(&Object::new(), &crate::host::boxed(&read(&state, "source")?).unchecked_into());
+            set(&source, "start", &read(&state, "offset")?)?;
+            source.into()
+        }
+        _ => return Err(js_sys::TypeError::new(&format!("The speech cursor has no member {name}")).into()),
     })
 }

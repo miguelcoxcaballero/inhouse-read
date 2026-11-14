@@ -152,3 +152,51 @@ it('releases its visibility listener and every handle exactly like the original'
     w.off()
   }
 })
+
+// The members answered by cursor_member (foliate_members.rs): each call of the view and the settling of each promise
+// at the same microtask as the original method (the sessions above compare them between tasks).
+async function probe(Cursor, flavour) {
+  const w = world(Cursor, flavour), rows = []
+  const watch = async (label, start) => {
+    let settled = 'pending', promise
+    try { promise = start() } catch (error) { rows.push([label, 'threw', error?.constructor?.name]); return undefined }
+    rows.push([label, 'answered', promise instanceof Promise, w.log.length])
+    let value
+    Promise.resolve(promise).then(result => { value = result; settled = `resolved ${result === null ? 'null' : typeof result}` }, error => { settled = `rejected ${error?.constructor?.name}` })
+    let seen = ''
+    for (let round = 0; round < 3; round++) {
+      for (let tick = 0; tick < 40; tick++) {
+        await Promise.resolve()
+        const now = `${w.log.length} ${settled}`
+        if (now !== seen) { rows.push([label, round, tick, now]); seen = now }
+      }
+      await settle()
+    }
+    return value
+  }
+  await watch('next while visible', () => { w.env.hidden = false; const found = w.cursor.next(); w.env.hidden = true; return found })
+  const first = await watch('next', () => w.cursor.next())
+  rows.push(['source', first ? Object.keys(first).join() : String(first)])
+  await watch('activate', () => first?.activate?.())
+  await watch('follow', () => first?.follow?.(0, 7))
+  rows.push(['current', JSON.stringify(Object.keys(w.cursor.currentSource() ?? {})), w.cursor.currentSource()?.start])
+  await watch('return', () => w.cursor.returnToSpeech())
+  await watch('next inactive', () => w.cursor.next({ isActive:() => false }))
+  await watch('next with null', () => w.cursor.next(null))
+  const second = await watch('next again', () => w.cursor.next({ isActive:() => true }))
+  await watch('activate again', () => second?.activate?.())
+  await watch('browse then return', () => { w.cursor.browse(); return w.cursor.returnToSpeech() })
+  rows.push(['close', w.cursor.close(), w.cursor.closed, w.cursor.currentSource()])
+  rows.push(['log', JSON.stringify(w.log), JSON.stringify(summary(w.cursor))])
+  w.off()
+  return rows
+}
+
+it('settles next, returnToSpeech and the sources at the microtask the original did', async () => {
+  for (const flavour of [{}, { failing:1 }, { nonLinear:1 }, { fixed:true }, { theme:'night' }]) {
+    const expected = await probe(ReferenceSpeechCursor, flavour)
+    const actual = await probe(FoliateSpeechCursor, flavour)
+    expect(actual).toEqual(expected)
+    expect(expected.length).toBeGreaterThan(25)
+  }
+})

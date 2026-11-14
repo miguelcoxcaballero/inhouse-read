@@ -37,6 +37,7 @@ mod language_detect;
 mod language_data;
 mod picker_policy;
 mod picker_actions;
+mod picker_members;
 mod picker_warm;
 mod voice_session;
 mod voice_advance;

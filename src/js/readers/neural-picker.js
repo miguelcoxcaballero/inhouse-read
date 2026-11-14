@@ -8,7 +8,7 @@ import { readerUI, rustMethods } from './rust-ui-required.js'
 import * as runtime from './neural-runtime.js'
 import {loadNeural,neuralEngine,neuralVoiceList} from './neural-runtime.js'
 import * as catalog from './voice-catalog.js'
-import {declaredLanguage,isNeuralId,langBase,languageName,orderNeuralVoices,recommendedNeuralFor} from './voice-catalog.js'
+import {langBase,languageName,orderNeuralVoices,recommendedNeuralFor} from './voice-catalog.js'
 
 // Texts of the natural-voice list that the Rust picker receives as plain data.
 const DOWNLOAD_ERRORS={offline:'Sin conexión.',storage:'Sin espacio en el dispositivo.',default:'No se pudo descargar.'}
@@ -61,18 +61,6 @@ export class NeuralVoicePicker {
   render(){return pickerView(this).renderPicker(this)}
   row(engine,voice){return pickerView(this).pickerRow(this,engine,voice)}
 
-  // --- Actions ------------------------------------------------------------------------------------------------------
-  /** Downloads a voice (only ever called by a tap) and selects it when it is ready. */
-  async install(id){
-    const ui=readerUI(),context=ui.picker_install_begin(this,id,neuralEngine,isNeuralId,()=>new AbortController());if(!context)return
-    try{await context.task;ui.picker_install_done(this,id,context,declaredLanguage,langBase,neuralVoiceList)}catch(error){ui.picker_install_error(this,id,context,error,DOWNLOAD_ERRORS)}
-  }
-  async remove(id){
-    const ui=readerUI(),context=ui.picker_remove_begin(this,id,neuralEngine,neuralVoiceList);if(!context)return
-    try{await context.engine.remove(id)}catch{}
-    ui.picker_remove_done(this,id,context)
-  }
-
   // --- Keyboard focus survives a repaint ---------------------------------------------------------------------------------
   focusKey() { return this.view.focusKey() }
   restoreFocus(key) { this.view.restoreFocus(key) }
@@ -85,3 +73,6 @@ export class NeuralVoicePicker {
 // offers a download when no installed natural voice speaks the book's language.
 rustMethods(NeuralVoicePicker,'picker_method',`warm refresh used attach warmContext isWarmCurrent cancelWarm warmUp changed paint state
  click cancel voiceName use dismissed snoozed dismiss offerFor renderOffer`,kit)
+// install downloads a voice (only ever called by a tap) and selects it when it is ready; remove deletes one: rust-ui
+// picker_member (picker_members.rs), which answers with the promise Rust returns.
+rustMethods(NeuralVoicePicker,'picker_member','!install !remove',kit)
