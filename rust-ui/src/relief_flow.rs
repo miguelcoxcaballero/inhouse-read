@@ -16,14 +16,62 @@ use crate::host::{get_at,method,read,set};
 #[wasm_bindgen]
 extern "C"{
  #[wasm_bindgen(js_namespace=Promise,js_name=all,catch)]fn all(list:&JsValue)->R<JsValue>;
+ /// Whatever the flows read or write: every member is one typed crossing, with no property name to send.
+ type Bag;
+ #[wasm_bindgen(constructor,js_class="ImageData",catch)]fn image_data(data:&JsValue,width:&JsValue,height:&JsValue)->R<Bag>;
+ #[wasm_bindgen(method,getter,catch)]fn width(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn height(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=naturalWidth)]fn natural_width(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=videoWidth)]fn video_width(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=displayWidth)]fn display_width(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=naturalHeight)]fn natural_height(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=videoHeight)]fn video_height(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=displayHeight)]fn display_height(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn aborted(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn signal(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=maxSize)]fn max_size(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=selectionAlpha)]fn selection_alpha(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn normal(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn foil(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn gloss(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn pixels(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=foilColor)]fn foil_color(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn ms(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=longestSliceMs)]fn longest(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn slices(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=normalSelectionAlpha)]fn normal_selection_alpha(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,setter,js_name=data)]fn set_data(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=width)]fn set_width(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=height)]fn set_height(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=foil)]fn set_foil(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=gloss)]fn set_gloss(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=normal)]fn set_normal(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=normalSelectionAlpha)]fn set_normal_selection_alpha(this:&Bag,value:bool);
+ #[wasm_bindgen(method,setter,js_name=pixels)]fn set_pixels(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=size)]fn set_size(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=foilColor)]fn set_foil_color(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=stats)]fn set_stats(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=ms)]fn set_ms(this:&Bag,value:f64);
+ #[wasm_bindgen(method,setter,js_name=longestSliceMs)]fn set_longest(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=slices)]fn set_slices(this:&Bag,value:&JsValue);
+ #[wasm_bindgen(method,setter,catch,js_name=imageSmoothingEnabled)]fn set_smoothing(this:&Bag,value:bool)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=imageSmoothingQuality)]fn set_smoothing_quality(this:&Bag,value:&str)->R<()>;
+ // The host of src/js/cover-relief.js.
+ #[wasm_bindgen(method,catch)]fn normalize(this:&Bag,relief:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=ready)]fn shelf_ready(this:&Bag)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn sliced(this:&Bag,task:&JsValue,signal:&JsValue,stats:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn maps(this:&Bag,work:&JsValue,hires:&JsValue,choice:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn render(this:&Bag,maps:&JsValue,unit:f64,alpha:&JsValue,fresh:bool,layers:&JsValue)->R<JsValue>;
 }
+fn bag(value:&JsValue)->&Bag{value.unchecked_ref()}
+fn object()->JsValue{Object::new().into()}
 
 const WORK_SIZE:f64=288.0;
 const MAP_SIZE:f64=512.0;
 
 fn abort_error()->JsValue{let error=js_sys::Error::new("Análisis cancelado");error.set_name("AbortError");error.into()}
 /// `signal?.aborted`.
-fn aborted(signal:&JsValue)->R<bool>{if absent(signal){Ok(false)}else{Ok(truthy(&read(signal,"aborted")?))}}
+fn aborted(signal:&JsValue)->R<bool>{if absent(signal){Ok(false)}else{Ok(truthy(&bag(signal).aborted()?))}}
 /// A destructuring default: `{ key = fallback }`.
 fn or(value:JsValue,fallback:JsValue)->JsValue{if value.is_undefined(){fallback}else{value}}
 fn record(entries:&[(&str,&JsValue)])->R<JsValue>{
@@ -93,7 +141,7 @@ fn decode(source:&JsValue,signal:&JsValue)->JsValue{
    *on_abort.borrow_mut()=listener.clone();
    let listening=(||->R{
     method(signal,"addEventListener",&[&text("abort"),&listener,&record(&[("once",&JsValue::TRUE)])?])?;
-    if truthy(&read(signal,"aborted")?){let _=reject.call1(&JsValue::UNDEFINED,&abort_error());}
+    if truthy(&bag(signal).aborted()?){let _=reject.call1(&JsValue::UNDEFINED,&abort_error());}
     Ok(())
    })();
    if let Err(failure)=listening{let _=reject.call1(&JsValue::UNDEFINED,&failure);}
@@ -125,34 +173,29 @@ fn decode(source:&JsValue,signal:&JsValue)->JsValue{
 
 /// `raster(drawable, long, { sampleColors })`: the drawable at `long` pixels on its long side, read back.
 fn raster(drawable:&JsValue,long:f64,sample_colors:bool)->R<JsValue>{
- let first=|keys:[&str;4]|->R<JsValue>{
-  for key in &keys[..3]{let value=read(drawable,key)?;if truthy(&value){return Ok(value)}}
-  read(drawable,keys[3])
- };
- let width=first(["naturalWidth","videoWidth","displayWidth","width"])?;
- let height=first(["naturalHeight","videoHeight","displayHeight","height"])?;
+ let source=bag(drawable);
+ let or_else=|value:JsValue,next:fn(&Bag)->R<JsValue>|->R<JsValue>{if truthy(&value){Ok(value)}else{next(source)}};
+ let width=or_else(or_else(or_else(source.natural_width()?,Bag::video_width)?,Bag::display_width)?,Bag::width)?;
+ let height=or_else(or_else(or_else(source.natural_height()?,Bag::video_height)?,Bag::display_height)?,Bag::height)?;
  let size=relief_fit_dimensions(&width,&height,&number(long))?;
+ let (width,height)=(bag(&size).width()?,bag(&size).height()?);
  let canvas=new_canvas()?;
- set(&canvas,"width",&read(&size,"width")?)?;set(&canvas,"height",&read(&size,"height")?)?;
+ bag(&canvas).set_width(&width);bag(&canvas).set_height(&height);
  let context=cpu_context(&canvas)?;
  // Analysis samples actual pixels, without manufacturing blend colors along two-color edges.
  // Map/preview resizing retains the existing high quality.
- smooth(&context,!sample_colors)?;
- let (width,height)=(read(&size,"width")?,read(&size,"height")?);
- let zero=number(0.0);
- method(&context,"drawImage",&[drawable,&zero,&zero,&width,&height])?;
- let data=read(&method(&context,"getImageData",&[&zero,&zero,&read(&size,"width")?,&read(&size,"height")?])?,"data")?;
+ bag(&context).set_smoothing(!sample_colors)?;bag(&context).set_smoothing_quality(intern("high"))?;
+ duck(&context).draw_image(drawable,0.0,0.0,num(&width),num(&height))?;
+ let data=duck(&duck(&context).get_image_data(0.0,0.0,num(&width),num(&height))?).data()?;
  // Preserve alpha: transparent cutouts/board padding are excluded from colors.
- record(&[("data",&data),("width",&read(&size,"width")?),("height",&read(&size,"height")?)])
+ let raster=object();
+ bag(&raster).set_data(&data);bag(&raster).set_width(&width);bag(&raster).set_height(&height);
+ Ok(raster)
 }
 /// A property write that fails on `null` as the engine's own does.
 fn write(target:&JsValue,key:&str,value:&JsValue)->R{
  if absent(target){return Err(js_sys::TypeError::new(&format!("Cannot set properties of {} (setting '{key}')",if target.is_null(){"null"}else{"undefined"})).into())}
  set(target,key,value)
-}
-fn smooth(context:&JsValue,enabled:bool)->R{
- write(context,"imageSmoothingEnabled",&JsValue::from_bool(enabled))?;
- write(context,"imageSmoothingQuality",&text("high"))
 }
 /// `toCanvas(rgba, width, height)`.
 fn to_canvas(rgba:&JsValue,width:&JsValue,height:&JsValue)->R<JsValue>{
@@ -165,11 +208,7 @@ fn to_canvas(rgba:&JsValue,width:&JsValue,height:&JsValue)->R<JsValue>{
  put.dyn_ref::<Function>().ok_or_else(||JsValue::from(js_sys::TypeError::new("putImageData is not a function")))?.call3(&context,&pixels,&number(0.0),&number(0.0))?;
  Ok(canvas)
 }
-fn image_data(rgba:&JsValue,width:&JsValue,height:&JsValue)->R<JsValue>{
- if get(&page(),"ImageData").is_undefined(){return Err(js_sys::ReferenceError::new("ImageData is not defined").into())}
- crate::host::construct("ImageData",&[rgba,width,height])
-}
-use crate::host::get;
+fn image_data(rgba:&JsValue,width:&JsValue,height:&JsValue)->R<JsValue>{Ok(Bag::image_data(rgba,width,height)?.into())}
 
 /// What the three flows share: the host's generator makers and the slice driver.
 #[derive(Clone)]
@@ -177,21 +216,21 @@ struct Passes{host:JsValue,signal:JsValue,stats:JsValue}
 impl Passes{
  fn make(&self,name:&str,args:&[&JsValue])->R<JsValue>{method(&self.host,name,args)}
  /// `runSliced(task, { signal, stats })`.
- fn sliced(&self,task:&JsValue)->R<JsValue>{method(&self.host,"sliced",&[task,&self.signal,&self.stats])}
+ fn sliced(&self,task:&JsValue)->R<JsValue>{bag(&self.host).sliced(task,&self.signal,&self.stats)}
  /// `Promise.all([decode(coverUrl, signal), ready()])`.
  fn decoded(&self,cover_url:&JsValue)->R<JsValue>{
   let decoding=decode(cover_url,&self.signal);
-  all(&Array::of2(&decoding,&method(&self.host,"ready",&[])?))
+  all(&Array::of2(&decoding,&bag(&self.host).shelf_ready()?))
  }
 }
 fn stats(durations:bool)->R<JsValue>{
- let zero=number(0.0);
- let stats=record(&[("slices",&zero),("longestSliceMs",&zero),("ms",&zero)])?;
+ let (stats,zero)=(object(),number(0.0));
+ bag(&stats).set_slices(&zero);bag(&stats).set_longest(&zero);bag(&stats).set_ms(0.0);
  if durations{set(&stats,"durations",&Array::new())?;}
  Ok(stats)
 }
 /// `options = {}`.
-fn given(options:JsValue)->JsValue{if options.is_undefined(){Object::new().into()}else{options}}
+fn given(options:JsValue)->JsValue{if options.is_undefined(){object()}else{options}}
 
 /// `thumbnailOf(work, maps, run)`: the shaded preview at 132 px wide at most, as a JPEG data URL.
 fn thumbnail(passes:&Passes,work:&JsValue,maps:&JsValue)->JsValue{
@@ -283,10 +322,10 @@ pub fn relief_build_maps(host:JsValue,cover_url:JsValue,relief:JsValue,options:J
  let (flow,promise)=Flow::new();
  flow.clone().run(move||{
   let options=given(options);
-  let max_size=or(read(&options,"maxSize")?,number(MAP_SIZE));
-  let signal=read(&options,"signal")?;
-  let selection_alpha=or(read(&options,"selectionAlpha")?,JsValue::FALSE);
-  let choice=method(&host,"normalize",&[&relief])?;
+  let max_size=or(bag(&options).max_size()?,number(MAP_SIZE));
+  let signal=bag(&options).signal()?;
+  let selection_alpha=or(bag(&options).selection_alpha()?,JsValue::FALSE);
+  let choice=bag(&host).normalize(&relief)?;
   if !truthy(&choice){flow.resolve(&JsValue::NULL);return Ok(())}
   let passes=Passes{host,signal,stats:stats(false)?};
   let decoded=passes.decoded(&cover_url)?;
@@ -294,21 +333,27 @@ pub fn relief_build_maps(host:JsValue,cover_url:JsValue,relief:JsValue,options:J
    let drawable=get_at(&both,0);
    let hires=raster(&drawable,relief_map_resolution(&max_size)?,false)?;
    let work=if relief_map_mode(&choice)?!=0{hires.clone()}else{raster(&drawable,WORK_SIZE,true)?};
-   let building=passes.sliced(&passes.make("maps",&[&work,&hires,&choice])?)?;
+   let building=passes.sliced(&bag(&passes.host).maps(&work,&hires,&choice)?)?;
    flow.clone().then(&building,move|maps|{
-    let unit=relief_normal_unit(&read(&maps,"width")?,&read(&maps,"height")?,&number(1.0))?;
-    let rendering=passes.sliced(&passes.make("render",&[&maps,&number(unit),&selection_alpha,&JsValue::TRUE,&JsValue::NULL])?)?;
+    let unit=relief_normal_unit(&bag(&maps).width()?,&bag(&maps).height()?,&number(1.0))?;
+    let rendering=passes.sliced(&bag(&passes.host).render(&maps,unit,&selection_alpha,true,&JsValue::NULL)?)?;
     flow.clone().then(&rendering,move|planes|{
-     let normal=read(&planes,"normal")?;
-     let (width,height)=(read(&maps,"width")?,read(&maps,"height")?);
-     let built=record(&[("height",&image_data(&read(&planes,"height")?,&width,&height)?),
-      ("foil",&image_data(&read(&planes,"foil")?,&width,&height)?),("gloss",&image_data(&read(&planes,"gloss")?,&width,&height)?),("normal",&normal)])?;
-     if truthy(&selection_alpha){set(&built,"normalSelectionAlpha",&JsValue::TRUE)?;}
-     let stats=&passes.stats;
-     set(&built,"pixels",&maps)?;
-     set(&built,"size",&record(&[("width",&width),("height",&height)])?)?;
-     set(&built,"foilColor",&read(&maps,"foilColor")?)?;
-     set(&built,"stats",&record(&[("ms",&number(js_round(num(&read(stats,"ms")?)))),("longestSliceMs",&read(stats,"longestSliceMs")?),("slices",&read(stats,"slices")?)])?)?;
+     let planes=bag(&planes);
+     let normal=planes.normal()?;
+     let (width,height)=(bag(&maps).width()?,bag(&maps).height()?);
+     let (built,size,report)=(object(),object(),object());
+     let (out,stats)=(bag(&built),bag(&passes.stats));
+     out.set_height(&image_data(&planes.height()?,&width,&height)?);
+     out.set_foil(&image_data(&planes.foil()?,&width,&height)?);
+     out.set_gloss(&image_data(&planes.gloss()?,&width,&height)?);
+     out.set_normal(&normal);
+     if truthy(&selection_alpha){out.set_normal_selection_alpha(true);}
+     out.set_pixels(&maps);
+     bag(&size).set_width(&width);bag(&size).set_height(&height);
+     out.set_size(&size);
+     out.set_foil_color(&bag(&maps).foil_color()?);
+     bag(&report).set_ms(js_round(num(&stats.ms()?)));bag(&report).set_longest(&stats.longest()?);bag(&report).set_slices(&stats.slices()?);
+     out.set_stats(&report);
      flow.resolve(&built);
      Ok(())
     });
@@ -328,20 +373,20 @@ pub fn relief_build_maps(host:JsValue,cover_url:JsValue,relief:JsValue,options:J
 pub fn relief_update_strengths(host:JsValue,built:JsValue,selection:JsValue,options:JsValue)->Promise{
  let (flow,promise)=Flow::new();
  flow.clone().run(move||{
-  let signal=read(&given(options),"signal")?;
-  let ready=method(&host,"ready",&[])?;
+  let signal=bag(&given(options)).signal()?;
+  let ready=bag(&host).shelf_ready()?;
   let passes=Passes{host,signal,stats:undefined()};
   flow.clone().then(&ready,move|_|{
-   let maps=read(&built,"pixels")?;
+   let maps=bag(&built).pixels()?;
    let layers=relief_selected_layers(&maps,&selection)?;
-   let unit=relief_normal_unit(&read(&maps,"width")?,&read(&maps,"height")?,&number(1.0))?;
-   let alpha=JsValue::from_bool(read(&built,"normalSelectionAlpha")?.as_bool()==Some(true));
-   let rendering=passes.sliced(&passes.make("render",&[&maps,&number(unit),&alpha,&JsValue::FALSE,&layers])?)?;
+   let unit=relief_normal_unit(&bag(&maps).width()?,&bag(&maps).height()?,&number(1.0))?;
+   let alpha=JsValue::from_bool(bag(&built).normal_selection_alpha()?.as_bool()==Some(true));
+   let rendering=passes.sliced(&bag(&passes.host).render(&maps,unit,&alpha,false,&layers)?)?;
    flow.clone().then(&rendering,move|planes|{
-    let (pixels,normal)=(read(&planes,"pixels")?,read(&planes,"normal")?);
-    let next:JsValue=Object::new().into();
+    let (pixels,normal)=(bag(&planes).pixels()?,bag(&planes).normal()?);
+    let next=object();
     assign(&next,&built)?;
-    set(&next,"pixels",&pixels)?;set(&next,"normal",&normal)?;
+    bag(&next).set_pixels(&pixels);bag(&next).set_normal(&normal);
     flow.resolve(&next);
     Ok(())
    });
