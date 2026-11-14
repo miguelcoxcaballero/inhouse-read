@@ -46,7 +46,7 @@ function arenaFrame(frame,gravityFrame,motionFrame,entries,c){
    state[at+40]=kind?e.width:e.thickness;state[at+41]=undershelf?3:kind;state[at+42]=e.shelf||0;state[at+43]=c.pixelsPerMetre;
    state[at+44]=row.left||0;state[at+45]=row.right??c.width;state[at+46]=row.bottom??e.y+e.height/2;state[at+47]=row.ceiling??row.top??0;state[at+48]=e.gripHeight||0;
   }
-  state[at+49]=(e.trashDrop?1:0)|(e.insertion?2:0)|(e.model?4:0)|(e.overview?8:0)|(e.trashDrop?.complete?16:0)|(e.insertion?.overlayCanvas?32:0);
+  state[at+85]=(e.trashDrop?e.trashDrop.complete?544:32:0)|(e.insertion?e.insertion.overlayCanvas?80:16:0)|(e.model?1:0);state[at+89]=e.overview?1:0;
  }
  let summary;
  if(!c.usePhysics)summary=frame.poses(motionFrame.native,c.sceneView,c.roomMotion,c.roomTransition,c.now,c.arranging,c.room);

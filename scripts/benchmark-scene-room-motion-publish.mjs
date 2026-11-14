@@ -37,7 +37,7 @@ function frame(c,tick,bays,arranging){
  for(let index=0;index<entries.length;index++){
   const e=entries[index],at=index*S,state=entryFrame.state,kind=e.kind==='lamp'?2:0;
   if(e.stale){e.stale=false;state[at]=kind;state[at+23]=e.x;state[at+24]=e.y;state[at+25]=e.width;state[at+26]=e.height;state[at+27]=e.depth;state[at+28]=e.depthInset;state.set(e.box,at+50);}
-  state[at+2]=e.bits;state[at+3]=e.dragNumberX;state[at+4]=e.dragNumberY;state[at+49]=4;
+  state[at+2]=e.bits;state[at+3]=e.dragNumberX;state[at+4]=e.dragNumberY;state[at+85]=1;
  }
  c.sink+=entryFrame.poses(c.motionFrame.native,c.sceneView,c.roomMotion,c.roomTransition,now,arranging,room.matrixWorld);
 }

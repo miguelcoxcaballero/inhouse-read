@@ -22,8 +22,7 @@ use super::projection::RustSceneProjectionFrame;
 /// - 37-39 the solver's presentation: book Euler order is `ZYX`, moving, projection flags;
 /// - 40-48 the solver's geometry (thickness or width, kind, shelf, pixels per metre, the bay's
 ///   left, right, bottom, ceiling and the grip height);
-/// - 49 what the host holds (1 drop, 2 insertion, 4 model, 8 overview, 16 drop complete,
-///   32 insertion overlay); 50-55 the slot box;
+/// - 49 unused (what the host holds is columns 85 and 89); 50-55 the slot box;
 /// - 56 the pose's Euler order (0 `XYZ`, 1 `ZYX`), which a frame without rigid bodies keeps;
 /// - 57-60 the pose's quaternion (`Quaternion#setFromEuler`, recomputed when the Euler moved);
 /// - 61-68 the pose last handed to the host; 69 the lean; 70 out: 1 the pose differs from the
@@ -37,7 +36,7 @@ use super::projection::RustSceneProjectionFrame;
 ///   away book; 89-90 the overview flag and the resolution the entry was last told to be drawn at.
 const STATE:usize=91;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TOLD:usize=89;
 #[path="scene_census.rs"] mod census;
-const HOST:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
+const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
 /// Per entry in: pose position, quaternion `[x, y, z, w]` and scale; the projection's kind,
@@ -147,9 +146,11 @@ impl RustSceneEntryFrame{
    row[HELD..HELD+8].copy_from_slice(&pose);
    input[..3].copy_from_slice(&pose[..3]);input[3..7].copy_from_slice(&row[QUATERNION..QUATERNION+4]);input[7]=pose[6];
    input[8]=row[0];input[9]=if physics{row[39]}else{row[2]};
-   let host=row[HOST] as u32;
-   input[10]=f64::from(host&1!=0);input[11]=f64::from(host&2!=0);input[12]=f64::from(host&4!=0);
-   input[13]=f64::from(host&8!=0);input[14]=f64::from(host&16!=0);input[15]=f64::from(host&32!=0);
+   // What the host holds (`scene_census.rs`: a drop, an insertion, a model, a completed drop, an
+   // insertion on the overlay) and the overview flag the entry was told last.
+   let host=row[HOSTED] as u32;
+   input[10]=f64::from(host&32!=0);input[11]=f64::from(host&16!=0);input[12]=f64::from(host&1!=0);
+   input[13]=f64::from(row[TOLD]!=0.0);input[14]=f64::from(host&512!=0);input[15]=f64::from(host&64!=0);
    input[16..22].copy_from_slice(&row[BOX..BOX+6]);
    let mut held=[0u64;16];
    for (bits,value) in held.iter_mut().zip(&output[26..42]){*bits=value.to_bits();}

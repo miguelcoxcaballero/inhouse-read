@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use crate::scene_view::RustScene;
 use super::{RustSceneEntryFrame,STATE,HOSTED,PAINTED_AWAY};
 
-/// Column 85's bits.
+/// Column 85's bits (512, a completed drop, is read by the pose call only).
 const MODEL:u32=1;const VISIBLE:u32=2;const PENDING:u32=4;const OVERVIEW:u32=8;const INSERTION:u32=16;
 const DROP:u32=32;const OVERLAY:u32=64;const NATIVE:u32=128;const LOADING:u32=256;
 

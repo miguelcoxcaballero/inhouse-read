@@ -57,7 +57,7 @@ export function createSceneEntryFrame(rust) {
     for (let index = 0, state = frame.state, to = 85; index < entries.length; index++, to += ENTRY_STATE) {
       const entry = entries[index], model = entry.model, data = model?.userData, insertion = entry.insertion, quality = entry.plantQuality;
       state[to] = (model ? data.overview ? 9 : 1 : 0) | (model?.visible ? 2 : 0) | (entry.qualityReplacement || quality ? 4 : 0) |
-        (insertion ? insertion.overlayCanvas ? 80 : 16 : 0) | (entry.trashDrop ? 32 : 0) | (insertion?.nativePresentation ? 128 : 0) |
+        (insertion ? insertion.overlayCanvas ? 80 : 16 : 0) | (entry.trashDrop ? entry.trashDrop.complete ? 544 : 32 : 0) | (insertion?.nativePresentation ? 128 : 0) |
         (entry.qualityReplacement && !entry.replacementReady || quality && !quality.ready ? 256 : 0);
       state[to + 1] = data?.inspectionResolution; state[to + 2] = model ? model.id : 0;
     }

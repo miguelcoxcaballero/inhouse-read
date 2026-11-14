@@ -1381,13 +1381,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const arranging = Boolean(stage.closest('.ihr-bookshelf')?.classList.contains('is-arranging'));
     const pixelsPerMetre = unitWidth / SHELF_SPECS[shelfType].width * 1000;
     if (usePhysics) { physicsStarted = true; gravityFrame.prepare(bookEntries); }
-    // What changed since the last frame enters the entry arena: a class or a drag variable, a size
-    // or a place (`stale`), what the host holds of the entry and, for the rigid bodies, its bay.
-    // Nothing else is copied: the lift, the landing, the preview and the pose stay in Rust.
+    // What changed since the last frame enters the entry arena: a class or a drag variable (when the
+    // DOM was read again), a size or a place (`stale`) and, for the rigid bodies, its bay; what the host
+    // holds follows below (`tellHeld`). The lift, the landing, the preview and the pose stay in Rust.
+    // The arena's view is taken again only after native work that may have grown the memory.
+    entryFrame.refresh();
+    let state = entryFrame.state;
+    const regrown = () => { entryFrame.refresh(); state = entryFrame.state; };
     for (let index = 0; index < bookEntries.length; index++) {
       const entry = bookEntries[index], at = index * ENTRY_STATE;
       // The DOM is read only for a node whose class or style changed.
-      if (entry.domDirty) { entry.domDirty = false; entry.state = stateFor(entry); }
+      const read = entry.domDirty;
+      if (read) { entry.domDirty = false; entry.state = stateFor(entry); regrown(); }
       const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
       const kind = plant ? 1 : lamp ? 2 : 0;
       if (usePhysics) {
@@ -1405,6 +1410,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
               const spec = lampGeometrySpec(entry);
               bookGravity.decoration(entry.key,spec.kind === 1 ? 2 : 3,'','',new Float64Array([0,0,0,spec.scale / pixelsPerMetre]));
             }
+            regrown();
           }
         }
         if (entry.bits & 6) physicsInteracted = true;
@@ -1417,9 +1423,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           completedLegacyInsertionLeases.add(entry.insertion.nativeLease);
         entry.insertion = null;
       }
-      // Native work above (the state's text, a decoration) may have grown the memory.
-      entryFrame.refresh();
-      const state = entryFrame.state, insertion = entry.insertion, trashDrop = entry.trashDrop;
       if (staticStale || entry.stale) {
         entry.stale = false;
         state[at] = kind; state[at + 1] = undershelf ? 1 : 0;
@@ -1427,7 +1430,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         state[at + 27] = entry.depth; state[at + 28] = entry.depthInset;
         state.set(entry.box, at + 50);
       }
-      state[at + 2] = entry.bits; state[at + 3] = entry.dragNumberX; state[at + 4] = entry.dragNumberY;
+      if (read) { state[at + 2] = entry.bits; state[at + 3] = entry.dragNumberX; state[at + 4] = entry.dragNumberY; }
       if (usePhysics) {
         const row = rows[entry.shelf || 0] || rows[0] || {};
         state[at + 40] = kind ? entry.width : entry.thickness; state[at + 41] = undershelf ? 3 : kind;
@@ -1436,8 +1439,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         state[at + 46] = row.bottom ?? entry.y + entry.height / 2;
         state[at + 47] = row.ceiling ?? row.top ?? 0; state[at + 48] = entry.gripHeight || 0;
       }
-      state[at + 49] = (trashDrop ? 1 : 0) | (insertion ? 2 : 0) | (entry.model ? 4 : 0) | (entry.overview ? 8 : 0) |
-        (trashDrop?.complete ? 16 : 0) | (insertion?.overlayCanvas ? 32 : 0);
     }
     staticStale = false;
     // One native call eases every lift, landing and preview (or steps the rigid bodies), samples the

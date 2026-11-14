@@ -93,7 +93,6 @@ it('decides in the pose call which settled entries the frozen host loop handed t
     const at=index*S,state=frame.state,kind=e.kind==='plant'?1:e.kind==='lamp'?2:0
     if(e.stale){e.stale=false;state[at]=kind;state[at+1]=0;state[at+23]=e.x;state[at+24]=e.y;state[at+25]=e.width;state[at+26]=e.height;state[at+27]=e.depth;state[at+28]=e.depthInset;state.set(e.box,at+50)}
     state[at+2]=e.bits;state[at+3]=0;state[at+4]=0
-    state[at+49]=(e.model?4:0)|(e.told.overview?8:0)
    })
    frame.hold(entries)
    frame.poses(motionFrame.native,scene,roomMotion,roomTransition,tick*16,false,room)

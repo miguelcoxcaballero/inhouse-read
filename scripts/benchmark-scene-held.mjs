@@ -30,7 +30,7 @@ function side(module,api,count){
  scene.sizeViewport(1400,1400,2,new Float64Array(4));scene.setInspection(1,0,0,false);
  frame.refresh();
  entries.forEach((e,index)=>{const at=index*S,state=frame.state;state[at]=e.kind==='plant'?1:e.kind==='lamp'?2:0;
-  state[at+23]=e.x;state[at+24]=e.y;state[at+25]=e.width;state[at+26]=e.height;state[at+27]=e.depth;state.set([-14,-90,-7,14,110,7],at+50);state[at+49]=4;});
+  state[at+23]=e.x;state[at+24]=e.y;state[at+25]=e.width;state[at+26]=e.height;state[at+27]=e.depth;state.set([-14,-90,-7,14,110,7],at+50);state[at+49]=4;});// (1.7.330 read what the host holds from column 49)
  let now=0,calls=0,applied=0;
  const begin=()=>{now+=16;scene.beginEntries(now,false,1,new Float64Array([0,0,0,1]),2,600,0,44);motionFrame.prepare(entries,rows,600,1000);};
  const poses=()=>frame.poses(motionFrame.native,scene,roomMotion,roomTransition,now,false,room);
