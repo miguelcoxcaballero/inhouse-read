@@ -2,7 +2,7 @@ import {VoiceClientPlan} from './client-plan.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 // Page-side handle of the synthesis worker (see worker.js for the protocol). The routing of its answers, the calls, the
 // jobs, the preparation and the teardown are rust-ui (synth_client.rs); this class keeps the injected services and the
-// closures the worker and the promises call back.
+// closures the worker calls back (prepare's promise bookkeeping is rust-ui client_prepare.rs).
 
 export class SynthClient {
   /**
@@ -32,25 +32,7 @@ export class SynthClient {
   }
 
   /** Starts the worker if needed and makes `piperId` the voice it holds. Resolves with the voice's config. */
-  prepare(piperId) {
-    if (this.plan.preparing(piperId)) return this.loading.promise
-    const generation = this.plan.capture()
-    const work = this.preparationChain.then(() => ui().synth_client_prepare(this, piperId, generation))
-    let rejectPreparation
-    const promise = new Promise((resolve, reject) => {
-      rejectPreparation = reject
-      this.preparations.add(reject)
-      work.then(resolve, reject)
-    })
-    this.preparationChain = promise.catch(() => {})
-    this.loading = { piperId, promise }; this.plan.beginPreparation(piperId)
-    const finished = () => {
-      this.preparations.delete(rejectPreparation)
-      if (this.loading?.promise === promise) { this.loading = null; this.plan.finishPreparation() }
-    }
-    promise.then(finished, finished)
-    return promise
-  }
+  prepare(piperId) { const module = ui(); return module.synth_client_begin(this, piperId, module) }
 
   /**
    * Runs a synth job. Handlers: onPlan(counts), onChunk({index,last,pcm,sampleRate,ms}), onEnd(), onError(error).

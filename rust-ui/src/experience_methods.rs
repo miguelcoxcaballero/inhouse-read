@@ -2,12 +2,21 @@
 //! the ones Rust decides (reader_experience_policy.rs) get the experience (`host`) and the doorways
 //! of `kit`; the rest hand the call to the part of the experience that owns it (its lifecycle,
 //! preference and voice flows, actions, view and navigation queue), with the defaults the
-//! JavaScript methods had. The constructor, the methods that close over a navigation step and the
-//! layout syncs its resize observers call (possibly every frame of a resize) stay with the class.
+//! JavaScript methods had. The constructor's body is experience_shell.rs; the layout syncs (possibly
+//! every frame of a resize) are the view's own methods.
 use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
 use crate::host::{get, method, read, set};
 use crate::reader_experience_policy::*;
+
+/// `current => host.actions.jump(place, target, current)`, the step a jump waits in the queue as.
+#[wasm_bindgen]
+pub fn reader_experience_jump_step(host: &JsValue, place: &JsValue, target: &JsValue, current: &JsValue) -> Result<JsValue, JsValue> { part(host, "actions", "jump", &[place, target, current]) }
+/// `() => host.voice.continueFromPage(() => reader_experience_page_step(host, direction))`.
+#[wasm_bindgen]
+pub fn reader_experience_step(host: &JsValue, direction: &JsValue, ui: &JsValue) -> Result<JsValue, JsValue> {
+    part(host, "voice", "continueFromPage", &[bound(ui, "reader_experience_page_step", &[host, direction])?.as_ref()])
+}
 
 /// `host[part][name](...args)`.
 fn part(host: &JsValue, owner: &str, name: &str, args: &[&JsValue]) -> Result<JsValue, JsValue> { method(&read(host, owner)?, name, args) }
@@ -26,7 +35,7 @@ pub fn experience_method(host: JsValue, name: &str, args: Array, kit: JsValue, u
     match name {
         "resetAppearance" => done(reader_experience_reset_appearance(&host, &k("preferences.normalizeReadingPreferences")?)),
         "rotateReading" => reader_experience_rotate(host),
-        "open" => reader_experience_open(&host, &a(0), &the_kit()?),
+        "open" => reader_experience_open(&host, &a(0), &ui),
         "relocate" => done(reader_experience_relocate(&host, &k("state.clonePlace")?)),
         "readingMetrics" => reader_experience_metrics(&host),
         "updateReadingMetrics" => done(reader_experience_update_metrics(&host)),
@@ -45,14 +54,18 @@ pub fn experience_method(host: JsValue, name: &str, args: Array, kit: JsValue, u
             method(&read(&host, "view")?, "updateBookmarkButton", &[&marked.into()])?;
             Ok(JsValue::UNDEFINED)
         }
-        "queueNavigation" => reader_experience_queue(&host, &a(0), &the_kit()?),
+        // jump(place, target): queueNavigation(current => this.actions.jump(place, target, current))
+        "jump" => method(&host, "queueNavigation", &[bound(&ui, "reader_experience_jump_step", &[&host, &a(0), &a(1)])?.as_ref()]),
+        // step(direction): consult another page without moving the independent audible cursor.
+        "step" => method(&host, "queueNavigation", &[bound(&ui, "reader_experience_step", &[&host, &a(0), &ui])?.as_ref()]),
+        "queueNavigation" => reader_experience_queue(&host, &a(0), &ui),
         // returnToReading(index = 0)
-        "returnToReading" => reader_experience_return(&host, &or(a(0), || Ok(JsValue::from_f64(0.0)))?, &the_kit()?),
-        "shareBook" => reader_experience_share(host, &the_kit()?),
+        "returnToReading" => reader_experience_return(&host, &or(a(0), || Ok(JsValue::from_f64(0.0)))?, &ui),
+        "shareBook" => reader_experience_share(host, &the_kit()?, &ui),
         // formatSize(bytes = 0)
         "formatSize" => reader_experience_size(&or(a(0), || Ok(JsValue::from_f64(0.0)))?),
-        "renderPlaces" => done(reader_experience_places(&host, &the_kit()?)),
-        "renderToc" => done(reader_experience_toc(&host, &the_kit()?)),
+        "renderPlaces" => done(reader_experience_places(&host, &ui)),
+        "renderToc" => done(reader_experience_toc(&host, &ui)),
         "updateReturnButton" => done(reader_experience_return_button(&host)),
         // The title written on the spine or the author changed (in the shelf's editor, maybe while
         // this book was already prepared): show them here too.
@@ -89,6 +102,6 @@ pub fn experience_method(host: JsValue, name: &str, args: Array, kit: JsValue, u
         "addQuote" => part(&host, "actions", "addQuote", &[]),
         "search" => part(&host, "actions", "search", &[&a(0)]),
         "endSearch" => part(&host, "actions", "endSearch", &[]),
-        _ => { let _ = ui; Err(js_sys::TypeError::new(&format!("ReaderExperience has no method {name}")).into()) }
+        _ => Err(js_sys::TypeError::new(&format!("ReaderExperience has no method {name}")).into()),
     }
 }

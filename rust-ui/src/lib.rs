@@ -167,4 +167,7 @@ mod controller_methods;
 mod experience_methods;
 
 #[cfg(feature = "ui")]
+mod experience_shell;
+
+#[cfg(feature = "ui")]
 mod flow_methods;
