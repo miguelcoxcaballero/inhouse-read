@@ -11,7 +11,9 @@ import {prepareShelfFonts} from './shelf-startup-resources.js'
 void prepareShelfFonts()
 
 // Adopt the page's parallel compilation before the first library read settles.
-// This is optional: never make displaying saved books await a network request.
+// The shelf has no JavaScript copy of these cores (core-tables.js), so its
+// first frame follows them: they are asked for here, as early as the app's
+// code can, and a launch after the first is answered by the offline shell.
 void loadRustCore()
 void loadRustDecorCore()
 // The shelf's pointer controllers: their module is awaited by the first render.
