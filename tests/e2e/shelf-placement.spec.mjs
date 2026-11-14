@@ -7,6 +7,9 @@ import { settledGeometryLength } from './helpers/settled-geometry-length.mjs'
 // At 50 ms of camera time per rendered frame, CI reached .98 after 8.3 s
 // but needed further real frames. Keep the exact endpoint and geometry checks.
 const VIEW_TRANSITION_TIMEOUT = 30_000
+// Books come to rest after a load, a view change or a move in tens of rendered frames; a software-WebGL frame of this
+// shelf takes about half a second (60 frames: 39 s on this fixture's larger sibling, on 1.7.325 and 1.7.328 alike).
+const REST_TIMEOUT = 60_000
 // Six completed real camera turns took 85.9s in CI before final reload.
 // Keep the local scenario and each exact endpoint unchanged; the software
 // renderer profile supplies only this scenario's total budget.
@@ -42,7 +45,7 @@ async function seedShelf(page) {
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(4)
   await expect(page.locator('.ihr-bookshelf-scene')).toBeVisible()
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
 }
 const object = (page, key) => page.locator(`[data-object-id="${key}"]`)
 async function positionFor(page, id) {
@@ -67,7 +70,7 @@ async function dragTo(page, key, target, shelf) {
   await page.mouse.up()
   await expect(page.locator('.ihr-bookshelf')).not.toHaveClass(/is-arranging/)
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
-  await expect(canvas).toHaveAttribute('data-animating', 'false')
+  await expect(canvas).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
   return x
 }
 async function assertNoOverlap(page) {
@@ -109,7 +112,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
   for (const width of [320,390,860]) {
     await page.setViewportSize({ width, height:844 })
     await expect(scene).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
-    await expect(scene).toHaveAttribute('data-animating', 'false')
+    await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
     await assertFullCabinetWidth(page)
     await expect(bin).toBeHidden()
     await expect(bin).toHaveAttribute('aria-hidden', 'true')
@@ -119,13 +122,13 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await expect(page.locator('.ihr-shelf-catalog')).toBeHidden()
     await switchShelfView(page, 'isometric')
     await expect(scene).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
-    await expect(scene).toHaveAttribute('data-animating', 'false')
+    await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
     await assertFullCabinetWidth(page)
     await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
     // The basket is on the cabinet's physical floor. On taller screens or
     // shelves it is reached by scrolling, rather than pinned to the viewport.
     await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = node.scrollHeight })
-    await expect(scene).toHaveAttribute('data-animating', 'false')
+    await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
     await expect(bin).toBeVisible()
     await expect(bin).toHaveAttribute('aria-hidden', 'false')
     await expect(scene).toHaveAttribute('data-trash-visible', 'true')
@@ -149,7 +152,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
     await switchShelfView(page, 'spine')
     await expect(scene).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
-    await expect(scene).toHaveAttribute('data-animating', 'false')
+    await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
     await assertFullCabinetWidth(page)
     await expect(bin).toBeHidden()
     await expect(scene).toHaveAttribute('data-trash-visible', 'false')
@@ -205,7 +208,7 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
 
   await switchShelfView(page, 'isometric')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
   const thirdRowPlant = await object(page, 'plant:placement-c').boundingBox()
   await dragTo(page, 'book:placement:1', { x:thirdRowPlant.x + thirdRowPlant.width / 2, y:thirdRowPlant.y + thirdRowPlant.height - 22 }, 2)
   await expect.poll(() => positionFor(page, 'placement:1')).toMatchObject({ shelf:2 })
@@ -213,13 +216,13 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   await object(page, 'book:placement:1').focus()
   await page.keyboard.press('Shift+ArrowUp')
   await expect.poll(() => positionFor(page, 'placement:1')).toMatchObject({ shelf:1 })
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
   await assertNoOverlap(page)
   const finalPlants = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)
   const finalPositions = await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))
   await switchShelfView(page, 'spine')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
   await assertFullCabinetWidth(page)
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
   expect(await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))).toEqual(finalPositions)
