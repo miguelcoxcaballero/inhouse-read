@@ -1,5 +1,4 @@
 import { createGravityFrame } from './gravity-frame.js';
-import { createSceneCountFrame } from './scene-count-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
@@ -166,7 +165,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
   const rust = needRustShelf();
-  const countFrame = createSceneCountFrame(rust);
   const [canvas, context] = rust.scene_canvas(0);
   // The canvas' diagnostics as this scene last wrote them. Nothing else writes them, so a value
   // that stands is known without asking the DOM: a steady frame reads none of its data attributes.
@@ -245,6 +243,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // An entry's lift, landing, preview, reorder offset and pose live in the entry arena, at `row`
   // (scene-entry-frame.js); `lift` reads it for whoever inspects an entry from outside the frame.
   const entryFrame = createSceneEntryFrame(rust);
+  entryFrame.shows(canvas.dataset);
   const cell = (entry, column) => (entryFrame.refresh(), entryFrame.state[entry.row * ENTRY_STATE + column]);
   const easing = entry => { entryFrame.refresh(); const at = entry.row * ENTRY_STATE; return entryFrame.state[at + 9] !== 0 || entryFrame.state[at + 20] !== 0; };
   function settleLift(entry, started) {
@@ -399,7 +398,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
   // This separate modal gate never changes home/reader presentation ownership.
   let modalDeferredEntry = null, inactiveModalEntry = null, paintedModalView = null;
-  const paintedAwayEntries = new Set();
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
   let programsReady = null, programsPoll = 0, unpainted = [], catalogPrelinked = false;
@@ -606,8 +604,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   rememberCatalogNode(catalogNode);
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
-  const shadowBounds = new THREE.Box3(), shadowOut = new Float64Array(6), captureOut = new Float64Array(4), countOut = new Float64Array(8);
-  let casterIds = new Float64Array(entries.length), casterListDirty = true, casterTrashVisible = null, casterSignature = 0;
+  const shadowBounds = new THREE.Box3(), shadowOut = new Float64Array(6), captureOut = new Float64Array(4);
   const rendererSize = new THREE.Vector2();
   const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
   const framedScratch = new THREE.Box3(), framedTrash = new THREE.Box3(), transformRects = { unscaled:{}, framed:{}, bounds:{}, world:{} };
@@ -845,7 +842,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelInsertion(entry);
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
-    if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+    if (entry.model) { entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
     entry.posed = null; entry.walked = null;
     entry.lampHull?.free(); entry.lampHull = null;
     const foliage = semanticFoliage.get(entry.node);
@@ -858,7 +855,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (!entry.trashDrop) return;
     inspectionOverview = null;
     trashDrops--;
-    if (rust.scene_cancel_trash_drop(entry, restore, furniture, trashNode, canvas)) casterListDirty = true;
+    rust.scene_cancel_trash_drop(entry, restore, furniture, trashNode, canvas);
     // It removed the drop's diagnostics from the canvas and from the bin's node.
     for (const key of ['trashDropProgress', 'trashingBookId', 'trashingObjectId', 'trashingObjectKind']) shownData.delete(key);
     binShown.delete('trashDropProgress'); binShown.delete('dropProgress');
@@ -946,7 +943,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (t === 1 && !drop.complete) {
         drop.complete = true;
         sceneView.trashFinishDrop();
-        casterListDirty = true; dropEntry.model.visible = false;
+        dropEntry.model.visible = false;
         finishedDrops.push(() => { if (!drop.settled) { drop.settled = true; drop.resolve(true); } });
       }
       // The lid wobbles and the bin's box follows it: the next still frame takes both again.
@@ -1041,7 +1038,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         // with a generated placeholder on the user's existing book.
         releaseCandidate(replacement); updateMaterials(entry); invalidate(); return;
       }
-      casterListDirty = true; entry.model = replacement;
+      entry.model = replacement;
       // The pending model may have survived newer records. Reconcile the
       // latest material keys before its first paint, including the ribbon.
       updateMaterials(entry);
@@ -1064,7 +1061,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     });
   }
 
-  const qualityPaintState = { deadline:0, paintDeadline:0 };
+  const qualityPaintState = { deadline:0 };
   let qualityPaintTimer = 0, qualityHoldTimer = 0;
   function qualityReady() {
     if (disposed) return;
@@ -1507,14 +1504,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       let created = null, still = false;
       if (visible && !entry.model) {
-        created = entry.model = makeModel(entry); casterListDirty = true;
+        created = entry.model = makeModel(entry);
         furniture.add(entry.model);
         if (entry.kind === 'plant' || entry.kind === 'lamp') programsStale = true;
       } else if (!visible && entry.model && !away) {
         releaseEntry(entry);
       }
       if (entry.model) {
-        if (entry.model.visible !== modelVisible) casterListDirty = true;
         entry.model.visible = modelVisible;
         if (trashDrop) {
           entry.posed = null;
@@ -2197,14 +2193,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       unpainted.push(...finishedInsertions, ...finishedDrops);
       return;
     }
-    const trashVisible = Boolean(trash?.visible);
-    if (casterListDirty || trashVisible !== casterTrashVisible) {
-      let casterCount = 0;
-      for (const entry of bookEntries) if (entry.model?.visible) casterIds[casterCount++] = entry.model.id;
-      casterSignature = rust.scene_casters(trashVisible, casterIds.subarray(0, casterCount));
-      casterListDirty = false; casterTrashVisible = trashVisible;
-    }
-    const casters = casterSignature;
+    // What the entries hold now answers the frame's questions about them in one call (scene-entry-frame.js).
+    const held = entryFrame.census(bookEntries, Boolean(trash?.visible)), busy = Boolean(held & 16), casters = entryFrame.counts[0];
     const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
     const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight:sceneView.viewportHeight,
       shadowDirty:contentDirty, transform:furniture.matrixWorld });
@@ -2217,7 +2207,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfSnapshotDirty = true;
     }
     if (lampLighting.shadowRefresh) renderer.shadowMap.needsUpdate = true;
-    const qualityHold = rust.scene_quality_hold(bookEntries,qualityPaintState,sceneView,
+    const qualityHold = entryFrame.qualityHold(sceneView,
       batchQuality && inspectionSnapshotVisible && !moving && !shelfMoving && !trashMoving,performance.now());
     if (qualityHold > 0) {
       drawPending = true; unpainted.push(...finishedInsertions,...finishedDrops);
@@ -2273,15 +2263,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       forceRefit:sceneView.shadowRefit && !sceneView.moving });
     if (!sceneView.moving) sceneView.shadowRefit = false;
     shadowDirty = false; shadowCasters = casters;
-    const overlayInsertion = bookEntries.some(entry => entry.insertion?.overlayCanvas);
+    const overlayInsertion = Boolean(held & 4);
     // Its hidden slot and neighbors are already painted. Reuse that snapshot
     // during a stationary insertion instead of reallocating the shared GPU
     // buffer between the smaller shelf and full-screen output every frame.
     if (!overlayInsertion || shelfSnapshotDirty || shadowRefresh || lampRefresh || furnitureMoving || shelfMoving || trashMoving) {
       const cacheInspection = inspectionContext && sceneView.progress === 1 && !furnitureMoving && !moving && !shelfMoving &&
         !trashMoving && !overlayInsertion && !sceneView.hasDrop;
-      const refreshOverview = cacheInspection && sceneView.zoom === 1 && sceneView.panX === 0 && sceneView.panY === 0 && inspectionOverviewContext &&
-        !bookEntries.some(entry => cell(entry, 5) || entry.flags.pressed);
+      const refreshOverview = cacheInspection && sceneView.zoom === 1 && sceneView.panX === 0 && sceneView.panY === 0 && inspectionOverviewContext && !(held & 32);
       // About a finger's width beyond every edge lets an already zoomed view
       // pan for many frames before rebasing. The complete room is still drawn,
       // including the wall and every object that can enter that extra area.
@@ -2378,11 +2367,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if(nativeFrame) {
         if(margin && !repaintNativeRoom())throw new Error('Native room cannot preserve its visible pixels');
         const owner=currentNativeRendererPresentation(renderer);
-        const insertionActive=bookEntries.some(entry=>entry.insertion?.nativePresentation);
         // Hidden preparation can update the room while the native return still
         // owns the canvas. The broker restores that book after this capture.
         // Only the semantic final restore transfers a completed insertion.
-        if(!insertionActive) {
+        if(!(held & 8)) {
           const presented=owner===nativeRoomLease?nativeRoomLease.present():!owner?nativeRoomLease.present():
             owner.role==='shelf-insertion' && owner.transferTo(nativeRoomLease);
           if(!presented && (!owner || owner===nativeRoomLease))throw new Error('Native room cannot preserve its viewport');
@@ -2398,42 +2386,24 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       paintedModalView = { progress:sceneView.progress, inspectionZoom:sceneView.zoom, panX:sceneView.panX, panY:sceneView.panY };
       // Record only a completed room transaction, after GPU/native/legacy
       // output succeeded. A flush can return while programs or paint are held.
-      paintedAwayEntries.clear();
-      for (const entry of bookEntries) if (entry.flags.away && entry.model && !entry.model.visible &&
-        !entry.insertion && !entry.trashDrop) paintedAwayEntries.add(entry);
+      entryFrame.painted();
     }
-    for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
+    if (overlayInsertion) for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     showData('renderCount', String(++renderCount));
-    // One pass over the entries serves every count below, taken in Rust.
-    const resolutionText = countFrame.sample(bookEntries, countOut);
-    const [plants, highPlants, lamps, overview, detailed, highBooks, pending] = countOut;
-    showData('activePlants', String(plants));
-    showData('highResolutionPlants', String(highPlants));
-    showData('activeLamps', String(lamps));
-    showData('lampLightCount', String(lampLighting.activeCount));
-    showData('activeLampLights', String(lampLighting.activeCount));
-    showData('lampShadowCount', String(lampLighting.shadowCount));
-    showData('lampLightTemperature', '2700');
-    showData('overviewBooks', String(overview));
-    showData('highResolutionBooks', String(highBooks));
-    showData('bookTextureResolutions', resolutionText);
-    showData('sceneGeometries', String(renderer.info?.memory?.geometries || 0));
-    showData('sceneTextures', String(renderer.info?.memory?.textures || 0));
-    showData('scenePrograms', String(renderer.info?.programs?.length || 0));
-    showData('inspectionOverviewReady', String(Boolean(inspectionOverview)));
-    showData('pixelRatio', String(ratio));
-    showData('detailedBooks', String(detailed));
-    showData('bookQualityPending', String(pending));
-    showData('shadowMapSize', '1024');
+    // The diagnostics that follow from the census and these numbers reach the canvas from Rust, when they change.
     let cabinet = null;
     for (const object of furniture.children) if (object.userData.furniture) { cabinet = object; break; }
-    showData('furnitureMeshes', String(cabinet?.children.length || 0));
-    showData('plantGeometry', 'catalog-3d');
+    entryFrame.refresh();
+    const shown = entryFrame.shown, info = renderer.info;
+    shown[0] = lampLighting.activeCount; shown[1] = lampLighting.shadowCount; shown[2] = info?.memory?.geometries || 0; shown[3] = info?.memory?.textures || 0;
+    shown[4] = inspectionOverview ? 1 : 0; shown[5] = ratio; shown[6] = cabinet?.children.length || 0;
+    entryFrame.show(0);
+    showData('scenePrograms', String(info?.programs?.length || 0));
+    entryFrame.show(1);
     showData('animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
     lastSceneMoving = Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving);
     lastLocalSceneMoving = Boolean(sceneView.turning || sceneView.reordering || localMoving || trashMoving);
-    if (settleBooks && physicsReady && !roomMotion.active(now) && !lastSceneMoving && !sceneView.moving &&
-      !bookEntries.some(entry => entry.insertion || entry.trashDrop || easing(entry))) {
+    if (settleBooks && physicsReady && !roomMotion.active(now) && !lastSceneMoving && !sceneView.moving && !busy) {
       const saved = bookGravity.snapshot();
       if (saved !== undefined && saved !== null) {
         try {
@@ -2451,8 +2421,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         } catch {}
       }
     }
-    if (settleBooks) publishRoomMotion(now, !lastSceneMoving && !sceneView.moving &&
-      !bookEntries.some(e => e.insertion || e.trashDrop || easing(e)));
+    if (settleBooks) publishRoomMotion(now, !lastSceneMoving && !sceneView.moving && !busy);
     paintedViewport = { width:frameLayout.innerWidth, height:frameLayout.innerHeight,
       ratio:frameLayout.ratio || 1, clientHeight:frameLayout.clientHeight, scrollTop:frameLayout.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
@@ -2514,7 +2483,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function canDeferModalPaint() {
     const selected = modalDeferredEntry || (!canPresent() ? inactiveModalEntry : null);
-    if (!selected || !bookEntries.includes(selected) || !paintedAwayEntries.has(selected) ||
+    if (!selected || !bookEntries.includes(selected) || !cell(selected, 88) ||
       !selected.node?.classList.contains('is-away') || !selected.model || selected.model.visible ||
       selected.insertion || selected.trashDrop || programsReady !== true || paintHeld || unpainted.length ||
       lighting.settling || sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.moving || sceneView.hasDrop ||
@@ -2633,7 +2602,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const finished = new Promise(done => { resolve = done; });
     const now = performance.now();
     const drop = rust.scene_trash_drop_record(THREE, resolve, now, reducedMotion.matches, duration, entry.model, trash);
-    entry.trashDrop = drop; trashDrops++; entry.posed = null; if (!entry.model.visible) casterListDirty = true; entry.model.visible = true; inspectionOverview = null;
+    entry.trashDrop = drop; trashDrops++; entry.posed = null; entry.model.visible = true; inspectionOverview = null;
     shelfSnapshotDirty = shadowDirty = true;
     cancelAnimationFrame(raf); raf = 0; draw(now);
     drop.lastFrame = performance.now();
@@ -3104,7 +3073,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
       }
       for (const entry of oldEntries.values()) releaseEntry(entry);
-      bookEntries = retained; casterIds = new Float64Array(bookEntries.length); casterListDirty = true; byNode.clear();
+      bookEntries = retained; byNode.clear();
       entryFrame.bind(bookEntries, true); staticStale = true;
       // Lamp fixtures are structural scene data. Rebuild their cached list and
       // light pool only when a layout is committed, not once per rendered frame.
@@ -3156,8 +3125,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { countFrame.free(); projectionFrame.free(); entryFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
-      disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
+      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null;
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
