@@ -523,3 +523,69 @@ it('does not undo a shared reading position with a stale legacy page on a timest
  await sync.syncBookProgress(record.id)
  expect(await library.get(record.id)).toMatchObject({progressFraction:.8,locator:{kind:'pdf-page',value:8}})
 })
+
+// 1.7.290 stopped reading the appearance of Drive's reading file for records with a shared appearance identity,
+// which is every record after its first library backup. The author and spine title the reader had typed were then
+// never adopted by a book put back on the shelf, and the next local save replaced them on Drive with empty values.
+describe('author and spine title in Drive\'s reading file', () => {
+ const shared={sourceType:'drive',driveFileId:'named',cloudAccountId:'account-1',name:'named.pdf',shelfVisualId:'named-origin'}
+ const typed={author:'Ursula Le Guin',spineTitleOverride:'Mi libro en Drive'}
+ it('are adopted with newer progress by a library-managed record that has none, leaving its placement and finish alone',async()=>{
+  const record=await library.addOrTouch({...shared,author:'',shelfPosition:{shelf:2,x:.7},spineColorOverride:'#224466',spineFinish:'gold'})
+  drive.readDriveProgress.mockResolvedValue({fraction:.5,locator:{kind:'pdf-page',value:2},updatedAt:200,stateFileId:'progress',
+   appearance:{...typed,shelfPosition:{shelf:0,x:.1},spineColorOverride:'#ffffff',spineFinish:'silver'}})
+  await sync.syncBookProgress(record.id)
+  expect(await library.get(record.id)).toMatchObject({...typed,progressFraction:.5,locator:{kind:'pdf-page',value:2},
+   shelfPosition:{shelf:2,x:.7},spineColorOverride:'#224466',spineFinish:'gold'})
+  expect(drive.writeDriveProgress).not.toHaveBeenCalled()
+ })
+ it('never replace a name the reader wrote on this device, whichever side has the newer progress',async()=>{
+  const mine={author:'Úrsula K. Le Guin',spineTitleOverride:'Terramar'}
+  const record=await library.addOrTouch({...shared,...mine,progressFraction:.2,locator:{kind:'pdf-page',value:1},progressUpdatedAt:100})
+  drive.readDriveProgress.mockResolvedValue({fraction:.5,locator:{kind:'pdf-page',value:2},updatedAt:200,stateFileId:'progress',appearance:typed})
+  await sync.syncBookProgress(record.id)
+  expect(await library.get(record.id)).toMatchObject({...mine,progressFraction:.5})
+  await library.updateProgress(record.id,.7,{kind:'pdf-page',value:3})
+  drive.writeDriveProgress.mockResolvedValue({id:'progress'})
+  await sync.syncBookProgress(record.id)
+  expect(drive.writeDriveProgress).toHaveBeenCalledTimes(1)
+  expect(drive.writeDriveProgress.mock.calls[0][1]).toMatchObject({fraction:.7,appearance:mine})
+  expect(await library.get(record.id)).toMatchObject({...mine,progressFraction:.7,progressDirty:false})
+ })
+ it.each([['a library-managed',shared],['a legacy',{...shared,shelfVisualId:undefined}]])('are not erased from Drive when %s record without them saves newer progress',async(_,source)=>{
+  const record=await library.addOrTouch({...source,author:'',shelfPosition:{shelf:1,x:.4},progressFraction:.9,locator:{kind:'pdf-page',value:9},progressUpdatedAt:300,progressDirty:true})
+  drive.readDriveProgress.mockResolvedValue({fraction:.5,locator:{kind:'pdf-page',value:2},updatedAt:200,stateFileId:'progress',
+   appearance:{...typed,shelfPosition:{shelf:0,x:.1}}})
+  drive.writeDriveProgress.mockResolvedValue({id:'progress'})
+  const changed=vi.fn();sync=new CloudSync(library,{onChange:changed});sync.setProfile({id:'account-1'})
+  await sync.syncBookProgress(record.id)
+  expect(drive.writeDriveProgress).toHaveBeenCalledTimes(1)
+  const written=drive.writeDriveProgress.mock.calls[0][1]
+  expect(written).toMatchObject({fraction:.9,locator:{kind:'pdf-page',value:9},updatedAt:300,appearance:{...typed,shelfPosition:{shelf:1,x:.4}}})
+  expect(await library.get(record.id)).toMatchObject({...typed,progressFraction:.9,progressDirty:false,shelfPosition:{shelf:1,x:.4}})
+  expect(changed).toHaveBeenCalledWith(expect.objectContaining(typed))
+ })
+ it('keep the local half and adopt only the missing half',async()=>{
+  const record=await library.addOrTouch({...shared,author:'Autora local',progressFraction:.9,progressUpdatedAt:300,progressDirty:true})
+  drive.readDriveProgress.mockResolvedValue({fraction:.5,updatedAt:200,stateFileId:'progress',appearance:typed})
+  drive.writeDriveProgress.mockResolvedValue({id:'progress'})
+  await sync.syncBookProgress(record.id)
+  expect(drive.writeDriveProgress.mock.calls[0][1].appearance).toMatchObject({author:'Autora local',spineTitleOverride:'Mi libro en Drive'})
+  expect(await library.get(record.id)).toMatchObject({author:'Autora local',spineTitleOverride:'Mi libro en Drive'})
+ })
+ it('a local edit made while the names are being adopted is published on the next pass instead of being overwritten',async()=>{
+  const record=await library.addOrTouch({...shared,author:'',progressFraction:.9,progressUpdatedAt:300,progressDirty:true})
+  drive.readDriveProgress.mockResolvedValue({fraction:.5,updatedAt:200,stateFileId:'progress',appearance:typed})
+  drive.writeDriveProgress.mockResolvedValue({id:'progress'})
+  const patch=library.patch.bind(library);let raced=false
+  vi.spyOn(library,'patch').mockImplementation(async(id,fields,options)=>{
+   if(!raced&&fields.author===typed.author){raced=true;await patch(id,{author:'Escrito ahora'})}
+   return patch(id,fields,options)
+  })
+  await sync.syncBookProgress(record.id);expect(raced).toBe(true)
+  expect(drive.writeDriveProgress).not.toHaveBeenCalled()
+  expect(await library.get(record.id)).toMatchObject({author:'Escrito ahora'})
+  await sync.syncBookProgress(record.id)
+  expect(drive.writeDriveProgress.mock.calls.at(-1)[1].appearance).toMatchObject({author:'Escrito ahora',spineTitleOverride:'Mi libro en Drive'})
+ })
+})

@@ -25,6 +25,18 @@ function sameProgress(a, b) {
     JSON.stringify(driveBookLength(a)) === JSON.stringify(driveBookLength(b))
 }
 
+// 1.7.330: the author and spine title in Drive's reading file that the local record has no value of its own for.
+// Until then a record with `shelfVisualId` (every record after its first library backup) ignored them and then
+// replaced the file with its own empty ones.
+function missingIdentity(record, remote) {
+  const missing = {}
+  if (!remote) return missing
+  const theirs = spineCustomization(remote.appearance), ours = spineCustomization(record)
+  const written = value => typeof value === 'string' && value !== ''
+  for (const key of ['author','spineTitleOverride']) if (written(theirs[key]) && !written(ours[key])) missing[key] = theirs[key]
+  return missing
+}
+
 /** Reconciles IndexedDB with the user's "inhouse read" Drive folder. */
 export class CloudSync {
   #library
@@ -222,7 +234,7 @@ export class CloudSync {
       (remoteUpdatedAt === localUpdatedAt && !record.progressDirty && typeof record.shelfVisualId !== 'string'))) {
       const updated = await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
-        ...(typeof record.shelfVisualId === 'string' ? {} : spineCustomization(remote.appearance)),
+        ...(typeof record.shelfVisualId === 'string' ? missingIdentity(record, remote) : spineCustomization(remote.appearance)),
         ...(Array.isArray(remote.readingHistory) ? { readingHistory:cleanPlaces(remote.readingHistory) } : {}),
         ...(Array.isArray(remote.bookmarks) ? { bookmarks:cleanPlaces(remote.bookmarks,100) } : {}),
         ...(Array.isArray(remote.quotes) ? { quotes:cleanQuotes(remote.quotes) } : {}),
@@ -243,6 +255,15 @@ export class CloudSync {
       return
     }
     if (!localHasProgress && !bookLength) return
+    const identity = missingIdentity(record, remote)
+    if (Object.keys(identity).length) {
+      const saved = await this.#library.patch(id, identity, {
+        ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, record)
+      })
+      if (!saved) { if (this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id); return }
+      record = saved
+      this.#onChange(record)
+    }
     const snapshot = {
       fraction: record.progressFraction, locator: record.locator,
       appearance:spineCustomization(record),
