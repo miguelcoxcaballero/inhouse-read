@@ -2,20 +2,8 @@
 // invalidation and exclusion geometry stay in the scene's retained Rust arena.
 export function createFoliageFrame(rust) {
   const native = new rust.RustFoliageFrame(), memory = native.memory(), states = new Set();
-  let count = -1, at = 0, buffer = null, input, disposed = false;
+  let disposed = false;
   function check() { if (disposed) throw new Error('Foliage frame has been disposed'); }
-  function prepare(areas) {
-    check();
-    if (count !== areas.length) {
-      count = areas.length; native.resize(count); at = native.input_ptr(); buffer = null;
-    }
-    if (buffer !== memory.buffer) { buffer = memory.buffer; input = new Float64Array(buffer, at, count * 4); }
-    let index = 0;
-    for (const area of areas) {
-      input[index++] = area.left; input[index++] = area.right; input[index++] = area.top; input[index++] = area.bottom;
-    }
-    native.commit();
-  }
   function createState() {
     check();
     const state = new rust.RustFoliageState(), pointer = state.input_ptr();
@@ -44,7 +32,8 @@ export function createFoliageFrame(rust) {
   function free() {
     if (disposed) return;
     for (const state of states) state.free();
-    native.free(); disposed = true; input = buffer = null;
+    native.free(); disposed = true;
   }
-  return { prepare, createState, free };
+  // The exclusions are gathered from the entry arena into `native` (rust-ui/src/scene_exclusions.rs).
+  return { get native() { check(); return native; }, createState, free };
 }

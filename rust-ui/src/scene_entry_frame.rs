@@ -36,6 +36,7 @@ use super::projection::RustSceneProjectionFrame;
 ///   away book; 89-90 the overview flag and the resolution the entry was last told to be drawn at.
 const STATE:usize=91;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TOLD:usize=89;
 #[path="scene_census.rs"] mod census;
+#[path="scene_exclusions.rs"] mod exclusions;
 const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 

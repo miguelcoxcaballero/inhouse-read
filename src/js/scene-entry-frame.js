@@ -10,7 +10,7 @@ export function createSceneEntryFrame(rust) {
   let count = -1, at = null, buffer = null, room = null, disposed = false;
   const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part),
     hold, census, painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
-    prepare, bind, refresh, step, poses, settle, place, settled, hits, preview, motionRest, motionBegin, motionPoses, free };
+    prepare, bind, refresh, step, poses, settle, place, settled, hits, exclusions, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
     if (buffer === memory.buffer) return;
@@ -102,6 +102,8 @@ export function createSceneEntryFrame(rust) {
   // A drag move's placement previews, over the arena's preview columns: `placed` is ten numbers per
   // placed entry, in row order (rust-ui/src/scene_entry_frame.rs `preview`). Whether any offset changed.
   function preview(placed, now, reduced) { const changed = native.preview(placed, now, reduced); refresh(); return changed; }
+  // The rectangles a plant's foliage takes no taps in, into the foliage arena (after `hits`).
+  function exclusions(foliage, turned) { native.exclusions(foliage, turned); }
   function hits(projectionFrame, scene) { refresh(); native.hits(projectionFrame, scene); refresh(); }
   function free() {
     if (disposed) return;

@@ -14,12 +14,19 @@ impl RustFoliageFrame {
  pub fn resize(&mut self,count:usize){self.input.resize(count*4,0.0);}
  pub fn input_ptr(&self)->usize{self.input.as_ptr() as usize}
  pub fn memory(&self)->JsValue{wasm_bindgen::memory()}
+ /// How many rectangles it holds.
+ #[wasm_bindgen(getter)]pub fn count(&self)->usize{self.input.len()/4}
  pub fn commit(&mut self){
   if self.input!=self.previous{
    self.previous.clone_from(&self.input);
    self.revision=self.revision.wrapping_add(1);
   }
  }
+}
+
+impl RustFoliageFrame {
+ /// The rectangles, four numbers each, for whoever gathers them natively (`scene_exclusions.rs`).
+ pub(super) fn areas(&mut self)->&mut Vec<f64>{&mut self.input}
 }
 
 #[wasm_bindgen]

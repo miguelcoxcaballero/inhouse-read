@@ -702,7 +702,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   // The stand-in hit box of a culled model only changes with its slot box.
   const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
-  const insertedIds = [], exclusionRects = [];
+  const insertedIds = [];
   let exclusionsReady = false, staticStale = true;
   // What the entries hold (model, visibility, quality, return, drop) may have changed: the entry arena is told again.
   let censusStale = true;
@@ -1333,7 +1333,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   function updateEntries(scroll, zoom, now, finishedInsertions) {
     let activeBooks = 0, moving = false, shelfMoving = false, previewing = false, previewed = 0, overlaying = false;
-    insertedIds.length = 0; exclusionRects.length = 0; exclusionsReady = false;
+    insertedIds.length = 0; exclusionsReady = false;
     // Changes the observer has not yet delivered (a synchronous draw right after
     // a class or drag-variable write) are examined here, as the frame's own read.
     for (const record of mutations.takeRecords()) { const entry = byNode.get(record.target); if (entry) entry.domDirty = true; }
@@ -1545,10 +1545,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const resetHit = entry.written?.node !== node;
         if (resetHit) entry.written = { node };
         // Without a surface the stand-in box goes under the entry's own placed matrix (32).
+        // 64: the room shows its model (a plant's foliage takes no taps over it).
         hits[h] = 1 | (undershelf ? 2 : 0) | (node.disabled || node.inert ? 4 : 0) | (resetHit ? 8 : 0) |
-          (!plant && !semanticCovers.has(node) ? 16 : 0) | placed;
+          (!plant && !semanticCovers.has(node) ? 16 : 0) | placed | (entry.model?.visible ? 64 : 0);
         hits[h + 1] = entry.bits;
-      } else hits[h] = 0;
+      } else hits[h] = entry.model?.visible ? 64 : 0;
       if (entry.insertion) {
         insertedIds.push(String(entry.book?.id ?? ''));
         overlaying ||= Boolean(entry.insertion.overlayCanvas);
@@ -1691,14 +1692,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     // The clip is a pure function of the reference box, this rectangle and every
     // excluded book rectangle: rebuild it only when one of those numbers moved.
-    if (!exclusionsReady) {
-      for (const other of bookEntries) if (other.kind !== 'plant' && other.model?.visible && !other.flags.away && !other.flags.dragging) {
-        const area = sceneView.progress > .04 ? other.rect : other.hitRect;
-        if (area) exclusionRects.push(area);
-      }
-      foliageFrame.prepare(exclusionRects);
-      exclusionsReady = true;
-    }
+    // Gathered from the entry arena in one native call per frame (rust-ui/src/scene_exclusions.rs).
+    if (!exclusionsReady) { entryFrame.exclusions(foliageFrame.native, sceneView.progress > .04); exclusionsReady = true; }
     // Inside the books' rectangles the existing native book surface already has touch-action:none and
     // resolves true mesh occlusion in its drag handler; the clip (Rust) keeps book clicks native even if
     // foliage is behind a cover. It is rebuilt only when one of its inputs moved.
