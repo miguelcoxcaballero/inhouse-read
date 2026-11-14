@@ -95,11 +95,11 @@ impl RustBookGravity{
   pose.translation.y+=if initial.mins.y<bay[2]{bay[2]-initial.mins.y}else if initial.maxs.y>bay[3]{bay[3]-initial.maxs.y}else{0.0};
   let origin=pose.translation;let bounds=shape.compute_aabb(&pose);
   let others:Vec<_>=self.books.iter().filter(|(k,o)|*k!=key&&!o.held&&self.world.colliders[o.collider].is_enabled()).map(|(_,o)|{
-   let shape=self.world.colliders[o.collider].shared_shape().clone();let pose=*self.world.bodies[o.handle].position();let bounds=shape.compute_aabb(&pose);(shape,pose,bounds)
-  }).filter(|(_,_,a)|a.mins.z<=bounds.maxs.z&&a.maxs.z>=bounds.mins.z&&a.mins.y<=bay[3]&&a.maxs.y>=bay[2]&&a.mins.x<=bay[1]&&a.maxs.x>=bay[0]).collect();
+   let shape=self.world.colliders[o.collider].shared_shape().clone();let pose=*self.world.bodies[o.handle].position();let bounds=shape.compute_aabb(&pose);(shape,pose,bounds,o.kind)
+  }).filter(|(_,_,a,_)|a.mins.z<=bounds.maxs.z&&a.maxs.z>=bounds.mins.z&&a.mins.y<=bay[3]&&a.maxs.y>=bay[2]&&a.mins.x<=bay[1]&&a.maxs.x>=bay[0]).collect();
   let clear=|position:Vector|{
    let mut pose=pose;pose.translation=position;let bounds=shape.compute_aabb(&pose);
-   others.iter().all(|(other,p,a)|bounds.maxs.x<a.mins.x||bounds.mins.x>a.maxs.x||bounds.maxs.y<a.mins.y||bounds.mins.y>a.maxs.y||!rapier3d::parry::query::intersection_test(&pose,shape,p,other.as_ref()).map_or(true,|hit|hit.intersecting))
+   others.iter().all(|(other,p,a,_)|bounds.maxs.x<a.mins.x||bounds.mins.x>a.maxs.x||bounds.maxs.y<a.mins.y||bounds.mins.y>a.maxs.y||!rapier3d::parry::query::intersection_test(&pose,shape,p,other.as_ref()).map_or(true,|hit|hit.intersecting))
   };
   let fits=|position:Vector|{
    let delta=position-origin;
@@ -108,9 +108,10 @@ impl RustBookGravity{
   };
   if fits(origin)&&clear(origin){return Some(pose);}
   let mut heights=vec![origin.y];let margin=0.0006;
-  if up{for (_,_,a) in &others{heights.push(origin.y+(a.maxs.y-bounds.mins.y+margin).max(0.0));}}
+  // A book may be raised onto other books, never onto a pot or a lamp.
+  if up{for (_,_,a,kind) in &others{if b.kind!=0||*kind==0{heights.push(origin.y+(a.maxs.y-bounds.mins.y+margin).max(0.0));}}}
   let mut edges=vec![bay[0]-bounds.mins.x, bay[1]-bounds.maxs.x];
-  for (other,p,a) in &others{
+  for (other,p,a,_) in &others{
    edges.extend([a.mins.x-bounds.maxs.x-margin,a.maxs.x-bounds.mins.x+margin]);
    // A few separated legs need their own edges; dense revolved profiles are
    // refined with the narrow phase below, without a per-frame vertex scan.
@@ -419,13 +420,21 @@ impl RustBookGravity {
      // unsupported legacy books just beyond their tipping point; subsequent
      // angles are entirely the solver's result, including chains and stacks.
      let mut left=base[0]-bay[0] as f64-thickness/2.0;let mut right=bay[1] as f64-base[0]-thickness/2.0;
+     let (mut left_decoration,mut right_decoration)=(false,false);
      for (j,other) in geometry.chunks_exact(9).enumerate(){if j==i||other[2]!=g[2]||other[1]==3.0{continue;}
       let os=&states[j*37..j*37+37];if os[2] as u32&1!=0{continue;}
       let gap=((os[23]-s[23]).abs()-(other[0]+g[0])/2.0)/p;
-      if os[23]<s[23]{left=left.min(gap);}else{right=right.min(gap);}
+      let decoration=other[1]!=0.0&&self.solids.contains_key(&names[j]);
+      if os[23]<s[23]{if gap<left{left=gap;left_decoration=decoration;}}else if gap<right{right=gap;right_decoration=decoration;}
      }
      let room=left.max(right);let tilt=(thickness/h).atan()+0.012;
-     if room>h*tilt.sin()+0.001{angle=if right>=left{-tilt}else{tilt};}
+     if room>h*tilt.sin()+0.001{
+      angle=if right>=left{-tilt}else{tilt};
+      // It would fall onto the real pot or lamp that ends its free space and
+      // stay propped against it. Next to such a solid within its own height
+      // a fresh book simply stands.
+      if (if right>=left{right_decoration}else{left_decoration})&&room<h+0.01{angle=0.0;}
+     }
     }
     // Start a legacy lean around its original bottom toe, not its
     // centre: rotating about the centre pushes the raised bottom corner
