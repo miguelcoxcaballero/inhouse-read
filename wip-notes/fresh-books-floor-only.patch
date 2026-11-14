@@ -1,0 +1,27 @@
+diff --git a/rust-ui/src/book_gravity.rs b/rust-ui/src/book_gravity.rs
+index d5e885c1..5a26723e 100644
+--- a/rust-ui/src/book_gravity.rs
++++ b/rust-ui/src/book_gravity.rs
+@@ -140,9 +140,9 @@ impl RustBookGravity{
+  }
+  // A fast grip can cross a row without contacts. Re-enable only after the
+  // selected item is clear; penetration correction must never shove a row.
+- fn clear_release(&mut self,key:&Vec<u16>){
++ fn clear_release(&mut self,key:&Vec<u16>,stack:bool){
+   let b=&self.books[key];let pose=*self.world.bodies[b.handle].position();
+-  let destination=self.clear_position(key,pose,b.bay,true).or_else(||b.home.filter(|(_,bay)|*bay==b.bay).and_then(|(pose,bay)|self.clear_position(key,pose,bay,true)));
++  let destination=self.clear_position(key,pose,b.bay,stack).or_else(||b.home.filter(|(_,bay)|stack&&*bay==b.bay).and_then(|(pose,bay)|self.clear_position(key,pose,bay,true)));
+   if let Some(position)=destination{if position!=pose{
+    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
+    body.set_position(position,true);body.set_linvel(Vector::ZERO,true);body.set_angvel(Vector::ZERO,true);
+@@ -588,8 +588,8 @@ impl RustBookGravity {
+   // Resolve that penetration before warmup: a solver impulse can otherwise
+   // wedge the book permanently between the tapered pot and the cabinet post.
+   // Saved poses and existing neighbours are never reseeded or repacked.
+-  for key in fresh_books{if self.books.iter().any(|(other,o)|*other!=key&&o.solid.is_some()&&self.intersects(&self.books[&key],o,false)){self.clear_release(&key);}}
+-  for key in isolated_releases{self.clear_release(&key);}
++  for key in fresh_books{if self.books.iter().any(|(other,o)|*other!=key&&o.solid.is_some()&&self.intersects(&self.books[&key],o,false)){self.clear_release(&key,false);}}
++  for key in isolated_releases{self.clear_release(&key,true);}
+   // An accidental overlapping drop must resolve its penetration first,
+   // without a powered tilt levering a whole neighbouring row over.
+   let blocked:Vec<Vec<u16>>=self.books.iter().filter(|(key,b)|!b.held&&b.release!=0.0&&self.books.iter().any(|(other,o)|other!=*key&&self.intersects(b,o,false))).map(|(key,_)|key.clone()).collect();
