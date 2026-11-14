@@ -29,7 +29,7 @@ impl Editor{
   for (input,output,field) in [(font_size_input,&self.size_output,"spineFontSize"),(author_size_input,&self.author_size_output,"spineAuthorFontSize")]{
    let w=w.clone();let (input,output)=(input.clone(),output.clone());
    on(keep,&input.clone(),"input",move|_|live!(w,e=>{
-    let size=num(&get(&input,"value"));
+    let size=crate::host::number(&input,"value");
     set_text(&output,&format!("{} px",ns(size)));
     sync_range(&input);
     e.update_customization(&obj(&[(field,&f(size))]))
@@ -116,7 +116,7 @@ impl Editor{
   put(&self.subtitle,"textContent",&get(&self.preview_title,"textContent"));
   put(&self.book,"author",&self.ctx.env("normalizeBookAuthor",&[&get(&self.book,"author")])?);
   put(&self.preview_author,"textContent",&get(&self.book,"author"));
-  putb(&self.preview_author,"hidden",!truthy(&get(&self.book,"author")));
+  putb(&self.preview_author,"hidden",!crate::host::flag(&self.book,"author"));
   Ok(())
  }
  /// The title and author written on the spine are the book's own, everywhere: this sheet, its labels and the shelf's.
@@ -157,7 +157,7 @@ impl Editor{
   update_book_style_vars(&self.book_node,&item_style);
   let shelf_node=self.shelf_spine_of_book().unwrap_or(undef());
   update_book_style_vars(&shelf_node,&item_style);
-  if truthy(&self.view)&&truthy(&get(&self.view,"updateEditorAppearance")){method(&self.view,"updateEditorAppearance",&[&self.book])?;}
+  if truthy(&self.view)&&crate::host::flag(&self.view,"updateEditorAppearance"){method(&self.view,"updateEditorAppearance",&[&self.book])?;}
   else if self.has_view(){method(&self.view,"updateCoverAppearance",&[&self.book])?;method(&self.view,"updateEdgeAppearance",&[&self.book])?;}
   let last=self.ctx.st("lastOpened");
   if get(&get(&last,"book"),"id")==get(&self.book,"id"){
@@ -201,7 +201,7 @@ impl Editor{
  pub(super) fn update_color_selection(&self)->R{
   let book=&self.book;
   let cloth=text(&self.ctx.env("spineFinish",&[&get(book,"spineFinish")])?)=="matte";
-  let follows_cover=!truthy(&get(book,"spineColorOverride"));
+  let follows_cover=!crate::host::flag(book,"spineColorOverride");
   let selected=self.selected_color.borrow().clone();
   for (index,button) in self.color_buttons.iter().enumerate(){
    let on=cloth&&(if follows_cover{index==0}else{data_get(button,"color")==selected});
@@ -286,7 +286,7 @@ impl Editor{
   }
   // The analysis waits for the turn to finish: it does not compete with its animation.
   if next=="cover"{
-   let finished=if truthy(&turned)&&truthy(&get(&turned,"finished")){get(&turned,"finished")}else{promise_resolve(&undef())};
+   let finished=if truthy(&turned)&&crate::host::flag(&turned,"finished"){get(&turned,"finished")}else{promise_resolve(&undef())};
    let weak=self.weak();
    then(&finished,move|_|live!(weak,e=>{
     if e.tab_is("cover")&&!e.hidden()&&e.is_session(){e.load_relief_proposals();}
@@ -301,9 +301,9 @@ impl Editor{
   let vv=visual_viewport();
   let width=inner_width();let width=if width.is_nan()||width==0.0{0.0}else{width};
   let inner_h=inner_height();let inner_h=if inner_h.is_nan()||inner_h==0.0{0.0}else{inner_h};
-  let vv_height=if truthy(&vv){num(&get(&vv,"height"))}else{0.0};
+  let vv_height=if truthy(&vv){crate::host::number(&vv,"height")}else{0.0};
   let vv_height=if vv_height.is_nan()||vv_height==0.0{inner_h}else{vv_height};
-  let top=if truthy(&vv){num(&get(&vv,"offsetTop"))}else{0.0};let top=if top.is_nan()||top==0.0{0.0}else{top};
+  let top=if truthy(&vv){crate::host::number(&vv,"offsetTop")}else{0.0};let top=if top.is_nan()||top==0.0{0.0}else{top};
   (width,min(inner_h,vv_height),top)
  }
  pub(super) fn open_editor(&self)->R{
@@ -336,7 +336,7 @@ impl Editor{
   putb(&self.panel,"hidden",true);
   cls_remove(&self.flyout,&["is-editing-spine"]);
   cls_remove(&self.meta,&["is-editing"]);
-  putb(&self.cover_target,"hidden",!truthy(&get(&self.ctx.opts,"autoOpen")));
+  putb(&self.cover_target,"hidden",!crate::host::flag(&self.ctx.opts,"autoOpen"));
   set_attr(&self.edit_button,"aria-expanded","false");
   {let previous=self.preview_timer.borrow().clone();if previous.is_set(){cancel(&previous);}*self.preview_timer.borrow_mut()=Timer::none();}
   let changed=self.dirty.get();

@@ -40,10 +40,7 @@ function fixture(native,options={},module=rustShelf){
  if(options.noReturnMethod)delete state.shelf.returnToShelf;
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
  const host={...env,state,ignoreCloseError:()=>{},
-  closeHandoff:f=>{flight=f;return()=>module.app_return_page_handoff(host,f)},
-  closeStillRemoval:f=>()=>module.app_remove_return_page(f),
-  closeProgressFlush:id=>()=>module.app_flush_closed_progress(host,id),
-  warnClosedProgress:error=>module.app_warn_closed_progress(host,error),
+  later:(name,take,...head)=>{if(name==='app_return_page_handoff')flight=head[1];return(...tail)=>module[name](...head,...tail.slice(0,take))},
   warnPendingShelf:error=>env.console.warn('Estantería pendiente:',error)};
  const close=native?()=>module.app_close_reader(host):scope(env,reference);
  return{events,state,snapshot,snapshotWait,progressWait,returnWait,close,host,

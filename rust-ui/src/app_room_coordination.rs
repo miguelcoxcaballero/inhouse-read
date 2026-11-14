@@ -2,7 +2,7 @@
 //! timer callbacks stay host bindings; queue state and sequencing live here.
 use wasm_bindgen::prelude::*;
 use js_sys::{Object,Promise};
-use crate::host::{read,method,set,truthy,absent,num,set_timeout,clear_timeout};
+use crate::host::{read,method,set,truthy,absent,num,set_timeout,clear_timeout,later};
 use crate::cloud_host;
 type R<T=()> = Result<T,JsValue>;
 fn state(host:&JsValue)->R<JsValue>{read(host,"state")}
@@ -11,7 +11,7 @@ fn account(host:&JsValue)->R<JsValue>{let profile=read(&state(host)?,"driveProfi
 pub fn app_backup_schedule(host:&JsValue)->R {
  let state=state(host)?;clear_timeout(&read(&state,"backupTimer")?)?;
  if !truthy(&method(host,"hasDriveSession",&[])?)&&!truthy(&method(host,"getRememberedDriveProfile",&[])?) {return Ok(());}
- let timer=set_timeout(&read(host,"backupCallback")?,350.0)?;set(&state,"backupTimer",&timer)
+ let timer=set_timeout(&later(host,"app_backup_run",0,&[host])?,350.0)?;set(&state,"backupTimer",&timer)
 }
 #[wasm_bindgen]
 pub fn app_backup_run(host:JsValue)->Promise {cloud_host::start(async move {
@@ -24,7 +24,7 @@ pub fn app_backup_run(host:JsValue)->Promise {cloud_host::start(async move {
 pub fn app_room_capture_schedule(host:&JsValue,delay:f64)->R {
  let state=state(host)?;set(&state,"roomCaptureAgain",&JsValue::TRUE)?;
  if truthy(&read(&state,"roomCaptureBusy")?)||!absent(&read(&state,"roomCaptureTimer")?)||!truthy(&account(host)?){return Ok(());}
- let timer=set_timeout(&read(host,"captureCallback")?,delay)?;set(&state,"roomCaptureTimer",&timer)
+ let timer=set_timeout(&later(host,"app_room_capture_run",0,&[host])?,delay)?;set(&state,"roomCaptureTimer",&timer)
 }
 #[wasm_bindgen]
 pub fn app_room_capture_run(host:JsValue)->Promise {cloud_host::start(async move {

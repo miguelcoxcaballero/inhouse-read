@@ -35,7 +35,7 @@ describe('names at the prepared reader handoff',()=>{
   const host={state:{currentBookId:'book',activeOpeningContext:ctx},els:{readerScreen:screen,readerToolbar:toolbar},document:{body:{classList}},
    readingExperience:experience,refreshSelectedBookNames,revealPreparedReader:async()=>{visible={title:displayBookTitle(prepared),author:prepared.author}},
    markTiming(){},library:{get:async()=>prepared},openingPageSnapshot:async()=>({sourceType:'pdf-canvas'}),animateReaderPageFromBook(){},
-   requestAnimationFrame:callback=>callback(),setTimeout:()=>0,revealReaderToolbar(){},settleReaderToolbar(){}};
+   requestAnimationFrame:callback=>callback(),setTimeout:()=>0,later:()=>()=>{}};
   await rustShelf.app_reader_ready(host,{book,ctx});
   expect(visible).toEqual({title:'Claros del bosque',author:'Maria Zambrano'});
   expect(host.state.activeOpeningContext).toBeNull();expect(toolbar.hidden).toBe(false);

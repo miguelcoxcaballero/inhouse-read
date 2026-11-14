@@ -2,7 +2,7 @@
 //! ownership checks, fallback routes and the page handover live in Rust.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Object,Promise,Reflect};
-use crate::host::{read,set,method,method_opt,truthy,absent,call};
+use crate::host::{read,set,method,method_opt,truthy,absent,call,later};
 use crate::cloud_host as c;
 type R<T>=Result<T,JsValue>;
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let entries=Array::new();for(k,v)in fields{c::data_entry(&entries,&(*k).into(),v);}Ok(Object::from_entries(entries.as_ref())?.into())}
@@ -66,8 +66,8 @@ pub fn app_reader_ready(host:JsValue,flight:JsValue)->Promise{
    if completed==JsValue::FALSE{app_cancel_reader_opening(host.clone(),flight.clone())?;return Ok(JsValue::UNDEFINED);}
    let toolbar=read(&read(&host,"els")?,"readerToolbar")?;set(&toolbar,"hidden",&JsValue::FALSE)?;
    classes(&toolbar,"add",&["is-rising"])?;read(&toolbar,"offsetWidth")?;
-   method(&host,"requestAnimationFrame",&[&read(&host,"revealReaderToolbar")?])?;
-   method(&host,"setTimeout",&[&read(&host,"settleReaderToolbar")?,&500.0.into()])?;
+   method(&host,"requestAnimationFrame",&[&later(&host,"app_reveal_reader_toolbar",0,&[&host])?])?;
+   method(&host,"setTimeout",&[&later(&host,"app_settle_reader_toolbar",0,&[&host])?,&500.0.into()])?;
    Ok(JsValue::UNDEFINED)
   }.await;
   clear(&host,&flight)?;result
@@ -82,9 +82,16 @@ pub fn app_cancel_opening_picker(host:JsValue,flight:JsValue)->R<()>{
   app_close_reader_opening(host,flight,object(&[("instant",JsValue::TRUE)])?)?;
  }Ok(())
 }
+/// The window got its focus back after the file picker: the listener (page-owned, found in `holder`)
+/// withdraws itself and the cancellation is scheduled.
+#[wasm_bindgen]
+pub fn app_picker_focus_back(host:JsValue,flight:JsValue,holder:JsValue)->R<JsValue>{
+ method(&read(&host,"window")?,"removeEventListener",&[&"focus".into(),&read(&holder,"listener")?])?;
+ app_schedule_picker_cancel(host,flight)
+}
 #[wasm_bindgen]
 pub fn app_schedule_picker_cancel(host:JsValue,flight:JsValue)->R<JsValue>{
- let callback=method(&host,"pickerCancellation",&[&flight])?;method(&host,"setTimeout",&[&callback,&400.0.into()])
+ let callback=later(&host,"app_cancel_opening_picker",0,&[&host,&flight])?;method(&host,"setTimeout",&[&callback,&400.0.into()])
 }
 fn or(value:JsValue,fallback:impl FnOnce()->R<JsValue>)->R<JsValue>{if truthy(&value){Ok(value)}else{fallback()}}
 fn stored_file(book:&JsValue)->R<JsValue>{
@@ -97,8 +104,8 @@ fn stored_file(book:&JsValue)->R<JsValue>{
 pub fn app_open_book_record(host:JsValue,book:JsValue,ctx:JsValue)->Promise{
  c::start(async move{
   let flight=object(&[("book",book.clone()),("ctx",ctx.clone())])?;
-  mark(&host,&flight)?;let transition=method(&host,"openingCallbacks",&[&flight])?;set(&flight,"transition",&transition)?;
-  let cancel=method(&host,"openingCancellation",&[&flight])?;method_opt(&ctx,"onCancel",&[&cancel])?;
+  mark(&host,&flight)?;let transition=object(&[("isActive",later(&host,"app_opening_is_active",0,&[&flight])?),("onReaderReady",later(&host,"app_reader_ready",0,&[&host,&flight])?),("onReaderError",later(&host,"app_close_reader_opening",0,&[&host,&flight])?)])?;set(&flight,"transition",&transition)?;
+  let cancel=later(&host,"app_cancel_reader_opening",0,&[&host,&flight])?;method_opt(&ctx,"onCancel",&[&cancel])?;
   let id=read(&book,"id")?;let books=read(&host,"preparedBooks")?;let prepared=method(&books,"get",&[&id])?;
   if truthy(&prepared){
    method(&host,"releasePageGate",&[&"open".into(),&id])?;
@@ -146,7 +153,7 @@ pub fn app_open_book_record(host:JsValue,book:JsValue,ctx:JsValue)->Promise{
    if !active(&ctx)?{return Ok(JsValue::UNDEFINED);}
    let state=state(&host)?;set(&state,"pendingLocalReopenId",&id)?;set(&state,"pendingReaderTransition",&transition)?;
    method(&read(&read(&host,"els")?,"filePicker")?,"click",&[])?;
-   let listener=method(&host,"filePickerFocusListener",&[&flight])?;
+   let holder=object(&[])?;let listener=later(&host,"app_picker_focus_back",0,&[&host,&flight,&holder])?;set(&holder,"listener",&listener)?;
    method(&read(&host,"window")?,"addEventListener",&[&"focus".into(),&listener,&object(&[("once",JsValue::TRUE)])?])?;
    return Ok(JsValue::UNDEFINED);
   }

@@ -48,7 +48,7 @@ describe('committed reading anchors survive incomplete layout notifications',()=
         cloudSync:{scheduleProgress:id=>scheduled.push(id),flushProgress:id=>{flushes.push(id);return new Promise(()=>{})}},
         document:{body:{classList:{add(){},remove(){}}}},els:{readerToolbar:{hidden:false}},
         persistablePosition,hasDriveSession:()=>true,isBookLengthReady:()=>false,supersedePreparation(){},showScreen(){},refreshShelf:async()=>{},ignoreCloseError(){},
-        closeProgressFlush:id=>()=>rustShelf.app_flush_closed_progress(host,id),warnClosedProgress:error=>{throw error},console}
+        later:(name,take,...head)=>name==='app_warn_closed_progress'?error=>{throw error}:(...tail)=>rustShelf[name](...head,...tail.slice(0,take)),console}
       await rustShelf.app_close_reader(host)
       expect(writes).toEqual(location===committed?[['book',.6,committed.locator]]:[])
       expect(scheduled).toEqual(location===committed?['book']:[]);expect(flushes).toEqual(['book'])

@@ -22,7 +22,7 @@ pub fn hit_trash(ctx:&Ctx,x:f64,y:f64,node:&JsValue)->R<bool>{Ok(truthy(&hit_tra
 /// `hitTrash(x, y, node)` as the scene answered it (the value goes on to the scene and to `classList.toggle`).
 pub fn hit_trash_value(ctx:&Ctx,x:f64,y:f64,node:&JsValue)->R<JsValue>{
  let trash_node=get(&ctx.parts,"trashNode");
- let has_book_trash=truthy(&get(&ctx.parts,"hasBookTrash"));
+ let has_book_trash=crate::host::flag(&ctx.parts,"hasBookTrash");
  let allowed=truthy(&trash_node)&&ctx.st_str("viewMode")==ISOMETRIC&&(
   matches(node,".ihr-plant, .ihr-lamp")||(has_book_trash&&!absent(node)&&cls_has(node,"ihr-spine")));
  if !allowed{return Ok(JsValue::FALSE);}
@@ -58,11 +58,11 @@ pub fn update_drop_preview(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
   ctx.cancel_frame_id(&get(drag,"previewFrame"));put(drag,"previewFrame",&f(0.0));
   ctx.scene_call("previewPlacements",&[&null()])?;return Ok(());
  }
- if truthy(&destination)&&!truthy(&get(drag,"previewFrame")){
+ if truthy(&destination)&&!crate::host::flag(drag,"previewFrame"){
   let (drag,node)=(drag.clone(),node.clone());
   let id=ctx.set_frame({let drag=drag.clone();move|ctx|{
    put(&drag,"previewFrame",&f(0.0));
-   if ctx.st("dragSession")!=drag||!truthy(&get(&drag,"destination")){return Ok(());}
+   if ctx.st("dragSession")!=drag||!crate::host::flag(&drag,"destination"){return Ok(());}
    let preview=preview_object_placement(ctx,&drag,&object_key(&node),&get(&drag,"destination"))?;
    if ctx.st("dragSession")!=drag||ctx.st_true("destroyed"){return Ok(());}
    ctx.scene_call("previewPlacements",&[&get(&preview,"objects"),&object_key(&node)])?;
@@ -75,7 +75,7 @@ pub fn update_drop_preview(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
 
 /// `continueDragScroll(drag, node)`: the shelf scrolls by itself while the object is held near its edge.
 pub fn continue_drag_scroll(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
- if truthy(&get(drag,"scrollFrame"))||ctx.st_str("viewMode")==ISOMETRIC{return Ok(());}
+ if crate::host::flag(drag,"scrollFrame")||ctx.st_str("viewMode")==ISOMETRIC{return Ok(());}
  fn tick(ctx:&Rc<Ctx>,drag:JsValue,node:JsValue)->R{
   put(&drag,"scrollFrame",&f(0.0));
   if ctx.st("dragSession")!=drag||!gb(&drag,"active")||ctx.st_str("viewMode")==ISOMETRIC{return Ok(());}
@@ -379,7 +379,7 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
   let (_,_,set_down,material)=object_sounds(node);
   if set_down==16||!truthy(&ctx.scene()){ctx.sound_of(set_down,material,0.45);}
  }
- if gb(&drag,"moved")&&!cancelled&&!truthy(&ctx.opts_get("sections"))&&truthy(&get(&drag,"destination")){
+ if gb(&drag,"moved")&&!cancelled&&!truthy(&ctx.opts_get("sections"))&&crate::host::flag(&drag,"destination"){
   persist_object_placement(ctx,node,&get(&drag,"destination"),&old_rects)?;
  }else if gb(&drag,"moved")&&!cancelled&&truthy(&target){
   reorder_spine(ctx,node,&target,gb(&drag,"after"))?;

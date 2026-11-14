@@ -36,8 +36,8 @@ pub async fn remove_in_trash(ctx:Rc<Ctx>,node:JsValue,motion:JsValue,rect_value:
  let plant=if cls_has(&node,"ihr-plant"){array_of(&ctx.st("plants")).into_iter().find(|item|get(item,"key")==key).unwrap_or(undef())}else{null()};
  let lamp=if cls_has(&node,"ihr-lamp"){array_of(&ctx.st("lamps")).into_iter().find(|item|get(item,"key")==key).unwrap_or(undef())}else{null()};
  let item=if truthy(&plant)||truthy(&lamp){null()}else{map_get(&ctx.st("itemsById"),&data_get(&node,"bookId"))};
- let has_trash=truthy(&get(&ctx.parts,"hasTrash"));
- let has_book_trash=truthy(&get(&ctx.parts,"hasBookTrash"));
+ let has_trash=crate::host::flag(&ctx.parts,"hasTrash");
+ let has_book_trash=crate::host::flag(&ctx.parts,"hasBookTrash");
  if !has_trash||!(truthy(&plant)||truthy(&lamp)||(has_book_trash&&truthy(&item)))||ctx.st_true("busy")||ctx.st_true("destroyed"){
   method_opt(&motion,"cancel",&[])?;
   return Ok(undef());
@@ -92,7 +92,7 @@ pub async fn remove_in_trash(ctx:Rc<Ctx>,node:JsValue,motion:JsValue,rect_value:
 #[allow(clippy::too_many_arguments)]
 async fn remove_flight(ctx:&Rc<Ctx>,operation:&JsValue,node:&JsValue,rect_value:&JsValue,duration:f64,plant:&JsValue,lamp:&JsValue,item:&JsValue)->R{
  let bin=trash_node(ctx);
- if !truthy(&get(operation,"motion"))&&!gb(&bin,"hidden")&&ctx.st_str("viewMode")==ISOMETRIC{
+ if !crate::host::flag(operation,"motion")&&!gb(&bin,"hidden")&&ctx.st_str("viewMode")==ISOMETRIC{
   let start=if truthy(rect_value){rect_value.clone()}else{rect(node)?};
   let target=rect(&bin)?;
   let clone=method(node,"cloneNode",&[&JsValue::TRUE])?;
@@ -223,7 +223,7 @@ impl Ctx{
 /// `pointerClick(event)`: a click a pointer produced, as opposed to the keyboard or assistive tech. Chromium can
 /// deliver a touch's compatibility click with detail 0, so the pointer type counts too.
 pub fn pointer_click(event:&JsValue)->bool{
- num(&get(event,"detail"))>0.0||["touch","mouse","pen"].contains(&text(&get(event,"pointerType")).as_str())
+ crate::host::number(event,"detail")>0.0||["touch","mouse","pen"].contains(&text(&get(event,"pointerType")).as_str())
 }
 
 /// `clearOpeningClick?.()`.
@@ -246,7 +246,7 @@ pub fn discard_touch_compatibility_click(ctx:&Rc<Ctx>,release:&JsValue)->R{
   if !pointer_click(&event)||(truthy(&pointer_type)&&pointer_type!=s("touch")){return Ok(());}
   let id=get(&event,"pointerId");
   if !id.is_undefined()&&id!=get(&release,"pointerId"){return Ok(());}
-  if hypot(num(&get(&event,"clientX"))-num(&get(&release,"clientX")),num(&get(&event,"clientY"))-num(&get(&release,"clientY")))>TAP_SLOP{return Ok(());}
+  if hypot(crate::host::number(&event,"clientX")-crate::host::number(&release,"clientX"),crate::host::number(&event,"clientY")-crate::host::number(&release,"clientY"))>TAP_SLOP{return Ok(());}
   clear_opening_click(&ctx);
   method(&event,"preventDefault",&[])?;
   method(&event,"stopImmediatePropagation",&[])?;

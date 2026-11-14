@@ -27,9 +27,7 @@ function fixture(native,options={},module=rustShelf){
  };
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
  const host={reader:env.reader,coverUpgrades:env.coverUpgrades,library:env.library,refreshShelf:env.refreshShelf,scheduleLibraryBackup:env.scheduleLibraryBackup,global:{createImageBitmap:env.createImageBitmap},console:env.console,now:()=>env.Date.now(),state,
-  measureSmallCover:bitmap=>module.app_cover_bitmap_small(bitmap),coverBitmapFailed:()=>module.app_cover_bitmap_failed(),
-  coverPatchGuard:flight=>latest=>module.app_cover_patch_allowed(host,flight,latest),
-  coverFlowCallbacks:flight=>({fetch:needed=>module.app_cover_fetch(host,flight,needed),persist:value=>module.app_cover_persist(host,flight,value),updated:value=>module.app_cover_updated(host,flight,value),failed:error=>module.app_cover_failed(host,flight,error),finish:()=>module.app_cover_finished(host,flight)})};
+  later:(name,take,...head)=>(...tail)=>module[name](...head,...tail.slice(0,take))};
  env.bookDataModule=()=>module;env.coverBackgroundHost=host;
  const use=scope(env,native?actual:reference);const cached=Promise.resolve('cached');if(options.cached||options.oldEpoch)env.coverUpgrades.set(record.id,{epoch:options.oldEpoch?3:4,promise:cached});
  return{env,host,state,record,blob,coverWait,bitmapWait,patchWait,cached,open:()=>use(record),entry:()=>env.coverUpgrades.get(record.id),

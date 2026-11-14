@@ -42,10 +42,8 @@ function fixture(config={}) {
  return{host,root,button,calls,state}
 }
 function bindCallbacks(core,host){
- host.uploadProgressFailure=error=>core.app_drive_upload_progress_failure(host,error)
+ host.later=(name,take,...head)=>(...tail)=>core[name](...head,...tail.slice(0,take))
  host.authFailure=error=>core.app_drive_report_error(host,error)
- host.resumeReady=()=>core.app_drive_resume_ready(host)
- host.resumeFailure=error=>core.app_drive_resume_failure(host,error)
 }
 function nativeActions(core,host){bindCallbacks(core,host);return {
  handleCoverAction:(...args)=>core.app_drive_cover_action(host,...args),

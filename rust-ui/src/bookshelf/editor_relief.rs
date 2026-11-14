@@ -15,7 +15,7 @@ impl Editor{
    e.relief.borrow_mut().active_color=get(&select,"value");e.sync_relief_selection()
   }))?;}
   {let w=w.clone();let input=self.relief_strength.clone();on(keep,&self.relief_strength,"input",move|_|live!(w,e=>{
-   let percent=num(&get(&input,"value"));
+   let percent=crate::host::number(&input,"value");
    set_text(&e.relief_strength_output,&format!("{} %",ns(percent)));
    sync_range(&input);
    let layers=array_of(&e.ctx.env("coverReliefLayers",&[&get(&e.book,"coverRelief")])?);
@@ -163,7 +163,7 @@ impl Editor{
   Ok(proposals.into())
  }
  pub(super) fn push_relief_to_view(&self,next:&JsValue)->R<JsValue>{
-  let applied=if truthy(&self.view)&&truthy(&get(&self.view,"setCoverRelief")){
+  let applied=if truthy(&self.view)&&crate::host::flag(&self.view,"setCoverRelief"){
    let result=method(&self.view,"setCoverRelief",&[next])?;
    then_map(&promise_resolve(&result),Ok,|error|{warn("No se pudo aplicar el relieve:",&error);Ok(JsValue::FALSE)})?
   }else{
@@ -242,7 +242,7 @@ impl Editor{
   let input=El::new("input").attr("type","checkbox").attr("value",&text(&get(proposal,"id"))).class("ihr-relief__input").done();
   {
    let weak=self.weak();let proposal=proposal.clone();let node=input.clone();
-   let listener=listen(&input,"change",None,false,move|_|live!(weak,e=>e.choose_relief(Some(&proposal),truthy(&get(&node,"checked")))))?;
+   let listener=listen(&input,"change",None,false,move|_|live!(weak,e=>e.choose_relief(Some(&proposal),crate::host::flag(&node,"checked"))))?;
    self.cards_keep.borrow_mut().push(listener);
   }
   let color=text(&get(proposal,"color"));

@@ -13,7 +13,7 @@ impl Editor{
   let image=construct("Image",&[])?;
   puts(&image,"decoding","async");
   put(&image,"src",&self.cover_url);
-  if truthy(&get(&image,"decode")){settle(method(&image,"decode",&[])?).await?;}
+  if crate::host::flag(&image,"decode"){settle(method(&image,"decode",&[])?).await?;}
   else{
    let (promise,resolve,reject)=deferred();
    put(&image,"onload",&resolve);put(&image,"onerror",&reject);
@@ -199,7 +199,7 @@ impl Editor{
   Ok(())
  }
  fn handle_viewport_resize(&self)->R<bool>{
-  let height=num(&get(&self.session,"editorViewportHeight"));
+  let height=crate::host::number(&self.session,"editorViewportHeight");
   if self.hidden()||height.is_nan()||height==0.0{return Ok(false);}
   let (width,viewport_height,_)=self.visible_viewport();
   if (width-gn(&self.session,"editorViewportWidth")).abs()>=40.0{return Ok(false);}
@@ -229,7 +229,7 @@ impl Editor{
   let w=self.weak();
   let keep=&self.keep;
   {let w=w.clone();on(keep,&self.header,"pointerdown",move|event|live!(w,e=>{
-   if gn(&event,"button")!=0.0||num(&get(&e.grip,"offsetWidth"))==0.0||truthy(&closest(&get(&event,"target"),"button")){return Ok(());}
+   if gn(&event,"button")!=0.0||crate::host::number(&e.grip,"offsetWidth")==0.0||truthy(&closest(&get(&event,"target"),"button")){return Ok(());}
    *e.sheet_drag.borrow_mut()=Some(SheetDrag{id:get(&event,"pointerId"),y:gn(&event,"clientY"),time:now(),dy:0.0});
    method_opt(&e.header,"setPointerCapture",&[&get(&event,"pointerId")])?;
    cls_add(&e.panel,&["is-dragging"]);Ok(())

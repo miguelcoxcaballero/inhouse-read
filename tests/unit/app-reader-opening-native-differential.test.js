@@ -39,11 +39,7 @@ function fixture(native,options={},module=rustShelf){
  };
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
  const host={...env,state,
-  openingCallbacks:f=>{flight=f;return{isActive:()=>module.app_opening_is_active(f),onReaderReady:()=>module.app_reader_ready(host,f),onReaderError:()=>module.app_close_reader_opening(host,f)}},
-  openingCancellation:f=>()=>module.app_cancel_reader_opening(host,f),
-  revealReaderToolbar:()=>module.app_reveal_reader_toolbar(host),settleReaderToolbar:()=>module.app_settle_reader_toolbar(host),
-  pickerCancellation:f=>()=>module.app_cancel_opening_picker(host,f),
-  filePickerFocusListener:f=>function onFocusBack(){env.window.removeEventListener('focus',onFocusBack);module.app_schedule_picker_cancel(host,f)},
+  later:(name,take,...head)=>{if(name==='app_opening_is_active')flight=head[0];return(...tail)=>module[name](...head,...tail.slice(0,take))},
   readerPageFrames:()=>new Promise(resolve=>env.requestAnimationFrame(()=>env.requestAnimationFrame(resolve)))
  };
  env.animateReaderPageFromBook=native?settings=>module.app_animate_reader_page(host,settings):scope(env,reference.animateReaderPageFromBook);host.animateReaderPageFromBook=env.animateReaderPageFromBook;

@@ -3,7 +3,7 @@
 //! exists. All metadata, cancellation, storage and reader sequencing live here.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Object,Promise};
-use crate::host::{read,set,method,method_opt,truthy,absent,call_opt};
+use crate::host::{read,set,method,method_opt,truthy,absent,call_opt,later};
 use crate::cloud_host as c;
 type R<T>=Result<T,JsValue>;
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let entries=Array::new();for(k,v)in fields{c::data_entry(&entries,&(*k).into(),v);}Ok(Object::from_entries(entries.as_ref())?.into())}
@@ -51,10 +51,9 @@ pub fn app_open_file_content(host:JsValue,file:JsValue,options:JsValue)->Promise
   let opened=async{
    let locator=opt(&existing,"locator")?;
    let initial=if opt(&locator,"kind")?==JsValue::from_str("pdf-page"){read(&read(&existing,"locator")?,"value")?}else{JsValue::UNDEFINED};
-   let callbacks=method(&host,"fileReaderCallbacks",&[])?;
    let options=object(&[("initialPage",initial),("initialLocator",opt(&existing,"locator")?),("initialFraction",opt(&existing,"progressFraction")?),
     ("preferences",read(&experience,"preferences")?),("onRelocate",read(&host,"onReaderRelocate")?),
-    ("onUserNavigation",read(&callbacks,"onUserNavigation")?),("onFollowLink",read(&callbacks,"onFollowLink")?),("onToggleChrome",read(&callbacks,"onToggleChrome")?)])?;
+    ("onUserNavigation",later(&host,"app_reader_user_navigation",0,&[&host])?),("onFollowLink",later(&host,"app_reader_follow_link",1,&[&host])?),("onToggleChrome",later(&host,"app_reader_toggle_chrome",0,&[&host])?)])?;
    c::settle(method(&reader,"open",&[&viewport,&file,&options])).await
   }.await;
   let format=match opened{Ok(value)=>value,Err(error)=>{

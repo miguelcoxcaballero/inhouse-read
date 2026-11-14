@@ -22,7 +22,7 @@ function fixture(native,options={}){
   renderBookshelf(_root,_books,settings){return settings},openBookRecord(){},prepareBookOpen(){},dismissPreparedPage(){},handleCoverAction(){},pickLocalFile(){},bookCloudState(){},hasDriveSession(){},normalizeShelfPosition(){},
  };
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:value=>{state[key]=value},configurable:true});
- const host={...env,state,ignoreRemovalPreparationError:()=>{},warnRemovalPreparation:error=>env.console.warn('No se pudo liberar la preparación del libro retirado:',error),removedPreparationCleanup:(record,generation)=>()=>rustShelf.app_finish_removed_preparation(host,record,generation)};
+ const host={...env,state,ignoreRemovalPreparationError:()=>{},warnRemovalPreparation:error=>env.console.warn('No se pudo liberar la preparación del libro retirado:',error),later:(name,take,...head)=>(...tail)=>rustShelf[name](...head,...tail.slice(0,take))};
  env.bookDataModule=bookDataModule;env.shelfRefreshHost=host;
  env.persistBookState=native?(id,fields)=>rustShelf.app_persist_book_state(host,id,fields):scoped(env,reference.persistBookState);
  env.removeBookFromShelf=native?record=>rustShelf.app_remove_from_shelf(host,record):scoped(env,reference.removeBookFromShelf);

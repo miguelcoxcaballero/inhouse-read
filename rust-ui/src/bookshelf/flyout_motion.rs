@@ -60,7 +60,7 @@ impl Flyout{
 
  /// `installOpeningPage(snapshot, { redraw })`: puts the page the book will open on into the model (or the DOM fallback).
  pub(super) fn install_opening_page(&self,snapshot:&JsValue,redraw:bool)->R<bool>{
-  if !truthy(&get(snapshot,"source")){return Ok(false);}
+  if !crate::host::flag(snapshot,"source"){return Ok(false);}
   // The book opens on white paper whatever the reading theme: the snapshot's white-paper variant starts at
   // pageTheme 0 and fades to the theme on the zoom. A page warmed up while the book waited is already on the model.
   if self.has_view(){
@@ -71,7 +71,7 @@ impl Flyout{
     let updated=spread(&[&self.book,&obj(&[("progressFraction",&get(&position,"fraction")),("locator",&get(&position,"locator"))])]);
     method_opt(&self.view,"updateBookmark",&[&updated,&obj(&[("redraw",&JsValue::FALSE)])])?;
    }
-   let paper=truthy(&get(snapshot,"paper"));
+   let paper=crate::host::flag(snapshot,"paper");
    if !truthy(&method(&self.view,"hasPageSnapshot",&[snapshot])?){
     let options=spread(&[&if paper{obj(&[("pageTheme",&f(0.0))])}else{obj(&[])},&obj(&[("redraw",&b(redraw))])]);
     return Ok(truthy(&method(&self.view,"setPageSnapshot",&[snapshot,&options])?));
@@ -113,7 +113,7 @@ impl Flyout{
   settle(call(&idle,"idle",&[])?).await?;
   let has_page=|me:&Flyout|->R<bool>{Ok(truthy(&method(&me.view,"hasPageSnapshot",&[&snapshot])?))};
   if stale(&self)||!has_page(&self)?{return Ok(JsValue::FALSE);}
-  if truthy(&get(&self.view,"preparePagePrograms")){
+  if crate::host::flag(&self.view,"preparePagePrograms"){
    let weak=self.weak();let watched=snapshot.clone();
    let keep_going=fun(move|_,_|match weak.upgrade(){
     Some(flyout)=>Ok(b(!(flyout.cancelled()||flyout.destroyed()||!flyout.is_session()||flyout.phase()!="ready")&&truthy(&method(&flyout.view,"hasPageSnapshot",&[&watched])?))),
@@ -151,7 +151,7 @@ impl Flyout{
   }
   let page=qs(&self.book_node,".ihr-flyout__saved-page");
   let bounds=if truthy(&page){method(&page,"getBoundingClientRect",&[])?}else{undef()};
-  if !truthy(&get(&bounds,"width"))||!truthy(&get(&bounds,"height")){return Ok(());}
+  if !crate::host::flag(&bounds,"width")||!crate::host::flag(&bounds,"height"){return Ok(());}
   if truthy(&qs(&self.book_node,".ihr-flyout__saved-page-stock")){
    animate(&page,&arr(&[&obj(&[("opacity",&f(0.0))]),&obj(&[("opacity",&f(1.0))])]),&obj(&[("duration",&f(duration)),("easing",&s(PAGE_EASE)),("fill",&s("both"))]))?;
   }
@@ -255,7 +255,7 @@ impl Flyout{
    // The close animation uses the same physical book and viewport. Keep its decoded case and linked programs
    // instead of rebuilding them at Back. Only one view is retained, and incompatible geometry is never reused. The
    // ribbon is refreshed from the reader's final progress.
-   if self.has_view()&&truthy(&get(&self.view,"updateBookmark")){
+   if self.has_view()&&crate::host::flag(&self.view,"updateBookmark"){
     let geometry=obj(&[("width",&f(g.cover_w)),("height",&f(g.cover_h)),("thickness",&f(g.thickness)),("viewportWidth",&f(g.vw)),("viewportHeight",&f(g.vh)),("centerX",&f(g.center_x)),("centerY",&f(g.center_y))]);
     let item_style=get(&self.item,"style");
     let signature=self.ctx.env("bookReturnSignature",&[&self.book,&item_style,&geometry,&self.cover_url])?;
@@ -329,7 +329,7 @@ impl Flyout{
   let is_active=self.callbacks.make(Stale::False,{let slot=slot.clone();move|_,_|Ok(b(slot.get().map(|flyout|flyout.is_active_now()).unwrap_or(false)))});
   let on_cancel=self.callbacks.make(Stale::Undefined,{let slot=slot.clone();move|listener,_|{if let Some(flyout)=slot.get(){put(&flyout.session,"onCancel",&listener);}Ok(undef())}});
   let close=self.callbacks.make(Stale::Promise,{let slot=slot.clone();move|options,_|match slot.get(){
-   Some(flyout)=>{let instant=truthy(&get(&options,"instant"));Ok(flyout.close(obj(&[("silent",&JsValue::TRUE),("instant",&b(instant))])))},
+   Some(flyout)=>{let instant=crate::host::flag(&options,"instant");Ok(flyout.close(obj(&[("silent",&JsValue::TRUE),("instant",&b(instant))])))},
    None=>Ok(promise_resolve(&undef())),
   }});
   let finish=self.callbacks.make(Stale::PromiseFalse,{let slot=slot.clone();move|options,_|match slot.get(){

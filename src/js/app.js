@@ -124,6 +124,9 @@ const progressWrites = createReadingProgressQueue(library, {
 })
 let savedReaderPositionGuard = null
 const readerPositionGuard = () => savedReaderPositionGuard ||= new (bookDataModule().RustReaderPositionGuard)()
+// A callback for later, owned by the page like every other one here: the module's `name` is looked up
+// when it runs and gets `head`, then the first `take` arguments of that call.
+const later = (name, take, ...head) => (...tail) => bookDataModule()[name](...head, ...tail.slice(0, take))
 let deployCheck = null
 const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
 const nativeImportShelfGate = createNativeImportShelfGate({
@@ -159,8 +162,7 @@ const roomCoordinationHost = {
   captureRoom: account => libraryBackup.captureRoom(account),
   drainLive: account => libraryBackup.drainLive(account),
   markBookChanged: (account,id,fields) => libraryBackup.markBookChanged(account,id,fields),
-  backupCallback: () => withBookDataModule(module => module.app_backup_run(roomCoordinationHost)),
-  captureCallback: () => withBookDataModule(module => module.app_room_capture_run(roomCoordinationHost)),
+  later,
   backupFailure: error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`),
   warnRoom: error => console.warn('Colocación pendiente:', error.message),
   state:app
@@ -298,12 +300,10 @@ const shelfRefreshHost = {
   get readingExperience() { return readingExperience },
   scheduleLibraryBackup, releasePageGate, onLocalBookChange:localRoomBookChanged,
   ignoreRemovalPreparationError: () => {},
-  removedPreparationCleanup: (book, generation) => () => bookDataModule().app_finish_removed_preparation(shelfRefreshHost, book, generation),
   warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
   createShelf: createShelfForRecords,
   recentFirst, retryRoomRefresh, get deployCheck() { return deployCheck },
-  placementMapper: () => row => bookDataModule().app_placement_record(shelfRefreshHost, row),
-  orderMapper: () => row => bookDataModule().app_order_record(shelfRefreshHost, row),
+  later,
   warnPreparation: error => console.warn('Preparación del grosor:', error),
   state:app
 }
@@ -328,19 +328,7 @@ const readerOpeningHost = {
   setTimeout: (callback, delay) => setTimeout(callback, delay),
   alert: message => alert(message),
   readerPageFrames: () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-  openingCallbacks: flight => ({
-    isActive: () => bookDataModule().app_opening_is_active(flight),
-    onReaderReady: () => bookDataModule().app_reader_ready(readerOpeningHost, flight),
-    onReaderError: () => bookDataModule().app_close_reader_opening(readerOpeningHost, flight)
-  }),
-  openingCancellation: flight => () => bookDataModule().app_cancel_reader_opening(readerOpeningHost, flight),
-  revealReaderToolbar: () => bookDataModule().app_reveal_reader_toolbar(readerOpeningHost),
-  settleReaderToolbar: () => bookDataModule().app_settle_reader_toolbar(readerOpeningHost),
-  pickerCancellation: flight => () => bookDataModule().app_cancel_opening_picker(readerOpeningHost, flight),
-  filePickerFocusListener: flight => function onFocusBack() {
-    window.removeEventListener('focus', onFocusBack)
-    bookDataModule().app_schedule_picker_cancel(readerOpeningHost, flight)
-  },
+  later,
   state:app
 }
 
@@ -362,11 +350,7 @@ const fileContentHost = {
   scheduleLibraryBackup, refreshShelf, extractCoverInBackground, onReaderRelocate, setReaderChromeHidden,
   alert: message => alert(message), isUnsupportedFormatError: error => error instanceof UnsupportedFormatError,
   ignoreFileOpenError: () => {}, warnFileGeometry: error => console.warn('No se pudo medir el libro:', error),
-  fileReaderCallbacks: () => ({
-    onUserNavigation: () => bookDataModule().app_reader_user_navigation(fileContentHost),
-    onFollowLink: href => bookDataModule().app_reader_follow_link(fileContentHost, href),
-    onToggleChrome: () => bookDataModule().app_reader_toggle_chrome(fileContentHost)
-  }),
+  later,
   state:app
 }
 
@@ -400,8 +384,7 @@ const readerPreparationHost = {
   createStageGate: settled => createStageGate(settled, { idle:idleSlice }),
   ignorePreparationError: () => {},
   warnPagePreparation: error => console.warn('No se pudo preparar la página guardada de antemano:', error),
-  reprepareRunner: (book, generation, gate) => ready => bookDataModule().app_reprepare_page(readerPreparationHost, book, generation, gate, ready),
-  preparationRunner: (book, generation, gate, files) => () => bookDataModule().app_run_preparation(readerPreparationHost, book, generation, gate, files)
+  later
 }
 
 function releasePageGate(reason, bookId) {
@@ -431,10 +414,8 @@ const driveActionsHost = {
   armDrivePoll: (generation, delay) => setTimeout(() => bookDataModule().app_drive_poll_tick(driveActionsHost, generation), delay),
   cancelDrivePoll: timer => clearTimeout(timer),
   pollDrive: () => bookDataModule().app_drive_resume(driveActionsHost, { poll:true }),
-  uploadProgressFailure: error => bookDataModule().app_drive_upload_progress_failure(driveActionsHost,error),
+  later,
   authFailure: reportDriveConnectionError,
-  resumeReady: () => bookDataModule().app_drive_resume_ready(driveActionsHost),
-  resumeFailure: error => bookDataModule().app_drive_resume_failure(driveActionsHost,error),
   savedCheckMarkup:'<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>',
   state:app
 }
@@ -487,16 +468,7 @@ function extractCoverInBackground(record) {
 const coverBackgroundHost = {
   reader, coverUpgrades, library, refreshShelf, scheduleLibraryBackup, global:globalThis, console,
   now: () => Date.now(),
-  measureSmallCover: bitmap => bookDataModule().app_cover_bitmap_small(bitmap),
-  coverBitmapFailed: () => bookDataModule().app_cover_bitmap_failed(),
-  coverPatchGuard: flight => latest => bookDataModule().app_cover_patch_allowed(coverBackgroundHost, flight, latest),
-  coverFlowCallbacks: flight => ({
-    fetch: needed => bookDataModule().app_cover_fetch(coverBackgroundHost, flight, needed),
-    persist: blob => bookDataModule().app_cover_persist(coverBackgroundHost, flight, blob),
-    updated: record => bookDataModule().app_cover_updated(coverBackgroundHost, flight, record),
-    failed: error => bookDataModule().app_cover_failed(coverBackgroundHost, flight, error),
-    finish: () => bookDataModule().app_cover_finished(coverBackgroundHost, flight)
-  }),
+  later,
   state:app
 }
 
@@ -517,10 +489,7 @@ const readerCloseHost = {
   persistablePosition, readerReturnCanvas, supersedePreparation, hasDriveSession,
   isBookLengthReady, showScreen, refreshShelf, setDriveSyncStatus,
   ignoreCloseError: () => {},
-  closeHandoff: flight => () => bookDataModule().app_return_page_handoff(readerCloseHost, flight),
-  closeStillRemoval: flight => () => bookDataModule().app_remove_return_page(flight),
-  closeProgressFlush: id => () => bookDataModule().app_flush_closed_progress(readerCloseHost, id),
-  warnClosedProgress: error => bookDataModule().app_warn_closed_progress(readerCloseHost, error),
+  later,
   warnPendingShelf: error => console.warn('Estantería pendiente:', error),
   state:app
 }

@@ -106,7 +106,7 @@ pub fn shelf_mount(env:JsValue,container:JsValue,books_or_options:JsValue,maybe_
   lifecycle(&ctx,"cancelInput",&[])?;Ok(undef())
  }});
  let visibility=ctx.input_callbacks.make(Stale::Undefined,{let interrupted=interrupted.clone();move|_,_|{
-  if truthy(&get(&document(),"hidden")){call(&interrupted,"onInputInterrupted",&[])?;}Ok(undef())}});
+  if crate::host::flag(&document(),"hidden"){call(&interrupted,"onInputInterrupted",&[])?;}Ok(undef())}});
  let resize=lifecycle_callback(&ctx,"viewportResize");
  let visual=lifecycle_callback(&ctx,"visualViewportChange");
  for (key,value) in [("onInputInterrupted",&interrupted),("onInputVisibility",&visibility),("onViewportResize",&resize),("onVisualViewportChange",&visual)]{put(&parts,key,value);}

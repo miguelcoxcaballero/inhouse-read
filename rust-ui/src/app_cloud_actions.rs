@@ -2,7 +2,7 @@
 //! upload ownership and finally cleanup; library/Drive/DOM objects stay host handles.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array, Object, Promise};
-use crate::host::{read,get,method,set,truthy,absent,num,jmax};
+use crate::host::{read,get,method,set,truthy,absent,num,jmax,later};
 use crate::cloud_host::{self,settle,start,object,string,error};
 type R<T=()> = Result<T,JsValue>;
 fn state(host:&JsValue)->R<JsValue>{read(host,"state")}
@@ -24,7 +24,7 @@ pub fn app_drive_upload(host:JsValue,book:JsValue)->Promise{start(async move{
   if !truthy(&updated){return Ok(JsValue::NULL);}
   // Background progress must not hold the cover open behind a network request.
   let progress=member(&host,"cloudSync","flushProgress",&[&read(&updated,"id")?])?;
-  method(&progress,"catch",&[&read(&host,"uploadProgressFailure")?])?;
+  method(&progress,"catch",&[&later(&host,"app_drive_upload_progress_failure",1,&[&host])?])?;
   status(&host,"Guardado en Google Drive")?;Ok(updated)
  }.await;
  let count=jmax(0.0,num(&read(&state,"driveUploadsInFlight")?)-1.0);
@@ -196,8 +196,8 @@ pub fn app_drive_resume(host:JsValue,options:JsValue)->R{
  member(&host,"liveRoom","resume",&[])?;
  if !truthy(&method(&host,"online",&[])?)||(!truthy(&method(&host,"hasDriveSession",&[])?)&&!truthy(&method(&host,"getRememberedDriveProfile",&[])?) ) {return Ok(());}
  let task=app_drive_sync(host.clone(),object(&[("silent",JsValue::TRUE),("poll",poll)]));
- let pending=method(&task,"then",&[&read(&host,"resumeReady")?])?;
- method(&pending,"catch",&[&read(&host,"resumeFailure")?])?;Ok(())
+ let pending=method(&task,"then",&[&later(&host,"app_drive_resume_ready",0,&[&host])?])?;
+ method(&pending,"catch",&[&later(&host,"app_drive_resume_failure",1,&[&host])?])?;Ok(())
 }
 // Callback functions that may never run remain JS-owned, so a successful
 // Promise cannot retain a Rust once-closure and its entire app host forever.

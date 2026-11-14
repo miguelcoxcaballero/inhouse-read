@@ -5,7 +5,7 @@ beforeEach(()=>vi.useFakeTimers());afterEach(()=>vi.useRealTimers());
 function fixture(overrides={}){
  const state={driveProfile:{id:'one'},backupTimer:null,roomCaptureTimer:null,roomCaptureBusy:false,roomCaptureAgain:false,roomCaptureFailures:0};
  const host={state,hasDriveSession:vi.fn(()=>true),getRememberedDriveProfile:vi.fn(()=>null),syncLibraryToDrive:vi.fn(async()=>{}),backupFailure:vi.fn(),captureRoom:vi.fn(async()=>{}),drainLive:vi.fn(async()=>{}),markBookChanged:vi.fn(()=>true),warnRoom:vi.fn(),...overrides};
- host.backupCallback=()=>native.app_backup_run(host);host.captureCallback=()=>native.app_room_capture_run(host);return{host,state};
+ host.later=(name,take,...head)=>(...tail)=>native[name](...head,...tail.slice(0,take));return{host,state};
 }
 it('debounces backups and retains the silent request and reported failure',async()=>{
  const{host,state}=fixture();native.app_backup_schedule(host);await vi.advanceTimersByTimeAsync(200);native.app_backup_schedule(host);await vi.advanceTimersByTimeAsync(349);expect(host.syncLibraryToDrive).not.toHaveBeenCalled();await vi.advanceTimersByTimeAsync(1);expect(state.backupTimer).toBeNull();expect(host.syncLibraryToDrive).toHaveBeenCalledExactlyOnceWith({silent:true});

@@ -64,7 +64,7 @@ fn cached_cover(ctx:&Ctx,book:&JsValue)->R<JsValue>{
 /// `rememberCover(book, url)`.
 fn remember_cover(ctx:&Ctx,book:&JsValue,url:&JsValue)->R<JsValue>{
  method(&ctx.cover_cache(),"set",&[book,url])?;
- if truthy(url)&&(truthy(&get(book,"cover"))||truthy(&get(book,"coverBlob"))||truthy(&get(book,"coverUrl"))){
+ if truthy(url)&&(crate::host::flag(book,"cover")||crate::host::flag(book,"coverBlob")||crate::host::flag(book,"coverUrl")){
   method(&ctx.saved_cover_urls(),"set",&[&cover_key_for(book),url])?;
  }
  Ok(url.clone())

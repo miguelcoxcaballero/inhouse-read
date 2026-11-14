@@ -48,7 +48,7 @@ function fixture(native,options={},module=rustShelf){
  const settings={existingRecord:options.noExisting?undefined:existing,forcedId:options.forced?id:undefined,folderFileName:options.folder,transition,preparing:options.preparing,restoreRemoved:options.restoreRemoved,reuseStoredContent:options.reuse,onImportReady:()=>events.push(['import-ready'])};
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
  const host={...env,state,isUnsupportedFormatError:error=>error instanceof UnsupportedFormatError,alert:env.alert,ignoreFileOpenError:()=>{},warnFileGeometry:error=>env.console.warn('No se pudo medir el libro:',error),
-  fileReaderCallbacks:()=>({onUserNavigation:()=>module.app_reader_user_navigation(host),onFollowLink:href=>module.app_reader_follow_link(host,href),onToggleChrome:()=>module.app_reader_toggle_chrome(host)})};
+  later:(name,take,...head)=>(...tail)=>module[name](...head,...tail.slice(0,take))};
  env.bookDataModule=()=>{events.push(['native-module']);return module};env.fileContentHost=host;
  const shell={els,document,state,get readingExperience(){return env.readingExperience},
   openFileContent:scope(env,actualContent.slice(actualContent.indexOf('(file, options) =>')))};

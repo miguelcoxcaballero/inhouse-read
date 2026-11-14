@@ -2,7 +2,7 @@
 //! retains an entry/promise cycle while a browser decoder or storage waits.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Object,Promise};
-use crate::host::{read,set,method,truthy,absent,num,jmax};
+use crate::host::{read,set,method,truthy,absent,num,jmax,later};
 use crate::cloud_host as c;
 type R<T>=Result<T,JsValue>;
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let entries=Array::new();for(k,v)in fields{c::data_entry(&entries,&(*k).into(),v);}Ok(Object::from_entries(entries.as_ref())?.into())}
@@ -29,8 +29,8 @@ fn needs_upgrade(host:&JsValue,record:&JsValue)->R<JsValue>{
  // record checks reject the async stage, like the original function.
  let measured=(||->R<JsValue>{
   let bitmap=method(&global,"createImageBitmap",&[&read(record,"cover")?])?;
-  let task=method(Promise::resolve(&bitmap).as_ref(),"then",&[&read(host,"measureSmallCover")?])?;
-  method(&task,"catch",&[&read(host,"coverBitmapFailed")?])
+  let task=method(Promise::resolve(&bitmap).as_ref(),"then",&[&later(host,"app_cover_bitmap_small",1,&[])?])?;
+  method(&task,"catch",&[&later(host,"app_cover_bitmap_failed",0,&[])?])
  })();
  match measured{Ok(task)=>Ok(task),Err(_)=>Ok(Promise::resolve(&JsValue::FALSE).into())}
 }
@@ -54,7 +54,7 @@ pub fn app_cover_persist(host:JsValue,flight:JsValue,blob:JsValue)->R<JsValue>{
  if !(num(&opt(&blob,"size")?)>0.0)||!current(&host,&flight)?{return Ok(JsValue::UNDEFINED);}
  let record=read(&flight,"record")?;let now=method(&host,"now",&[])?;
  let fields=object(&[("cover",blob),("coverUpdatedAt",now)])?;
- let settings=object(&[("ifCurrent",method(&host,"coverPatchGuard",&[&flight])?)])?;
+ let settings=object(&[("ifCurrent",later(&host,"app_cover_patch_allowed",1,&[&host,&flight])?)])?;
  method(&read(&host,"library")?,"patch",&[&read(&record,"id")?,&fields,&settings])
 }
 #[wasm_bindgen]
@@ -80,10 +80,11 @@ pub fn app_extract_cover_background(host:JsValue,record:JsValue)->R<JsValue>{
  let controller=c::construct("AbortController",&[])?;let first=JsValue::from_bool(!truthy(&read(&record,"cover")?));
  let entry=object(&[("epoch",epoch.clone()),("controller",controller.clone()),("firstCover",first.clone()),("retainedOnClose",JsValue::FALSE)])?;
  let flight=object(&[("record",record.clone()),("epoch",epoch),("controller",controller),("firstCover",first),("entry",entry.clone())])?;
- let callbacks=method(&host,"coverFlowCallbacks",&[&flight])?;
+ let stage=|name:&str,take:u32|later(&host,name,take,&[&host,&flight]);
  let mut task:JsValue=match needs_upgrade(&host,&record){Ok(task)=>task,Err(error)=>Promise::reject(&error).into()};
- for key in ["fetch","persist","updated"]{task=method(&task,"then",&[&read(&callbacks,key)?])?;}
- task=method(&task,"catch",&[&read(&callbacks,"failed")?])?;
- task=method(&task,"finally",&[&read(&callbacks,"finish")?])?;
+ let stages=[stage("app_cover_fetch",1)?,stage("app_cover_persist",1)?,stage("app_cover_updated",1)?,stage("app_cover_failed",1)?,stage("app_cover_finished",0)?];
+ for callback in &stages[..3]{task=method(&task,"then",&[callback])?;}
+ task=method(&task,"catch",&[&stages[3]])?;
+ task=method(&task,"finally",&[&stages[4]])?;
  set(&entry,"promise",&task)?;method(&covers,"set",&[&read(&record,"id")?,&entry])?;Ok(task)
 }
