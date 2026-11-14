@@ -43,6 +43,7 @@ for(const format of ['pdf','epub']) test(`${format}: reading suspends the room G
  await page.locator('[data-play]').click();
  await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.length)).toBeGreaterThan(0);
  await page.locator('[data-stop]').click();await page.locator('[data-close]').click();
- await page.locator('#reader-back').click();await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/);
+ // The 3D return (shelf build, shader links and the flight's frames) is 7–9 s of software WebGL on 1.7.325 and 1.7.328 alike: wait for it as the other suites do, not with the 8 s default.
+ await page.locator('#reader-back').click();await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000});
  await quietShelf(page.locator('.ihr-bookshelf-scene'));expect(errors).toEqual([]);
 });

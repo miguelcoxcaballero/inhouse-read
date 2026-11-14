@@ -24,11 +24,11 @@ test('the compiled app closes through Rust once for a double press and preserves
  await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'reading-journey.pdf');
  await page.locator('#reader-next').click();await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 2 de/);
  await page.evaluate(()=>{document.getElementById('reader-back').click();document.getElementById('reader-back').click()});
- await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/);await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+ await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000});await expect(page.locator('.ihr-flyout')).toHaveCount(0);
  expect(await page.evaluate(()=>window.closeProof.calls.app_close_reader)).toBe(2);
  await page.locator('.ihr-spine').first().click();const cover=page.locator('.ihr-flyout__cover-target');await expect(cover).toBeVisible();await cover.click();
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 2 de/);
- await page.locator('#reader-back').click();await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/);await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+ await page.locator('#reader-back').click();await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000});await expect(page.locator('.ihr-flyout')).toHaveCount(0);
  const proof=await page.evaluate(()=>({...window.closeProof,leaks:document.querySelectorAll('.ihr-reader-return-page,.ihr-flyout--return').length}));
  expect(proof.calls.app_close_reader).toBe(3);expect(proof.calls.app_return_page_handoff).toBeGreaterThanOrEqual(2);expect(proof.handoffs).toBe(2);expect(proof.calls.app_reader_relocate).toBeGreaterThan(0);expect(proof.calls.reader_persistable_position).toBeGreaterThan(0);expect(proof.leaks).toBe(0);expect(errors).toEqual([]);
  await info.attach('compiled-native-reader-close',{body:JSON.stringify(proof),contentType:'application/json'});

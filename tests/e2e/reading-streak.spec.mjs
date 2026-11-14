@@ -92,8 +92,12 @@ test('el widget recibe el último libro y el ajuste lo quita', async ({ page }) 
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/lectura-es.epub')
   await expect(page.locator('#reader-top-title')).not.toBeEmpty()
   // Mientras el libro carga, la cabecera del lector no acepta toques.
+  // The press is retried only while the reader is still on screen: once it is accepted the reader hides at once, but
+  // the shelf it returns to can keep the page busy for more than the 2 s below, and pressing a hidden button again
+  // would wait for ever.
+  await expect(page.locator('#reader-screen')).toBeVisible()
   await expect(async () => {
-    await page.locator('#reader-back').click()
+    if (await page.locator('#reader-screen').isVisible()) await page.locator('#reader-back').click({ timeout: 2_000 })
     await expect(page.locator('#reader-screen')).toBeHidden({ timeout: 2_000 })
   }).toPass({ timeout: 20_000 })
   await expect.poll(() => page.evaluate(() => window.__books.filter(Boolean).length), { timeout: 15_000 }).toBeGreaterThan(0)
