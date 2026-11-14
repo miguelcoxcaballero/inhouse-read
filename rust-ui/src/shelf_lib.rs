@@ -217,6 +217,7 @@ mod book_surface_policy;
 mod reading_display;
 mod app_shell;
 mod font_score_client;
+mod cover_appearance;
 mod launch_frames;
 mod app_controller;
 mod reading_focus;

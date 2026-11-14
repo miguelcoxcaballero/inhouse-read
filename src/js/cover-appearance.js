@@ -5,6 +5,7 @@ import { createRustFontScorer } from './font-score-wasm.js';
 export { scoreFontMask } from './font-score-core.js';
 import { createRustFontWrapCache, rustFontSearchPlan, rustFontFamilyMax, rustFontFamilySelect } from './font-policy-wasm.js';
 import { shelfWorkReady } from './idle-startup.js';
+import { getRustShelf, loadRustShelf } from './rust-shelf.js';
 /*
  * Appearance extracted from a book cover image. This stays local to the
  * browser: a small pixel sample supplies the dominant binding colour, while
@@ -12,17 +13,11 @@ import { shelfWorkReady } from './idle-startup.js';
  * The font match is necessarily approximate for raster covers (the source
  * font is not embedded in a JPEG), but it follows the lettering actually
  * visible on the cover instead of assigning every book the same serif.
+ *
+ * The analysis itself (decode bounds, sample, colour, font loads, the single-flight search and its
+ * slices) is rust-ui/src/cover_appearance.rs. This module hands it the numeric core's bridges, the
+ * generator slice driver and the Worker client, and keeps the two values a page owns between analyses.
  */
-
-const FONT_CANDIDATES = Object.freeze([
-  { family: 'Playfair Display', weight: 700, fallback: 'Georgia, serif' },
-  { family: 'Lora', weight: 700, fallback: 'Georgia, serif' },
-  { family: 'Cormorant Garamond', weight: 700, fallback: 'Georgia, serif' },
-  { family: 'DM Sans', weight: 600, fallback: 'Arial, sans-serif' },
-  { family: 'Montserrat', weight: 700, fallback: 'Arial, sans-serif' },
-  { family: 'Oswald', weight: 600, fallback: 'Arial Narrow, sans-serif' }
-]);
-let candidateFontsTask;
 
 // Relative modules cannot resolve when this self-contained analyzer is imported from a data URL.
 // Load the production Worker client only for matching; keep the original sliced scorer on failure.
@@ -43,33 +38,6 @@ export function coverAspectRatio(width, height) {
   return clamp(ratio, 0.25, 2.5);
 }
 
-/** Decode only the dimensions when a caller needs the correct model shape fast. */
-export async function readCoverAspectRatio(url) {
-  if (!url || typeof Image === 'undefined') return null;
-  const image = new Image();
-  image.decoding = 'async';
-  image.src = url;
-  let timeout;
-  try {
-    await Promise.race([
-      typeof image.decode === 'function'
-        ? image.decode()
-        : new Promise((resolve, reject) => {
-          image.onload = resolve;
-          image.onerror = reject;
-        }),
-      new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error('La portada tardó demasiado')), 1500);
-      })
-    ]);
-    return coverAspectRatio(image.naturalWidth, image.naturalHeight);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 /** Pure pixel helper, exported so the colour and contrast rules stay testable. */
 export function coverColorFromPixels(data, width, height) {
   if (!data || !Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null;
@@ -84,49 +52,8 @@ export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
   return mask;
 }
 
-function fontMask(title, candidate, plan, maxWidth, wraps, key, surface) {
-  const [upper, alignment, size, canvasHeight, x, lineHeight, lineWidth] = plan;
-  const align = ['center', 'left', 'right'][alignment];
-  const linesCanvas = surface.canvas ||= document.createElement('canvas');
-  if (linesCanvas.width !== maxWidth) linesCanvas.width = maxWidth;
-  if (linesCanvas.height !== canvasHeight) linesCanvas.height = canvasHeight;
-  const linesContext = surface.context ||= linesCanvas.getContext('2d', { willReadFrequently: true });
-  if (!linesContext) return null;
-  linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
-  linesContext.font = `${candidate.weight} ${size}px "${candidate.family}", ${candidate.fallback}`;
-  linesContext.textAlign = align;
-  linesContext.textBaseline = 'top';
-  linesContext.fillStyle = '#fff';
-  const lines = wraps.lines(linesContext, upper ? title.toLocaleUpperCase() : title, lineWidth, key);
-  if (!lines.length) return null;
-  lines.forEach((line, index) => {
-    linesContext.fillText(line, x, 3 + index * lineHeight, lineWidth);
-  });
-  return glyphMask(linesContext.getImageData(0, 0, maxWidth, linesCanvas.height).data, maxWidth, linesCanvas.height);
-}
-
 export function nearEdgeMap(edges, width) {
   return rustNearEdgeMap(loadedRustCore(), edges, width);
-}
-
-function* scoreFamily(candidate, gray, near, width, height, rows, title, plans, scorer = remoteFontScore) {
-  const wraps = createRustFontWrapCache(loadedRustCore());
-  // Each family owns one CPU-backed raster surface. Masks are copied before
-  // yielding, so later plans may reuse it without retaining old canvas pixels.
-  const surface = { canvas:null, context:null };
-  try {
-    for (let i=0; i<plans.length; i++) {
-      const plan=plans[i];
-      yield;
-      const mask = fontMask(String(title), candidate, plan, width, wraps, plan[7], surface);
-      if (!mask || !loadedRustCore().font_mask_fits(mask.width, mask.height, width, rows)) continue;
-      yield* scorer(gray, near, width, height, rows, mask);
-    }
-  } finally {
-    wraps.dispose();
-    if (surface.canvas) { surface.canvas.width = 0; surface.canvas.height = 0; }
-    surface.canvas = surface.context = null;
-  }
 }
 
 // The search is a few hundred million operations: run it in slices short
@@ -141,7 +68,6 @@ const yieldToMain = () => new Promise(resolve => {
   port1.onmessage = () => { port1.close(); port2.close(); resolve(); };
   port2.postMessage(0);
 });
-let matcherTurn = Promise.resolve();
 
 /** Run a generator to completion, handing the main thread back whenever a
  * slice has used its budget. Resolves to the generator's return value.
@@ -157,151 +83,28 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
   }
 }
 
-// The same scoreFamily generator rasterizes fonts on the main thread in its original order.
-// Only numerical mask scores cross the Worker boundary; bare yields retain the mask-raster budget.
-function* remoteFontScore(_gray, _near, _width, _height, _rows, mask) {
-  return yield { mask };
-}
-async function runRemoteFamily(task, scoreMasks) {
-  // Scores only select a maximum; they never alter which glyphs are sampled.
-  // Build the identical family in short slices, then send its bounded batch.
-  const masks = [];
-  let sliceStart = performance.now(), step = task.next();
-  try {
-    while (!step.done) {
-      if (step.value?.mask) masks.push(step.value.mask);
-      if (performance.now() - sliceStart >= SLICE_MS) {
-        await yieldToMain(); await shelfWorkReady(); sliceStart = performance.now();
-      }
-      step = task.next(0);
-    }
-    return rustFontFamilyMax(loadedRustCore(), await scoreMasks(masks));
-  } finally { task.return?.(); }
-}
+const host = {
+  core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, color: rustCoverColor, glyph: rustGlyphMask,
+  prepare: rustPrepareCoverPixels, scorer: createRustFontScorer, wraps: createRustFontWrapCache, plan: rustFontSearchPlan,
+  max: rustFontFamilyMax, select: rustFontFamilySelect, open: openFontScoreJob, slices: runInSlices, yieldToMain,
+  noop: () => {},
+  // One cover is searched at a time; the six candidate faces are requested once per page.
+  turn: Promise.resolve(), fonts: undefined
+};
+// The shelf's first render awaited the module; an analysis asked for earlier waits for it once.
+const withShelf = use => {
+  const shelf = getRustShelf();
+  return shelf ? use(shelf) : loadRustShelf().then(loaded => loaded ? use(loaded) : null);
+};
 
-async function matchTitleFont(gray, width, height, title, preparedNear) {
-  await shelfWorkReady();
-  if (!title || String(title).trim().length < 3 || typeof document === 'undefined') return null;
-  const scoreByFamily = [];
-  const plans = rustFontSearchPlan(loadedRustCore(), title, width);
-  const work = document.createElement('canvas');
-  work.width = width; work.height = Math.floor(height * 0.82);
-  const context = work.getContext('2d');
-  if (!context || width < 48 || work.height < 48) return null;
-  const near = preparedNear;
-  let localScorer = null;
-  let workerJob = await openFontScoreJob({ gray, near, width, height, rows:work.height });
-
-  const scoreMasks = async masks => {
-    if (workerJob) {
-      try { return await workerJob.scoreMany(masks); }
-      catch { workerJob.close(); workerJob = null; }
-    }
-    // Keep the original masks intact for a failed/unavailable Worker.
-    localScorer ??= createRustFontScorer(loadedRustCore(), { gray, near, width, height, rows:work.height });
-    const scores = [];
-    for (const mask of masks) {
-      await shelfWorkReady();
-      scores.push(await runInSlices(localScorer.steps(mask)));
-    }
-    return scores;
-  };
-  try {
-    for (const candidate of FONT_CANDIDATES) {
-      await shelfWorkReady();
-      const task = scoreFamily(candidate, gray, near, width, height, work.height, title, plans, remoteFontScore);
-      const score = await runRemoteFamily(task, scoreMasks);
-      scoreByFamily.push(score);
-    }
-  } finally { workerJob?.close(); localScorer?.dispose(); }
-  const best = rustFontFamilySelect(loadedRustCore(), scoreByFamily);
-  return best < 0 ? null : FONT_CANDIDATES[best];
-}
-
-function loadCandidateFonts(text) {
-  if (!document.fonts?.load) return Promise.resolve();
-  if (!candidateFontsTask) {
-    candidateFontsTask = Promise.allSettled(FONT_CANDIDATES.map(candidate =>
-      document.fonts.load(`${candidate.weight} 20px "${candidate.family}"`)
-    ));
-  }
-  // The default Latin face already covers ASCII/Latin-1. Request additional
-  // unicode subsets only when the actual lettering needs them.
-  return text && /[^\u0000-\u00ff]/u.test(String(text)) ? Promise.allSettled([candidateFontsTask,...FONT_CANDIDATES.map(candidate =>
-    document.fonts.load(`${candidate.weight} 20px "${candidate.family}"`,String(text)))]) : candidateFontsTask;
+/** Decode only the dimensions when a caller needs the correct model shape fast. */
+export function readCoverAspectRatio(url) {
+  return withShelf(shelf => shelf.cover_aspect_read(url));
 }
 
 /** Analyze an already-decodable image URL. Returns null for missing/unsafe images. */
-export async function analyzeCoverAppearance(url, title = '', { matchFont = true, image:decodedImage } = {}) {
-  if (!url || typeof Image === 'undefined' || typeof document === 'undefined') return null;
-  const coreReady = requireRustCore();
-  // Start compilation alongside decode; observe failures even if decoding fails.
-  coreReady.catch(() => {});
-  const image = decodedImage || new Image();
-  image.decoding = 'async';
-  if (!decodedImage) image.src = url;
-  const decodeTimeout = matchFont ? 3000 : 1200;
-  try {
-    if (!decodedImage && typeof image.decode === 'function') {
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('La portada tardó demasiado')), decodeTimeout);
-        Promise.resolve().then(() => image.decode()).then(value => {
-          clearTimeout(timer);
-          resolve(value);
-        }, error => {
-          clearTimeout(timer);
-          reject(error);
-        });
-      });
-    }
-    else if (!decodedImage) await new Promise((resolve, reject) => {
-      image.onload = resolve; image.onerror = reject;
-    });
-    if (!image.naturalWidth || !image.naturalHeight) return null;
-    const aspectRatio = coverAspectRatio(image.naturalWidth, image.naturalHeight);
-    const scale = Math.min(1, 192 / image.naturalWidth, 288 / image.naturalHeight);
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return { aspectRatio, source: 'cover' };
-    context.drawImage(image, 0, 0, width, height);
-    let pixels;
-    try {
-      pixels = context.getImageData(0, 0, width, height).data;
-    } catch {
-      // Cross-origin images can still supply their decoded dimensions even
-      // when browser security prevents sampling their pixels.
-      return { aspectRatio, source: 'cover' };
-    }
-    const core = await coreReady;
-    await shelfWorkReady();
-    const color = coverColorFromPixels(pixels, width, height);
-    if (!matchFont) return { ...color, aspectRatio, source: 'cover' };
-    // Font loading is already required. Let the numeric module finish loading
-    // during that wait, before choosing the native or compatibility path.
-    await loadCandidateFonts(title);
-    const includeEdges = Boolean(title) && String(title).trim().length >= 3 && width >= 48 && Math.floor(height * .82) >= 48;
-    const prepared = rustPrepareCoverPixels(core, pixels, width, height, includeEdges);
-    if (!prepared) throw new Error('Invalid cover preparation');
-    const gray = prepared.gray;
-    const turn = matcherTurn.then(() => matchTitleFont(gray, width, height, title, prepared?.near));
-    matcherTurn = turn.catch(() => {});
-    const font = await turn || FONT_CANDIDATES[prepared.busy ? 3 : 0];
-    return {
-      ...color,
-      fontFamily: font.family,
-      fontCanvasFamily: font.family,
-      fontFallback: font.fallback,
-      fontWeight: font.weight,
-      aspectRatio,
-      source: 'cover'
-    };
-  } catch {
-    // Canvas may be unavailable in a WebView or reject cross-origin pixels.
-    return null;
-  }
+export function analyzeCoverAppearance(url, title = '', options) {
+  return withShelf(shelf => shelf.cover_appearance_analyze(host, url, title, options));
 }
 
 export function withCoverAppearance(style, appearance) {
