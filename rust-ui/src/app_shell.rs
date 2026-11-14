@@ -342,15 +342,21 @@ pub fn app_open_drive_modal(host:JsValue)->Promise{
  if let Err(error)=element(&host,"driveModal").and_then(|modal|set(&modal,"hidden",&JsValue::FALSE)){return Promise::reject(&error)}
  load_drive_files(host)
 }
+/// One row the size of a Drive file, shown while the list is being fetched.
+const DRIVE_PLACEHOLDER:&str=r#"<span class="drive-item-placeholder ihr-skeleton" aria-hidden="true"></span>"#;
 fn load_drive_files(host:JsValue)->Promise{start(async move{
  let status=element(&host,"driveStatus")?;let list=element(&host,"driveList")?;
+ // While Drive answers, the list holds placeholder rows (skeleton styles, base.css) and is marked busy;
+ // the sentence stays in the status line for assistive technology.
  set(&status,"textContent",&"Conectando con Drive…".into())?;
- set(&list,"innerHTML",&"".into())?;
+ set(&list,"innerHTML",&DRIVE_PLACEHOLDER.repeat(4).into())?;
+ attr(&list,"aria-busy",&"true".into())?;
  DRIVE_ITEMS.with(|items|items.borrow_mut().clear());
  let listed=async{
   if !truthy(&method(&host,"hasDriveSession",&[])?){settle(method(&host,"requestDriveAccess",&[])).await?;}
   settle(method(&host,"loadDriveAccountProfile",&[])).await?;
   let files=Array::from(&settle(method(&host,"listAllDriveBooks",&[])).await?);
+  set(&list,"innerHTML",&"".into())?;attr(&list,"aria-busy",&"false".into())?;
   set(&status,"textContent",&(if files.length()>0{""}else{"Sin libros en Drive."}).into())?;
   for file in files.iter(){
    let item=method(&document(&host)?,"createElement",&[&"button".into()])?;
@@ -372,6 +378,7 @@ fn load_drive_files(host:JsValue)->Promise{start(async move{
   Ok::<(),JsValue>(())
  }.await;
  if let Err(error)=listed{
+  set(&list,"innerHTML",&"".into())?;attr(&list,"aria-busy",&"false".into())?;
   let outdated=!absent(&error)&&text(&get(&error,"code"),"ANDROID_SHELL_OUTDATED");
   if outdated&&truthy(&settle(method(&host,"offerAvailableAndroidUpdate",&[])).await?){
    set(&element(&host,"driveModal")?,"hidden",&JsValue::TRUE)?;

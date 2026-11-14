@@ -348,7 +348,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
   </div>
   <button type="button" class="streak-widget-cta" data-streak-widget hidden>
     <span class="streak-widget-art" aria-hidden="true"><span class="streak-widget-art-flame">${flameSvg()}</span><span class="streak-widget-art-lines"><i></i><i></i></span><span class="streak-widget-art-dots"><i></i><i></i><i></i><i></i><i class="is-today"></i></span></span>
-    <span class="streak-widget-copy"><strong data-streak-widget-title>Añade la racha a tu pantalla de inicio</strong><small data-streak-widget-text>Un widget con tu llama y los días de esta semana.</small></span>
+    <span class="streak-widget-copy"><strong data-streak-widget-title>Añade la racha a tu pantalla de inicio</strong><small data-streak-widget-text></small></span>
   </button>
   <div class="streak-calendar">
     <div class="streak-calendar-head">
@@ -424,7 +424,7 @@ export function createReadingStreak({ document, storage = localStorage, onChange
     // Se pregunta una vez al abrir (son llamadas síncronas al sistema).
     widgetOffer = widgetCall('canPin', false) === true && widgetCall('isPlaced', false) === false
     panel.querySelector('[data-streak-widget-title]').textContent = 'Añade la racha a tu pantalla de inicio'
-    panel.querySelector('[data-streak-widget-text]').textContent = 'Un widget con tu llama y los días de esta semana.'
+    panel.querySelector('[data-streak-widget-text]').textContent = ''
     renderPanel()
     panel.hidden = false
     requestAnimationFrame(() => panel.classList.add('is-open'))

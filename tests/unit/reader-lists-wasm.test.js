@@ -48,3 +48,15 @@ it('releases unique labels, callbacks and rows without growing the WASM arena',(
  for(let i=30;i<330;i++)cycle(i)
  expect(core.memory.buffer.byteLength).toBe(before)
 },15000)
+it('shows three hidden placeholder rows and a busy status while searching, and removes both with the result',()=>{
+ const status=panel.querySelector('[data-search-status]'),list=panel.querySelector('[data-search-results]')
+ view.clearSearch('Buscando…')
+ // The sentence is still what assistive technology reads; the rows are decoration.
+ expect(status.textContent).toBe('Buscando…');expect(status.getAttribute('aria-busy')).toBe('true')
+ expect([...list.children].map(row=>[row.className,row.getAttribute('aria-hidden'),row.textContent])).toEqual(Array(3).fill(['reading-search-placeholder ihr-skeleton','true','']))
+ expect(list.querySelector('button,.reading-search-hit')).toBeNull()
+ view.renderSearch([{excerpt:'Found'}],()=>{})
+ expect(status.textContent).toBe('1 resultado');expect(status.hasAttribute('aria-busy')).toBe(false);expect(list.querySelector('.ihr-skeleton')).toBeNull();expect(list.children).toHaveLength(1)
+ view.clearSearch('Buscando…');view.clearSearch('')
+ expect(status.textContent).toBe('');expect(status.hasAttribute('aria-busy')).toBe(false);expect(list.childElementCount).toBe(0)
+})

@@ -48,7 +48,8 @@
   display:grid; place-items:center; width:100%; height:100%; border-radius:50%;
   color:var(--text-primary); background:var(--bg-primary); font-weight:600; font-size:1rem;
 }
-.drive-profile-avatar { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+/* The photo comes from the network: until it has loaded, a neutral disc stands where it will be. */
+.drive-profile-avatar { width:100%; height:100%; object-fit:cover; border-radius:50%; background:color-mix(in srgb, currentColor 10%, transparent); }
 .drive-profile-menu {
   position:absolute; z-index:2000; top:calc(100% + 10px); right:0; width:min(300px, calc(100vw - 24px));
   max-height:calc(100dvh - var(--ihr-safe-top) - 80px); overflow-y:auto; overscroll-behavior:contain;
@@ -62,7 +63,9 @@
 .drive-profile-name { font-size:.9rem; font-weight:600; }
 .drive-profile-email { color:var(--text-secondary); font-size:.75rem; overflow-wrap:anywhere; }
 .drive-sync-status { margin:0; color:var(--text-secondary); font-size:.82rem; }
-.drive-sync-status.is-syncing::before { content:''; display:inline-block; width:8px; height:8px; margin-right:7px; border-radius:50%; background:var(--accent-read); animation:drive-sync-pulse 1s ease-in-out infinite alternate; }
+.drive-sync-status:empty { display:none; }
+/* Syncing: a placeholder bar the size of the line (base.css); the sentence stays for assistive technology. */
+.drive-sync-status.is-syncing { width:fit-content; max-width:100%; --ihr-skeleton-trim:.2em; }
 .drive-profile-actions { display:flex; flex-direction:column; gap:0; }
 .drive-profile-menu .drive-menu-btn { flex:none; width:100%; min-height:44px; padding:10px 0; border-radius:0; text-align:left; background:transparent; }
 .drive-profile-menu .drive-menu-btn:hover { background:color-mix(in srgb,currentColor 4%,transparent); }
@@ -102,7 +105,6 @@
   .drive-profile-btn { width:32px; height:32px; }
   .drive-auth-notice { flex-wrap:wrap; }
 }
-@keyframes drive-sync-pulse { to { opacity:.3; } }
 
 .icon-btn {
   width: var(--header-btn-size);
@@ -410,12 +412,6 @@ body.is-opening-reader .app-header {
   animation: drive-upload-spin .8s linear infinite;
 }
 
-.drive-upload-brand {
-  margin: 4px 0 0;
-  color: var(--accent-read);
-  font: 600 .86rem var(--f-logo);
-}
-
 .drive-upload-card h1 {
   margin: 0;
   font: 600 1.2rem var(--f-body);
@@ -473,6 +469,11 @@ body.is-opening-reader .app-header {
   font: 500 .9rem/1.35 var(--f-body);
   overflow-wrap: anywhere;
 }
+
+/* While Drive answers: rows the size of a file, and the sentence only for assistive technology. */
+.drive-item-placeholder { flex:none; height:var(--tap-min); --ihr-skeleton-radius:10px; }
+.drive-modal-card:has(.drive-list[aria-busy="true"]) .drive-status { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.drive-status:empty { display:none; }
 
 .drive-item:active { background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
 @media (hover: hover) { .drive-item:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); } }

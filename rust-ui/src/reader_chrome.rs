@@ -37,6 +37,8 @@ pub fn reader_voice_state(host:JsValue,state:JsValue,message:JsValue,doc:web_sys
  set(query(&node(&host,"panel")?,"[data-play]")?.as_ref(),"disabled",&loading.into())?;
  let status=query(&node(&host,"panel")?,".reading-audio-status")?;
  set(&status,"textContent",&if message.is_truthy(){message.clone()}else{JsValue::from_str(if playing{"Leyendo"}else if paused{"En pausa"}else{"Detenido"})})?;
+ // With no message the line only repeats what the play button shows: it is kept for assistive technology and not painted.
+ if message.is_truthy(){status.remove_attribute("data-state-only")?;}else{status.set_attribute("data-state-only","")?;}
  doc.get_element_by_id("reader-audio").ok_or_else(||JsValue::from_str("Missing audio button"))?.class_list().toggle_with_force("is-playing",playing)?;
  if state==JsValue::from_str("stopped"){one(&host,"setSleepChoice",&0.into())?;}
  two(&host,"updateMiniPlayer",&state,&message)?;call(&host,"updateReturnButton")?;

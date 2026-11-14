@@ -89,7 +89,8 @@ impl RustReaderView {
  #[wasm_bindgen(js_name=setDocumentInfo)]
  pub fn set_document_info(&self,title:JsValue,author:JsValue,about:JsValue,update_mini:bool)->Result<(),JsValue>{
   self.query("#reading-book-title")?.unchecked_ref::<ValueControl>().set_control_text(&title)?;
-  self.cached_id("reader-top-title")?.unchecked_ref::<ValueControl>().set_control_text(&title)?;
+  // The header shows a placeholder bar (aria-busy, index.html) until the first book names itself.
+  let top=self.cached_id("reader-top-title")?;top.unchecked_ref::<ValueControl>().set_control_text(&title)?;top.remove_attribute("aria-busy")?;
   self.cached_id("reader-top-byline")?.unchecked_ref::<ValueControl>().set_control_text(&author)?;
   self.query("#reading-document-about")?.unchecked_ref::<ValueControl>().set_control_text(&about)?;
   if update_mini{if let Some(node)=self.mini.query_selector("[data-mini-title]")?{node.unchecked_ref::<ValueControl>().set_control_text(&title)?;}}

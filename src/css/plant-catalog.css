@@ -81,6 +81,10 @@
 .ihr-plant-catalog__status[data-error='true'] { color: #a4281c; }
 .ihr-plant-catalog .ihr-plant-catalog__add { grid-column: 1; min-height: 44px; padding: 8px 14px; background: var(--catalog-blue); color: white; border: 0; border-radius: 2px; font-size: 14px; font-weight: 700; line-height: 1.2; }
 .ihr-plant-catalog .ihr-plant-catalog__add:hover { background: #004682; }
+/* Busy: the button keeps its size and colour under a sheen (keyframes in base.css); its label
+   ("Añadiendo…") stays for assistive technology and is not painted. */
+.ihr-plant-catalog[aria-busy='true'] .ihr-plant-catalog__add { -webkit-text-fill-color: transparent; background-image: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .3) 50%, transparent 70%); background-size: 220% 100%; background-repeat: no-repeat; background-position: 100% 0; animation: ihr-skeleton-sheen 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .ihr-plant-catalog[aria-busy='true'] .ihr-plant-catalog__add { animation: none; background-image: none; } }
 .ihr-plant-catalog button:disabled { opacity: .55; cursor: wait; }
 .ihr-plant-catalog__page-number { font-size: 10px; white-space: nowrap; }
 .ihr-plant-catalog__body--shelves { grid-template-columns: 44% 56%; }
