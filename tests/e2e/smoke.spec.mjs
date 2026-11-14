@@ -328,9 +328,15 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posic
   const firstSpine = page.locator('.ihr-spine[data-book-id="shelf:alpha"]')
   const initialX = Number(await firstSpine.getAttribute('data-shelf-x'))
   await firstSpine.focus()
+  const neighbourX = await page.locator('.ihr-spine[data-book-id="shelf:bravo"]').getAttribute('data-shelf-x')
   await page.keyboard.press('Shift+ArrowRight')
-  await expect.poll(async () => Number(await firstSpine.getAttribute('data-shelf-x'))).toBeCloseTo(initialX + .08, 4)
+  // A keyboard step asks for a place 0.08 further along; the shelf answers with the nearest place there that is free
+  // of the other solid objects, without moving them (rust-ui/src/book_gravity.rs drop_position). These two unsupported
+  // books lie down when the shelf first settles, so the step lands beyond its nominal 0.08.
+  await expect.poll(async () => Number(await firstSpine.getAttribute('data-shelf-x'))).toBeGreaterThan(initialX + .08 - 5e-5)
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  const steppedX = Number(await firstSpine.getAttribute('data-shelf-x'))
+  expect(await page.locator('.ihr-spine[data-book-id="shelf:bravo"]').getAttribute('data-shelf-x')).toBe(neighbourX)
   const source = page.locator('.ihr-spine[data-book-id="shelf:bravo"]')
   const from = await source.boundingBox()
   const to = await page.locator('.ihr-spine[data-book-id="shelf:alpha"]').boundingBox()
@@ -393,7 +399,7 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posic
   await expect.poll(async () => (await readPlacements())['shelf:bravo']?.x).toBeCloseTo(chosenX, 3)
   const persisted = await readPlacements()
   expect(persisted['shelf:alpha'].shelf).toBe(0)
-  expect(persisted['shelf:alpha'].x).toBeCloseTo(initialX + .08, 4)
+  expect(persisted['shelf:alpha'].x).toBeCloseTo(steppedX, 4)
   expect(persisted['shelf:bravo'].shelf).toBe(0)
   const expected = await page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => ({ id:node.dataset.bookId,
     shelf:node.dataset.shelfIndex, x:node.dataset.shelfX })))

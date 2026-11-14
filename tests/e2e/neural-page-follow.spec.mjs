@@ -319,7 +319,7 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
     expect(start.after.pixels).not.toBe(evidence.initial.pixels)
     expect(start.after.highlight.replace(/\s+/g,'')).toBe(PDF_PARTS[1].replace(/\s+/g,''))
     expect(start.after.at-start.at).toBeLessThan(1000)
-    if(!multilingual){const durations=await durationKernelProof(page);expect(durations).toBeTruthy();expect(durations.instances).toBe(1);expect(durations.cores).toBe(1);expect(durations.calls).toBeGreaterThan(0)
+    if(!multilingual){const durations=await durationKernelProof(page);expect(durations).toBeTruthy();expect(durations.instances).toBe(1);expect(durations.cores).toBe(1);expect(durations.jobs).toBeGreaterThan(0);expect(durations.chunks).toBeGreaterThan(0);expect(durations.samples).toBeGreaterThan(0);expect(durations.marks).toBeGreaterThan(0);expect(durations.calls).toBe(0)
       await testInfo.attach('compiled-duration-marks',{body:JSON.stringify(durations),contentType:'application/json'})}
     const firstSecondPage=evidence.frames.find(frame => /Página 2 de 2/.test(frame.label))
     expect(firstSecondPage?.at).toBeGreaterThanOrEqual(start.at)

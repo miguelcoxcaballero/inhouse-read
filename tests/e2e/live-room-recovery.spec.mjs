@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test'
-import {driveServer} from './helpers/drive-server.mjs'
+import {driveServer,SYNCED_FIRST_SHELF} from './helpers/drive-server.mjs'
 import {seedShelf,quietShelf} from './helpers/reader-layout-fixture.mjs'
 import {roomProbe} from './helpers/live-room-probe.mjs'
 const URL=process.env.IHR_TEST_URL||'/inhouse-read/'
@@ -15,7 +15,7 @@ for(const blocked of [false,true])test(`lamp switches stay live through ${blocke
   }
   const a=await make();await seedShelf(a,{single:true,withLamp:true,mode:'frontal'});await drive.connect(contexts[0]);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'))
   await expect.poll(()=>drive.manifests().some(m=>m.books.length===1&&m.settings['inhouse-read-shelf-lamps']),{timeout:30000}).toBe(true)
-  const b=await make();await drive.connect(contexts[1]);await b.goto(URL);await expect(b.locator('.ihr-lamp')).toHaveCount(1);await quietShelf(b.locator('.ihr-bookshelf-scene'))
+  const b=await make();await drive.connect(contexts[1]);await b.goto(URL);await expect(b.locator('.ihr-lamp')).toHaveCount(1,{timeout:SYNCED_FIRST_SHELF});await quietShelf(b.locator('.ihr-bookshelf-scene'))
   if(!blocked)await expect.poll(()=>b.evaluate(()=>__roomChannels.some(c=>c.label==='inhouse-read-interactive-v1'&&c.readyState==='open')),{timeout:30000}).toBe(true)
   delayBackups=true
   const switches=[]

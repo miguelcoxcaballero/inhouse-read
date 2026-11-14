@@ -6,8 +6,19 @@ const BOOK_PREFIX = 'motion:book:';
 const LAMP_KEY = 'inhouse-read-shelf-lamps';
 const PLANT_KEY = 'inhouse-read-shelf-plants';
 const TARGET_URL = process.env.IHR_TEST_URL || '/';
+// A seeded shelf is cold: its six covers are analysed before the first frame (the shelf never shows provisional
+// lettering) and its books then come to rest over tens of rendered frames. On the CI runner's software WebGL these
+// scenarios finished in 18-30 s whenever they passed, against the 30 s default that cut the rest short, and the first
+// shelf alone can take longer than the 8 s default. The shared fixture (helpers/reader-layout-fixture.mjs) already
+// waits 90 s for that first shelf; every wait for a behaviour keeps its own deadline.
+const SCENARIO_TIMEOUT = 120_000, FIRST_SHELF_TIMEOUT = 90_000;
 
-test('cozy sounds use native PCM for switches, pickup and opening and sleep afterwards',async({page},info)=>{
+// A page the offline shell already controls gets the recorded atlas from the shell's cache, which no route sees: the
+// pull-out then plays its recorded take and never asks Rust to synthesise it. This case is about the synthesised
+// fallback, so its page runs without the service worker and the atlas really is unavailable.
+const synthesisedTest=test.extend({serviceWorkers:'block'});
+synthesisedTest('cozy sounds use native PCM for switches, pickup and opening and sleep afterwards',async({page},info)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  // Without the recorded atlas every event is synthesised in Rust.
  await page.route(/\/assets\/atlas-[\w-]+\.(bin|json)$/,route=>route.abort());
  await page.addInitScript(()=>{
@@ -104,7 +115,7 @@ async function seedShelf(page, {domino=false,single=false,mode='isometric'}={}) 
   }, { bytes, prefix:BOOK_PREFIX, geometry:await settledGeometryLength(78_000, 'shelf-motion'), domino, single });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
-  await expect(page.locator('.ihr-spine')).toHaveCount(single ? 1 : 6);
+  await expect(page.locator('.ihr-spine')).toHaveCount(single ? 1 : 6, { timeout:FIRST_SHELF_TIMEOUT });
   await expect(page.locator('.ihr-plant')).toHaveCount(single ? 0 : 1);
   await expect(page.locator('.ihr-lamp')).toHaveCount(single ? 0 : 1);
   await expect(scene).toHaveAttribute('data-shelf-type', 'baggebo');
@@ -374,14 +385,23 @@ test('isometric finger motion reuses its image, restores sharp books and keeps r
   expect(errors).toEqual([]);
 });
 
-test('a released book settles against its neighbour and leaves the GPU idle',async({page},testInfo)=>{
+// Lifting a book straightens it, and a book released where it was held is placed carefully: it stays upright and
+// asleep instead of falling back against its neighbour (tests/unit/book-release-intent.test.js). Only a sideways
+// release tips it, which the pointer case below exercises.
+test('a book lifted and set down in place stays upright and leaves the GPU idle',async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const scene=await seedShelf(page);
  const book=page.locator('[data-book-id="motion:book:1"]');
+ const lean=async()=>Math.abs(Number(await book.getAttribute('data-scene-lean')));
+ const resting=await lean();
  await book.evaluate(node=>node.classList.add('is-dragging'));
  await expect(scene).toHaveAttribute('data-animating','true');
+ await expect.poll(lean,{timeout:30_000}).toBeLessThan(.025);
  await book.evaluate(node=>node.classList.remove('is-dragging'));
- await expect.poll(async()=>Math.abs(Number(await book.getAttribute('data-scene-lean')))).toBeGreaterThan(.01);
  await quietShelf(scene);
+ const placed=await lean();
+ await testInfo.attach('careful-placement-lean',{body:JSON.stringify({resting,placed}),contentType:'application/json'});
+ expect(placed).toBeLessThan(.025);
  const before=await scene.getAttribute('data-render-count');await page.waitForTimeout(500);
  expect(await scene.getAttribute('data-render-count')).toBe(before);
  await expect(book).toHaveAttribute('data-scene-projected','true');
@@ -390,6 +410,7 @@ test('a released book settles against its neighbour and leaves the GPU idle',asy
 
 
 test('legacy books settle on load, standing neighbours topple and a fallen support stays planted',async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const scene=await seedShelf(page,{domino:true});
  const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
  const before=await poses();expect(before.some(b=>Math.abs(b.angle)>.03)).toBe(true);
@@ -422,6 +443,7 @@ test('legacy books settle on load, standing neighbours topple and a fallen suppo
 // The slow-contact/domino case above and the fast lifted case below exercise
 // both intended interaction speeds with the production scene and WASM solver.
 test('pickup smoothly straightens a fallen book and a fast sweep leaves resting neighbours quiet',async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const scene=await seedShelf(page,{domino:true});
  const poses=()=>page.locator('.ihr-spine').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.bookId,angle:Number(node.dataset.sceneLean),left:node.getBoundingClientRect().left,top:node.getBoundingClientRect().top})));
  const resting=await poses(),fallen=resting.find(b=>Math.abs(b.angle)>.1);
@@ -446,29 +468,38 @@ test('pickup smoothly straightens a fallen book and a fast sweep leaves resting 
 
 
 test('real pointer releases tip both ways without coasting and the renderer sleeps afterwards',async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const samples=[];
  await page.addInitScript(()=>{
   window.gripProof=[];window.toeProof=[];window.releaseDirection=0;
   const observe=result=>{
    const instance=result.instance||result,actual=instance.exports;
-   if(typeof actual?.rustbookgravity_step!=='function')return result;
-   const exports={...actual,rustbookgravity_step(...args){
-    const states=new Float64Array(actual.memory.buffer,args[2],args[3]).slice();
-    const geometry=new Float64Array(actual.memory.buffer,args[5],args[6]).slice();
-    for(let i=0;i<geometry.length/9;i++)if(states[i*37+2]&6){
-     window.gripProof.push(geometry[i*9+8]);
+   // The solver steps the scene's entry arena in place (rust-ui/src/book_gravity_frame.rs advance_rows): the page
+   // no longer hands it slices. Each frame's inputs and outputs stay in the gravity frame's own arenas, whose
+   // addresses the module exports; this fixture has one entry, the single seeded book.
+   const frameCalls=['rustsceneentryframe_settled','rustsceneentryframe_settle'];
+   if(!frameCalls.every(name=>typeof actual?.[name]==='function'))return result;
+   const arenas=['rustgravityframe_states_ptr','rustgravityframe_geometry_ptr','rustgravityframe_output_ptr'];
+   if(!arenas.every(name=>typeof actual[name]==='function'))throw new Error('The gravity frame no longer exports its arenas; update this probe explicitly.');
+   const stepped=name=>function(...args){
+    const result=actual[name](...args);
+    const [statesAt,geometryAt,outputAt]=arenas.map(arena=>actual[arena](args[1])>>>0);
+    // An empty frame owns no storage (a dangling aligned address).
+    if(statesAt<=8||geometryAt<=8||outputAt<=8)return result;
+    const states=new Float64Array(actual.memory.buffer,statesAt,37),geometry=new Float64Array(actual.memory.buffer,geometryAt,9);
+    if(states[2]&6){
+     window.gripProof.push(geometry[8]);
      if(window.gripProof.length>100)window.gripProof.shift();
-    }
-    const result=actual.rustbookgravity_step(...args);
-    if(geometry.length===9&&window.releaseDirection&&!(states[2]&6)){
-     const out=new Float64Array(actual.memory.buffer,args[10],args[11]);
+    }else if(window.releaseDirection){
+     const out=new Float64Array(actual.memory.buffer,outputAt,4);
      const angle=out[0],scale=geometry[3],width=geometry[0],height=states[26];
      const toe=states[23]+out[1]+window.releaseDirection*width/2*Math.cos(angle)+height/2*Math.sin(angle);
      const bottom=states[24]-out[2]+height/2*Math.abs(Math.cos(angle))+width/2*Math.abs(Math.sin(angle));
      window.toeProof.push({angle,toe:toe/scale,gap:(geometry[6]-bottom)/scale});
     }
     return result;
-   }};
+   };
+   const exports={...actual,...Object.fromEntries(frameCalls.map(name=>[name,stepped(name)]))};
    const observed=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});
    return result.instance?{...result,instance:observed}:observed;
   };
@@ -524,6 +555,7 @@ test('real pointer releases tip both ways without coasting and the renderer slee
 });
 
 test('mobile room stays idle and suspends active physics while the document is hidden',async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const scene=await seedShelf(page);
  const session=await page.context().newCDPSession(page);await session.send('Performance.enable');
  const counts=()=>scene.evaluate(node=>({frames:Number(node.dataset.renderCount),renders:Number(node.dataset.snapshotRenderCount),textures:node.dataset.sceneTextures,resolutions:node.dataset.bookTextureResolutions}));
@@ -551,6 +583,7 @@ test('mobile room stays idle and suspends active physics while the document is h
 });
 
 test('native dragging pushes neighbours and preserves the settled poses across reload',async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const scene=await seedShelf(page,{domino:true});
  const point=await visibleMiddleBookPoint(page,[.5,.7,.3],0);expect(point).not.toBeNull();
  const held=page.locator(`[data-book-id="${point.id}"]`);
@@ -582,6 +615,7 @@ test('native dragging pushes neighbours and preserves the settled poses across r
 });
 
 for(const mode of ['isometric','spine'])test(`a ${mode} drop near a plant preserves every unselected slot and solid pose`,async({page},testInfo)=>{
+ test.setTimeout(SCENARIO_TIMEOUT);
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  const scene=await seedShelf(page,{mode});const point=await visibleMiddleBookPoint(page,[.5,.7,.3],2);expect(point).not.toBeNull();
  const slots=()=>page.locator('[data-object-id]').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.objectId,shelf:n.dataset.shelfIndex,x:n.dataset.shelfX})).sort((a,b)=>a.id.localeCompare(b.id)));

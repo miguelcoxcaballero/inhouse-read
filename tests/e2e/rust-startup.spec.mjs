@@ -21,16 +21,31 @@ test('early core shares one actual request and instance with the live shelf',asy
  const state=await page.evaluate(()=>({instances:window.rustBoot.instances,adopted:!('__inhouseRustReady'in window)&&!('__inhouseDecorReady'in window),urls:['ihr-rust-core','ihr-rust-decor'].map(id=>document.getElementById(id).href)}));
  expect(state.instances).toEqual([1,1]);expect(state.adopted).toBe(true);expect(requests.sort()).toEqual(state.urls.sort());expect(errors).toEqual([]);
 });
-for(const [kind,domain] of [['core',0],['decor',1]]) test('a pending '+kind+' download never holds the first shelf frame',async({page})=>{
- await observe(page);let release;const gate=new Promise(r=>release=r);
- await page.route(`**/assets/inhouse_read_${kind}-*.wasm`,async route=>{await gate;await route.continue();});
- try{await page.goto('./',{waitUntil:'domcontentloaded'});await firstFrame(page);expect(await page.evaluate(domain=>window.rustBoot.instances[domain],domain)).toBe(0);}
- finally{release();}
- await expect.poll(()=>page.evaluate(domain=>window.rustBoot.instances[domain],domain)).toBe(1);
+// The shelf's tables and kernels exist only in the two cores (src/js/core-tables.js): there is no JavaScript copy to
+// draw a first frame from. A slow core therefore delays the shelf without failing it, and one that cannot be reached
+// is reported to the person after a single automatic reload (src/js/chunk-recovery.js). A launch after the first is
+// answered by the offline shell, which holds both cores (tests/e2e/offline-shell.spec.mjs).
+const unavailable=page=>page.locator('#bookshelf-root [role="alert"]');
+for(const [kind,domain] of [['core',0],['decor',1]]) test('a pending '+kind+' download delays the shelf without an error and the first frame follows it',async({page})=>{
+ await observe(page);let release,requests=0;const gate=new Promise(r=>release=r),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.route(`**/assets/inhouse_read_${kind}-*.wasm`,async route=>{requests++;await gate;await route.continue();});
+ try{
+  await page.goto('./',{waitUntil:'domcontentloaded'});
+  // The other core has arrived and a further second has passed: the shelf is waiting for this download only.
+  await expect.poll(()=>page.evaluate(domain=>window.rustBoot.instances[1-domain],domain)).toBe(1);await page.waitForTimeout(1000);
+  expect(await page.evaluate(domain=>window.rustBoot.instances[domain],domain)).toBe(0);
+  await expect(unavailable(page)).toHaveCount(0);expect(requests).toBe(1);
+ }finally{release();}
+ await firstFrame(page);expect(await page.evaluate(domain=>window.rustBoot.instances[domain],domain)).toBe(1);
+ await expect(page.locator('.ihr-plant')).toHaveCount(1);await expect(unavailable(page)).toHaveCount(0);expect(requests).toBe(1);expect(errors).toEqual([]);
 });
-for(const [kind,domain] of [['core',0],['decor',1]]) test('offline '+kind+' keeps the saved shelf usable without a second startup request',async({page})=>{
- await observe(page);let requests=0;const errors=[];page.on('pageerror',error=>errors.push(error.message));
+for(const [kind,domain] of [['core',0],['decor',1]]) test('a first visit that cannot reach the '+kind+' reloads once and then says so instead of showing an empty shelf',async({page})=>{
+ await observe(page);let requests=0;
  await page.route(`**/assets/inhouse_read_${kind}-*.wasm`,async route=>{requests++;await route.abort('internetdisconnected');});
- await page.goto('./');await firstFrame(page);expect(await page.evaluate(domain=>window.rustBoot.instances[domain],domain)).toBe(0);
- await expect.poll(()=>page.evaluate(domain=>window.rustBoot.instances[1-domain],domain)).toBe(1);expect(requests).toBe(1);expect(errors).toEqual([]);await expect(page.locator('.ihr-plant')).toHaveCount(1);
+ await page.goto('./');
+ await expect(unavailable(page)).toHaveText('No se pudo cargar la estantería. Comprueba la conexión e inténtalo de nuevo.',{timeout:30_000});
+ // One request per page load: the first visit's and the single automatic reload's. Nothing asks again afterwards.
+ await expect.poll(()=>requests).toBe(2);await page.waitForTimeout(2000);expect(requests).toBe(2);
+ await expect(unavailable(page)).toHaveCount(1);await expect(page.locator('canvas.ihr-bookshelf-scene')).toHaveCount(0);
+ expect(await page.evaluate(domain=>window.rustBoot.instances[domain],domain)).toBe(0);
 });
