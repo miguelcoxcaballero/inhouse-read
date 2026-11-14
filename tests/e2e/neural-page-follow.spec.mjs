@@ -152,9 +152,24 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
         for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers'],['detect_voice_language','languages'],['rustneuralview_renderPicker','pickerRenders'],['voice_order','voiceOrders'],['voice_recommended','voiceRecommendations'],['speech_sentence_ends','sentenceEnds'],['speech_plan','speechPlans'],['speech_pipeline','speechPipelines'],['speech_pipeline_native','speechPipelines']]){
           if(actual[name])exports[name]=(...args)=>{evidence.rustJoin[key]++;return actual[name](...args)}
         }
+        // The download and its completion are one Rust member (picker_member "install", picker_members.rs): its
+        // begin and done steps no longer cross the boundary as exports. The start is that member's call on this
+        // instance; the completion is what only its done step (picker_actions.rs picker_install_done) writes once
+        // the engine's task resolved: the picker's status "Voz <name> instalada…", seen after a counted start.
+        let watching=false
+        const watchInstalled=()=>{
+          if(watching)return
+          watching=true
+          let last=''
+          new MutationObserver(()=>{
+            const text=document.querySelector('[data-neural-status]')?.textContent||''
+            if(text!==last&&/^Voz .+ instalada/.test(text))evidence.rustJoin.installCompletions++
+            last=text
+          }).observe(document.documentElement,{subtree:true,childList:true,characterData:true})
+        }
         // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
         // dispatched member's name from the call and count it as the implementation it runs.
-        const dispatched={"voice_method":{"speakCurrent":"dispatches","speakNeural":"synthesis","joinPageSentence":"calls","prepareAhead":"preparations","advance":"advances","prepare":"plans","prepareOpening":"opening","adopt":"adoptions","engineStarted":"starts","present":"presentations","prepareText":"textPlans"},"picker_method":{"attach":"attachments","warmContext":"warmContexts","warmUp":"warmUps","state":"availability","click":"pickerClicks","offerFor":"offers"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)evidence.rustJoin[name]++;return actual[dispatch](...args)}
+        const dispatched={"voice_method":{"speakCurrent":"dispatches","speakNeural":"synthesis","joinPageSentence":"calls","prepareAhead":"preparations","advance":"advances","prepare":"plans","prepareOpening":"opening","adopt":"adoptions","engineStarted":"starts","present":"presentations","prepareText":"textPlans"},"picker_method":{"attach":"attachments","warmContext":"warmContexts","warmUp":"warmUps","state":"availability","click":"pickerClicks","offerFor":"offers"},"picker_member":{"install":"installStarts"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)evidence.rustJoin[name]++;if(name==='installStarts')watchInstalled();return actual[dispatch](...args)}
         const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
         return result.instance?{...result,instance:proxy}:proxy
       }
