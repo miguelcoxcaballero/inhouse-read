@@ -1,4 +1,4 @@
-import {it,expect} from 'vitest';
+import {it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
 import {onReaderRelocate as reference} from './helpers/reference-app-reader-relocate.js';
@@ -13,6 +13,8 @@ async function run(native,event,options={},module=rustShelf){
   readingExperience:{relocate(){events.push(['relocate',this===env.readingExperience]);if(options.clearOnRelocate)env.currentBookId=null}},
   progressWrites:{updateProgress(...args){events.push(['write',...args,this===env.progressWrites]);if(options.throwWrite)throw Error('write');return options.rejectWrite?Promise.reject(Error('write')):Promise.resolve()}}
  };
+// The module reports to the page's console itself (rust-ui/src/app_report.rs): it is heard through this fixture's.
+ vi.spyOn(console,'warn').mockImplementation((...args)=>env.console.warn(...args));
  env.readerRuntimeHost={...env,state:env,warnReaderProgress:error=>env.console.warn('No se pudo guardar el progreso:',error)};env.bookDataModule=()=>module;
  let value,error;try{value=scope(env,native?actual:reference)(event)}catch(e){error=e.message}await flush();
  return{events,width:env.els.readerProgressFill.style.width,current:env.currentBookId,value,error};

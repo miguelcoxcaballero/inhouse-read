@@ -1,4 +1,4 @@
-import {it,expect} from 'vitest';
+import {it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 import * as reference from './helpers/reference-app-file-open.js';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
@@ -47,6 +47,8 @@ function fixture(native,options={},module=rustShelf){
  };
  const settings={existingRecord:options.noExisting?undefined:existing,forcedId:options.forced?id:undefined,folderFileName:options.folder,transition,preparing:options.preparing,restoreRemoved:options.restoreRemoved,reuseStoredContent:options.reuse,onImportReady:()=>events.push(['import-ready'])};
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
+// The module reports to the page's console itself (rust-ui/src/app_report.rs): it is heard through this fixture's.
+ vi.spyOn(console,'warn').mockImplementation((...args)=>env.console.warn(...args));
  const host={...env,state,isUnsupportedFormatError:error=>error instanceof UnsupportedFormatError,alert:env.alert,ignoreFileOpenError:()=>{},warnFileGeometry:error=>env.console.warn('No se pudo medir el libro:',error),
   later:(name,take,...head)=>(...tail)=>module[name](...head,...tail.slice(0,take))};
  env.bookDataModule=()=>{events.push(['native-module']);return module};env.fileContentHost=host;

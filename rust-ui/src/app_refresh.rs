@@ -29,7 +29,8 @@ pub fn app_refresh_after_load(host:JsValue,stored:JsValue,account:JsValue,immedi
   let shelf=read(&state,"shelf")?;if !absent(&shelf){method(&shelf,"prepareCloudRoom",&[])?;}
   set(&state,"shelfRecords",&JsValue::NULL)?;set(&state,"cloudRoomChanged",&JsValue::FALSE)?;
  }
- for book in books.iter(){let task=method(&read(&host,"wordCountQueue")?,"ensure",&[&book])?;method(&task,"catch",&[&read(&host,"warnPreparation")?])?;}
+ let warn=crate::app_report::warner("Preparación del grosor:");let queue=read(&host,"wordCountQueue")?;
+ for book in books.iter(){let task=method(&queue,"ensure",&[&book])?;method(&task,"catch",&[&warn])?;}
  if truthy(&read(&state,"shelf")?)&&truthy(&read(&state,"shelfRecords")?)
   &&truthy(&crate::library_store::library_same_records(read(&state,"shelfRecords")?,books.clone().into(),read(&host,"libraryHost")?)?)
   &&read(&state,"shelfLengthStatusVersion")?==read(&state,"lengthStatusVersion")?{return Ok(JsValue::UNDEFINED);}

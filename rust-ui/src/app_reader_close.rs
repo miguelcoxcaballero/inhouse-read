@@ -8,7 +8,7 @@ type R<T> = Result<T,JsValue>;
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let entries=Array::new();for(k,v)in fields{c::data_entry(&entries,&(*k).into(),v);}Ok(Object::from_entries(entries.as_ref())?.into())}
 fn optional(value:&JsValue,key:&str)->R<JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{read(value,key)}}
 fn classes(target:&JsValue,operation:&str,names:&[&str])->R<()>{let args:Vec<JsValue>=names.iter().map(|v|JsValue::from_str(v)).collect();let refs:Vec<_>=args.iter().collect();method(&read(target,"classList")?,operation,&refs)?;Ok(())}
-fn ignore(host:&JsValue,task:&JsValue)->R<JsValue>{method(task,"catch",&[&read(host,"ignoreCloseError")?])}
+fn ignore(_host:&JsValue,task:&JsValue)->R<JsValue>{method(task,"catch",&[&crate::app_report::ignore()])}
 fn warn(host:&JsValue,label:&str,error:&JsValue)->R<()>{method(&read(host,"console")?,"warn",&[&label.into(),error])?;Ok(())}
 fn body(host:&JsValue)->R<JsValue>{read(&read(host,"document")?,"body")}
 fn remove_still(flight:&JsValue)->R<()>{method_opt(&read(flight,"stillPage")?,"remove",&[])?;Ok(())}
@@ -112,7 +112,7 @@ pub fn app_close_reader(host:JsValue)->Promise{
   method_opt(&read(&state,"shelf")?,"setReturningBook",&[&JsValue::NULL])?;
   method_opt(&read(&flight,"stillFade")?,"cancel",&[])?;remove_still(&flight)?;
   classes(&body(&host)?,"remove",&["is-closing-reader","is-reader-page-leaving"])?;set(&state,"closingReader",&JsValue::FALSE)?;
-  if truthy(&read(&state,"cloudRoomChanged")?)||truthy(&optional(&state,"shelfRefreshDeferred")?){let task=method(&host,"refreshShelf",&[])?;method(&task,"catch",&[&read(&host,"warnPendingShelf")?])?;}
+  if truthy(&read(&state,"cloudRoomChanged")?)||truthy(&optional(&state,"shelfRefreshDeferred")?){let task=method(&host,"refreshShelf",&[])?;method(&task,"catch",&[&crate::app_report::warner("Estantería pendiente:")])?;}
   caught?;Ok(JsValue::UNDEFINED)
  })
 }
