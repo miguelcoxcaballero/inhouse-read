@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import { readFileSync } from 'node:fs'
 import { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices, NeuralVoiceEngine, getNeuralEngine, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
 import { fakeAudioContext, advance, flush, fakeClients, feedJob, recordEvents } from './neural-fakes.js'
@@ -55,7 +56,7 @@ describe('the contract (index.js)', () => {
   it('does not import the engine, the store, the player or the worker statically (they are lazy chunks)', () => {
     const source = readFileSync(new URL('../../src/js/readers/neural-voice/index.js', import.meta.url), 'utf8')
     const staticImports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map(m => m[1])
-    expect(staticImports.sort()).toEqual(['./audio.js', './catalog.js'])
+    expect(staticImports.sort()).toEqual(['../rust-ui-required.js', './audio.js', './catalog.js'])
     expect(source).toMatch(/import\('\.\/engine\.js'\)/)
     for (const file of ['catalog.js', 'audio.js']) {
       const text = readFileSync(new URL(`../../src/js/readers/neural-voice/${file}`, import.meta.url), 'utf8')

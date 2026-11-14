@@ -1,6 +1,7 @@
 // @vitest-environment node
 import {readFileSync} from 'node:fs'
 import {beforeEach,expect,it,vi} from 'vitest'
+import './helpers/rust-ui-ready.js'
 const fixture=vi.hoisted(()=>({instances:[],loaded:null,require:vi.fn()}))
 vi.mock('../../src/js/rust-voice-core.js',()=>({getRustVoiceCore:()=>fixture.loaded,requireRustVoiceCore:()=>fixture.require()}))
 vi.mock('../../src/js/readers/neural-voice/engine.js',()=>({NeuralEngine:class extends EventTarget{
