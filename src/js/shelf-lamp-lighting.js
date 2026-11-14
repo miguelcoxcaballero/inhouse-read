@@ -7,9 +7,8 @@ import { needRustShelf } from './rust-shelf.js';
 export const MAX_SHELF_LAMP_LIGHTS = 8;
 const MAX_LAMP_SHADOWS = 2;
 // Rust owns fixture quotas, assignment/rank caches, light math, colour caches and shadow
-// invalidation/transport state (lamp_light.rs). The host owns Three lights/scene graph,
+// invalidation/transport state (lamp_light.rs, lamp_room.rs). The host owns Three lights/scene graph,
 // marshals emitter/model data and applies the returned light values and shadow commands.
-const rootOut = new Float64Array(17);
 let filamentIn = new Float64Array(24 + 10 * 4), filamentOut = new Float64Array(3 + 10 * 4);
 const refused = what => new Error(`Las luces de las lámparas no recibieron datos válidos (${what}).`);
 // The area-light lookup tables are ~250 KB of numbers that only the filament
@@ -21,9 +20,6 @@ export function ensureAreaLights() {
   return areaLightsLoading ||= import('three/addons/lights/RectAreaLightUniformsLib.js').then(({ RectAreaLightUniformsLib }) => {
     RectAreaLightUniformsLib.init(); areaLights = RectAreaLightUniformsLib; return areaLights;
   }).catch(error => { areaLightsLoading = null; throw error; });
-}
-export function savedLampsNeedAreaLights() {
-  try { return /"lampId"\s*:\s*"tarnaby"/.test(localStorage.getItem('inhouse-read-shelf-lamps') || ''); } catch { return false; }
 }
 // The shelf lights filament lamps with a point light (see lampKind): only the
 // catalogue's studio needs the area-light tables, and loads them itself.
@@ -71,26 +67,29 @@ const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
 export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false, preparedEntries = false } = {}) {
   const kindOf = entry => lampKind(entry, filamentAreas);
   const slots = [];
-  let pool = null;
-  let lightFrame = null, lightMemory = null, lightBuffer = null, lightIn = null, lightOut = null;
-  let lightInputAt = 0, lightOutputAt = 0;
-  function lightFrameViews() {
-    if (!lightFrame) {
-      lightFrame = new (needRustShelf().LampLightFrame)();
-      lightMemory = lightFrame.memory();
-      lightInputAt = lightFrame.input_ptr(); lightOutputAt = lightFrame.output_ptr();
-    }
-    if (lightBuffer === lightMemory.buffer) return;
-    lightBuffer = lightMemory.buffer;
-    lightIn = new Float64Array(lightBuffer, lightInputAt, 103);
-    lightOut = new Float64Array(lightBuffer, lightOutputAt, 38);
+  // One Rust room for this manager and one arena in its memory for a frame's numbers (the layout is in lamp_room.rs):
+  // a frame is two calls, the plan and every point and cone light, whatever the number of lamps.
+  let room = null, memory = null, heap = null, lampRoom = 0, lightRoom = 0;
+  let roomAt = 0, slotAt = 0, inAt = 0, outAt = 0, lampAt = 0, planAt = 0;
+  function roomOf() {
+    if (!room) { room = new (needRustShelf().LampRoomFrame)(); memory = room.memory(); }
+    return room;
   }
-  const poolState = () => pool ||= new (needRustShelf().LampPoolState)();
+  const fresh = () => { if (heap.buffer !== memory.buffer) heap = new Float64Array(memory.buffer); };
+  function arena(count, total) {
+    if (count > lampRoom || total > lightRoom || !heap) {
+      if (count > lampRoom) lampRoom = count + 8;
+      if (total > lightRoom) lightRoom = Math.max(total, MAX_SHELF_LAMP_LIGHTS);
+      roomAt = room.reserve(lampRoom, lightRoom) / 8;
+      slotAt = roomAt + 16; inAt = slotAt + 3 * lightRoom; outAt = inAt + 37 * lightRoom;
+      lampAt = outAt + 21 * lightRoom; planAt = lampAt + 7 * lampRoom;
+      heap = new Float64Array(memory.buffer);
+    } else fresh();
+  }
   const kindCode = kind => kind === 'cone' ? 0 : kind === 'point' ? 1 : Number(kind.slice(10)) + 1;
   const kindName = code => code === 0 ? 'cone' : code === 1 ? 'point' : filamentKind(code - 1);
-  // Per-instance protocol state: the packed candidates and slots, the quotas, and what makes the ids of the keys.
-  let kindsIn = new Float64Array(0), poolSlots = new Float64Array(0);
-  let candidateIn = new Float64Array(0), slotIn = new Float64Array(0), planOut = new Float64Array(2);
+  // Per-instance protocol state: the kinds of the library's lamps, and what makes the ids of the keys.
+  let kindsIn = new Float64Array(0);
   const keyIds = new Map(), identities = new Map();
   let nextKeyId = 0;
   // The set and fixture kinds change only when the shelf layout changes.
@@ -100,7 +99,6 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   // Rust invalidates ranks; locale-specific String collation is a browser primitive.
   let disposed = false, shadowRefresh = false, prepared = false;
   function removeLights(slot) {
-    slot.state.free();
     for (const light of slot.lights) {
       light.removeFromParent(); light.target?.removeFromParent();
       light.shadow?.map?.dispose(); light.shadow?.mapPass?.dispose();
@@ -114,8 +112,8 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       ensureAreaLights().then(() => { if (!disposed) onAreaLightsReady?.(); }).catch(error => console.warn('No se pudo cargar la luz de filamentos:', error));
       return false;
     }
-    const slot = { kind, filaments, spotlight, shadow:spotlight && index < MAX_LAMP_SHADOWS, key:null,
-      power:0, lit:false, state:new (needRustShelf().LampLightState)(filaments) };
+    const slot = { kind, code:kindCode(kind), filaments, spotlight, shadow:spotlight && index < MAX_LAMP_SHADOWS, key:null,
+      power:0, lit:false };
     if (filaments) {
       slot.lights = Array.from({ length:filaments }, (_, strip) => {
         const light = new THREE.RectAreaLight(0xffffff, 0);
@@ -135,11 +133,11 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       slot.lights = [light];
     }
     for (const light of slot.lights) { light.userData.shelfLamp = true; light.name = 'Shelf lamp light: idle'; scene.add(light); }
-    slots.push(slot);
+    room.slot_added(slot.code, slot.shadow); slots.push(slot);
   }
-  // Giving a slot to another lamp invalidates everything it remembers.
+  // Giving a slot to another lamp invalidates everything it remembers (the room does that part while it plans).
   function assign(slot, key) {
-    slot.key = key; slot.state.assign();
+    slot.key = key;
     for (const light of slot.lights) { light.userData.entryKey = key; light.name = `Shelf lamp light: ${key}`; }
   }
   function release(slot) {
@@ -151,13 +149,11 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   function reconcile(entries) {
     lampEntries = entries.filter(entry => entry.kind === 'lamp');
     if (kindsIn.length !== lampEntries.length) kindsIn = new Float64Array(lampEntries.length);
-    if (poolSlots.length !== slots.length) poolSlots = new Float64Array(slots.length);
     for (let index = 0; index < lampEntries.length; index++) {
       const entry = lampEntries[index], kind = kindOf(entry);
       kindsIn[index] = kind ? kindCode(kind) : -1;
     }
-    for (let index = 0; index < slots.length; index++) poolSlots[index] = kindCode(slots[index].kind);
-    const poolOut = poolState().reconcile(kindsIn, poolSlots, Number(maxLights));
+    const poolOut = roomOf().reconcile(kindsIn, Number(maxLights));
     let changed = false;
     for (let at = 0; at < poolOut.length; at += 3) {
       const kind = kindName(poolOut[at]), want = poolOut[at + 1];
@@ -165,7 +161,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       for (; have < want; have++) { if (createSlot(kind, have) === false) break; changed = true; }
       for (; have > want; have--) {
         const at = slots.findLastIndex(slot => slot.kind === kind);
-        removeLights(slots[at]); slots.splice(at, 1); changed = true;
+        room.slot_removed(at); removeLights(slots[at]); slots.splice(at, 1); changed = true;
       }
     }
     return changed;
@@ -178,7 +174,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     order.forEach((index, rank) => { ranks[index] = rank; });
     return ranks;
   }
-  function updateFilaments(slot, entry, wasLit) {
+  function updateFilaments(slot, slotIndex, entry, wasLit) {
     const model = entry.model, emitter = model.userData.lightEmitter, count = slot.lights.length;
     model.updateWorldMatrix(true, false);
     if (filamentIn.length < 24 + 10 * count) filamentIn = new Float64Array(24 + 10 * count);
@@ -196,7 +192,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       filamentIn[at + 6] = strip.normal[0]; filamentIn[at + 7] = strip.normal[1]; filamentIn[at + 8] = strip.normal[2];
       filamentIn[at + 9] = strip.width;
     }
-    const flags = slot.state.filaments(slot.lit, wasLit, filamentIn, filamentOut);
+    const flags = room.filaments(slotIndex, slot.lit, wasLit, filamentIn, filamentOut);
     if (!(flags & 8)) throw refused('filamentos');
     const out = filamentOut;
     for (let index = 0; index < count; index++) {
@@ -211,52 +207,46 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     }
     return (flags & 1) !== 0;
   }
-  // rootMatrix: the room's transform when the lights can follow it, else null.
-  function updateLight(slot, entry, wasLit, shadowDirty, rootMatrix) {
-    const model = entry.model, emitter = model.userData.lightEmitter, light = slot.lights[0];
-    const { spotlight, shadow:shadowed } = slot;
+  // A point or cone light's inputs, into the arena: the model's world matrix, then the emitter.
+  function packLight(slot, index, entry) {
+    const model = entry.model, emitter = model.userData.lightEmitter, spotlight = slot.spotlight;
     model.updateWorldMatrix(true, false);
-    lightFrameViews();
-    lightIn.set(model.matrixWorld.elements, 0);
-    lightIn[16] = rootMatrix ? 1 : 0; lightIn[81] = 0;
-    if (rootMatrix) {
-      for (let index = 0; index < 16; index++) lightIn[17 + index] = rootOut[1 + index];
-      lightIn.set(rootMatrix.elements, 33);
-    }
-    lightIn[82] = emitter.position[0]; lightIn[83] = emitter.position[1]; lightIn[84] = emitter.position[2];
-    if (spotlight) { lightIn[85] = emitter.direction[0]; lightIn[86] = emitter.direction[1]; lightIn[87] = emitter.direction[2]; }
-    lightIn[88] = Math.floor(emitter.color ?? 0xffd19a) | 0;
+    const lightIn = heap, at = inAt + 37 * index, world = model.matrixWorld.elements;
+    for (let index = 0; index < 16; index++) lightIn[at + index] = world[index];
+    lightIn[at + 16] = emitter.position[0]; lightIn[at + 17] = emitter.position[1]; lightIn[at + 18] = emitter.position[2];
+    if (spotlight) { lightIn[at + 19] = emitter.direction[0]; lightIn[at + 20] = emitter.direction[1]; lightIn[at + 21] = emitter.direction[2]; }
+    lightIn[at + 22] = Math.floor(emitter.color ?? 0xffd19a) | 0;
     const tint = emitter.tint;
-    lightIn[89] = tint ? 1 : 0;
-    if (tint) { lightIn[90] = tint[0]; lightIn[91] = tint[1]; lightIn[92] = tint[2]; }
-    lightIn[93] = Number(emitter.intensity); lightIn[94] = slot.power; lightIn[95] = Number(emitter.distance);
-    lightIn[96] = Number(entry.width); lightIn[97] = Number(emitter.decay);
-    lightIn[98] = emitter.angle == null ? 0 : 1; lightIn[99] = emitter.angle;
-    lightIn[100] = emitter.penumbra == null ? 0 : 1; lightIn[101] = emitter.penumbra;
+    lightIn[at + 23] = tint ? 1 : 0;
+    if (tint) { lightIn[at + 24] = tint[0]; lightIn[at + 25] = tint[1]; lightIn[at + 26] = tint[2]; }
+    lightIn[at + 27] = Number(emitter.intensity); lightIn[at + 28] = slot.power; lightIn[at + 29] = Number(emitter.distance);
+    lightIn[at + 30] = Number(entry.width); lightIn[at + 31] = Number(emitter.decay);
+    lightIn[at + 32] = emitter.angle == null ? 0 : 1; lightIn[at + 33] = emitter.angle;
+    lightIn[at + 34] = emitter.penumbra == null ? 0 : 1; lightIn[at + 35] = emitter.penumbra;
     // Raw non-number emitter values compared unequal to Float64 stamps even
     // when their numeric conversion was unchanged (including undefined).
-    lightIn[102] = typeof emitter.distance !== 'number' ||
+    lightIn[at + 36] = typeof emitter.distance !== 'number' ||
       typeof emitter.position[0] !== 'number' || typeof emitter.position[1] !== 'number' || typeof emitter.position[2] !== 'number' ||
       (spotlight && (typeof emitter.direction[0] !== 'number' || typeof emitter.direction[1] !== 'number' || typeof emitter.direction[2] !== 'number')) ? 1 : 0;
-    const flags = lightFrame.sample(slot.state, spotlight, shadowed, slot.lit, wasLit, shadowDirty);
+  }
+  function applyLight(slot, index) {
+    const light = slot.lights[0], out = heap, at = outAt + 21 * index + 1, flags = out[at - 1];
     if (!(flags & 8)) throw refused('luz');
-    lightFrameViews();
-    const out = lightOut;
-    light.position.set(out[0], out[1], out[2]);
-    light.color.r = out[3]; light.color.g = out[4]; light.color.b = out[5];
-    light.intensity = out[6]; light.distance = out[7]; light.decay = out[8];
-    if (spotlight) {
+    light.position.set(out[at], out[at + 1], out[at + 2]);
+    light.color.r = out[at + 3]; light.color.g = out[at + 4]; light.color.b = out[at + 5];
+    light.intensity = out[at + 6]; light.distance = out[at + 7]; light.decay = out[at + 8];
+    if (slot.spotlight) {
       // A ceiling cone points down its local Y axis. World-up would be
       // parallel to it, forcing lookAt's arbitrary fallback, and would
       // also roll the cached texture during a cabinet turn. An orthogonal
       // model-space up follows the complete room consistently instead.
-      light.shadow.camera.up.set(out[9], out[10], out[11]);
-      light.target.position.set(out[12], out[13], out[14]);
+      light.shadow.camera.up.set(out[at + 9], out[at + 10], out[at + 11]);
+      light.target.position.set(out[at + 12], out[at + 13], out[at + 14]);
       light.target.updateMatrixWorld(true);
-      light.angle = out[15]; light.penumbra = out[16];
-      light.shadow.camera.near = out[17]; light.shadow.camera.far = out[18];
+      light.angle = out[at + 15]; light.penumbra = out[at + 16];
+      light.shadow.camera.near = out[at + 17]; light.shadow.camera.far = out[at + 18];
       light.shadow.camera.updateProjectionMatrix();
-      light.shadow.normalBias = out[19];
+      light.shadow.normalBias = out[at + 19];
     }
     light.updateMatrixWorld(true);
     if (flags & 2) light.shadow.updateMatrices(light);
@@ -272,12 +262,10 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     },
     update(entries, { scroll = 0, viewportHeight = Infinity, shadowDirty = false, transform = null } = {}) {
       if (disposed) return false;
-      const shelf = needRustShelf();
-      let rootMatrix = null;
-      if (transform) {
-        if (!shelf.lamp_root(transform.elements, rootOut)) throw refused('sala');
-        if (rootOut[0] !== 0) rootMatrix = transform;
-      }
+      needRustShelf();
+      // The room's transform: the lights follow it when it is a uniform similarity (the room decides while it plans).
+      const follow = transform ? transform.elements : null;
+      if (follow && !(follow.length >= 16)) throw refused('sala');
       const middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
       shadowRefresh = false;
       // Standalone callers may provide a fresh entry set on each update.
@@ -294,41 +282,53 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
         for (const slot of slots) liveKeys.add(slot.key);
         for (const key of keyIds.keys()) if (!liveKeys.has(key)) keyIds.delete(key);
       }
-      if (candidateIn.length !== 7 * count) candidateIn = new Float64Array(7 * count);
-      if (slotIn.length !== 3 * total) slotIn = new Float64Array(3 * total);
-      if (planOut.length < 2 + 2 * count + 3 * total) planOut = new Float64Array(2 + 2 * count + 3 * total);
+      // Neither a lamp that may be lit nor a light: nothing to plan, nothing to aim.
+      if (!count && !total) return changed;
+      const frame = roomOf();
+      arena(count, total);
+      const packed = heap;
+      if (follow) for (let index = 0; index < 16; index++) packed[roomAt + index] = follow[index];
       identities.clear();
       for (let index = 0; index < total; index++) {
-        const slot = slots[index];
-        slotIn[3 * index] = kindCode(slot.kind); slotIn[3 * index + 1] = idOf(slot.key); slotIn[3 * index + 2] = slot.lit ? 1 : 0;
+        const slot = slots[index], at = slotAt + 3 * index;
+        packed[at] = slot.code; packed[at + 1] = idOf(slot.key); packed[at + 2] = slot.lit ? 1 : 0;
       }
       for (let index = 0; index < count; index++) {
-        const entry = candidates[index], at = 7 * index;
-        candidateIn[at] = kindOf(entry) ? kindCode(kindOf(entry)) : -1;
-        candidateIn[at + 1] = idOf(entry.key);
-        candidateIn[at + 2] = entry.node?.classList.contains('is-dragging') ? 1 : 0;
-        candidateIn[at + 3] = Number(entry.model.userData.lightEmitter.power ?? 1);
-        candidateIn[at + 4] = (entry.rect?.top + entry.rect?.bottom) / 2;
+        const entry = candidates[index], at = lampAt + 7 * index;
+        packed[at] = kindOf(entry) ? kindCode(kindOf(entry)) : -1;
+        packed[at + 1] = idOf(entry.key);
+        packed[at + 2] = entry.node?.classList.contains('is-dragging') ? 1 : 0;
+        packed[at + 3] = Number(entry.model.userData.lightEmitter.power ?? 1);
+        packed[at + 4] = (entry.rect?.top + entry.rect?.bottom) / 2;
         let first = identities.get(entry);
         if (first === undefined) identities.set(entry, first = index);
-        candidateIn[at + 5] = first;
+        packed[at + 5] = first;
       }
-      if (!poolState().plan(candidateIn, slotIn, middle, planOut, rankKeys)) throw refused('plan');
-      const events = planOut[1];
+      if (!frame.plan(count, total, follow !== null, middle, rankKeys)) throw refused('plan');
+      fresh();
+      const events = heap[planAt + 1];
       for (let event = 0; event < events; event++) {
-        const entry = candidates[planOut[3 + 2 * event]];
-        assign(slots[planOut[2 + 2 * event]], entry.key);
+        const entry = candidates[heap[planAt + 3 + 2 * event]];
+        assign(slots[heap[planAt + 2 + 2 * event]], entry.key);
       }
       // A lamp that is to be lit but finds no light of its kind (its fixture's tables are still loading) is an error.
-      if (planOut[0] >= 0) assign(null, candidates[planOut[0]].key);
-      const base = 2 + 2 * count;
+      if (heap[planAt] >= 0) assign(null, candidates[heap[planAt]].key);
+      const base = planAt + 2 + 2 * count;
+      let lights = 0;
       for (let index = 0; index < total; index++) {
-        const slot = slots[index], at = base + 3 * index, found = planOut[at];
+        const slot = slots[index], at = base + 3 * index, found = heap[at];
         if (found < 0) { if (slot.key !== null) { release(slot); changed = true; } continue; }
-        const entry = candidates[found], wasLit = slot.lit, lit = planOut[at + 1] !== 0;
-        slot.lit = lit; slot.power = planOut[at + 2];
+        const entry = candidates[found], wasLit = slot.lit, lit = heap[at + 1] !== 0;
+        slot.lit = lit; slot.power = heap[at + 2];
         if (lit !== wasLit) changed = true;
-        if (slot.filaments ? updateFilaments(slot, entry, wasLit) : updateLight(slot, entry, wasLit, shadowDirty, rootMatrix)) changed = true;
+        if (slot.filaments) { if (updateFilaments(slot, index, entry, wasLit)) changed = true; fresh(); }
+        else { packLight(slot, index, entry); lights++; }
+      }
+      if (lights) {
+        frame.sample(shadowDirty);
+        for (let index = 0; index < total; index++) {
+          if (!slots[index].filaments && heap[base + 3 * index] >= 0 && applyLight(slots[index], index)) changed = true;
+        }
       }
       candidates.length = 0; identities.clear();
       return changed;
@@ -354,8 +354,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       if (disposed) return;
       disposed = true;
       for (const slot of slots) removeLights(slot);
-      slots.length = 0; keyIds.clear(); pool?.free(); pool = null;
-      lightFrame?.free(); lightFrame = lightMemory = lightBuffer = lightIn = lightOut = null;
+      slots.length = 0; keyIds.clear(); room?.free(); room = memory = heap = null;
     }
   };
 }

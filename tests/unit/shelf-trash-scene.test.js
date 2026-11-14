@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
-import { minimumBookTapWidth } from '../../src/js/plant-dimensions.js';
+import { minimumBookTapWidth } from './helpers/plant-dimensions-doorways.js';
 
 // Static renderer/picking fixture: physical contacts are covered with the
 // default simulation in book-gravity tests and the mobile motion suite.

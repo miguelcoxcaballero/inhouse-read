@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 import { layoutShelves } from '../../src/js/bookshelf-layout.js';
-import { bookSpineOptions, minimumBookCellWidth, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare, MINIMUM_LAMP_TAP_SIZE } from '../../src/js/plant-dimensions.js';
+import { bookSpineOptions, minimumBookCellWidth, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare, MINIMUM_LAMP_TAP_SIZE } from './helpers/plant-dimensions-doorways.js';
 
 vi.mock('../../src/js/book-model.js', async () => {
   // Static renderer/picking fixture: physical contacts are covered with the

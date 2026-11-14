@@ -102,7 +102,7 @@ pub fn appearance(entry:&JsValue,geometry:&JsValue,pot_color:&JsValue,persist:bo
  let width=num(&g(&real,Thing::canopy))*unit;let radius=num(&g(&real,Thing::pot_diameter))/2.0*unit;let pot_height=num(&g(&real,Thing::pot_height))*unit;
  let detailed=truthy(&catalog)||truthy(&pot)||["palm","fern","ivy","zz"].contains(&name.as_str());
  let soil=if name=="cactus"||name=="succulent"{"grit"}else{"peat"};
- let bake_key=if persist{let values=Array::new();values.push(&read(&catalog,"id")?);values.push(&s(&name));values.push(&pot);values.push(&text_of_seed()?);values.push(&height);js_sys::JSON::stringify(values.as_ref())?.into()}else{JsValue::NULL};
+ let bake_key=if persist{let values=Array::new();values.push(&r(&catalog,"id",Thing::id)?);values.push(&s(&name));values.push(&pot);values.push(&text_of_seed()?);values.push(&height);js_sys::JSON::stringify(values.as_ref())?.into()}else{JsValue::NULL};
  let seed_text=text_of_seed()?;
  let quality=if truthy(&r(entry,"inspectionResolution",Thing::inspection_resolution)?){2.0}else{1.0};
  Ok(Appearance{variant:name,seed:seed_text,units,skip,quality,width,radius,pot_height,detailed,clay,clay_value,soil,bake_key,
