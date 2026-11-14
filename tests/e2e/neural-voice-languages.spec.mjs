@@ -155,10 +155,13 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
     await build({ root: ROOT, configFile: join(ROOT, 'vite.config.js'), logLevel: 'warn', build: { outDir, emptyOutDir: true, sourcemap: false, rollupOptions: { input: join(ROOT, 'tests/e2e/fixtures/neural-voice-harness.html') } } })
     ;({ server, port } = await startServer(outDir, hits))
     page = await browser.newPage()
-    // Observe the actual worker exports without adding diagnostics to the app.
+    // Observe the actual worker exports without adding diagnostics to the app. Since the worker's Hebrew phonemizer
+    // moved into the voice module (rust-ui voice_hebrew.rs), two modules carry the Hebrew rules: the import-free voice
+    // core (`cores`) and the voice module whose VoiceHebrew.phonemize is the only way the worker turns Hebrew into
+    // phonemes (`instances`, `ipa`). hebrew_ipa_words itself is now called inside Rust, not across the boundary.
     await page.route(/\/assets\/worker-[\w-]+\.js$/,async route=>{
       const response=await route.fetch()
-      const prelude=`self.__voiceRustProof={instances:0,ipa:0};const observeVoice=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.hebrew_ipa_words)return result;self.__voiceRustProof.instances++;const exports={...actual,hebrew_ipa_words:(...args)=>{self.__voiceRustProof.ipa++;return actual.hebrew_ipa_words(...args)}};const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy};for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observeVoice(await Reflect.apply(original,WebAssembly,args))}};\n`
+      const prelude=`self.__voiceRustProof={instances:0,cores:0,ipa:0};const observeVoice=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.hebrew_ipa_words)return result;if(!actual.voicehebrew_phonemize){self.__voiceRustProof.cores++;return result}self.__voiceRustProof.instances++;const exports={...actual,voicehebrew_phonemize:(...args)=>{self.__voiceRustProof.ipa++;return actual.voicehebrew_phonemize(...args)}};const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy};for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observeVoice(await Reflect.apply(original,WebAssembly,args))}};\n`
       await route.fulfill({response,body:prelude+await response.text()})
     })
     await page.addInitScript(() => {
@@ -274,7 +277,7 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
       const chunks=await page.evaluate(()=>{window.__capture=false;return window.neural.starts.splice(0).map(s=>({data:s.data,sampleRate:s.sampleRate}))})
       expect(log.some(event=>event.type==='error'),JSON.stringify(log)).toBe(false);expect(log.filter(event=>event.type==='done')).toHaveLength(1)
       const proofs=await Promise.all(page.workers().map(worker=>worker.evaluate(()=>self.__voiceRustProof)))
-      const proof=proofs.find(proof=>proof?.instances>0);expect(proof).toBeTruthy();expect(proof.instances).toBe(1);expect(proof.ipa).toBeGreaterThan(0)
+      const proof=proofs.find(proof=>proof?.instances>0);expect(proof).toBeTruthy();expect(proof.instances).toBe(1);expect(proof.cores).toBe(1);expect(proof.ipa).toBeGreaterThan(0)
       const pcm=Float32Array.from(chunks.flatMap(chunk=>chunk.data)),audio=stats(pcm)
       expect(audio.finite).toBe(true);expect(audio.peak).toBeGreaterThan(.3);expect(audio.peak).toBeLessThanOrEqual(.9001);expect(audio.rms).toBeGreaterThan(.01);expect(pcm.length/chunks[0].sampleRate).toBeGreaterThan(2)
       writeFileSync(join(EVIDENCE,'rust-hebrew-core.json'),JSON.stringify({proof,audio,sampleRate:chunks[0].sampleRate,frames:pcm.length,seconds:pcm.length/chunks[0].sampleRate,log},null,2));writeFileSync(join(EVIDENCE,'rust-hebrew-core.wav'),wavOf(pcm,chunks[0].sampleRate))

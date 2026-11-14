@@ -36,7 +36,7 @@ for(const mode of ['spine','isometric'])test(`reading and dismissing a selected 
   const cover=page.locator('.ihr-flyout__cover-target');await expect(cover).toBeVisible();await cover.click();
   await expect(page.locator('#reader-toolbar')).toBeVisible();await expect(page.locator('.pdf-page-canvas')).toBeVisible();
   await page.getByRole('button',{name:'Volver a la estantería'}).click();
-  await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/);
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000}); // the software-WebGL return takes 7–9 s
   await quietShelf(page.locator('.ihr-bookshelf-scene'));sameLayout(await layout(page),before);
  }
  await page.reload();await quietShelf(page.locator('.ihr-bookshelf-scene'));sameLayout(await layout(page),before,true);

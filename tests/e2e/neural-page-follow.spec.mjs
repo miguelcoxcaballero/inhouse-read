@@ -149,7 +149,7 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
         if(!actual.voice_join_sentence)return result
         evidence.rustJoin.available=true
         const exports={...actual,voice_join_sentence:(...args)=>{evidence.rustJoin.calls++;return actual.voice_join_sentence(...args)}}
-        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers'],['detect_voice_language','languages'],['rustneuralview_renderPicker','pickerRenders'],['voice_order','voiceOrders'],['voice_recommended','voiceRecommendations'],['speech_sentence_ends','sentenceEnds'],['speech_plan','speechPlans'],['speech_pipeline','speechPipelines']]){
+        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers'],['detect_voice_language','languages'],['rustneuralview_renderPicker','pickerRenders'],['voice_order','voiceOrders'],['voice_recommended','voiceRecommendations'],['speech_sentence_ends','sentenceEnds'],['speech_plan','speechPlans'],['speech_pipeline','speechPipelines'],['speech_pipeline_native','speechPipelines']]){
           if(actual[name])exports[name]=(...args)=>{evidence.rustJoin[key]++;return actual[name](...args)}
         }
         // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
@@ -288,6 +288,7 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
     expect(evidence.rustJoin.voiceOrders).toBeGreaterThan(0)
     expect(evidence.rustJoin.voiceRecommendations).toBeGreaterThan(0)
     // Cleanup and sentence planning now run inside one raw-to-plan native call.
+    // The reader calls its speech_pipeline_native variant (the plan stays in Rust until its fields are read).
     expect(evidence.rustJoin.speechPipelines).toBeGreaterThan(0)
     if(multilingual)expect(evidence.rustJoin.languages).toBeGreaterThan(0)
     // PDF's prepared speech items retain their original offsets and bypass the
@@ -318,7 +319,7 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
     expect(start.after.pixels).not.toBe(evidence.initial.pixels)
     expect(start.after.highlight.replace(/\s+/g,'')).toBe(PDF_PARTS[1].replace(/\s+/g,''))
     expect(start.after.at-start.at).toBeLessThan(1000)
-    if(!multilingual){const durations=await durationKernelProof(page);expect(durations).toBeTruthy();expect(durations.instances).toBe(1);expect(durations.calls).toBeGreaterThan(0)
+    if(!multilingual){const durations=await durationKernelProof(page);expect(durations).toBeTruthy();expect(durations.instances).toBe(1);expect(durations.cores).toBe(1);expect(durations.calls).toBeGreaterThan(0)
       await testInfo.attach('compiled-duration-marks',{body:JSON.stringify(durations),contentType:'application/json'})}
     const firstSecondPage=evidence.frames.find(frame => /Página 2 de 2/.test(frame.label))
     expect(firstSecondPage?.at).toBeGreaterThanOrEqual(start.at)

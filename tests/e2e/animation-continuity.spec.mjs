@@ -1,6 +1,6 @@
 import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { test, expect } from '@playwright/test'
-import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
+import { clickSpine } from './helpers/shelf-pointer.mjs'
 import { readFile } from 'node:fs/promises'
 import { settledGeometryLength } from './helpers/settled-geometry-length.mjs'
 
@@ -229,17 +229,15 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   await observePrintedCoverFrames(page)
   // Cancel in the image-metadata phase, before the lifted view exists.
   const pendingSpine = page.locator('.ihr-spine[data-book-id="continuity:0"]')
-  const pendingBounds = await pendingSpine.boundingBox()
-  await pendingSpine.click({ position:await spinePointerPosition(pendingSpine,pendingBounds) })
+  await clickSpine(pendingSpine)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(1150)
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
 
   for (const index of [0, 1, 2]) {
     const spine = page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`)
-    const bounds = await spine.boundingBox()
     // Touch the projected binding's solid centre using normal pointer events.
-    await spine.click({ position:await spinePointerPosition(spine,bounds) })
+    await clickSpine(spine)
     await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
     await page.getByRole('button', { name:'Cerrar', exact:true }).click()
     await expect(page.locator('.ihr-flyout')).toHaveCount(0)
@@ -257,11 +255,11 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   // Software WebGL must render the complete reverse camera path, too.
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:30_000 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
-  await page.locator('.ihr-spine[data-book-id="continuity:0"]').click()
+  await clickSpine(page.locator('.ihr-spine[data-book-id="continuity:0"]'))
   await expect(page.locator('.ihr-flyout')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
-  await page.locator('.ihr-spine[data-book-id="continuity:1"]').click()
+  await clickSpine(page.locator('.ihr-spine[data-book-id="continuity:1"]'))
   await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
   await page.getByRole('button', { name:'Cerrar', exact:true }).click()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
@@ -292,7 +290,7 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
   await seedCoveredBooks(page)
   const preparationTimings = []
   for (const index of [0, 1]) {
-    await page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`).click()
+    await clickSpine(page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`))
     // Revealing the cover finishes independently of the PDF preparation.
     // Start its own eight-second budget after that visible presentation.
     await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
@@ -305,7 +303,7 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
   await test.info().attach('book-preparation-timings', {
     body:JSON.stringify(preparationTimings), contentType:'application/json'
   })
-  await page.locator('.ihr-spine[data-book-id="continuity:0"]').click()
+  await clickSpine(page.locator('.ihr-spine[data-book-id="continuity:0"]'))
   await page.locator('.ihr-flyout__cover-target').click()
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   // The first PDF has one page; the second has four. A resolved preparation
@@ -333,8 +331,7 @@ test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e
   await seedCoveredBooks(page)
   const selectBook = async (index = 2) => {
     const book = page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`)
-    const bounds = await book.boundingBox()
-    await book.click({ position:await spinePointerPosition(book,bounds) })
+    await clickSpine(book)
     await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
   }
 
@@ -376,7 +373,7 @@ test('cancelar una devolución al cambiar el viewport restaura el libro y permit
   const bookId = 'continuity:2'
   const book = page.locator(`.ihr-spine[data-book-id="${bookId}"]`)
   const selectBook = async () => {
-    await book.click()
+    await clickSpine(book)
     await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
   }
   const cancelAtInsertion = async trigger => {

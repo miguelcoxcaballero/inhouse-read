@@ -37,7 +37,10 @@ jobs:
   e2e:
     name: Reader and bookshelf (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Runs 43496135948 and 43526331558 cancelled shards 1/6 and 6/6 at 45 minutes with 35 and 22 listed tests
+    # never started (cover-editor, bookshelf-polish, smoke, shelf-zoom...), so their state was unknown. A red
+    # test costs its timeout twice (one retry); the limit must still let every listed test report.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:

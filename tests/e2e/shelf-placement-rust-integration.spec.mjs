@@ -5,8 +5,8 @@ import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 
 test('real book and plant drags use the compiled placement job and persist the chosen shelf',async({page},testInfo)=>{
   // Two real 12-step drags plus a reload of the 3D scene, on the same budget
-  // scale as the existing four-drag 240-second placement journey.
-  test.setTimeout(120_000);
+  // scale as the existing four-drag 240-second placement journey. The first rest alone takes 27–40 s.
+  test.setTimeout(180_000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'no-preference'});
   await page.addInitScript(()=>{
@@ -43,7 +43,10 @@ test('real book and plant drags use the compiled placement job and persist the c
     ]));localStorage.setItem('inhouse-read-shelf-view','spine');
   },{bytes,geometry:await settledGeometryLength(30_000,'rust-placement')});
   await page.reload();await expect(page.locator('.ihr-spine')).toHaveCount(14);
-  const scene=page.locator('.ihr-bookshelf-scene');await expect(scene).toHaveAttribute('data-animating','false');
+  const scene=page.locator('.ihr-bookshelf-scene');
+  // Fourteen seeded books settle on load in about sixty rendered frames: 39 s of software WebGL here on 1.7.325 and
+  // 1.7.328 alike. Wait for that first rest as the shared shelf fixture does, not with the 8 s default.
+  await expect(scene).toHaveAttribute('data-animating','false',{timeout:90_000});
   await page.waitForFunction(()=>window.placementProof?.ready);
   const object=key=>page.locator(`[data-object-id="${key}"]`);
   async function drag(key,target){
