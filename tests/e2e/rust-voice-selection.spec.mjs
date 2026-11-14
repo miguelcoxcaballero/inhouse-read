@@ -19,7 +19,9 @@ test('compiled audiobook selects the installed language and builds lookahead thr
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
- await page.goto(process.env.IHR_TEST_URL||'./');await expect.poll(()=>page.evaluate(()=>window.voiceSelectionProof.available)).toBe(true)
+ await page.goto(process.env.IHR_TEST_URL||'./');
+ // The module is warmed in an idle slice after the shelf's first live frame, which a software renderer may take several seconds to draw.
+ await expect.poll(()=>page.evaluate(()=>window.voiceSelectionProof.available),{timeout:30000}).toBe(true)
  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
  await page.getByRole('button',{name:'Escuchar el libro'}).click();await pickLanguage(page,'es')
