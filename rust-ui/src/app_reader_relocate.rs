@@ -16,5 +16,5 @@ pub fn app_reader_relocate(host:JsValue,relocation:JsValue)->R<()>{
  if !truthy(&position){return Ok(());}
  let id=read(&state,"currentBookId")?;
  let task=method(&read(&host,"progressWrites")?,"updateProgress",&[&id,&read(&position,"fraction")?,&read(&position,"locator")?])?;
- method(&task,"catch",&[&read(&host,"warnReaderProgress")?])?;Ok(())
+ method(&task,"catch",&[&crate::app_report::warner("No se pudo guardar el progreso:")])?;Ok(())
 }

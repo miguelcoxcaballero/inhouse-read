@@ -11,11 +11,11 @@ fn deferred(state:&JsValue,host:&JsValue)->R<bool>{Ok(truthy(&read(state,"appDis
 pub fn app_refresh_after_load(host:JsValue,stored:JsValue,account:JsValue,immediate:JsValue)->Promise{cloud_host::start(async move{
  let state=read(&host,"state")?;let library=read(&host,"library")?;let pending=Array::new();
  for book in Array::from(&stored).iter(){
-  let title=crate::book_title::book_normalize_title(or(read(&book,"title")?,||read(&book,"name"))?,JsValue::UNDEFINED)?;
-  let author=crate::book_title::book_normalize_author(read(&book,"author")?)?;let patch=Object::new();let mut changed=false;
-  if title!=read(&book,"title")?{set(patch.as_ref(),"title",&title)?;changed=true;}
-  if author!=or(read(&book,"author")?,||Ok("".into()))?{set(patch.as_ref(),"author",&if truthy(&author){author}else{JsValue::NULL})?;changed=true;}
-  pending.push(&if changed{method(&library,"patch",&[&read(&book,"id")?,patch.as_ref()])?}else{book});
+  let title=crate::title_memo::title(or(read(&book,"title")?,||read(&book,"name"))?)?;
+  let author=crate::title_memo::author(read(&book,"author")?)?;let mut patch:Option<Object>=None;
+  if title!=read(&book,"title")?{set(patch.get_or_insert_with(Object::new).as_ref(),"title",&title)?;}
+  if author!=or(read(&book,"author")?,||Ok("".into()))?{set(patch.get_or_insert_with(Object::new).as_ref(),"author",&if truthy(&author){author}else{JsValue::NULL})?;}
+  pending.push(&match patch{Some(patch)=>method(&library,"patch",&[&read(&book,"id")?,patch.as_ref()])?,None=>book});
  }
  let normalized=cloud_host::settle(Ok(Promise::all(&pending).into())).await?;
  let books=Array::new();for book in Array::from(&normalized).iter(){if crate::book_data::book_is_visible(book.clone(),account.clone())?{books.push(&book);}}
@@ -29,7 +29,8 @@ pub fn app_refresh_after_load(host:JsValue,stored:JsValue,account:JsValue,immedi
   let shelf=read(&state,"shelf")?;if !absent(&shelf){method(&shelf,"prepareCloudRoom",&[])?;}
   set(&state,"shelfRecords",&JsValue::NULL)?;set(&state,"cloudRoomChanged",&JsValue::FALSE)?;
  }
- for book in books.iter(){let task=method(&read(&host,"wordCountQueue")?,"ensure",&[&book])?;method(&task,"catch",&[&read(&host,"warnPreparation")?])?;}
+ let warn=crate::app_report::warner("Preparación del grosor:");let queue=read(&host,"wordCountQueue")?;
+ for book in books.iter(){let task=method(&queue,"ensure",&[&book])?;method(&task,"catch",&[&warn])?;}
  if truthy(&read(&state,"shelf")?)&&truthy(&read(&state,"shelfRecords")?)
   &&truthy(&crate::library_store::library_same_records(read(&state,"shelfRecords")?,books.clone().into(),read(&host,"libraryHost")?)?)
   &&read(&state,"shelfLengthStatusVersion")?==read(&state,"lengthStatusVersion")?{return Ok(JsValue::UNDEFINED);}

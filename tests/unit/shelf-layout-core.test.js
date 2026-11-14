@@ -4,7 +4,7 @@
 // structure, same key order, and Object.is on every number (so -0 counts).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { core, tables } from '../../src/js/catalogue-core.js';
-import * as rust from '../../src/js/bookshelf-layout.js';
+import * as rust from './helpers/bookshelf-layout-doorways.js';
 import * as original from './helpers/reference-bookshelf-layout.js';
 import * as length from '../../src/js/book-length.js';
 

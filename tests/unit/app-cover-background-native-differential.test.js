@@ -1,10 +1,12 @@
 // @vitest-environment node
-import {it,expect} from 'vitest';
+import {it,expect,vi,afterEach} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
 import {extractCoverInBackground as reference} from './helpers/reference-app-cover-background.js';
 const source=readFileSync('src/js/app.js','utf8'),start=source.indexOf('function extractCoverInBackground('),actual=source.slice(start,source.indexOf('\nconst coverBackgroundHost',start));
 const scope=(env,fn)=>new Function('env',`with(env){return (${typeof fn==='string'?fn:fn.toString()})}`)(env);
+// The module reads the page's clock itself: it is given this fixture's.
+afterEach(()=>vi.restoreAllMocks());
 const flush=async()=>{for(let n=0;n<40;n++)await Promise.resolve()};
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return{promise,resolve,reject}};
 function fixture(native,options={},module=rustShelf){
@@ -26,8 +28,9 @@ function fixture(native,options={},module=rustShelf){
   refreshShelf(){events.push(['refresh']);fail('refresh')},scheduleLibraryBackup(){events.push(['backup']);fail('backup')}
  };
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
- const host={reader:env.reader,coverUpgrades:env.coverUpgrades,library:env.library,refreshShelf:env.refreshShelf,scheduleLibraryBackup:env.scheduleLibraryBackup,global:{createImageBitmap:env.createImageBitmap},console:env.console,now:()=>env.Date.now(),state,
+ const host={reader:env.reader,coverUpgrades:env.coverUpgrades,library:env.library,refreshShelf:env.refreshShelf,scheduleLibraryBackup:env.scheduleLibraryBackup,global:{createImageBitmap:env.createImageBitmap},console:env.console,state,
   later:(name,take,...head)=>(...tail)=>module[name](...head,...tail.slice(0,take))};
+ vi.spyOn(Date,'now').mockImplementation(()=>env.Date.now());
  env.bookDataModule=()=>module;env.coverBackgroundHost=host;
  const use=scope(env,native?actual:reference);const cached=Promise.resolve('cached');if(options.cached||options.oldEpoch)env.coverUpgrades.set(record.id,{epoch:options.oldEpoch?3:4,promise:cached});
  return{env,host,state,record,blob,coverWait,bitmapWait,patchWait,cached,open:()=>use(record),entry:()=>env.coverUpgrades.get(record.id),

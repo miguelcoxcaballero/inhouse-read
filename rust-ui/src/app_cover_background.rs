@@ -52,7 +52,7 @@ pub fn app_cover_patch_allowed(host:JsValue,flight:JsValue,latest:JsValue)->R<bo
 #[wasm_bindgen]
 pub fn app_cover_persist(host:JsValue,flight:JsValue,blob:JsValue)->R<JsValue>{
  if !(num(&opt(&blob,"size")?)>0.0)||!current(&host,&flight)?{return Ok(JsValue::UNDEFINED);}
- let record=read(&flight,"record")?;let now=method(&host,"now",&[])?;
+ let record=read(&flight,"record")?;let now:JsValue=js_sys::Date::now().into();
  let fields=object(&[("cover",blob),("coverUpdatedAt",now)])?;
  let settings=object(&[("ifCurrent",later(&host,"app_cover_patch_allowed",1,&[&host,&flight])?)])?;
  method(&read(&host,"library")?,"patch",&[&read(&record,"id")?,&fields,&settings])

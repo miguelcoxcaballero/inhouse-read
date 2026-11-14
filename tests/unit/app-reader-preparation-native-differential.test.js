@@ -1,4 +1,4 @@
-import {it, expect} from 'vitest';
+import {it, expect, vi} from 'vitest';
 import * as reference from './helpers/reference-app-reader-preparation.js';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
 
@@ -29,6 +29,8 @@ function fixture(native, options={}, module=rustShelf) {
  if(options.progressPending)env.progressWrites.set('book',Promise.reject(Error('progress')));
  state.shelf=options.noShelf?null:{async prepareOpeningPage(id,page,idle){events.push(['warm',id,page,typeof idle]);if(options.warmError)throw Error('warm')}};
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:value=>state[key]=value,configurable:true});
+// The module reports to the page's console itself (rust-ui/src/app_report.rs): it is heard through this fixture's.
+ vi.spyOn(console,'warn').mockImplementation((...args)=>env.console.warn(...args));
  const host={...env,state,ignorePreparationError:()=>{},warnPagePreparation:error=>env.console.warn('No se pudo preparar la página guardada de antemano:',error),
   createStageGate:settled=>env.createStageGate(settled),
   later:(name,take,...head)=>(...tail)=>module[name](...head,...tail.slice(0,take))};
