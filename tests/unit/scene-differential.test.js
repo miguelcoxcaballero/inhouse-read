@@ -51,7 +51,7 @@ describe('bookshelf scene against its frozen original', () => {
   // data stand as written). These sessions dwell on them: hovers, drops, switches and temperatures between
   // frames, view changes and layouts, with the bin's world matrices and lid and each lamp's emission
   // recorded at every render.
-  let binRenders = 0, lampRenders = 0
+  let binRenders = 0, lampRenders = 0, nudges = 0, ranSurface = false
   it.each([101, 102, 103, 104, 105, 106, 107, 108])('fixture session %i leaves identical state', async seed => {
     const options = { steps: 90, bin: true,
       weights: { hover: 12, trash: 4, trashCancel: 7, trashThrough: 3, mode: 6, lampPower: 9, lampKelvin: 7, frames: 14, advance: 4, zoomTo: 3, layout: 3, scroll: 2, class: 2, query: 1 } }
@@ -64,6 +64,23 @@ describe('bookshelf scene against its frozen original', () => {
   it('recorded the bin and the lamps in the fixture sessions\' renders', () => {
     if (binRenders + lampRenders === 0) return // The sessions were filtered out of this run.
     expect(binRenders).toBeGreaterThan(400); expect(lampRenders).toBeGreaterThan(400)
+  })
+
+  // A hit surface that stands in a room that stands keeps its world matrix (the frame does not compose it
+  // again). These sessions rest often and have something else move the parts inside the models between
+  // frames, with scrolls, lifts, zooms, turns, returns and layouts around them.
+  it.each([201, 202, 203, 204, 205, 206, 207, 208])('surface session %i leaves identical state', async seed => {
+    const options = { steps: 110, bin: true,
+      weights: { nudgePart: 14, frames: 16, scroll: 6, class: 6, drag: 4, release: 4, mode: 3, zoomTo: 3, inspectView: 3, layout: 3, returnBook: 3, trashCancel: 2, advance: 3, query: 3 } }
+    ranSurface = true
+    await runScenario(frozen, seed, options)
+    const original = await runScenario(frozen, seed, options), current = await runScenario(live, seed, options)
+    same(`surface seed ${seed}`, original, current)
+    nudges += current.filter(line => / nudgePart: \[/.test(line.slice(0, 40))).length
+  }, 180000)
+  it('moved parts inside the models in the surface sessions', () => {
+    if (nudges === 0 && !ranSurface) return // The sessions were filtered out of this run.
+    expect(nudges).toBeGreaterThan(60)
   })
 
   it.each(Array.from({ length: Number(process.env.SCENE_SEEDS) || 24 }, (_, index) => index + 1))('session %i leaves identical state', async seed => {

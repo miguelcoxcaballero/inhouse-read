@@ -331,6 +331,25 @@ export async function runScenario(create, seed, { steps = 60, units, weights:emp
         animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
         await drain(whole(0, 6)); animation.cancel(); return true
       },
+      // Something other than the scene moves a part inside a model (its hit surface or an object between
+      // it and the model): the button must follow in the next frame, as when every matrix is taken again.
+      nudgePart: async () => {
+        const models = []
+        gpu.scene?.traverse(object => { if (object.userData.entry && object.parent) models.push(object) })
+        const model = pick(models); if (!model) return null
+        const surface = ['binding', 'ceramic-pot', 'lamp-base', 'warm-opal-diffuser', 'woven-linen-drum-shade'].map(name => model.getObjectByName(name)).find(Boolean)
+        if (!surface) return null
+        const chain = []
+        for (let object = surface; object && object !== model; object = object.parent) chain.push(object)
+        const part = pick(chain), kind = pick(['x', 'y', 'turn', 'scale', 'back'])
+        if (kind === 'x') part.position.x += between(-9, 9)
+        else if (kind === 'y') part.position.y += between(-9, 9)
+        else if (kind === 'turn') part.rotation.z += between(-.2, .2)
+        else if (kind === 'scale') part.scale.multiplyScalar(between(.8, 1.25))
+        else { part.position.set(0, 0, 0); part.rotation.set(0, 0, 0); part.scale.set(1, 1, 1) }
+        run.shelf.invalidate(random() < .5)
+        return [model.name, part.name, kind]
+      },
       trashThrough: async () => {
       const animation = run.shelf.animateObjectToTrash(pick(run.nodes), { duration: pick([200, 850]) })
       if (animation) animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
@@ -431,7 +450,7 @@ export async function runScenario(create, seed, { steps = 60, units, weights:emp
       }
     }
     const names = Object.keys(operations)
-    const weights = { frames: 10, advance: 3, mode: 4, scroll: 5, class: 5, drag: 3, release: 3, inspectView: 4, zoomTo: 2, query: 4, layout: 3, trashCancel: 0, ...emphasis }
+    const weights = { frames: 10, advance: 3, mode: 4, scroll: 5, class: 5, drag: 3, release: 3, inspectView: 4, zoomTo: 2, query: 4, layout: 3, trashCancel: 0, nudgePart: 0, ...emphasis }
     const bag = names.flatMap(name => Array(weights[name] ?? 1).fill(name))
     // The scene starts in a known state, then the session wanders through it.
     run.shelf.setMode(startMode, { animate: false }); await drain()

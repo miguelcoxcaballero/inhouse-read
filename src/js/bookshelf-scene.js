@@ -258,7 +258,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
     // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
     classText:null, flags:NO_FLAGS, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
-    written:null, seen:0, domDirty:true };
+    written:null, seen:0, domDirty:true, walked:null, rested:0 };
     fresh.lift = { get value() { return cell(fresh, 5); }, get from() { return cell(fresh, 6); }, get target() { return cell(fresh, 7); }, get started() { return cell(fresh, 8); } };
     return fresh;
   };
@@ -658,6 +658,50 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       else object.matrixWorld.multiplyMatrices(parent.matrixWorld, object.matrix);
     }
   }
+  // The room's epoch advances whenever its world matrix is not, bit for bit, the one of the
+  // previous frame of the entries.
+  const roomNow = new Float64Array(16), roomHeld = new Float64Array(16).fill(NaN);
+  const roomNowBits = new Uint32Array(roomNow.buffer), roomHeldBits = new Uint32Array(roomHeld.buffer);
+  let roomEpoch = 0, roomMoved = true;
+  function roomEpochNow() {
+    const room = furniture.matrixWorld.elements;
+    for (let index = 0; index < 16; index++) roomNow[index] = room[index];
+    let same = true;
+    for (let index = 0; same && index < 32; index++) same = roomNowBits[index] === roomHeldBits[index];
+    roomMoved = !same;
+    if (!same) { roomHeld.set(roomNow); roomEpoch++; }
+    return roomEpoch;
+  }
+  // Whether a hit surface's world matrix stands as the entry arena holds it: it was taken in this
+  // epoch of the room, and the surface and its ancestors below the room stand (position,
+  // quaternion, scale: what their matrices are composed from) where they stood then. When it does
+  // not, where they stand now is remembered and the caller takes the matrix again.
+  function surfaceStands(entry, surface, epoch) {
+    const held = entry.walked;
+    let places = held !== null && held.surface === surface ? held.places : null, same = places !== null && held.epoch === epoch, at = 0, object = surface;
+    for (; same && object !== null && object !== furniture; object = object.parent, at += 10) {
+      const position = object.position, quaternion = object.quaternion, scale = object.scale;
+      same = at < places.length && object.matrixAutoUpdate === true && object.matrixWorldAutoUpdate === true &&
+        Object.is(places[at], position.x) && Object.is(places[at + 1], position.y) && Object.is(places[at + 2], position.z) &&
+        Object.is(places[at + 3], quaternion.x) && Object.is(places[at + 4], quaternion.y) && Object.is(places[at + 5], quaternion.z) && Object.is(places[at + 6], quaternion.w) &&
+        Object.is(places[at + 7], scale.x) && Object.is(places[at + 8], scale.y) && Object.is(places[at + 9], scale.z);
+    }
+    if (same && object === furniture && at === places.length) return true;
+    let depth = 0;
+    for (object = surface; object !== null && object !== furniture; object = object.parent) depth++;
+    // Outside the room (a model on its way to the bin): nothing is remembered.
+    if (object === null) { entry.walked = null; return false; }
+    if (places === null || places.length !== depth * 10) places = new Float64Array(depth * 10);
+    at = 0;
+    for (object = surface; object !== furniture; object = object.parent, at += 10) {
+      const position = object.position, quaternion = object.quaternion, scale = object.scale;
+      places[at] = position.x; places[at + 1] = position.y; places[at + 2] = position.z;
+      places[at + 3] = quaternion.x; places[at + 4] = quaternion.y; places[at + 5] = quaternion.z; places[at + 6] = quaternion.w;
+      places[at + 7] = scale.x; places[at + 8] = scale.y; places[at + 9] = scale.z;
+    }
+    if (held !== null) { held.surface = surface; held.places = places; held.epoch = epoch; } else entry.walked = { surface, places, epoch };
+    return false;
+  }
   // The stand-in hit box of a culled model only changes with its slot box.
   const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
   const insertedIds = [], exclusionRects = [];
@@ -802,7 +846,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
     if (entry.model) { casterListDirty = true; entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
-    entry.posed = null;
+    entry.posed = null; entry.walked = null;
     entry.lampHull?.free(); entry.lampHull = null;
     const foliage = semanticFoliage.get(entry.node);
     if (foliage) { foliage.svg.remove(); foliage.state.free(); semanticFoliage.delete(entry.node); }
@@ -1412,6 +1456,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     moving = Boolean(summary & 1); shelfMoving = Boolean(summary & 2); previewing = Boolean(summary & 4); previewed = Math.floor(summary / 8);
     let roomWalked = false;
+    const epoch = roomEpochNow();
     for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
       const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
@@ -1456,7 +1501,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const overview = live[at + 67] === 1, resolution = live[at + 68];
         if (settledQualityWork(entry, overview, resolution)) rust.scene_update_quality(entry,qualityHost,overview,resolution);
       }
-      let created = null;
+      let created = null, still = false;
       if (visible && !entry.model) {
         created = entry.model = makeModel(entry); casterListDirty = true;
         furniture.add(entry.model);
@@ -1495,7 +1540,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           entry.model.position.copy(pose.position);
           entry.model.rotation.copy(pose.rotation);
           entry.model.scale.copy(pose.scale);
-        }
+        } else still = true;
         if (!decorative && (!away || insertion)) activeBooks++;
       }
       if (lamp) moving = advanceLampPower(entry, now) || moving;
@@ -1512,13 +1557,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         let placed = 32;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
-          // The room's own matrices are walked once per frame; every other surface starts below them.
-          if (roomWalked) refreshWorldBelowRoom(surface);
-          else { surface.updateWorldMatrix(true, false); for (let above = surface.parent; above; above = above.parent) if (above === furniture) { roomWalked = true; break; } }
+          // A model the frame has just moved, or that has stood for fewer than three frames, is not
+          // asked whether its surface stands, and none is while the room itself moves: a book in
+          // motion and a turning room pay nothing for the question.
+          if (!still) entry.rested = 0; else if (entry.rested < 3) entry.rested++;
+          if (!(entry.rested === 3 && !roomMoved && surfaceStands(entry, surface, epoch))) {
+            // The room's own matrices are walked once per frame; every other surface starts below them.
+            if (roomWalked) refreshWorldBelowRoom(surface);
+            else { surface.updateWorldMatrix(true, false); for (let above = surface.parent; above; above = above.parent) if (above === furniture) { roomWalked = true; break; } }
+            hits.set(surface.matrixWorld.elements, h + 8);
+          }
           const { min, max } = surface.geometry.boundingBox;
           hits[h + 2] = min.x; hits[h + 3] = min.y; hits[h + 4] = min.z; hits[h + 5] = max.x; hits[h + 6] = max.y; hits[h + 7] = max.z;
-          hits.set(surface.matrixWorld.elements, h + 8); placed = 0;
-        } else hits.set(fallbackBox(entry, lamp), h + 2);
+          placed = 0;
+        } else { hits.set(fallbackBox(entry, lamp), h + 2); entry.rested = 0; }
         const resetHit = entry.written?.node !== node;
         if (resetHit) entry.written = { node };
         // Without a surface the stand-in box goes under the entry's own placed matrix (32).
@@ -3040,7 +3092,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         // (`bind` below clears every preview and landing).
         // The outgoing DOM was just restored and the new one may be a fresh tree:
         // write every inline value of the projected nodes again and reread its state.
-        entry.written = null; entry.leanNode = null; entry.lampShown = null; entry.domDirty = true;
+        entry.written = null; entry.leanNode = null; entry.lampShown = null; entry.walked = null; entry.domDirty = true;
         entry.key = key;
         retained.push(entry);
         if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
