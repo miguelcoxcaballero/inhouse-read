@@ -67,6 +67,8 @@ mod voice_options;
 mod voice_menus;
 mod neural_view;
 mod neural_engine;
+mod neural_engine_flows;
+mod quick_wait;
 mod neural_player;
 mod voice_store;
 mod voice_urls;

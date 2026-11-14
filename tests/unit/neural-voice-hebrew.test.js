@@ -223,7 +223,7 @@ function workerHarness({ voiceFailure = false } = {}) {
   const source = readFileSync(new URL('../../src/js/readers/neural-voice/worker.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace("import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs')", 'Promise.resolve(__ort)')
-  runInNewContext(source, { self, __ort: fake.ort, createPhonemizer: async () => espeak, createHebrewPhonemizer,
+  runInNewContext(source, { self, __ort: fake.ort, createPhonemizer: async () => espeak, createHebrewPhonemizer, createSupertonicRuntime: null,
     exposePiperDurations:bytes=>({bytes,name:null}), phonemeMarks:async()=>[],
     ...flow, requireRustVoiceCore, VoiceClientPlan, yieldToMessages, loadedRustVoiceUI, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
   let id = 0
