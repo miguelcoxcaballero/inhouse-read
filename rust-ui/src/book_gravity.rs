@@ -25,8 +25,6 @@ impl PhysicsHooks for GentleSideContacts{
  }
 }
 const DT:f32=1.0/120.0;
-// Simulation time a supported pose must stay inside its 0.25 mm / 0.11 degree window.
-const QUIET_TIME:f32=0.75;
 // Scene input bits: dragging or lifted; a simple press (8) leaves the library asleep.
 const HELD:u32=2|4;
 // Only reading reserves a physical origin. Ordinary removal still frees supports.
@@ -54,7 +52,7 @@ impl ReleaseInput{
  }
 }
 
-struct Book{input:Option<ReleaseInput>,reader:bool,sound_until:f64,landing_sound:bool,landing_height:f32,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,home:Option<(Pose,[f32;4])>,recovery:Option<Vector>,firm_grip:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,motion_at:f64,stroke:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>,rest:Option<(Vector,Rotation)>}
+struct Book{input:Option<ReleaseInput>,reader:bool,sound_until:f64,landing_sound:bool,landing_height:f32,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,home:Option<(Pose,[f32;4])>,recovery:Option<Vector>,firm_grip:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,motion_at:f64,stroke:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
 fn overlapping(a:&RigidBody,sa:[f64;3],b:&RigidBody,sb:[f64;3],resting:bool)->bool{
  let pa=a.translation();let pb=b.translation();
  if (pa.z-pb.z).abs()>(sa[2]+sb[2]) as f32/2.0{return false;}
@@ -95,11 +93,11 @@ impl RustBookGravity{
   pose.translation.y+=if initial.mins.y<bay[2]{bay[2]-initial.mins.y}else if initial.maxs.y>bay[3]{bay[3]-initial.maxs.y}else{0.0};
   let origin=pose.translation;let bounds=shape.compute_aabb(&pose);
   let others:Vec<_>=self.books.iter().filter(|(k,o)|*k!=key&&!o.held&&self.world.colliders[o.collider].is_enabled()).map(|(_,o)|{
-   let shape=self.world.colliders[o.collider].shared_shape().clone();let pose=*self.world.bodies[o.handle].position();let bounds=shape.compute_aabb(&pose);(shape,pose,bounds,o.kind)
-  }).filter(|(_,_,a,_)|a.mins.z<=bounds.maxs.z&&a.maxs.z>=bounds.mins.z&&a.mins.y<=bay[3]&&a.maxs.y>=bay[2]&&a.mins.x<=bay[1]&&a.maxs.x>=bay[0]).collect();
+   let shape=self.world.colliders[o.collider].shared_shape().clone();let pose=*self.world.bodies[o.handle].position();let bounds=shape.compute_aabb(&pose);(shape,pose,bounds)
+  }).filter(|(_,_,a)|a.mins.z<=bounds.maxs.z&&a.maxs.z>=bounds.mins.z&&a.mins.y<=bay[3]&&a.maxs.y>=bay[2]&&a.mins.x<=bay[1]&&a.maxs.x>=bay[0]).collect();
   let clear=|position:Vector|{
    let mut pose=pose;pose.translation=position;let bounds=shape.compute_aabb(&pose);
-   others.iter().all(|(other,p,a,_)|bounds.maxs.x<a.mins.x||bounds.mins.x>a.maxs.x||bounds.maxs.y<a.mins.y||bounds.mins.y>a.maxs.y||!rapier3d::parry::query::intersection_test(&pose,shape,p,other.as_ref()).map_or(true,|hit|hit.intersecting))
+   others.iter().all(|(other,p,a)|bounds.maxs.x<a.mins.x||bounds.mins.x>a.maxs.x||bounds.maxs.y<a.mins.y||bounds.mins.y>a.maxs.y||!rapier3d::parry::query::intersection_test(&pose,shape,p,other.as_ref()).map_or(true,|hit|hit.intersecting))
   };
   let fits=|position:Vector|{
    let delta=position-origin;
@@ -108,12 +106,9 @@ impl RustBookGravity{
   };
   if fits(origin)&&clear(origin){return Some(pose);}
   let mut heights=vec![origin.y];let margin=0.0006;
-  // A book may be raised onto other books, never onto a pot or a lamp: the
-  // nearest free place of a slot that runs through a pot was the top of that
-  // pot, where two or three upright books then stood and rocked for ever.
-  if up{for (_,_,a,kind) in &others{if b.kind!=0||*kind==0{heights.push(origin.y+(a.maxs.y-bounds.mins.y+margin).max(0.0));}}}
+  if up{for (_,_,a) in &others{heights.push(origin.y+(a.maxs.y-bounds.mins.y+margin).max(0.0));}}
   let mut edges=vec![bay[0]-bounds.mins.x, bay[1]-bounds.maxs.x];
-  for (other,p,a,_) in &others{
+  for (other,p,a) in &others{
    edges.extend([a.mins.x-bounds.maxs.x-margin,a.maxs.x-bounds.mins.x+margin]);
    // A few separated legs need their own edges; dense revolved profiles are
    // refined with the narrow phase below, without a per-frame vertex scan.
@@ -148,60 +143,11 @@ impl RustBookGravity{
  fn clear_release(&mut self,key:&Vec<u16>){
   let b=&self.books[key];let pose=*self.world.bodies[b.handle].position();
   let destination=self.clear_position(key,pose,b.bay,true).or_else(||b.home.filter(|(_,bay)|*bay==b.bay).and_then(|(pose,bay)|self.clear_position(key,pose,bay,true)));
-  if let Some(position)=destination{if position!=pose{self.place(key,position);}}
- }
- fn place(&mut self,key:&Vec<u16>,position:Pose){
-  let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
-  body.set_position(position,true);body.set_linvel(Vector::ZERO,true);body.set_angvel(Vector::ZERO,true);
-  body.reset_forces(false);body.reset_torques(false);b.release=0.0;b.quiet=None;
- }
- // Several fresh books can share one pot. Each still goes to its own nearest
- // free place, but the one with the shortest way goes first: taken in key
- // order, a book in the middle of the pot claimed the gap beside it and the
- // book that only grazed the pot was left inside it with nowhere to go.
- fn clear_fresh_books(&mut self,fresh:Vec<Vec<u16>>){
-  let mut pending:Vec<Vec<u16>>=fresh.into_iter().filter(|key|self.books.iter().any(|(other,o)|other!=key&&o.solid.is_some()&&self.intersects(&self.books[key],o,false))).collect();
-  while !pending.is_empty(){
-   let mut nearest:Option<(usize,Pose,f32)>=None;
-   for (index,key) in pending.iter().enumerate(){
-    let b=&self.books[key];let pose=*self.world.bodies[b.handle].position();
-    let Some(position)=self.clear_position(key,pose,b.bay,true)else{continue;};
-    let distance=(position.translation-pose.translation).length_squared();
-    if nearest.is_none_or(|(_,_,least)|distance<least){nearest=Some((index,position,distance));}
-   }
-   if let Some((index,position,_))=nearest{let key=pending.remove(index);self.place(&key,position);continue;}
-   // The board is full. Lay the book on the standing books of its row, as one
-   // does with a book that no longer fits; with no such place it stays where
-   // it is and the contact solver separates it from the pot.
-   let key=pending.remove(0);
-   if let Some(position)=self.flat_position(&key,&pending){self.place(&key,position);}
-  }
- }
- // The nearest place where this book lies flat across the tops of standing
- // books of its row, touching nothing: just above the tallest thing under its
- // length, with a standing book under its centre or on both sides of it.
- fn flat_position(&self,key:&Vec<u16>,unplaced:&[Vec<u16>])->Option<Pose>{
-  let b=&self.books[key];let shape=self.world.colliders[b.collider].shape();let bay=b.bay;
-  let origin=self.world.bodies[b.handle].translation();
-  let (half_width,half_height)=(b.size[1] as f32/2.0,b.size[0] as f32/2.0);
-  if 2.0*half_width>bay[1]-bay[0]{return None;}
-  let others:Vec<_>=self.books.iter().filter(|(k,o)|*k!=key&&!o.held&&o.base[2]==b.base[2]&&self.world.colliders[o.collider].is_enabled()).map(|(k,o)|{
-   let shape=self.world.colliders[o.collider].shared_shape().clone();let body=&self.world.bodies[o.handle];let pose=*body.position();
-   (shape.compute_aabb(&pose),shape,pose,o.kind==0&&!unplaced.contains(k)&&body.rotation().to_scaled_axis().z.abs()<0.02)
-  }).collect();
-  let mut best:Option<Pose>=None;
-  for (host,_,_,standing) in &others{
-   if !*standing{continue;}
-   let x=((host.mins.x+host.maxs.x)/2.0).clamp(bay[0]+half_width,bay[1]-half_width);
-   let under=||others.iter().filter(move|(a,_,_,_)|a.maxs.x>x-half_width&&a.mins.x<x+half_width);
-   let y=under().map(|(a,_,_,_)|a.maxs.y).fold(bay[2],f32::max)+0.0006+half_height;
-   if y+half_height>bay[3]||!under().any(|(a,_,_,standing)|*standing&&a.mins.x<=x)||!under().any(|(a,_,_,standing)|*standing&&a.maxs.x>=x){continue;}
-   let pose=Pose::new(Vector::new(x,y,origin.z),Vector::new(0.0,0.0,std::f32::consts::FRAC_PI_2));
-   let bounds=shape.compute_aabb(&pose);
-   let clear=others.iter().all(|(a,other,p,_)|bounds.maxs.x<a.mins.x||bounds.mins.x>a.maxs.x||bounds.maxs.y<a.mins.y||bounds.mins.y>a.maxs.y||!rapier3d::parry::query::intersection_test(&pose,shape,p,other.as_ref()).map_or(true,|hit|hit.intersecting));
-   if clear&&best.is_none_or(|nearest|(pose.translation-origin).length_squared()<(nearest.translation-origin).length_squared()){best=Some(pose);}
-  }
-  best
+  if let Some(position)=destination{if position!=pose{
+   let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
+   body.set_position(position,true);body.set_linvel(Vector::ZERO,true);body.set_angvel(Vector::ZERO,true);
+   body.reset_forces(false);body.reset_torques(false);b.release=0.0;b.quiet=None;
+  }}
  }
  fn intersects(&self,a:&Book,b:&Book,resting:bool)->bool{
   if !self.world.colliders[a.collider].is_enabled()||!self.world.colliders[b.collider].is_enabled(){return false;}
@@ -246,24 +192,28 @@ impl RustBookGravity{
    if self.world.bodies[b.handle].is_dynamic(){self.world.bodies[b.handle].wake_up(true);b.quiet=None;b.restored=false;}
   }}
  }
- // Rapier puts a whole contact island to sleep at once and solves a body that
- // is merely flagged asleep inside an awake island as an immovable wall: its
- // own contacts stop holding it, so it sinks into its support until it is woken
- // and pushed back out, knocking whatever rests on it. A pot carrying books
- // was dropped like that every 0.75 s and its books rocked for ever. Rest is
- // therefore decided per island: only when every member has kept still.
- fn sleep_quiet_islands(&mut self){
-  let members:Vec<(Vec<u16>,Option<u32>,bool,bool)>=self.books.iter().filter(|(_,b)|self.world.bodies[b.handle].is_dynamic()).map(|(key,b)|{
-   let body=&self.world.bodies[b.handle];
-   (key.clone(),self.world.islands.persistent_island_of(&self.world.bodies,b.handle),body.is_sleeping(),b.quiet.is_some_and(|q|q.2>=QUIET_TIME))
-  }).collect();
-  let mut still:BTreeMap<u32,bool>=BTreeMap::new();
-  for (_,island,sleeping,quiet) in &members{if let Some(island)=island{*still.entry(*island).or_insert(true)&=*sleeping||*quiet;}}
-  for (key,island,sleeping,quiet) in members{
-   if sleeping||!quiet||island.is_some_and(|island|!still[&island]){continue;}
-   let b=self.books.get_mut(&key).unwrap();let body=&mut self.world.bodies[b.handle];
-   b.rest=Some((body.translation(),*body.rotation()));body.sleep();b.quiet=None;
+ // Sleep a quiet flat book and its already quiet supports together. Sleeping
+ // just the lower cover drops its warm contacts for a substep, making the
+ // upright book fall a fraction of a millimetre and restart both timers.
+ fn sleep_supported_stack(&mut self,key:&Vec<u16>){
+  let mut island=BTreeSet::from([key.clone()]);let mut pending=vec![key.clone()];
+  while let Some(key)=pending.pop(){
+   let b=&self.books[&key];
+   for pair in self.world.contact_pairs_with(b.collider){
+    if !pair.has_any_active_contact(){continue;}
+    let collider=if pair.collider1==b.collider{pair.collider2}else{pair.collider1};
+    let Some((other,body))=self.books.iter().find(|(_,body)|body.collider==collider)else{continue;};
+    if island.contains(other){continue;}
+    let rigid=&self.world.bodies[body.handle];
+    if body.held||body.release!=0.0{return;}
+    if rigid.is_dynamic()&&!rigid.is_sleeping(){
+     let v=rigid.linvel();
+     if body.quiet.is_none_or(|q|q.2<0.4)||v.x*v.x+v.y*v.y>0.003_f32.powi(2)||rigid.angvel().z.abs()>0.01{return;}
+    }
+    island.insert(other.clone());pending.push(other.clone());
+   }
   }
+  for key in island{let b=self.books.get_mut(&key).unwrap();if self.world.bodies[b.handle].is_dynamic(){self.world.bodies[b.handle].sleep();b.quiet=None;}}
  }
  fn cabinet(&mut self,g:&[f64],metal:bool){
   let side=if metal{crate::cabinet::BAGGEBO.post_size/1000.0}else{12.0/0.65/1000.0};
@@ -502,7 +452,7 @@ impl RustBookGravity {
     }
     let b=&mut self.world.bodies[handle];if kind==0&&!held&&!restored{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
     let name=keys.get(i as u32);let name=if name.is_string(){name.unchecked_into::<JsString>()}else{JsString::from("")};
-    self.books.insert(key.clone(),Book{input:None,reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,motion_at:f64::NEG_INFINITY,stroke:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None,rest:None});changed=true;
+    self.books.insert(key.clone(),Book{input:None,reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,motion_at:f64::NEG_INFINITY,stroke:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }
    if self.books.get(key).is_some_and(|b|b.held!=held||b.base[2]!=base[2]||(0..2).any(|i|(b.base[i]-base[i]).abs()>1e-7)){
     self.wake_contacts(key);
@@ -638,7 +588,7 @@ impl RustBookGravity {
   // Resolve that penetration before warmup: a solver impulse can otherwise
   // wedge the book permanently between the tapered pot and the cabinet post.
   // Saved poses and existing neighbours are never reseeded or repacked.
-  self.clear_fresh_books(fresh_books);
+  for key in fresh_books{if self.books.iter().any(|(other,o)|*other!=key&&o.solid.is_some()&&self.intersects(&self.books[&key],o,false)){self.clear_release(&key);}}
   for key in isolated_releases{self.clear_release(&key);}
   // An accidental overlapping drop must resolve its penetration first,
   // without a powered tilt levering a whole neighbouring row over.
@@ -749,23 +699,11 @@ impl RustBookGravity {
    self.wake_objects(&contact_objects);
    // Quiet kinetic energy and exact cabinet bounds, independent of a thin
    // book's mass or the contact solver's tolerance. No bounce or fling.
-   let mut settled=false;
+   let mut resting_stacks=Vec::new();
    for (key,b) in self.books.iter_mut(){if self.world.bodies[b.handle].is_dynamic(){
     // Rebuilding cold contacts may wake an unchanged saved stack. Preserve its
     // validated pose until an explicit change or real external contact reaches
     // its contact island; both clear restored above, so gentle pushes still propagate.
-    // Rapier removes a sleeping island from its solver at the start of its
-    // next step, or later while a pending split of that island is unresolved.
-    // Until then keep the pose every member agreed to rest in.
-    if let Some((position,rotation))=b.rest{
-     let body=&mut self.world.bodies[b.handle];
-     if body.is_sleeping(){
-      if body.translation()!=position{body.set_translation(position,false);}if *body.rotation()!=rotation{body.set_rotation(rotation,false);}
-      if body.linvel()!=Vector::ZERO{body.set_linvel(Vector::ZERO,false);}if body.angvel()!=Vector::ZERO{body.set_angvel(Vector::ZERO,false);}
-      continue;
-     }
-     b.rest=None;
-    }
     if b.restored{
      let body=&mut self.world.bodies[b.handle];let (position,rotation)=before[key];
      if body.translation()!=position{body.set_translation(position,false);}if *body.rotation()!=rotation{body.set_rotation(rotation,false);}if !body.is_sleeping(){body.sleep();}continue;
@@ -797,11 +735,14 @@ impl RustBookGravity {
       let delta=position-quiet.0;
       if delta.x*delta.x+delta.y*delta.y>0.00025_f32.powi(2)||(angle-quiet.1).abs()>0.002{
        *quiet=(position,angle,0.0);
-      }else{quiet.2+=DT;settled|=quiet.2>=QUIET_TIME;}
+      }else{quiet.2+=DT;if quiet.2>=0.75{
+       if b.kind==0&&angle.cos().abs()<0.02{resting_stacks.push(key.clone());}
+       body.sleep();b.quiet=None;
+      }}
      }else{b.quiet=None;}
     }else{b.quiet=None;}
    }}
-   if settled{self.sleep_quiet_islands();}
+   for key in resting_stacks{self.sleep_supported_stack(&key);}
    if warming&&n%16==15&&js_sys::Date::now()-warm_start>80.0{break;}
   }
   if self.sounds_enabled&&!warming{self.finish_landing_sounds(now);}

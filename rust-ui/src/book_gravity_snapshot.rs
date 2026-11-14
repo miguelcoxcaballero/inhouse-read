@@ -79,7 +79,7 @@ impl RustBookGravity{
    body.set_translation(Vector::new((pose.x as f64+dx) as f32,(pose.y as f64+dy) as f32,z),false);
    body.set_rotation(Rotation::from_scaled_axis(Vector::new(0.0,0.0,pose.angle)),false);
    body.set_linvel(Vector::ZERO,false);body.set_angvel(Vector::ZERO,false);
-   if body.is_dynamic(){body.sleep();}b.restored=true;b.quiet=None;b.rest=None;
+   if body.is_dynamic(){body.sleep();}b.restored=true;b.quiet=None;
   }
   self.last=None;self.carry=0.0;self.snapshot_dirty=true;true
  }
