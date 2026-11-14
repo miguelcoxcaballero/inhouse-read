@@ -3,6 +3,12 @@ import { createHash } from 'node:crypto'
 /** Binary-preserving Drive HTTP fixture shared by independent browser contexts.
  * Only Google's endpoints are substituted; the built app, storage, readers and
  * sync implementation are real. No app modules or IndexedDB are shared. */
+// The first shelf of a second client: it lists the account's folder, downloads the manifest and every book, restores them
+// and paints its first room while the first client keeps painting its own, both in software WebGL on the runner. A
+// profile of that wait spends nine tenths outside JavaScript, in the browser's own rendering (31.2 s of 34.9 s on a
+// loaded development machine; JavaScript and WASM together 3.7 s). With the default 8 s these cases never passed on CI
+// since they were written (1.7.290-1.7.301); the budget is the one the suite gives its other first software frames.
+export const SYNCED_FIRST_SHELF = 30_000
 export function driveServer({ beforeUpload = async () => {}, privateAppProperties = false } = {}) {
   const files = new Map()
   let counter = 0

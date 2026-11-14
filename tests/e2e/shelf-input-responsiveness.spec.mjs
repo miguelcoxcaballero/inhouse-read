@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs';
-import {driveServer} from './helpers/drive-server.mjs';
+import {driveServer,SYNCED_FIRST_SHELF} from './helpers/drive-server.mjs';
 
 test('desktop drag starts with movement without a touch long press, then books still open',async({page})=>{
  test.setTimeout(90000);
@@ -28,7 +28,7 @@ test('a synced desktop room accepts local drag, interrupted capture and opening'
   await expect.poll(()=>drive.manifests().some(m=>m.books.length===1),{timeout:30000}).toBe(true);
   const bContext=await browser.newContext({viewport:{width:1240,height:900}});contexts.push(bContext);await drive.connect(bContext);
   const b=await bContext.newPage();b.on('pageerror',e=>errors.push(e.message));
-  await b.goto(process.env.IHR_TEST_URL||'/inhouse-read/');await expect(b.locator('.ihr-spine')).toHaveCount(1);
+  await b.goto(process.env.IHR_TEST_URL||'/inhouse-read/');await expect(b.locator('.ihr-spine')).toHaveCount(1,{timeout:SYNCED_FIRST_SHELF});
   await quietShelf(b.locator('.ihr-bookshelf-scene'));
   const p=await visibleMiddleBookPoint(b);expect(p).toBeTruthy();
   await b.mouse.move(p.x,p.y);await b.mouse.down();await b.mouse.move(p.x+25,p.y,{steps:3});

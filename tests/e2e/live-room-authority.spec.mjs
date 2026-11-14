@@ -1,6 +1,6 @@
 import {paintedRoomProbe,paintedRoom} from './helpers/painted-room-probe.mjs'
 import {test,expect} from '@playwright/test'
-import {driveServer} from './helpers/drive-server.mjs'
+import {driveServer,SYNCED_FIRST_SHELF} from './helpers/drive-server.mjs'
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs'
 import {roomProbe} from './helpers/live-room-probe.mjs'
 const URL=process.env.IHR_TEST_URL||'/inhouse-read/'
@@ -13,7 +13,7 @@ test('consecutive live gestures retain exact rendered poses while checkpoints ar
   const make=async viewport=>{const c=await browser.newContext({serviceWorkers:'block',viewport,hasTouch:true,isMobile:viewport.width<500});contexts.push(c);const page=await c.newPage();await roomProbe(page);await paintedRoomProbe(page);page.on('pageerror',e=>errors.push(e.message));await page.emulateMedia({reducedMotion:'reduce'});return page}
   const a=await make({width:390,height:844});await seedShelf(a,{single:true});await drive.connect(contexts[0]);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'))
   await expect.poll(()=>drive.manifests().some(m=>m.books.length===1&&m.settings['inhouse-read-shelf-physics-v1']),{timeout:30000}).toBe(true)
-  const b=await make({width:1240,height:900});await drive.connect(contexts[1]);await b.goto(URL);await expect(b.locator('.ihr-spine')).toHaveCount(1);await quietShelf(b.locator('.ihr-bookshelf-scene'))
+  const b=await make({width:1240,height:900});await drive.connect(contexts[1]);await b.goto(URL);await expect(b.locator('.ihr-spine')).toHaveCount(1,{timeout:SYNCED_FIRST_SHELF});await quietShelf(b.locator('.ihr-bookshelf-scene'))
   await expect.poll(()=>a.evaluate(()=>__roomChannels.some(c=>c.label==='inhouse-read-interactive-v1'&&c.readyState==='open')),{timeout:30000}).toBe(true)
   // Freeze the actual Drive responses and reliable RTC snapshot stream while
   // letting the interactive channel continue delivering the moving book.

@@ -1,6 +1,6 @@
 import {paintedRoomProbe,paintedRoom} from './helpers/painted-room-probe.mjs';
 import {test,expect} from '@playwright/test';
-import {driveServer} from './helpers/drive-server.mjs';
+import {driveServer,SYNCED_FIRST_SHELF} from './helpers/drive-server.mjs';
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs';
 import {roomProbe} from './helpers/live-room-probe.mjs';
 const URL=process.env.IHR_TEST_URL||'/inhouse-read/';
@@ -30,7 +30,7 @@ test('full mobile room stays identical in Chrome across OAuth clients, live gest
   const mobile=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:1});contexts.push(mobile);a=await mobile.newPage();await roomProbe(a);await paintedRoomProbe(a);a.on('pageerror',e=>errors.push(e.message));
   await seedShelf(a);await drive.connect(mobile);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'));await expect.poll(()=>drive.manifests().some(m=>m.books.length===6&&m.settings['inhouse-read-shelf-physics-v1']),{timeout:30000}).toBe(true);
   const desktop=await browser.newContext({serviceWorkers:'block',viewport:{width:1240,height:900},deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);b=await desktop.newPage();await roomProbe(b);await paintedRoomProbe(b);b.on('pageerror',e=>errors.push(e.message));await b.goto(URL);
-  await expect(b.locator('.ihr-spine')).toHaveCount(6);await expect(b.locator('.ihr-plant')).toHaveCount(1);await expect(b.locator('.ihr-lamp')).toHaveCount(1);
+  await expect(b.locator('.ihr-spine')).toHaveCount(6,{timeout:SYNCED_FIRST_SHELF});await expect(b.locator('.ihr-plant')).toHaveCount(1);await expect(b.locator('.ihr-lamp')).toHaveCount(1);
   await quietShelf(a.locator('.ihr-bookshelf-scene'));await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await info.attach('initial-painted-pair',{body:JSON.stringify({a:await paintedRoom(a),b:await paintedRoom(b)}),contentType:'application/json'});
   await info.attach('initial-room-pair',{body:JSON.stringify({a:await state(a),b:await state(b)}),contentType:'application/json'});
@@ -80,7 +80,7 @@ test('different installations receive held movement through encrypted Drive when
    await context.addInitScript(()=>{globalThis.RTCPeerConnection=class{constructor(){throw Error('Blocked network fixture')}}});
    const page=await context.newPage();await paintedRoomProbe(page);await page.emulateMedia({reducedMotion:'reduce'});return page};
   const a=await make({width:390,height:844},false);await seedShelf(a,{single:true});await drive.connect(contexts[0]);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'));await expect.poll(()=>drive.manifests().some(m=>m.books.length===1),{timeout:30000}).toBe(true);
-  const b=await make({width:1000,height:900});await b.goto(URL);await expect(b.locator('.ihr-spine')).toHaveCount(1);await quietShelf(b.locator('.ihr-bookshelf-scene'));
+  const b=await make({width:1000,height:900});await b.goto(URL);await expect(b.locator('.ihr-spine')).toHaveCount(1,{timeout:SYNCED_FIRST_SHELF});await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await watchScene(b);const p=await visibleMiddleBookPoint(a),touch=await contexts[0].newCDPSession(a);expect(p).toBeTruthy();
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:p.x,y:p.y,id:1}]});await expect(a.locator('.ihr-spine')).toHaveClass(/is-lifted/);
   await expect.poll(async()=>Math.abs(Number(await b.locator('.ihr-spine').getAttribute('data-scene-lean'))),{timeout:8000}).toBeLessThan(.01);

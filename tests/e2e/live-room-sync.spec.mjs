@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {driveServer} from './helpers/drive-server.mjs';
+import {driveServer,SYNCED_FIRST_SHELF} from './helpers/drive-server.mjs';
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs';
 const URL=process.env.IHR_TEST_URL||'/inhouse-read/';
 const PEER_URL=process.env.IHR_TEST_PEER_URL||URL;
@@ -18,7 +18,7 @@ test('mobile and desktop stream held-book movement and converge poses and readin
   const source=await book(a),initial=await row(a);expect(source.driveFileId).toBeTruthy();expect(initial).toBeTruthy();
   const desktop=await browser.newContext({viewport:{width:1000,height:900},hasTouch:true,deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);
   const b=await desktop.newPage();await roomProbe(b);b.on('console',m=>{if(m.text().startsWith('Direct room'))console.log('desktop',m.text())});b.on('pageerror',e=>errors.push(e.message));await b.emulateMedia({reducedMotion:'reduce'});await b.goto(PEER_URL);
-  await expect(b.locator('.ihr-spine')).toHaveCount(1);await quietShelf(b.locator('.ihr-bookshelf-scene'));
+  await expect(b.locator('.ihr-spine')).toHaveCount(1,{timeout:SYNCED_FIRST_SHELF});await quietShelf(b.locator('.ihr-bookshelf-scene'));
   const restored=await book(b);expect(restored.id).not.toBe(source.id);expect(restored.driveFileId).toBe(source.driveFileId);expect(restored.shelfVisualId).toBe(source.id);
   await expect.poll(async()=>Number(await b.locator('.ihr-spine').getAttribute('data-scene-lean'))).toBeCloseTo(initial[7],3);
   await expect.poll(()=>a.evaluate(()=>globalThis.__roomChannels.some(c=>c.readyState==='open')),{timeout:45000}).toBe(true);
