@@ -460,7 +460,6 @@ function extractCoverInBackground(record) {
 }
 const coverBackgroundHost = {
   reader, coverUpgrades, library, refreshShelf, scheduleLibraryBackup, global:globalThis, console,
-  now: () => Date.now(),
   later,
   state:app
 }
