@@ -124,6 +124,18 @@ impl RustScene{
    if let Some(target)=target{let _=Reflect::set(target,&shown.bin_keys[key],progress);}
   }
  }
+ /// `setDrop`, and the guide's shelf, place and mount on the canvas when it changed.
+ #[wasm_bindgen(js_name=showDrop)]
+ pub fn show_drop(&mut self,present:bool,shelf:f64,x:f64,undershelf:bool,rows:u32)->Result<bool,JsValue>{
+  if !self.set_drop(present,shelf,x,undershelf,rows){return Ok(false);}
+  let Some(canvas)=&self.shown.canvas else{return Ok(true)};
+  let empty=JsValue::from_str("");
+  let texts=match self.drop_state()[..]{
+   [shelf,x,under]=>[JsValue::from_f64(shelf),js_sys::Number::from(x).to_fixed(4)?.into(),if under!=0.0{JsValue::from_str("undershelf")}else{empty}],
+   _=>[empty.clone(),empty.clone(),empty]};
+  for (key,text) in ["dropShelf","dropX","dropMount"].iter().zip(&texts){Reflect::set(canvas,&JsValue::from_str(key),text)?;}
+  Ok(true)
+ }
  /// A cancelled flight took its progress from both: the next one writes it again.
  #[wasm_bindgen(js_name=dropUnshown)]
  pub fn drop_unshown(&mut self){self.shown.drop=Default::default();}

@@ -151,6 +151,18 @@ impl RustScene{
   let finite=canvas_left.is_finite()&&canvas_top.is_finite();
   put(out,&[margin,width,height,f64::from((aligned as u32)|((whole as u32)<<1)|((finite as u32)<<2))]);
  }
+ /// `capturePlan` for a room about to be painted, deciding first whether its image is kept for the
+ /// fingers (`eligible & 1`: there is a canvas for it and nothing moves, returns or flies; here, the
+ /// diagonal view has ended its turn and shows no drop guide) and whether that image is the fitted
+ /// overview too (`eligible & 2`: there is a canvas for it and no book is lifted or pressed; here,
+ /// the view is neither zoomed nor panned). `out[3]` gains 8 and 16 for the two.
+ #[wasm_bindgen(js_name=paintPlan)]
+ pub fn paint_plan(&self,eligible:u32,ratio:f64,canvas_left:f64,canvas_top:f64,out:&mut [f64]){
+  let cache=eligible&1!=0&&self.progress==1.0&&!self.has_drop();
+  let overview=cache&&eligible&2!=0&&self.zoom==1.0&&self.pan_x()==0.0&&self.pan_y()==0.0;
+  self.capture_plan(cache,ratio,canvas_left,canvas_top,out);
+  if let Some(grid)=out.get_mut(3){*grid+=f64::from(u32::from(cache)<<3|u32::from(overview)<<4);}
+ }
 
  /// The furniture's layout: `[unit scale, gap, floor width, floor depth, floor x, floor y, floor z, room span,
  /// wall y, wall z]` for the cabinet width, the floor's height and the unit width, then each unit's centre.
