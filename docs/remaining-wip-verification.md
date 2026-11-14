@@ -1,3 +1,11 @@
+# 1.7.330 — fachada de voz, análisis de portada, censo de la escena y autor/título de Drive (tanda integ-bar-9)
+
+- Unitarias: cuatro tandas, 0 fallos reproducibles. Con la máquina a carga 10, bookshelf-scene-programs y bookshelf-scene-veneer (cuentan repintados del primer fotograma) fallan a ratos: candidato 14 de 16 repeticiones en verde, compilación de la 1.7.329 10 de 12; fragilidad previa bajo carga.
+- Capturas: 22 estados comparados con la 1.7.325, 14 idénticos bit a bit, máximo 2/255, media máxima 0,03.
+- Navegador, en local (máquina muy cargada): 44 de 44 en voz, audiolibro, resaltado y carga tardía; portadas y PDF nativo en verde; shelf-trash:495 (autor y título) 3 de 3; smoke 19 de 19 antes de retirar la física. Varias pruebas de PDF, editor de portada y regreso del lector fallaron en su primera espera de 8 s con carga 12-25 y quedan sin verificar aquí; las juzga el CI.
+- Comprobado en la app compilada: la narración de PDF pinta un resaltado por frase (34 de 34) y sigue la página desde el módulo Rust; el audiolibro elige la voz por idioma.
+- Sin verificar: teléfono real; tiempos en navegador; voces reales solo en CI.
+
 # 1.7.329 — papelera y lámparas en reposo, luces de lámpara, lomos y trabajador de voz (tanda integ-bar-8)
 
 - Unitarias: 9136 pasan, 4 omitidas (bancos de medida), 0 fallos, en cuatro tandas.

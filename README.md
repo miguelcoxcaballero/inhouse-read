@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.7.330 — Autor y título a salvo, voz y portadas en Rust
+
+Un libro vuelve a recuperar de Drive el autor y el título de lomo que le
+falten, y un valor vacío ya no borra el que estaba escrito en Drive (fallaba
+desde la 1.7.290). Además, sin cambios visibles: la fachada de voz, el motor y
+parte de los lectores, el análisis de portada y el recuento por fotograma de
+la escena pasan a Rust. Medido en Node, no en teléfono. Detalle en
+[docs/rust-migration.md](docs/rust-migration.md).
+
 ## 1.7.329 — Lámparas, papelera y voz con menos trabajo
 
 Sin cambios visibles. La papelera y las lámparas en reposo ya no cuestan

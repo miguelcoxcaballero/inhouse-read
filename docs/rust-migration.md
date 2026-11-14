@@ -1,3 +1,16 @@
+# Entrega 1.7.330 (tanda integ-bar-9): fachada de voz, análisis de portada, censo de la escena y autor/título de Drive
+
+Ramas: ready/scene-frame-19, ready/book-model-14, ready/readers-voice-15, ready/product-fixes-1 (sin su cambio de física 4ec5beff, retenido), ready/ci-green-2, ready/probes-1.
+Barra estimada en local (bytes al estilo de GitHub): 74,7 % Rust; quedan unos 891 KB de JavaScript (1.7.329: 73,73 %, 919 KB).
+
+- Voz y lectores: 19,5 KB de JavaScript menos. La fachada neural-voice/index.js, el constructor y los callbacks del motor, audio.js, 17 miembros del lector Foliate, el cursor de voz, instalar/quitar del selector y las fuentes habladas del PDF son Rust. En el camino por palabra, igual que JavaScript dentro del 2 %; en caminos fríos (por frase, toque o página), 1-3 µs más lento por llamada.
+- Portadas: cover-appearance.js 14,9 → 7,8 KB. Coste aceptado: el análisis es un 4-9 % más lento (0,2-0,6 ms por portada, una vez por libro), el wasm de la estantería crece 39 KB (14 KB comprimido) y el enlace generado 16,8 KB.
+- Escena: 2,2 KB menos; un censo por fotograma en Rust sustituye las preguntas entrada a entrada (2,3 veces más rápido; 27-30 veces con imagen retenida) y 19 diagnósticos del lienzo se escriben solo cuando cambian.
+- Producto: rust-ui/src/cloud_sync.rs adopta del archivo de progreso el autor y el título de lomo que el registro no tiene, y no sube un valor vacío sobre uno escrito. Límite: borrar a propósito un autor en un libro enlazado a Drive ya no se propaga.
+- Retenido: el cambio de física para la fila que no se duerme (libros sobre una maceta) dejaba un libro apoyado en la pantalla de una lámpara; vuelve cuando su reposo sea correcto.
+
+Todas las cifras de velocidad son de Node/WASM en una máquina cargada; nada se midió en navegador ni en teléfono.
+
 # Entrega 1.7.329 (tanda integ-bar-8): papelera y lámparas en reposo, luces de lámpara, lomos y trabajador de voz
 
 Ramas: ready/scene-frame-17, ready/book-model-13, ready/decor-shell-10, ready/readers-voice-9.
