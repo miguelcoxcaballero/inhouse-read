@@ -53,6 +53,9 @@ mod decor_adapters;
 mod plant_parts;
 mod plant_model;
 mod baggebo_model;
+// A cloth's dye field and slubs: the core's plan, run on a book's native stream (spine_surface.rs).
+#[path="../../rust-core/src/book_cloth.rs"]
+mod book_cloth;
 mod spine_surface;
 mod cover_editor;
 mod book_reflection;

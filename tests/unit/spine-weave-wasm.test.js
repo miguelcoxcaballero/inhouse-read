@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import * as production from '../../src/js/spine-surface.js';
 import * as original from './helpers/reference-spine-surface.js';
+import { shelfCloth, shelfStream } from './helpers/shelf-stream.js';
 
 let log, canvases, objects;
 const show = value => {
@@ -14,7 +15,8 @@ const show = value => {
   if (typeof value === 'string') return JSON.stringify(value);
   if (value?.__canvas) return `canvas#${value.__canvas}`;
   if (value?.__object) return `object#${value.__object}`;
-  if (value instanceof Uint8ClampedArray) { let h = 0; for (const byte of value) h = Math.imul(h ^ byte, 16777619); return `bytes:${value.length}:${h >>> 0}`; }
+  // The dye field's bytes as they are copied into the ImageData: production hands a view of the module's memory.
+  if (value instanceof Uint8ClampedArray || value instanceof Uint8Array) { let h = 0; for (const byte of value) h = Math.imul(h ^ byte, 16777619); return `bytes:${value.length}:${h >>> 0}`; }
   return value === undefined ? 'undefined' : JSON.stringify(value);
 };
 function context(id, owner) {
@@ -70,7 +72,8 @@ it('replays the cloth plans of the numeric core like the original', () => {
   for (let seed = 1; seed < 40; seed++) {
     for (const [designWidth, options] of [[675.84, undefined], [400 + seed * 7.25, { metal:true }], [96, { threads:false }], [seed * 31, {}]]) {
       const expected = run(original, (module, c) => module.paintCloth(c, designWidth, module.seededRandom(seed * 7919), options));
-      const actual = run(production, (module, c) => module.paintCloth(c, designWidth, module.seededRandom(seed * 7919), options));
+      // Production plans the cloth on the book's native stream and replays it with replayCloth.
+      const actual = run(production, (_module, c) => shelfCloth(c, designWidth, shelfStream(seed * 7919), options));
       expect(actual.log.length, `${seed} ${designWidth}`).toBe(expected.log.length);
       expect(actual, `${seed} ${designWidth} ${JSON.stringify(options)}`).toEqual(expected);
     }

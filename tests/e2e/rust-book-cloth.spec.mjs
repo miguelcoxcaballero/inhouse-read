@@ -5,11 +5,15 @@ import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs'
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {requireRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
-import {paintCloth,seededRandom} from '/inhouse-read/src/js/spine-surface.js';
+import {replayCloth} from '/inhouse-read/src/js/spine-surface.js';
 import {paintCloth as reference,seededRandom as referenceRandom} from '/inhouse-read/tests/unit/helpers/reference-book-cloth.js';
 const core=await loadRustCore();if(!core?.book_cloth_plan)throw Error('Actual cloth core required');
 // The app loads the shelf module before its first frame; so does this page.
-await requireRustShelf();
+const shelf=await requireRustShelf();
+// Production: the shelf module plans a cloth on the book's native stream and replayCloth lays it on the canvas
+// (rust-ui/src/spine_surface.rs, paint_cloth). The stream is read through the module's own doorways.
+const seededRandom=seed=>{let state=shelf.spine_random_seed(seed);const next=()=>{const batch=shelf.spine_random_batch(state);state=batch[0];return batch[1];};return Object.assign(next,{get:()=>state,set:value=>{state=value;}});};
+const paintCloth=(c,width,random,{metal=false}={})=>{random.set(shelf.spine_cloth_seeded(replayCloth,c,width,random.get(),metal));};
 window.checkCloth=()=>{
  const results=[];
  for(const [width,metal] of [[80,false],[257.3592701820759,false],[257.3592701820759,true],[512,false]]){

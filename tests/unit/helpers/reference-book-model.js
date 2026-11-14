@@ -20,7 +20,9 @@ import { bookReturnCompatibility } from '../../../src/js/bookshelf-return.js';
 import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from '../../../src/js/studio-renderer.js';
 import { configureNativeRendererSize } from '../../../src/js/native-renderer-size.js';
-import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, spineLayout, drawDevice } from '../../../src/js/spine-surface.js';
+import { spineSurface, releaseSurface, textSeed, paintWeave, spineLayout, drawDevice } from '../../../src/js/spine-surface.js';
+// The book's stream and its cloth as they were while the stream lived in JavaScript (production: native).
+import { seededRandom, paintCloth } from './reference-spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from '../../../src/js/book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from '../../../src/js/book-title.js';
 import { pageRaster } from '../../../src/js/page-raster.js';

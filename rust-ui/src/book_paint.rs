@@ -3,8 +3,8 @@
 //! board, and the lettering of a plain cloth case. Each makes the same calls in the same order with
 //! the same numbers as the JavaScript it replaces (tests/unit/helpers/reference-book-paint.js),
 //! so the pixels are the ones the page always drew: sines come from the engine's own Math, numbers
-//! become text the way the engine prints them, and a stream of random numbers the cloth painter
-//! began is continued through the host's function rather than copied.
+//! become text the way the engine prints them, and the stream of random numbers the cloth painter
+//! began is continued here (a book's own stream is native; a caller's function is called per value).
 use std::f64::consts::PI;
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array, Function, JsString, Math};
@@ -208,6 +208,10 @@ fn draw(random: &Function) -> f64 { random.call0(&JsValue::UNDEFINED).map(|value
 /// that came before continues here.
 #[wasm_bindgen]
 pub fn book_finish_board(c: &Canvas2d, design_width: f64, random: &Function, wear: bool) {
+    finish_board(c, design_width, &mut || draw(random), wear);
+}
+/// The same over any stream: a book's own is the shelf module's (spine_surface.rs, `Stream`).
+pub(crate) fn finish_board(c: &Canvas2d, design_width: f64, next: &mut dyn FnMut() -> f64, wear: bool) {
     let hinge = HINGE_GROOVE * 1024.0;
     let edge = 14.0;
     c.set_global_alpha(1.0);
@@ -230,8 +234,8 @@ pub fn book_finish_board(c: &Canvas2d, design_width: f64, random: &Function, wea
     for (length, vertical, at) in [(design_width, false, 0.0), (design_width, false, 1021.6), (1024.0, true, design_width - 2.4)] {
         let mut p = 0.0;
         while p < length {
-            let run = 6.0 + draw(random) * 42.0;
-            c.set_global_alpha(if draw(random) < 0.45 { draw(random) * 0.24 } else { 0.0 });
+            let run = 6.0 + next() * 42.0;
+            c.set_global_alpha(if next() < 0.45 { next() * 0.24 } else { 0.0 });
             if vertical { c.fill_rect(at, p, 2.4, run); } else { c.fill_rect(p, at, run, 2.4); }
             p += run;
         }
@@ -254,6 +258,12 @@ pub fn book_finish_board(c: &Canvas2d, design_width: f64, random: &Function, wea
 #[allow(clippy::too_many_arguments)]
 pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author: &JsString, ink: &JsValue, font_weight: &JsValue,
     family: &JsString, thumb: bool, device: f64, draw_device: &Function, random: &Function) -> Result<(), JsValue> {
+    cover_case(c, design_width, title, author, ink, font_weight, family, thumb, device, draw_device, &mut || draw(random))
+}
+/// The same over any stream.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author: &JsString, ink: &JsValue, font_weight: &JsValue,
+    family: &JsString, thumb: bool, device: f64, draw_device: &Function, next: &mut dyn FnMut() -> f64) -> Result<(), JsValue> {
     // Design in physical cover proportions so lettering is never stretched, centred on the board
     // beyond the joint as a real case is.
     let hinge = HINGE_GROOVE * 1024.0;
@@ -319,6 +329,6 @@ pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author
         draw_device.call3(&JsValue::UNDEFINED, c, &JsValue::from_f64(device), &JsValue::from_f64(24.0))?;
         c.restore();
     }
-    book_finish_board(c, design_width, random, !thumb);
+    finish_board(c, design_width, next, !thumb);
     Ok(())
 }

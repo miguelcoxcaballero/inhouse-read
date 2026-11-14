@@ -1,14 +1,14 @@
 import { getRustCore } from './rust-core.js'
-import { rustBookWeavePixels, rustBookClothPlan } from './book-surface-wasm.js'
+import { rustBookWeavePixels } from './book-surface-wasm.js'
 import * as THREE from 'three'
 import { spineFinish, surfaceFinish, SURFACE_FINISHES } from './book-colors.js'
 import { normalizeBookAuthor } from './book-title.js'
 import { needRustShelf } from './rust-shelf.js'
 
 // The binding layout, the lettering fit and every canvas operation of a spine run in Rust
-// (rust-ui/src/spine_surface.rs, the `shelf` module the first shelf render awaits). What stays
-// here is the part that touches three.js, the pooled scratch canvases, the pseudo-random streams
-// that the cloth plan resumes, and the cloth/weave painters that replay the core's plans.
+// (rust-ui/src/spine_surface.rs, the `shelf` module the first shelf render awaits), over the book's
+// own pseudo-random stream. What stays here is the part that touches three.js, the pooled scratch
+// canvases and the replay of a cloth's plan on its canvas.
 
 /** Every publisher sets its spines a little differently: raised bands between
  * heavy and fine rules, fine double rules, a blind-stamped panel, or a plain
@@ -23,72 +23,25 @@ export const drawDevice = (c, kind, size) => needRustShelf().draw_device(c, kind
 export const lattice = (i, j, salt) => needRustShelf().spine_lattice(i, j, salt)
 export const textSeed = text => needRustShelf().spine_text_seed(text)
 
-// Only the callback/cursor lives in JS. Rust generates 64 exact PRNG values
-// per call; the consumed state is retained when a cloth plan takes over.
-const randomStates = new WeakMap()
-export function seededRandom(seed) {
-  let state = needRustShelf().spine_random_seed(seed), batch = null, cursor = 0
-  const random = () => {
-    if (!batch || cursor === batch.length) { batch = needRustShelf().spine_random_batch(state); cursor = 0 }
-    state = batch[cursor++]; return batch[cursor++]
-  }
-  randomStates.set(random, { get: () => state, set: value => { state = value; batch = null; cursor = 0 } })
-  return random
-}
-
-/** Attach colour stops; tolerant of partial canvas implementations. */
-export function withStops(gradient, stops) {
-  for (const [at, value] of stops) gradient?.addColorStop?.(at, value)
-  return gradient
-}
-
-/** Low-frequency variation from a tiny random raster, upscaled in one pass.
- * soft-light around mid-grey mottles colour; 'lighter' with a single channel
- * adds to one PBR channel. Far cheaper than stacking large radial gradients. */
-export function paintField(c, width, height, random, options) {
-  const stream = randomStates.get(random), rust = needRustShelf()
-  if (stream) {
-    const [state, ok, error] = rust.paint_field_seeded(c, width, height, stream.get(), options)
-    stream.set(state); if (!ok) throw error
-  }
-  else rust.paint_field(c, width, height, random, options)
-}
-
-// Book cloth: slow dye mottling plus irregular warp/weft slubs. Mipmaps turn
-// the threads into a quiet tooth on the shelf and a real weave up close.
-export function paintCloth(c, designWidth, random, { threads = true, metal = false } = {}) {
-  // A thumbnail shows neither dye nor threads: keep its flat colour.
-  if (!threads) return
-  const stream = randomStates.get(random)
-  const plan = stream && rustBookClothPlan(getRustCore(), stream.get(), designWidth, metal)
-  if (plan) {
-    stream.set(plan.state)
-    paintClothPlan(c, designWidth, plan)
-    return
-  }
-  needRustShelf().paint_cloth_callback(c, designWidth, random, metal)
-}
-
-// Replay the same Canvas operations after the numeric plan has been copied: the dye field in one soft-light
-// pass, then each slub. Every slub sets its own colour string, so the replay stays beside the canvas (a
-// replay driven from the shelf module crossed the boundary about nine times per slub, ~150 slubs a cloth).
-function paintClothPlan(c, designWidth, plan) {
-  const field = Object.assign(document.createElement('canvas'), { width:plan.fieldWidth, height:30 })
-  const f = field.getContext('2d'), image = f.createImageData?.(plan.fieldWidth, 30)
-  if (image?.data) { image.data.set(plan.pixels); f.putImageData(image, 0, 0) }
+// A book's cloth, as the shelf module planned it from the book's own stream (rust-ui/src/spine_surface.rs,
+// paint_cloth): the dye field in one soft-light pass, then each slub. Every slub sets its own colour string,
+// so the replay stays beside the canvas (driven from the module it crossed the boundary about nine times per
+// slub, ~150 slubs a cloth). `pixels` and `commands` are views of the module's memory, read before returning.
+export function replayCloth(c, designWidth, fieldWidth, pixels, commands) {
+  const field = Object.assign(document.createElement('canvas'), { width:fieldWidth, height:30 })
+  const f = field.getContext('2d'), image = f.createImageData?.(fieldWidth, 30)
+  if (image?.data) { image.data.set(pixels); f.putImageData(image, 0, 0) }
   c.save(); c.globalCompositeOperation = 'soft-light'; c.imageSmoothingEnabled = true
   c.imageSmoothingQuality = 'high'; c.drawImage(field, 0, 0, designWidth, 1024); c.restore()
-  const commands = plan.commands
   for (let at = 0; at < commands.length; at += 6) {
     c.fillStyle = commands[at + 5] ? `rgba(255,248,235,${commands[at + 4]})` : `rgba(0,0,0,${commands[at + 4]})`
     c.fillRect(commands[at], commands[at + 1], commands[at + 2], commands[at + 3])
   }
 }
 
-// The plan's replay (the dye field in one soft-light pass, then the slubs) and the weave are painted by the shelf
-// module (rust-ui/src/spine_surface.rs): plain weave, 16 × 16 threads per 128 px tile with uneven yarn, at 4.4
-// design units a thread (1024 = board height), so one case is one cloth. The two tiles are made on first use
-// and kept on the host.
+// The weave is painted by the shelf module (rust-ui/src/spine_surface.rs): plain weave, 16 × 16 threads per
+// 128 px tile with uneven yarn, at 4.4 design units a thread (1024 = board height), so one case is one cloth.
+// The two tiles are made on first use and kept on the host.
 export const WEAVE = 4.4 / 8
 /** Lay the weave over a canvas drawn in design units: colour by default, or
  * multiplied into a packed height/roughness/metal channel raster. */
@@ -120,7 +73,7 @@ function releaseScratch() {
 }
 
 const host = {
-  scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, random: seededRandom, paintCloth, paintWeave, paintField,
+  scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, cloth: replayCloth,
   surface: value => SURFACE_FINISHES[surfaceFinish(value, 'matte')],
   three: THREE, weavePixels: () => rustBookWeavePixels(getRustCore()), tiles: null,
   // The spine's relief as the binding samples it: the mesh reads `pixels` (256 x 1024 RGBA) in one pass.
@@ -132,8 +85,7 @@ const host = {
 // level: 'detail' (lifted book: height channel drives a bump map), 'shelf'
 // or 'overview' (tiny). No level reads pixels back except engraved relief.
 export function spineSurface(book, style, physicalHeight, thickness, options) {
-  const rust = needRustShelf()
-  return rust.spine_surface_material(host, rust.spine_surface(book, style, physicalHeight, thickness, options, host), style)
+  return needRustShelf().spine_surface(book, style, physicalHeight, thickness, options, host)
 }
 
 export function releaseSurface(surface) { surface.map.dispose(); surface.channels.dispose() }

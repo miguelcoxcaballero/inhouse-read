@@ -14,7 +14,7 @@ import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from './studio-renderer.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
-import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, drawDevice } from './spine-surface.js';
+import { spineSurface, releaseSurface, textSeed, replayCloth, paintWeave, drawDevice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
@@ -620,7 +620,7 @@ function modelHost() {
     surfacePixels:kind => rustBookSurfacePixels(rustCore(), kind), notchPixels:(width, height) => rustRibbonNotchPixels(rustCore(), width, height),
     pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
     silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, paperTone, applyPageTheme,
-    acquire:acquireCoverImage, reuse:reuseCoverRaster, random:seededRandom, paintCloth, paintWeave, drawDevice,
+    acquire:acquireCoverImage, reuse:reuseCoverRaster, cloth:replayCloth, paintWeave, drawDevice,
     title:displayBookTitle, author:normalizeBookAuthor, anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
     pageTheme:setPageTheme, getPageTheme:s => s.pageTheme, coverRelief:s => normalizeCoverRelief(s.wantedRelief),
     setCoverRelief, rebake:(s, revision) => { bakeReliefMaterial(s, revision).then(done => { if (done) s.group.userData.invalidate?.(); }); },
