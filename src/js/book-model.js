@@ -3,10 +3,7 @@ import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
 import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle, planPageBounds,
   planPageZoom, planReadingPose, planReturnFrame } from './book-view-wasm.js';
-import { getRustCore, loadedRustCore } from './rust-core.js';
 import { needRustShelf } from './rust-shelf.js';
-
-import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
@@ -26,12 +23,9 @@ import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from './native-renderer-presentation.js';
 
-// The shelf renders only after requireRustCore() (app.js): every model is built with the core in.
-const rustCore = () => getRustCore() ?? loadedRustCore();
-
 // Procedural micro-detail shared by every book: the woven-cloth and printed-paper tooth, the swallowtail cut,
 // the page edges and the endpaper are built once by the shelf module (rust-ui/src/book_model_build.rs,
-// book_shared_texture); the cloth/paper/notch pixels come from the numeric core through the model's host.
+// book_shared_texture, with the cloth/paper/notch pixels of book_tiles.rs).
 const sharedTexture = (key, build) => needRustShelf().book_shared_texture(key, build);
 const clothNormals = () => needRustShelf().book_model_tile_normals(modelHost(), 'cloth');
 const endpaperTexture = () => needRustShelf().book_model_endpaper(modelHost());
@@ -617,7 +611,6 @@ function modelHost() {
     finish:(value, fallback) => SURFACE_FINISHES[surfaceFinish(value, fallback)], surfaceFinish, normalizeRelief:normalizeCoverRelief,
     reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFinish, metal:METAL_COLORS,
     rememberedPatch, spineFadePatches:new Map(), reliefPatches:new Map(), constant:value => value,
-    surfacePixels:kind => rustBookSurfacePixels(rustCore(), kind), notchPixels:(width, height) => rustRibbonNotchPixels(rustCore(), width, height),
     pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
     silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, paperTone, applyPageTheme,
     acquire:acquireCoverImage, reuse:reuseCoverRaster, cloth:replayCloth, paintWeave, drawDevice,

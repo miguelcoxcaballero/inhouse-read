@@ -63,20 +63,37 @@ fn front_groups(normal: &[f32], groups: &[[usize; 3]; 2]) -> Vec<[usize; 3]> {
     out
 }
 
+thread_local! {
+    /// `[Math.sin(a), Math.cos(a)]` at `a = i / segments * PI`, `i = 0..=segments`, per segment count.
+    static HALF_TURNS: std::cell::RefCell<Vec<(usize, std::rc::Rc<[[f64; 2]]>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+/// The angles of a cap depend only on its segment count (a shelf has two or three), and the engine's sine and
+/// cosine of an angle are the same every time: asked once per count, not twice per vertex of every book.
+fn half_turn(segments: usize) -> std::rc::Rc<[[f64; 2]]> {
+    HALF_TURNS.with(|known| {
+        if let Some((_, arc)) = known.borrow().iter().find(|(count, _)| *count == segments) { return arc.clone(); }
+        let arc: std::rc::Rc<[[f64; 2]]> = (0..=segments).map(|i| { let a = i as f64 / segments as f64 * PI; [Math::sin(a), Math::cos(a)] }).collect();
+        let mut known = known.borrow_mut();
+        // Segment counts come from a handful of quality levels; bound the table all the same.
+        if known.len() >= 32 { known.clear(); }
+        known.push((segments, arc.clone()));
+        arc
+    })
+}
+
 /// `capGeometry(width, thickness, segments, rim)`: the half-ellipse end of the case. A rim leaves the hollow
 /// open so the headband shows inside a thin edge of cloth and board.
 fn cap(width: f64, thickness: f64, segments: usize, rim: f64) -> crate::three_geo::Geo {
     let bulge = thickness * 0.38;
+    let arc = half_turn(segments);
     let mut shape = Path::new();
     shape.move_to([-width / 2.0, -thickness / 2.0]);
-    for i in 1..=segments {
-        let a = i as f64 / segments as f64 * PI;
-        shape.line_to([-width / 2.0 - bulge * Math::sin(a), -thickness / 2.0 * Math::cos(a)]);
+    for [sin, cos] in &arc[1..] {
+        shape.line_to([-width / 2.0 - bulge * sin, -thickness / 2.0 * cos]);
     }
     if rim != 0.0 && !rim.is_nan() {
-        for i in (0..=segments).rev() {
-            let a = i as f64 / segments as f64 * PI;
-            shape.line_to([-width / 2.0 - (bulge - rim) * Math::sin(a), -(thickness / 2.0 - rim) * Math::cos(a)]);
+        for [sin, cos] in arc.iter().rev() {
+            shape.line_to([-width / 2.0 - (bulge - rim) * sin, -(thickness / 2.0 - rim) * cos]);
         }
     }
     shape.close();

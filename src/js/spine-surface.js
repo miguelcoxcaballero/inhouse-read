@@ -1,5 +1,3 @@
-import { getRustCore } from './rust-core.js'
-import { rustBookWeavePixels } from './book-surface-wasm.js'
 import * as THREE from 'three'
 import { spineFinish, surfaceFinish, SURFACE_FINISHES } from './book-colors.js'
 import { normalizeBookAuthor } from './book-title.js'
@@ -75,7 +73,7 @@ function releaseScratch() {
 const host = {
   scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, cloth: replayCloth,
   surface: value => SURFACE_FINISHES[surfaceFinish(value, 'matte')],
-  three: THREE, weavePixels: () => rustBookWeavePixels(getRustCore()), tiles: null,
+  three: THREE, tiles: null,
   // The spine's relief as the binding samples it: the mesh reads `pixels` (256 x 1024 RGBA) in one pass.
   bindingRelief: pixels => Object.assign((u, v) => pixels[needRustShelf().book_mesh_relief_index(u, v, 256, 1024)] / 255, { pixels })
 }

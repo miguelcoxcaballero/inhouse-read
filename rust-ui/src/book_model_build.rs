@@ -32,16 +32,16 @@ pub(crate) fn with_key<T>(name:&'static str,f:impl FnOnce(&JsValue)->T)->T{
 fn k(name:&'static str)->&'static str{wasm_bindgen::intern(name)}
 // Three objects and the model's state are objects: read and written directly, one crossing each (Reflect.get
 // refuses null, undefined and primitives: `get` answers undefined for them, `read` fails as before).
-fn get(v:&JsValue,name:&'static str)->JsValue{with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
+pub(crate) fn get(v:&JsValue,name:&'static str)->JsValue{with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
 fn read(v:&JsValue,name:&'static str)->R<JsValue>{
  match with_key(name,|key|Reflect::get(v,key)){
   Ok(value)=>Ok(value),
   Err(error)=>if absent(v){crate::host::read(v,name)}else{Err(error)},
  }
 }
-fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{with_key(name,|key|Reflect::set(v,key,x))?;Ok(())}
+pub(crate) fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{with_key(name,|key|Reflect::set(v,key,x))?;Ok(())}
 // Numbers go straight to the engine, without a boxed JS number for each.
-fn putn(v:&JsValue,name:&'static str,x:f64)->R<()>{with_key(name,|key|set_number(v,key,x))?;Ok(())}
+pub(crate) fn putn(v:&JsValue,name:&'static str,x:f64)->R<()>{with_key(name,|key|set_number(v,key,x))?;Ok(())}
 #[wasm_bindgen]
 extern "C"{
  #[wasm_bindgen(js_namespace=Reflect,js_name=set,catch)] fn set_number(target:&JsValue,key:&JsValue,value:f64)->Result<bool,JsValue>;
@@ -145,8 +145,8 @@ fn shared_built(host:&JsValue,key:&'static str,build:impl FnOnce(&JsValue)->R<Js
 #[wasm_bindgen]
 pub fn book_model_tile_normals(host:&JsValue,kind:&str)->R<JsValue>{
  let three=read(host,"three")?;
- let data=call(host,"surfacePixels",&[&JsValue::from_str(kind)])?;
- if !truthy(&data){return Err(js_sys::Error::new("El módulo numérico no pudo generar la textura del libro.").into());}
+ let Some(pixels)=crate::book_tiles::book_tile_normal_bytes(kind)else{return Err(js_sys::Error::new("El módulo numérico no pudo generar la textura del libro.").into());};
+ let data:JsValue=js_sys::Uint8Array::from(&pixels[..]).into();
  let texture=make(&three,"DataTexture",&[&data,&n(128.0),&n(128.0)])?;
  let repeat=read(&three,"RepeatWrapping")?;put(&texture,"wrapT",&repeat)?;put(&texture,"wrapS",&repeat)?;
  put(&texture,"magFilter",&read(&three,"LinearFilter")?)?;put(&texture,"minFilter",&read(&three,"LinearMipmapLinearFilter")?)?;
@@ -158,8 +158,8 @@ pub fn book_model_tile_normals(host:&JsValue,kind:&str)->R<JsValue>{
 #[wasm_bindgen]
 pub fn book_model_ribbon_notch(host:&JsValue)->R<JsValue>{
  let three=read(host,"three")?;
- let data=call(host,"notchPixels",&[&n(16.0),&n(64.0)])?;
- if !truthy(&data){return Err(js_sys::Error::new("El módulo numérico no pudo generar la muesca de la cinta.").into());}
+ let Some(pixels)=crate::book_tiles::notch(16,64)else{return Err(js_sys::Error::new("El módulo numérico no pudo generar la muesca de la cinta.").into());};
+ let data:JsValue=js_sys::Uint8Array::from(&pixels[..]).into();
  let texture=make(&three,"DataTexture",&[&data,&n(16.0),&n(64.0)])?;
  let linear=read(&three,"LinearFilter")?;put(&texture,"minFilter",&linear)?;put(&texture,"magFilter",&linear)?;
  put(&texture,"needsUpdate",&JsValue::TRUE)?;

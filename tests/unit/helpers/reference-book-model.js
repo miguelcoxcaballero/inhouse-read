@@ -9,7 +9,7 @@ import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, pl
 import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';
 
-import { rustBookSurfacePixels, rustRibbonNotchPixels } from '../../../src/js/book-surface-wasm.js';
+import { rustBookSurfacePixels, rustRibbonNotchPixels } from './reference-book-surface-wasm.js';
 import { rustBookmarkBuffers } from './reference-bookmark-wasm.js';
 import { rustBindingBuffers } from './reference-binding-wasm.js';
 import { rustPageBlockBuffers, rustLeafStackBuffers, rustBookPaperBuffers } from './reference-page-mesh-wasm.js';

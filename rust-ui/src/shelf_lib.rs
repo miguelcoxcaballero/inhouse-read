@@ -87,6 +87,10 @@ mod book_mesh;
 #[path="../../rust-core/src/book_view.rs"]
 mod book_view;
 mod book_view_plan;
+// The rasters every book shares (cloth and paper tooth, ribbon cut, weave): the core's kernels, run natively.
+#[path="../../rust-core/src/book_surface.rs"]
+mod book_surface;
+mod book_tiles;
 mod cloud_host;
 mod bookshelf;
 mod book_paint;

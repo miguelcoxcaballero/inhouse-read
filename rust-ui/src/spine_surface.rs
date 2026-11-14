@@ -637,8 +637,8 @@ pub fn spine_cloth_seeded(replay:&JsValue,c:&JsValue,width:f64,seed:u32,metal:bo
 
 /// Plain weave, 16 × 16 threads per 128 px tile with uneven yarn, at 4.4 design units a thread (1024 = board
 /// height), so cover and lifted spine are one cloth: laid over a canvas drawn in design units, in colour or
-/// multiplied into the packed height/roughness/metal raster. Both tiles are made on first use from the core's
-/// pixels (`host.weavePixels()`) and kept by the host (`host.tiles`).
+/// multiplied into the packed height/roughness/metal raster. Both tiles are made on first use (book_tiles.rs)
+/// and kept by the host (`host.tiles`).
 #[wasm_bindgen]
 pub fn spine_paint_weave(host:&JsValue,c:&JsValue,design_width:f64,options:&JsValue)->R<()>{
  weave(host,c,design_width,!options.is_undefined()&&truthy(&rd(options,"channels")?))
@@ -681,15 +681,14 @@ fn material(host:&JsValue,painted:&Painted,style:&JsValue)->R<JsValue>{
 fn weave_tile(host:&JsValue,kind:&'static str)->R<JsValue>{
  let known=rd(host,"tiles")?;
  if !absent(&known){return rd(&known,kind);}
- let pixels=host_call(host,"weavePixels",&[])?;
- if absent(&pixels){return Err(js_sys::Error::new("No se pudo generar el tejido del libro en Rust.").into());}
+ let pixels=crate::book_tiles::weave();
  let tiles=object(&[])?;
- for name in["color","channels"]{
+ for (name,bytes) in[("color",&pixels[..65536]),("channels",&pixels[65536..])]{
   let tile=canvas(128.0,128.0)?;
   let t=context_2d(&tile)?;
   let image=optional(&t,"createImageData",&[&val(128.0),&val(128.0)])?.unwrap_or(JsValue::UNDEFINED);
   let data=get(&image,"data");
-  if truthy(&data){method(&data,"set",&[&rd(&pixels,name)?])?;ctx(&t).put_image_data(&image,0.0,0.0)?;}
+  if truthy(&data){method(&data,"set",&[&js_sys::Uint8Array::from(bytes)])?;ctx(&t).put_image_data(&image,0.0,0.0)?;}
   Reflect::set(&tiles,&lit(name),&tile)?;
  }
  Reflect::set(host,&lit("tiles"),&tiles)?;

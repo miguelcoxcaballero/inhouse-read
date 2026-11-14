@@ -1,6 +1,6 @@
 // Frozen from f5abb752b0731721b24e5b48b4ee35df5ee633df; only relative imports relocated.
 import { getRustCore } from '../../../src/js/rust-core.js'
-import { rustBookWeavePixels } from '../../../src/js/book-surface-wasm.js'
+import { rustBookWeavePixels } from './reference-book-surface-wasm.js'
 import { rustBookClothPlan } from './reference-book-cloth-plan.js'
 import * as THREE from 'three'
 import { spineFinish, surfaceFinish, SURFACE_FINISHES } from '../../../src/js/book-colors.js'

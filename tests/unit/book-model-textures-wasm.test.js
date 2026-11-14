@@ -6,14 +6,12 @@
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { getRustCore, loadedRustCore } from '../../src/js/rust-core.js';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
-import { rustBookSurfacePixels, rustRibbonNotchPixels } from '../../src/js/book-surface-wasm.js';
 
 const reference = await import('./helpers/reference-book-model.js');
-const core = () => getRustCore() ?? loadedRustCore();
-const host = { three:THREE, surfacePixels:kind => rustBookSurfacePixels(core(), kind),
-  notchPixels:(width, height) => rustRibbonNotchPixels(core(), width, height) };
+// The cloth, paper and notch pixels are the shelf module's own (rust-ui/src/book_tiles.rs); the frozen model
+// takes them from the numeric core through the frozen bridges.
+const host = { three:THREE };
 
 let log = [], canvases = 0;
 const show = value => typeof value === 'number' ? (Object.is(value, -0) ? '-0' : String(value)) : value?.__canvas ? `canvas#${value.__canvas}` : JSON.stringify(value ?? null);
@@ -74,8 +72,10 @@ it('builds the shared book textures exactly like the original', () => {
   }
 });
 
-it('fails like the original when the numeric core gives no pixels', () => {
-  const rust = needRustShelf(), empty = { three:THREE, surfacePixels:() => null, notchPixels:() => null };
-  expect(() => rust.book_model_tile_normals(empty, 'cloth')).toThrow('El módulo numérico no pudo generar la textura del libro.');
-  expect(() => rust.book_model_ribbon_notch(empty)).toThrow('El módulo numérico no pudo generar la muesca de la cinta.');
+it('fails like the original for a tile it does not know', () => {
+  const rust = needRustShelf();
+  for (const kind of ['wood', '', 'Cloth']) expect(() => rust.book_model_tile_normals(host, kind)).toThrow('El módulo numérico no pudo generar la textura del libro.');
+  // A host without three fails before any pixel is made, as before.
+  expect(() => rust.book_model_tile_normals({}, 'cloth')).toThrow();
+  expect(() => rust.book_model_ribbon_notch({})).toThrow();
 });

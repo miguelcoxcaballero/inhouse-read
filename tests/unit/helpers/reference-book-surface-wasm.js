@@ -1,4 +1,7 @@
-import { resolveHostMath } from './host-math.js';
+// Frozen from src/js/book-surface-wasm.js (1.7.328): the bridges that asked the numeric core for the rasters
+// every book shares. Production makes them inside the shelf module (rust-ui/src/book_tiles.rs, the same kernels
+// compiled into it); the frozen book model and spine keep driving the core's own copy through these.
+import { resolveHostMath } from '../../../src/js/host-math.js';
 // Fixed production rasters, unchanged dimensions and filtering. Each result
 // owns its bytes; one bounded arena is released before returning to Three. The
 // threads' sines are asked of the core and answered with the engine's own Math.

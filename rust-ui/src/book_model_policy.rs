@@ -72,21 +72,24 @@ pub(crate) fn cover_raster_dims(ratio: f64, height: f64, max_dimension: f64) -> 
 /// their original order, including needsUpdate before the paper adjustments.
 #[wasm_bindgen]
 pub fn book_apply_material_finish(material: JsValue, finish: JsValue, kind: &str, metallic: bool) -> Result<(), JsValue> {
+    // A material and a finish row are objects: each member is read or written in one crossing with a remembered
+    // key, numbers as numbers (every book applies four finishes while the shelf is built).
+    use crate::book_model_build::{get as member, put, putn};
     if kind == "cap" {
-        set(&material, "metalness", &if metallic { 1.0 } else { 0.0 }.into())?;
+        putn(&material, "metalness", if metallic { 1.0 } else { 0.0 })?;
         if metallic {
             for (key, value) in [("roughness", 0.3), ("envMapIntensity", 1.8),
-                ("clearcoat", 0.42), ("clearcoatRoughness", 0.16)] { set(&material, key, &value.into())?; }
-            return set(&material, "needsUpdate", &JsValue::TRUE);
+                ("clearcoat", 0.42), ("clearcoatRoughness", 0.16)] { putn(&material, key, value)?; }
+            return put(&material, "needsUpdate", &JsValue::TRUE);
         }
     }
-    for key in ["roughness", "clearcoat", "clearcoatRoughness", "envMapIntensity"] { set(&material, key, &get(&finish, key))?; }
-    set(&material, "needsUpdate", &JsValue::TRUE)?;
+    for key in ["roughness", "clearcoat", "clearcoatRoughness", "envMapIntensity"] { put(&material, key, &member(&finish, key))?; }
+    put(&material, "needsUpdate", &JsValue::TRUE)?;
     if kind == "paper" {
-        set(&material, "roughness", &(0.35 + num(&get(&material, "roughness")) * 0.6).into())?;
-        set(&material, "clearcoat", &(num(&get(&material, "clearcoat")) * 0.3).into())?;
-        set(&material, "specularIntensity", &0.7.into())?;
-    } else if kind == "cover" { set(&material, "specularIntensity", &1.0.into())?; }
+        putn(&material, "roughness", 0.35 + num(&member(&material, "roughness")) * 0.6)?;
+        putn(&material, "clearcoat", num(&member(&material, "clearcoat")) * 0.3)?;
+        putn(&material, "specularIntensity", 0.7)?;
+    } else if kind == "cover" { putn(&material, "specularIntensity", 1.0)?; }
     Ok(())
 }
 
