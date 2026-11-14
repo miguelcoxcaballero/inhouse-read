@@ -8,17 +8,126 @@
 //! microtask as before (tests/unit/cover-appearance-orchestration-differential.test.js runs both against
 //! a frozen copy). The numeric kernels stay where they were: the host hands over the core's bridges, the
 //! slice driver and the Worker client, and keeps the two values the module owned (`turn`, `fonts`).
+//!
+//! Each host member is a typed import, so a call is one crossing with its numbers as numbers; the globals
+//! (`Image`, `document`, the timers, `performance`) are looked up by name at every call, as they were.
 use std::cell::{Cell,RefCell};
 use std::rc::Rc;
-use wasm_bindgen::{prelude::*,JsCast};
-use js_sys::{Array,Function,JsString,Object,Promise};
-use crate::host::{absent,call,clear_timeout,clock,construct,get,get_at,global,jmax,jmin,js_round,method,num,number_string,read,set,set_timeout,text_value,truthy};
+use wasm_bindgen::{intern,prelude::*,JsCast};
+use js_sys::{Array,Float64Array,Function,JsString,Object,Promise};
+use crate::host::{absent,global,jmax,jmin,js_round,num,number_string,text_value,truthy};
 type R<T=()>=Result<T,JsValue>;
 
+#[wasm_bindgen]
+extern "C"{
+ #[wasm_bindgen(js_name=setTimeout,catch)]fn set_timeout(callback:&JsValue,delay:f64)->R<JsValue>;
+ #[wasm_bindgen(js_name=clearTimeout,catch)]fn clear_timeout(id:&JsValue)->R<()>;
+ #[wasm_bindgen(js_name=clearTimeout,catch)]fn clear_timeout_number(id:f64)->R<()>;
+ #[wasm_bindgen(js_namespace=performance,js_name=now,catch)]fn clock()->R<f64>;
+ #[wasm_bindgen(js_namespace=Promise,js_name=allSettled,catch)]fn all_settled(list:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(js_namespace=Promise,js_name=race,catch)]fn race(list:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(js_namespace=Object,js_name=assign,catch)]fn assign(target:&JsValue,source:&JsValue)->R<JsValue>;
+
+ /// Whatever the page hands over or answers with (the host table, an image, a canvas, a context, a mask, a
+ /// promise): only the members the analyser uses. A throwing member comes back as the error it threw.
+ type Duck;
+ #[wasm_bindgen(constructor,js_class="Image",catch)]fn image()->R<Duck>;
+ // The global object.
+ #[wasm_bindgen(method,getter,js_name=Image)]fn image_class(this:&Duck)->JsValue;
+ #[wasm_bindgen(method,getter)]fn document(this:&Duck)->JsValue;
+ // The host table of cover-appearance.js.
+ #[wasm_bindgen(method,catch)]fn core(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=requireCore)]fn require_core(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn ready(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn color(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn glyph(this:&Duck,core:&JsValue,raw:&JsValue,width:f64,rows:&JsValue,stride:f64)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn prepare(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64,edges:bool)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn scorer(this:&Duck,core:&JsValue,context:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn wraps(this:&Duck,core:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn plan(this:&Duck,core:&JsValue,title:&JsValue,width:f64)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn max(this:&Duck,core:&JsValue,scores:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn select(this:&Duck,core:&JsValue,scores:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn open(this:&Duck,context:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn slices(this:&Duck,task:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=yieldToMain)]fn yield_to_main(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter)]fn noop(this:&Duck)->JsValue;
+ #[wasm_bindgen(method,getter,catch)]fn turn(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,setter,catch,js_name=turn)]fn set_turn(this:&Duck,value:&JsValue)->R<()>;
+ #[wasm_bindgen(method,getter,js_name=fonts)]fn font_loads(this:&Duck)->JsValue;
+ #[wasm_bindgen(method,setter,catch,js_name=fonts)]fn set_font_loads(this:&Duck,value:&JsValue)->R<()>;
+ // Options and promises.
+ #[wasm_bindgen(method,getter,catch,js_name=matchFont)]fn match_font(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=image)]fn given_image(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method)]fn then(this:&Duck,fulfilled:&JsValue,rejected:&JsValue);
+ /// `function.bind(context, ticket)`.
+ #[wasm_bindgen(method)]fn bind(this:&Duck,context:&JsValue,ticket:u32)->JsValue;
+ /// `image.decode.bind(image)`.
+ #[wasm_bindgen(method,catch,js_name=bind)]fn bound_to(this:&Duck,context:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=then)]fn then_run(this:&Duck,fulfilled:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=catch)]fn otherwise(this:&Duck,rejected:&JsValue)->R<JsValue>;
+ // An image.
+ #[wasm_bindgen(method,setter,catch,js_name=decoding)]fn set_decoding(this:&Duck,value:&str)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=src)]fn set_src(this:&Duck,value:&JsValue)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=onload)]fn set_onload(this:&Duck,value:&JsValue)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=onerror)]fn set_onerror(this:&Duck,value:&JsValue)->R<()>;
+ #[wasm_bindgen(method,getter,catch,js_name=decode)]fn decoder(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn decode(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=naturalWidth)]fn natural_width(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=naturalHeight)]fn natural_height(this:&Duck)->R<JsValue>;
+ // The document, a canvas and its context.
+ #[wasm_bindgen(method,catch,js_name=createElement)]fn create_element(this:&Duck,tag:&str)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=fonts)]fn font_faces(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch,js_name=load)]fn loader(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn load(this:&Duck,font:&str)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=load)]fn load_for(this:&Duck,font:&str,text:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn width(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn height(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,setter,catch,js_name=width)]fn set_width(this:&Duck,value:f64)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=height)]fn set_height(this:&Duck,value:f64)->R<()>;
+ #[wasm_bindgen(method,catch,js_name=getContext)]fn get_context(this:&Duck,kind:&str)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=getContext)]fn get_context_with(this:&Duck,kind:&str,options:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,setter,js_name=willReadFrequently)]fn set_will_read_frequently(this:&Duck,value:bool);
+ #[wasm_bindgen(method,catch,js_name=drawImage)]fn draw_image(this:&Duck,image:&JsValue,x:f64,y:f64,width:f64,height:f64)->R<()>;
+ #[wasm_bindgen(method,catch,js_name=getImageData)]fn get_image_data(this:&Duck,x:f64,y:f64,width:f64,height:f64)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=getImageData)]fn get_image_rows(this:&Duck,x:f64,y:f64,width:f64,height:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn data(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=clearRect)]fn clear_rect(this:&Duck,x:f64,y:f64,width:&JsValue,height:&JsValue)->R<()>;
+ #[wasm_bindgen(method,catch,js_name=fillText)]fn fill_text(this:&Duck,text:&JsValue,x:f64,y:f64,max_width:f64)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=font)]fn set_font(this:&Duck,value:&str)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=textAlign)]fn set_text_align(this:&Duck,value:&str)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=textAlign)]fn set_text_align_value(this:&Duck,value:&JsValue)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=textBaseline)]fn set_text_baseline(this:&Duck,value:&str)->R<()>;
+ #[wasm_bindgen(method,setter,catch,js_name=fillStyle)]fn set_fill_style(this:&Duck,value:&str)->R<()>;
+ #[wasm_bindgen(method,catch,js_name=toLocaleUpperCase)]fn to_locale_upper_case(this:&Duck)->R<JsValue>;
+ // The core's bridges' objects: prepared planes, the wrap cache, a mask, the core, the scorers.
+ #[wasm_bindgen(method,getter,catch)]fn gray(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn near(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn busy(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn lines(this:&Duck,context:&JsValue,text:&JsValue,width:f64,key:f64)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn length(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn dispose(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn font_mask_fits(this:&Duck,mask_width:&JsValue,mask_height:&JsValue,width:f64,rows:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=scoreMany)]fn score_many(this:&Duck,masks:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn close(this:&Duck)->R<JsValue>;
+ #[wasm_bindgen(method,catch)]fn steps(this:&Duck,mask:&JsValue)->R<JsValue>;
+ // The records the analyser answers with or hands to the scorers: a setter on a fresh object defines the key.
+ #[wasm_bindgen(method,setter,js_name=aspectRatio)]fn set_aspect_ratio(this:&Duck,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=source)]fn set_source(this:&Duck,value:&str);
+ #[wasm_bindgen(method,setter,js_name=fontFamily)]fn set_font_family(this:&Duck,value:&str);
+ #[wasm_bindgen(method,setter,js_name=fontCanvasFamily)]fn set_font_canvas_family(this:&Duck,value:&str);
+ #[wasm_bindgen(method,setter,js_name=fontFallback)]fn set_font_fallback(this:&Duck,value:&str);
+ #[wasm_bindgen(method,setter,js_name=fontWeight)]fn set_font_weight(this:&Duck,value:f64);
+ #[wasm_bindgen(method,setter,js_name=gray)]fn set_gray(this:&Duck,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=near)]fn set_near(this:&Duck,value:&JsValue);
+ #[wasm_bindgen(method,setter,js_name=rows)]fn set_rows(this:&Duck,value:&JsValue);
+}
+/// The typed view of a host value; nothing is checked, a missing member fails where it is used.
+fn duck(value:&JsValue)->&Duck{value.unchecked_ref()}
+
 /// family, weight, fallback: the order is the tie-break of the search.
-const FONTS:[(&str,f64,&str);6]=[
- ("Playfair Display",700.0,"Georgia, serif"),("Lora",700.0,"Georgia, serif"),("Cormorant Garamond",700.0,"Georgia, serif"),
- ("DM Sans",600.0,"Arial, sans-serif"),("Montserrat",700.0,"Arial, sans-serif"),("Oswald",600.0,"Arial Narrow, sans-serif")];
+const FONTS:[(&str,f64,&str,&str);6]=[
+ ("Playfair Display",700.0,"Georgia, serif","700"),("Lora",700.0,"Georgia, serif","700"),("Cormorant Garamond",700.0,"Georgia, serif","700"),
+ ("DM Sans",600.0,"Arial, sans-serif","600"),("Montserrat",700.0,"Arial, sans-serif","700"),("Oswald",600.0,"Arial Narrow, sans-serif","600")];
 // The search is a few hundred million operations: masks are rastered in slices short enough that
 // scrolling and the animation loop keep their frames.
 const SLICE_MS:f64=2.0;
@@ -27,8 +136,19 @@ const SLOW:&str="La portada tardó demasiado";
 fn error(message:&str)->JsValue{js_sys::Error::new(message).into()}
 fn undefined()->JsValue{JsValue::UNDEFINED}
 fn number(value:f64)->JsValue{JsValue::from_f64(value)}
-fn document()->JsValue{get(&global(),"document")}
-fn object(fields:&[(&str,&JsValue)])->R<JsValue>{let value:JsValue=Object::new().into();for (key,field) in fields{set(&value,key,field)?;}Ok(value)}
+fn page()->JsValue{global()}
+/// `document.createElement('canvas')`, with `document` looked up now.
+fn new_canvas()->R<JsValue>{
+ let document=duck(&page()).document();
+ if absent(&document){return Err(js_sys::ReferenceError::new("document is not defined").into())}
+ duck(&document).create_element(intern("canvas"))
+}
+/// `canvas.getContext('2d', { willReadFrequently: true })`: getImageData on a GPU-backed canvas forces a readback.
+fn cpu_context(canvas:&JsValue)->R<JsValue>{
+ let options:JsValue=Object::new().into();
+ duck(&options).set_will_read_frequently(true);
+ duck(canvas).get_context_with(intern("2d"),&options)
+}
 
 /// The promise of one `async` function and its two settlers.
 struct Deferred{promise:Promise,resolve:Function,reject:Function}
@@ -44,24 +164,42 @@ impl Deferred{
  fn settle(&self,result:R<JsValue>){match result{Ok(value)=>self.resolve(&value),Err(reason)=>self.reject(&reason)}}
 }
 
-/// A callback JavaScript owns: it runs once at most and gives up what it captured when it runs; one that is
-/// never called (a cleared timer, the other reaction of a pair) is collected with the function itself.
-/// `Closure::once_into_js` would keep such a callback, and a handle to it, for the life of the page.
+/// A callback JavaScript owns: it runs once at most and is collected with the function itself.
+/// (`Closure::once_into_js` would keep one that is never called, and a handle to it, for the life of the page.)
 fn js_owned<T:?Sized+wasm_bindgen::closure::WasmClosure>(closure:Closure<T>)->JsValue{closure.into_js_value()}
-/// `promise.then(value => next(Ok(value)), reason => next(Err(reason)))`. The reaction that runs takes the
-/// continuation and everything it holds; its twin keeps nothing and goes with the promise, as does the pair
-/// of a promise that never settles. The derived promise always fulfils, so nothing is left unhandled.
-fn settled(promise:&Promise,next:impl FnOnce(R<JsValue>)+'static){react(promise,Box::new(next))}
-fn react(promise:&Promise,next:Box<dyn FnOnce(R<JsValue>)>){
- let next=Rc::new(RefCell::new(Some(next)));
- let reaction=|fulfilled:bool|{
-  let next=next.clone();
-  js_owned(Closure::<dyn FnMut(JsValue)>::once(move|value:JsValue|{
-   let work=next.borrow_mut().take();
-   if let Some(work)=work{work(if fulfilled{Ok(value)}else{Err(value)});}
-  }))
- };
- let _=method(promise,"then",&[&reaction(true),&reaction(false)]);
+
+type Next=Box<dyn FnOnce(R<JsValue>)>;
+thread_local!{
+ /// What runs when a promise settles or a timer fires, by ticket. A ticket is taken by whichever comes first
+ /// and a late call finds nothing, so every reaction is one of two functions the module makes once, bound to
+ /// the ticket by the engine: making a Rust callback per `await` costs more than the await itself.
+ static WAITING:RefCell<(u32,std::collections::HashMap<u32,Next>)>=RefCell::new((0,std::collections::HashMap::new()));
+ static REACTIONS:(JsValue,JsValue)=(reaction(true),reaction(false));
+}
+fn reaction(fulfilled:bool)->JsValue{
+ js_owned(Closure::<dyn Fn(u32,JsValue)>::new(move|ticket:u32,value:JsValue|{
+  let next=WAITING.with(|waiting|waiting.borrow_mut().1.remove(&ticket));
+  if let Some(next)=next{next(if fulfilled{Ok(value)}else{Err(value)});}
+ }))
+}
+fn ticket(next:Next)->u32{
+ WAITING.with(|waiting|{
+  let mut waiting=waiting.borrow_mut();
+  waiting.0=waiting.0.wrapping_add(1);
+  let ticket=waiting.0;
+  waiting.1.insert(ticket,next);
+  ticket
+ })
+}
+fn forget(ticket:u32){let dropped=WAITING.with(|waiting|waiting.borrow_mut().1.remove(&ticket));drop(dropped);}
+/// `promise.then(value => next(Ok(value)), reason => next(Err(reason)))`. The derived promise always fulfils,
+/// so nothing is left unhandled.
+fn settled(promise:&JsValue,next:impl FnOnce(R<JsValue>)+'static){react(promise,Box::new(next))}
+fn react(promise:&JsValue,next:Next){
+ let ticket=ticket(next);
+ REACTIONS.with(|(fulfilled,rejected)|{
+  duck(promise).then(&duck(fulfilled).bind(&JsValue::UNDEFINED,ticket),&duck(rejected).bind(&JsValue::UNDEFINED,ticket));
+ });
 }
 /// One `await value`.
 fn wait(value:&JsValue,next:impl FnOnce(R<JsValue>)+'static){settled(&Promise::resolve(value),next)}
@@ -70,13 +208,7 @@ fn wait(value:&JsValue,next:impl FnOnce(R<JsValue>)+'static){settled(&Promise::r
 /// two values the module keeps between analyses (`turn`, the search queue; `fonts`, the font loads).
 #[derive(Clone)]
 struct Host(JsValue);
-impl Host{
- fn run(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&get(&self.0,name),name,args)}
- /// `loadedRustCore()`.
- fn core(&self)->R<JsValue>{self.run("core",&[])}
- /// `shelfWorkReady()`.
- fn ready(&self)->R<JsValue>{self.run("ready",&[])}
-}
+impl std::ops::Deref for Host{type Target=Duck;fn deref(&self)->&Duck{duck(&self.0)}}
 
 /// `coverAspectRatio(width, height)`.
 fn aspect_ratio(width:&JsValue,height:&JsValue)->JsValue{
@@ -86,27 +218,30 @@ fn aspect_ratio(width:&JsValue,height:&JsValue)->JsValue{
 }
 /// `String(value).trim().length`.
 fn trimmed_length(value:&JsValue)->u32{text_value(value).unchecked_into::<JsString>().trim().length()}
-fn font(index:usize,size:&str)->String{let (family,weight,_)=FONTS[index];format!("{weight} {size}px \"{family}\"")}
 /// `new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; })`.
 fn loaded(image:&JsValue)->Promise{
  Promise::new(&mut|resolve,reject|{
   // A setter that throws rejects the promise, as it did inside the executor.
-  if let Err(failure)=set(image,"onload",&resolve).and_then(|_|set(image,"onerror",&reject)){let _=reject.call1(&JsValue::UNDEFINED,&failure);}
+  if let Err(failure)=duck(image).set_onload(&resolve).and_then(|_|duck(image).set_onerror(&reject)){let _=reject.call1(&JsValue::UNDEFINED,&failure);}
  })
 }
 /// `setTimeout(() => reject(new Error(SLOW)), delay)` for a wait that `settle` may end first. Whichever comes
 /// first takes the settlers, so neither a cleared timer nor a decode that never ends keeps them.
 /// A browser's timer id is a number and is kept as one, so a decode that never ends holds no handle at all.
-struct Timeout{id:Result<f64,JsValue>,settlers:Rc<RefCell<Option<(Function,Function)>>>}
+struct Timeout{id:Result<f64,JsValue>,ticket:u32,settlers:Rc<RefCell<Option<(Function,Function)>>>}
 impl Timeout{
  fn start(resolve:&Function,reject:&Function,delay:f64)->R<Timeout>{
   let settlers=Rc::new(RefCell::new(Some((resolve.clone(),reject.clone()))));
   let fired=settlers.clone();
-  let id=set_timeout(&js_owned(Closure::<dyn FnMut()>::once(move||{
+  let ticket=ticket(Box::new(move|_|{
    let waiting=fired.borrow_mut().take();
    if let Some((_,reject))=waiting{let _=reject.call1(&JsValue::UNDEFINED,&error(SLOW));}
-  })),delay)?;
-  Ok(Timeout{id:id.as_f64().ok_or(id),settlers})
+  }));
+  let started=REACTIONS.with(|(fire,_)|set_timeout(&duck(fire).bind(&JsValue::UNDEFINED,ticket),delay));
+  match started{
+   Ok(id)=>Ok(Timeout{id:id.as_f64().ok_or(id),ticket,settlers}),
+   Err(failure)=>{forget(ticket);Err(failure)}
+  }
  }
  /// `clearTimeout(timer)`, then the wait's outcome if the timer has not already rejected it.
  fn settle(&self,outcome:R<JsValue>)->R{
@@ -116,7 +251,14 @@ impl Timeout{
   Ok(())
  }
  fn clear(&self)->R{self.settlers.borrow_mut().take();self.stop()}
- fn stop(&self)->R{match &self.id{Ok(number)=>clear_timeout(&JsValue::from_f64(*number)),Err(id)=>clear_timeout(id)}}
+ fn stop(&self)->R{forget(self.ticket);match &self.id{Ok(id)=>clear_timeout_number(*id),Err(id)=>clear_timeout(id)}}
+}
+/// `new Image()` with `decoding = 'async'` and its source.
+fn new_image(url:&JsValue)->R<JsValue>{
+ let image:JsValue=Duck::image()?.into();
+ duck(&image).set_decoding(intern("async"))?;
+ duck(&image).set_src(url)?;
+ Ok(image)
 }
 
 /// `readCoverAspectRatio(url)`: only the decoded dimensions, 1.5 s at most.
@@ -124,27 +266,21 @@ impl Timeout{
 pub fn cover_aspect_read(url:JsValue)->Promise{
  let done=Deferred::new();
  let promise=done.promise.clone();
- let started=(||->R<Option<JsValue>>{
-  if !truthy(&url)||get(&global(),"Image").is_undefined(){return Ok(None)}
-  let image=construct("Image",&[])?;
-  set(&image,"decoding",&"async".into())?;
-  set(&image,"src",&url)?;
-  Ok(Some(image))
- })();
- let image=match started{Ok(Some(image))=>image,Ok(None)=>{done.resolve(&JsValue::NULL);return promise}Err(failure)=>{done.reject(&failure);return promise}};
+ if !truthy(&url)||duck(&page()).image_class().is_undefined(){done.resolve(&JsValue::NULL);return promise}
+ let image=match new_image(&url){Ok(image)=>image,Err(failure)=>{done.reject(&failure);return promise}};
  let timeout:Rc<RefCell<Option<Timeout>>>=Rc::new(RefCell::new(None));
  let raced=(||->R<JsValue>{
-  let first:JsValue=if get(&image,"decode").is_function(){method(&image,"decode",&[])?}else{loaded(&image).into()};
+  let first:JsValue=if duck(&image).decoder()?.is_function(){duck(&image).decode()?}else{loaded(&image).into()};
   let timer=timeout.clone();
   let second=Promise::new(&mut|resolve,reject|match Timeout::start(&resolve,&reject,1500.0){
    Ok(started)=>*timer.borrow_mut()=Some(started),
    Err(failure)=>{let _=reject.call1(&JsValue::UNDEFINED,&failure);}
   });
-  method(&get(&global(),"Promise"),"race",&[&Array::of2(&first,&second)])
+  race(&Array::of2(&first,&second))
  })();
  // `finally { clearTimeout(timeout) }` runs before the answer leaves, whatever it is.
  let finish=move|outcome:R<JsValue>|{
-  let value=match outcome{Ok(_)=>aspect_ratio(&get(&image,"naturalWidth"),&get(&image,"naturalHeight")),Err(_)=>JsValue::NULL};
+  let value=outcome.and_then(|_|Ok(aspect_ratio(&duck(&image).natural_width()?,&duck(&image).natural_height()?))).unwrap_or(JsValue::NULL);
   let cleared=match timeout.borrow_mut().take(){Some(timeout)=>timeout.clear(),None=>clear_timeout(&JsValue::UNDEFINED)};
   match cleared{Ok(())=>done.resolve(&value),Err(failure)=>done.reject(&failure)}
  };
@@ -166,18 +302,17 @@ pub fn cover_appearance_analyze(host:JsValue,url:JsValue,title:JsValue,options:J
  let started=(||->R<Option<(Rc<Analysis>,bool)>>{
   // `{ matchFont = true, image } = {}`
   let (match_font,decoded)=if options.is_undefined(){(true,undefined())}else{
-   let chosen=read(&options,"matchFont")?;
-   (chosen.is_undefined()||truthy(&chosen),read(&options,"image")?)
+   let chosen=duck(&options).match_font()?;
+   (chosen.is_undefined()||truthy(&chosen),duck(&options).given_image()?)
   };
-  if !truthy(&url)||get(&global(),"Image").is_undefined()||get(&global(),"document").is_undefined(){return Ok(None)}
+  let page=page();
+  if !truthy(&url)||duck(&page).image_class().is_undefined()||duck(&page).document().is_undefined(){return Ok(None)}
   let host=Host(host);
-  let core_ready=host.run("requireCore",&[])?;
+  let core_ready=host.require_core()?;
   // Start compilation alongside decode; observe failures even if decoding fails.
-  method(&core_ready,"catch",&[&get(&host.0,"noop")])?;
+  duck(&core_ready).otherwise(&host.noop())?;
   let given=truthy(&decoded);
-  let image=if given{decoded}else{construct("Image",&[])?};
-  set(&image,"decoding",&"async".into())?;
-  if !given{set(&image,"src",&url)?;}
+  let image=if given{duck(&decoded).set_decoding(intern("async"))?;decoded}else{new_image(&url)?};
   Ok(Some((Rc::new(Analysis{host,done:done.clone(),title,match_font,image,core_ready,aspect:RefCell::new(undefined()),pixels:RefCell::new(undefined()),
    width:Cell::new(0.0),height:Cell::new(0.0),core:RefCell::new(undefined()),color:RefCell::new(undefined()),prepared:RefCell::new(undefined())}),given)))
  })();
@@ -200,14 +335,14 @@ impl Analysis{
  fn decode(self:&Rc<Self>,given:bool)->R{
   if given{return self.sample()}
   let image=self.image.clone();
-  let decoding:Promise=if get(&image,"decode").is_function(){
+  let decoder=duck(&image).decoder()?;
+  let decoding:Promise=if decoder.is_function(){
    let delay=if self.match_font{3000.0}else{1200.0};
    Promise::new(&mut|resolve,reject|{
     let begun=(||->R{
      let timer=Timeout::start(&resolve,&reject,delay)?;
-     let source=image.clone();
-     let decode=js_owned(Closure::<dyn FnMut(JsValue)->R<JsValue>>::once(move|_:JsValue|method(&source,"decode",&[])));
-     let decoded:Promise=method(&Promise::resolve(&JsValue::UNDEFINED),"then",&[&decode])?.unchecked_into();
+     // `Promise.resolve().then(() => image.decode())`
+     let decoded=duck(&Promise::resolve(&JsValue::UNDEFINED)).then_run(&duck(&decoder).bound_to(&image)?)?;
      // A timer that cannot be cleared leaves the wait as it is, as the reaction's own failure did.
      settled(&decoded,move|outcome|{let _=timer.settle(outcome);});
      Ok(())
@@ -218,27 +353,32 @@ impl Analysis{
   self.then(&decoding,|analysis,_|analysis.sample());
   Ok(())
  }
+ /// `{ aspectRatio, source: 'cover' }` after whatever `record` already holds.
+ fn dimensions(&self,record:JsValue)->JsValue{
+  duck(&record).set_aspect_ratio(&self.aspect.borrow());
+  duck(&record).set_source(intern("cover"));
+  record
+ }
  /// The decoded image drawn at 192 x 288 at most and read back.
  fn sample(self:&Rc<Self>)->R{
-  let (natural_width,natural_height)=(get(&self.image,"naturalWidth"),get(&self.image,"naturalHeight"));
+  let image=duck(&self.image);
+  let (natural_width,natural_height)=(image.natural_width()?,image.natural_height()?);
   if !truthy(&natural_width)||!truthy(&natural_height){self.done.resolve(&JsValue::NULL);return Ok(())}
-  let aspect=aspect_ratio(&natural_width,&natural_height);
-  *self.aspect.borrow_mut()=aspect.clone();
+  *self.aspect.borrow_mut()=aspect_ratio(&natural_width,&natural_height);
   let (natural_width,natural_height)=(num(&natural_width),num(&natural_height));
   let scale=jmin(jmin(1.0,192.0/natural_width),288.0/natural_height);
   let (width,height)=(jmax(1.0,js_round(natural_width*scale)),jmax(1.0,js_round(natural_height*scale)));
   self.width.set(width);self.height.set(height);
-  let canvas=method(&document(),"createElement",&[&"canvas".into()])?;
-  set(&canvas,"width",&number(width))?;set(&canvas,"height",&number(height))?;
-  let context=method(&canvas,"getContext",&[&"2d".into(),&object(&[("willReadFrequently",&JsValue::TRUE)])?])?;
-  let dimensions=||object(&[("aspectRatio",&aspect),("source",&"cover".into())]);
-  if !truthy(&context){self.done.resolve(&dimensions()?);return Ok(())}
-  method(&context,"drawImage",&[&self.image,&number(0.0),&number(0.0),&number(width),&number(height)])?;
+  let canvas=new_canvas()?;
+  duck(&canvas).set_width(width)?;duck(&canvas).set_height(height)?;
+  let context=cpu_context(&canvas)?;
+  if !truthy(&context){self.done.resolve(&self.dimensions(Object::new().into()));return Ok(())}
+  duck(&context).draw_image(&self.image,0.0,0.0,width,height)?;
   // Cross-origin images can still supply their decoded dimensions even when browser security
   // prevents sampling their pixels.
-  let pixels=match method(&context,"getImageData",&[&number(0.0),&number(0.0),&number(width),&number(height)]).and_then(|image|read(&image,"data")){
+  let pixels=match duck(&context).get_image_data(0.0,0.0,width,height).and_then(|image|duck(&image).data()){
    Ok(pixels)=>pixels,
-   Err(_)=>{self.done.resolve(&dimensions()?);return Ok(())}
+   Err(_)=>{self.done.resolve(&self.dimensions(Object::new().into()));return Ok(())}
   };
   *self.pixels.borrow_mut()=pixels;
   self.then(&self.core_ready,|analysis,core|{
@@ -248,26 +388,18 @@ impl Analysis{
   });
   Ok(())
  }
- /// `{ ...color, ...fields }`.
- fn record(&self,fields:&[(&str,&JsValue)])->R<JsValue>{
-  let value:JsValue=Object::new().into();
-  method(&get(&global(),"Object"),"assign",&[&value,&self.color.borrow()])?;
-  for (key,field) in fields{set(&value,key,field)?;}
-  Ok(value)
- }
+ /// `{ ...color }`.
+ fn record(&self)->R<JsValue>{let value:JsValue=Object::new().into();assign(&value,&self.color.borrow())?;Ok(value)}
  fn colour(self:&Rc<Self>)->R{
   let (pixels,width,height)=(self.pixels.borrow().clone(),self.width.get(),self.height.get());
   // `coverColorFromPixels(pixels, width, height)`
   let color=if !truthy(&pixels)||!width.is_finite()||!height.is_finite()||width<1.0||height<1.0{JsValue::NULL}else{
-   let style=self.host.run("color",&[&self.host.core()?,&pixels,&number(width),&number(height)])?;
+   let style=self.host.color(&self.host.core()?,&pixels,width,height)?;
    if !truthy(&style){return Err(error("Invalid cover pixels"))}
    style
   };
   *self.color.borrow_mut()=color;
-  if !self.match_font{
-   self.done.resolve(&self.record(&[("aspectRatio",&self.aspect.borrow()),("source",&"cover".into())])?);
-   return Ok(())
-  }
+  if !self.match_font{self.done.resolve(&self.dimensions(self.record()?));return Ok(())}
   // Font loading is already required. Let the numeric module finish loading during that wait.
   self.then(&candidate_fonts(&self.host,&self.title)?,|analysis,_|analysis.search());
   Ok(())
@@ -275,51 +407,57 @@ impl Analysis{
  fn search(self:&Rc<Self>)->R{
   let (width,height,title)=(self.width.get(),self.height.get(),self.title.clone());
   let include_edges=truthy(&title)&&trimmed_length(&title)>=3&&width>=48.0&&(height*0.82).floor()>=48.0;
-  let prepared=self.host.run("prepare",&[&self.core.borrow(),&self.pixels.borrow(),&number(width),&number(height),&JsValue::from_bool(include_edges)])?;
+  let prepared=self.host.prepare(&self.core.borrow(),&self.pixels.borrow(),width,height,include_edges)?;
   if !truthy(&prepared){return Err(error("Invalid cover preparation"))}
-  let (gray,near)=(read(&prepared,"gray")?,read(&prepared,"near")?);
+  let (gray,near)=(duck(&prepared).gray()?,duck(&prepared).near()?);
   *self.prepared.borrow_mut()=prepared;
   // One cover at a time, so a whole shelf of new books does not pile up long tasks.
   let host=self.host.clone();
   let search=js_owned(Closure::<dyn FnMut(JsValue)->JsValue>::once(move|_:JsValue|match_title_font(host,gray,width,height,title,near).into()));
-  let turn=method(&read(&self.host.0,"turn")?,"then",&[&search])?;
-  set(&self.host.0,"turn",&method(&turn,"catch",&[&get(&self.host.0,"noop")])?)?;
+  let turn=duck(&self.host.turn()?).then_run(&search)?;
+  self.host.set_turn(&duck(&turn).otherwise(&self.host.noop())?)?;
   self.then(&turn,|analysis,found|{
    let index=match found.as_f64(){Some(index) if index>=0.0&&index<6.0&&index.fract()==0.0=>index as usize,
-    _=>if truthy(&read(&analysis.prepared.borrow(),"busy")?){3}else{0}};
-   let (family,weight,fallback)=FONTS[index];
-   let family=JsValue::from_str(family);
-   analysis.done.resolve(&analysis.record(&[("fontFamily",&family),("fontCanvasFamily",&family),("fontFallback",&fallback.into()),
-    ("fontWeight",&number(weight)),("aspectRatio",&analysis.aspect.borrow()),("source",&"cover".into())])?);
+    _=>if truthy(&duck(&analysis.prepared.borrow()).busy()?){3}else{0}};
+   let (family,weight,fallback,_)=FONTS[index];
+   let record=analysis.record()?;
+   let fields=duck(&record);
+   fields.set_font_family(family);fields.set_font_canvas_family(family);
+   fields.set_font_fallback(fallback);fields.set_font_weight(weight);
+   analysis.done.resolve(&analysis.dimensions(record));
    Ok(())
   });
   Ok(())
  }
 }
 
+/// `${weight} 20px "${family}"`.
+fn face(index:usize)->String{let (family,_,_,weight)=FONTS[index];format!("{weight} 20px \"{family}\"")}
 /// `loadCandidateFonts(text)`: the six faces once per page, plus the unicode subsets the lettering needs.
 fn candidate_fonts(host:&Host,text:&JsValue)->R<JsValue>{
- let fonts=||read(&document(),"fonts");
- let load=|arguments:&[&JsValue]|method(&fonts()?,"load",arguments);
+ let fonts=||{
+  let document=duck(&page()).document();
+  if absent(&document){return Err(js_sys::TypeError::new("Cannot read properties of undefined (reading 'fonts')").into())}
+  duck(&document).font_faces()
+ };
  let available=fonts()?;
- if absent(&available)||!truthy(&read(&available,"load")?){return Ok(Promise::resolve(&JsValue::UNDEFINED).into())}
- let all_settled=|loads:&Array|method(&get(&global(),"Promise"),"allSettled",&[loads]);
- if !truthy(&get(&host.0,"fonts")){
+ if absent(&available)||!truthy(&duck(&available).loader()?){return Ok(Promise::resolve(&JsValue::UNDEFINED).into())}
+ if !truthy(&host.font_loads()){
   let loads=Array::new();
-  for index in 0..FONTS.len(){loads.push(&load(&[&font(index,"20").into()])?);}
-  set(&host.0,"fonts",&all_settled(&loads)?)?;
+  for index in 0..FONTS.len(){loads.push(&duck(&fonts()?).load(&face(index))?);}
+  host.set_font_loads(&all_settled(&loads)?)?;
  }
- let task=get(&host.0,"fonts");
+ let task=host.font_loads();
  // The default Latin face already covers ASCII/Latin-1.
  if !truthy(text)||!text_value(text).unchecked_into::<JsString>().iter().any(|unit|unit>0xff){return Ok(task)}
  let loads=Array::of1(&task);
- for index in 0..FONTS.len(){loads.push(&load(&[&font(index,"20").into(),&text_value(text)])?);}
+ for index in 0..FONTS.len(){loads.push(&duck(&fonts()?).load_for(&face(index),&text_value(text))?);}
  all_settled(&loads)
 }
 
 /// One title search between its awaits: the cover's planes, the plans, the Worker job and the main-thread scorer.
 struct Search{host:Host,done:Rc<Deferred>,gray:JsValue,near:JsValue,width:f64,height:f64,title:JsValue,
- rows:RefCell<JsValue>,plans:RefCell<Vec<[f64;8]>>,worker:RefCell<JsValue>,local:RefCell<JsValue>,scores:Array}
+ rows:RefCell<JsValue>,plans:RefCell<Vec<f64>>,worker:RefCell<JsValue>,local:RefCell<JsValue>,scores:Array}
 
 /// `matchTitleFont(...)`: the index of the best family, or `null` when nothing can be matched.
 fn match_title_font(host:Host,gray:JsValue,width:f64,height:f64,title:JsValue,near:JsValue)->Promise{
@@ -334,21 +472,31 @@ fn match_title_font(host:Host,gray:JsValue,width:f64,height:f64,title:JsValue,ne
  promise
 }
 impl Search{
- fn context(&self)->R<JsValue>{object(&[("gray",&self.gray),("near",&self.near),("width",&number(self.width)),("height",&number(self.height)),("rows",&self.rows.borrow())])}
+ /// `{ gray, near, width, height, rows }`.
+ fn context(&self)->JsValue{
+  let context:JsValue=Object::new().into();
+  let fields=duck(&context);
+  fields.set_gray(&self.gray);fields.set_near(&self.near);
+  let _=fields.set_width(self.width);let _=fields.set_height(self.height);
+  fields.set_rows(&self.rows.borrow());
+  context
+ }
  fn open(self:&Rc<Self>)->R{
   let title=&self.title;
-  if !truthy(title)||trimmed_length(title)<3||get(&global(),"document").is_undefined(){self.done.resolve(&JsValue::NULL);return Ok(())}
+  if !truthy(title)||trimmed_length(title)<3||duck(&page()).document().is_undefined(){self.done.resolve(&JsValue::NULL);return Ok(())}
   let core=self.host.core()?;
-  let plans=self.host.run("plan",&[&core,title,&number(self.width)])?;
-  *self.plans.borrow_mut()=Array::from(&plans).iter().map(|plan|{let mut values=[0.0;8];for (index,value) in values.iter_mut().enumerate(){*value=num(&get_at(&plan,index as u32));}values}).collect();
-  let work=method(&document(),"createElement",&[&"canvas".into()])?;
-  set(&work,"width",&number(self.width))?;set(&work,"height",&number((self.height*0.82).floor()))?;
-  let context=method(&work,"getContext",&[&"2d".into()])?;
-  let rows=read(&work,"height")?;
+  // Eight numbers a plan: upper, alignment, size, canvas height, x, line height, line width, cache key.
+  let plans=self.host.plan(&core,title,self.width)?;
+  if !Array::is_array(&plans){return Err(js_sys::TypeError::new("plans is not iterable").into())}
+  *self.plans.borrow_mut()=Float64Array::new(&plans.unchecked_ref::<Array>().flat(1)).to_vec();
+  let work=new_canvas()?;
+  duck(&work).set_width(self.width)?;duck(&work).set_height((self.height*0.82).floor())?;
+  let context=duck(&work).get_context(intern("2d"))?;
+  let rows=duck(&work).height()?;
   if !truthy(&context)||self.width<48.0||num(&rows)<48.0{self.done.resolve(&JsValue::NULL);return Ok(())}
   *self.rows.borrow_mut()=rows;
   let search=self.clone();
-  wait(&self.host.run("open",&[&self.context()?])?,move|outcome|match outcome{
+  wait(&self.host.open(&self.context())?,move|outcome|match outcome{
    Ok(job)=>{*search.worker.borrow_mut()=job;search.family(0)}
    Err(failure)=>search.done.reject(&failure),
   });
@@ -358,13 +506,13 @@ impl Search{
  fn close(&self,outcome:R<JsValue>){
   let closed=(||->R{
    let worker=self.worker.borrow().clone();
-   if !absent(&worker){method(&worker,"close",&[])?;}
+   if !absent(&worker){duck(&worker).close()?;}
    let local=self.local.borrow().clone();
-   if !absent(&local){method(&local,"dispose",&[])?;}
+   if !absent(&local){duck(&local).dispose()?;}
    Ok(())
   })();
   self.done.settle(closed.and(outcome).and_then(|_|{
-   let best=num(&self.host.run("select",&[&self.host.core()?,&self.scores])?);
+   let best=num(&self.host.select(&self.host.core()?,&self.scores)?);
    Ok(if best<0.0{JsValue::NULL}else{number(best)})
   }));
  }
@@ -389,7 +537,7 @@ impl Search{
   let promise=done.promise.clone();
   let worker=self.worker.borrow().clone();
   if truthy(&worker){
-   match method(&worker,"scoreMany",&[&masks]){
+   match duck(&worker).score_many(&masks){
     Ok(scores)=>{
      let search=self.clone();
      wait(&scores,move|outcome|match outcome{Ok(scores)=>done.resolve(&scores),Err(_)=>search.score_locally(masks,done,true)});
@@ -403,12 +551,12 @@ impl Search{
   let prepared=(||->R{
    if failed{
     let worker=self.worker.borrow().clone();
-    method(&worker,"close",&[])?;
+    duck(&worker).close()?;
     *self.worker.borrow_mut()=JsValue::NULL;
    }
    // Keep the original masks intact for a failed/unavailable Worker.
    if absent(&self.local.borrow()){
-    let scorer=self.host.run("scorer",&[&self.host.core()?,&self.context()?])?;
+    let scorer=self.host.scorer(&self.host.core()?,&self.context())?;
     *self.local.borrow_mut()=scorer;
    }
    Ok(())
@@ -421,8 +569,8 @@ impl Search{
   let search=self.clone();
   wait(&ready,move|outcome|{
    let sliced=outcome.and_then(|_|{
-    let steps=method(&search.local.borrow(),"steps",&[&masks.get(index)])?;
-    search.host.run("slices",&[&steps])
+    let steps=duck(&search.local.borrow()).steps(&masks.get(index))?;
+    search.host.slices(&steps)
    });
    match sliced{
     Ok(sliced)=>wait(&sliced,move|outcome|match outcome{
@@ -437,21 +585,31 @@ impl Search{
 
 /// Where the family's raster generator stands: before the mask of plan `at`, or just after handing one over.
 enum Step{Bare,Mask(JsValue),Done}
-/// One family's rasters (`scoreFamily` driven by `runRemoteFamily`). The family owns one CPU-backed
-/// raster surface; masks are copied before they are handed over, so later plans reuse it.
-struct Family{search:Rc<Search>,done:Rc<Deferred>,index:usize,title:JsValue,masks:Array,wraps:RefCell<JsValue>,canvas:RefCell<JsValue>,context:RefCell<JsValue>,
+/// A canvas dimension as last read back: the value the canvas answered and, when it is a number, that number.
+/// Only this family writes to its canvas, so a dimension that already matches costs no call.
+struct Dimension{value:JsValue,number:Option<f64>}
+impl Dimension{
+ fn unknown()->Dimension{Dimension{value:JsValue::UNDEFINED,number:None}}
+ fn read(value:JsValue)->Dimension{Dimension{number:value.as_f64(),value}}
+}
+/// The family's CPU-backed raster surface.
+struct Surface{canvas:JsValue,context:Option<JsValue>,width:Dimension,height:Dimension}
+/// One family's rasters (`scoreFamily` driven by `runRemoteFamily`). The family owns one raster surface;
+/// masks are copied before they are handed over, so later plans reuse it.
+struct Family{search:Rc<Search>,done:Rc<Deferred>,index:usize,title:JsValue,masks:Array,wraps:RefCell<JsValue>,core:RefCell<JsValue>,surface:RefCell<Option<Surface>>,
  at:Cell<usize>,step:RefCell<Step>,slice_start:Cell<f64>,finished:Cell<bool>}
 impl Family{
  fn run(search:&Rc<Search>,index:usize)->Promise{
   let done=Deferred::new();
   let promise=done.promise.clone();
   let family=Rc::new(Family{search:search.clone(),done,index,title:text_value(&search.title),masks:Array::new(),wraps:RefCell::new(JsValue::NULL),
-   canvas:RefCell::new(JsValue::NULL),context:RefCell::new(JsValue::NULL),at:Cell::new(0),step:RefCell::new(Step::Done),slice_start:Cell::new(0.0),finished:Cell::new(true)});
+   core:RefCell::new(JsValue::NULL),surface:RefCell::new(None),at:Cell::new(0),step:RefCell::new(Step::Done),slice_start:Cell::new(0.0),finished:Cell::new(true)});
   // The generator starts outside the driver's `try`: a wrap cache that cannot be made has nothing to release.
   let started=(||->R{
    family.slice_start.set(clock()?);
-   let host=&search.host;
-   *family.wraps.borrow_mut()=host.run("wraps",&[&host.core()?])?;
+   let core=search.host.core()?;
+   *family.wraps.borrow_mut()=search.host.wraps(&core)?;
+   *family.core.borrow_mut()=core;
    family.finished.set(false);
    Ok(())
   })();
@@ -463,15 +621,14 @@ impl Family{
  /// The generator's `finally`: the wrap cache and the raster surface are released once.
  fn release(&self)->R{
   if self.finished.replace(true){return Ok(())}
-  method(&self.wraps.borrow(),"dispose",&[])?;
-  let canvas=self.canvas.borrow().clone();
-  if truthy(&canvas){set(&canvas,"width",&number(0.0))?;set(&canvas,"height",&number(0.0))?;}
-  *self.canvas.borrow_mut()=JsValue::NULL;*self.context.borrow_mut()=JsValue::NULL;
+  duck(&self.wraps.borrow()).dispose()?;
+  let surface=self.surface.borrow_mut().take();
+  if let Some(surface)=surface{duck(&surface.canvas).set_width(0.0)?;duck(&surface.canvas).set_height(0.0)?;}
   Ok(())
  }
  /// The top of the plan loop: the bare yield before plan `at`, or the end of the generator.
  fn arrive(&self)->R<Step>{
-  if self.at.get()<self.search.plans.borrow().len(){return Ok(Step::Bare)}
+  if self.at.get()*8<self.search.plans.borrow().len(){return Ok(Step::Bare)}
   self.release()?;
   Ok(Step::Done)
  }
@@ -479,10 +636,12 @@ impl Family{
  fn next(&self)->R<Step>{
   let bare=matches!(*self.step.borrow(),Step::Bare);
   if bare{
-   let plan=self.search.plans.borrow()[self.at.get()];
+   let mut plan=[0.0;8];
+   plan.copy_from_slice(&self.search.plans.borrow()[self.at.get()*8..self.at.get()*8+8]);
    if let Some(mask)=self.mask(&plan)?{
-    let core=self.search.host.core()?;
-    if truthy(&method(&core,"font_mask_fits",&[&read(&mask,"width")?,&read(&mask,"height")?,&number(self.search.width),&self.search.rows.borrow()])?){return Ok(Step::Mask(mask))}
+    let fields=duck(&mask);
+    let fits=duck(&self.core.borrow()).font_mask_fits(&fields.width()?,&fields.height()?,self.search.width,&self.search.rows.borrow())?;
+    if truthy(&fits){return Ok(Step::Mask(mask))}
    }
   }
   self.at.set(self.at.get()+1);
@@ -491,45 +650,55 @@ impl Family{
  /// `fontMask(...)`: the title in this family, wrapped by the plan and rastered on the family's surface.
  fn mask(&self,plan:&[f64;8])->R<Option<JsValue>>{
   let [upper,alignment,size,canvas_height,x,line_height,line_width,key]=*plan;
-  let width=number(self.search.width);
-  if !truthy(&self.canvas.borrow()){let canvas=method(&document(),"createElement",&[&"canvas".into()])?;*self.canvas.borrow_mut()=canvas;}
-  let canvas=self.canvas.borrow().clone();
-  if read(&canvas,"width")?!=width{set(&canvas,"width",&width)?;}
-  if read(&canvas,"height")?!=number(canvas_height){set(&canvas,"height",&number(canvas_height))?;}
-  if !truthy(&self.context.borrow()){
-   let context=method(&canvas,"getContext",&[&"2d".into(),&object(&[("willReadFrequently",&JsValue::TRUE)])?])?;
-   *self.context.borrow_mut()=context;
+  let width=self.search.width;
+  // Nothing below comes back into this family before the mask is made.
+  let mut slot=self.surface.borrow_mut();
+  if slot.is_none(){*slot=Some(Surface{canvas:new_canvas()?,context:None,width:Dimension::unknown(),height:Dimension::unknown()});}
+  let surface=slot.as_mut().expect("the surface was just made");
+  let canvas=duck(&surface.canvas);
+  // `if (canvas.width !== maxWidth) canvas.width = maxWidth`, and the same for the height.
+  if surface.width.number.is_none(){surface.width=Dimension::read(canvas.width()?);}
+  if surface.width.number!=Some(width){canvas.set_width(width)?;surface.width=Dimension::read(canvas.width()?);}
+  if surface.height.number.is_none(){surface.height=Dimension::read(canvas.height()?);}
+  if surface.height.number!=Some(canvas_height){canvas.set_height(canvas_height)?;surface.height=Dimension::read(canvas.height()?);}
+  if surface.context.is_none(){
+   let context=cpu_context(&surface.canvas)?;
+   if !truthy(&context){return Ok(None)}
+   surface.context=Some(context);
   }
-  let context=self.context.borrow().clone();
-  if !truthy(&context){return Ok(None)}
-  let zero=number(0.0);
-  method(&context,"clearRect",&[&zero,&zero,&read(&canvas,"width")?,&read(&canvas,"height")?])?;
-  let (family,weight,fallback)=FONTS[self.index];
-  set(&context,"font",&format!("{weight} {}px \"{family}\", {fallback}",number_string(size)).into())?;
-  set(&context,"textAlign",&match alignment{a if a==0.0=>"center".into(),a if a==1.0=>"left".into(),a if a==2.0=>"right".into(),_=>undefined()})?;
-  set(&context,"textBaseline",&"top".into())?;
-  set(&context,"fillStyle",&"#fff".into())?;
-  let text=if upper!=0.0&&!upper.is_nan(){method(&self.title,"toLocaleUpperCase",&[])?}else{self.title.clone()};
-  let lines=method(&self.wraps.borrow(),"lines",&[&context,&text,&number(line_width),&number(key)])?;
-  if !truthy(&read(&lines,"length")?){return Ok(None)}
-  for (index,line) in Array::from(&lines).iter().enumerate(){
-   method(&context,"fillText",&[&line,&number(x),&number(3.0+index as f64*line_height),&number(line_width)])?;
+  let context=surface.context.as_ref().expect("the context was just kept");
+  let rows=&surface.height.value;
+  let pen=duck(context);
+  pen.clear_rect(0.0,0.0,&surface.width.value,rows)?;
+  let (family,_,fallback,weight)=FONTS[self.index];
+  pen.set_font(&format!("{weight} {}px \"{family}\", {fallback}",number_string(size)))?;
+  match alignment{
+   a if a==0.0=>pen.set_text_align(intern("center"))?,
+   a if a==1.0=>pen.set_text_align(intern("left"))?,
+   a if a==2.0=>pen.set_text_align(intern("right"))?,
+   _=>pen.set_text_align_value(&JsValue::UNDEFINED)?,
   }
-  let raw=read(&method(&context,"getImageData",&[&zero,&zero,&width,&read(&canvas,"height")?])?,"data")?;
-  let host=&self.search.host;
-  let mask=host.run("glyph",&[&host.core()?,&raw,&width,&read(&canvas,"height")?,&width])?;
+  pen.set_text_baseline(intern("top"))?;
+  pen.set_fill_style(intern("#fff"))?;
+  let capitals;
+  let text=if upper!=0.0&&!upper.is_nan(){capitals=duck(&self.title).to_locale_upper_case()?;&capitals}else{&self.title};
+  let lines=duck(&self.wraps.borrow()).lines(context,text,line_width,key)?;
+  if !truthy(&duck(&lines).length()?){return Ok(None)}
+  let lines:&Array=lines.unchecked_ref();
+  for index in 0..lines.length(){pen.fill_text(&lines.get(index),x,3.0+f64::from(index)*line_height,line_width)?;}
+  let raw=duck(&pen.get_image_rows(0.0,0.0,width,rows)?).data()?;
+  let mask=self.search.host.glyph(&self.core.borrow(),&raw,width,rows,width)?;
   if mask.is_undefined(){return Err(error("Invalid glyph raster"))}
-  Ok(truthy(&mask).then_some(mask))
+  Ok((!mask.is_null()).then_some(mask))
  }
  /// `runRemoteFamily`'s loop from the step just reached (`resumed`: straight after a slice's yield).
  fn advance(self:&Rc<Self>,reached:R,mut resumed:bool){
   let run=reached.and_then(|_|loop{
    if !resumed{
-    let mask=match &*self.step.borrow(){Step::Done=>break Ok(false),Step::Mask(mask)=>Some(mask.clone()),Step::Bare=>None};
-    if let Some(mask)=mask{self.masks.push(&mask);}
+    match &*self.step.borrow(){Step::Done=>break Ok(false),Step::Mask(mask)=>{self.masks.push(mask);}Step::Bare=>{}}
     if clock()?-self.slice_start.get()>=SLICE_MS{
      // A message event queues behind whatever else is waiting (input, timers).
-     let yielded=self.search.host.run("yieldToMain",&[])?;
+     let yielded=self.search.host.yield_to_main()?;
      let family=self.clone();
      wait(&yielded,move|outcome|match outcome.and_then(|_|family.search.host.ready()){
       Ok(ready)=>{
@@ -548,17 +717,15 @@ impl Family{
   match run{
    Ok(true)=>{}
    // Scores only select a maximum; they never alter which glyphs are sampled.
-   Ok(false)=>{
-    match self.search.host.core(){
-     Ok(core)=>{
-      let family=self.clone();
-      wait(&self.search.score_masks(self.masks.clone()),move|outcome|{
-       match outcome.and_then(|scores|family.search.host.run("max",&[&core,&scores])){Ok(best)=>family.done.resolve(&best),Err(failure)=>family.fail(failure)}
-      });
-     }
-     Err(failure)=>self.fail(failure),
+   Ok(false)=>match self.search.host.core(){
+    Ok(core)=>{
+     let family=self.clone();
+     wait(&self.search.score_masks(self.masks.clone()),move|outcome|{
+      match outcome.and_then(|scores|family.search.host.max(&core,&scores)){Ok(best)=>family.done.resolve(&best),Err(failure)=>family.fail(failure)}
+     });
     }
-   }
+    Err(failure)=>self.fail(failure),
+   },
    Err(failure)=>self.fail(failure),
   }
  }

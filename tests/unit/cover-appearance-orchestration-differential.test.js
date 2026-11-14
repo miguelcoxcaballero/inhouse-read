@@ -163,11 +163,13 @@ const modules = {}
 async function analysers() {
   // Both analysers reach the Worker client through a dynamic import: have it loaded, so it answers in microtasks.
   await import('../../src/js/font-score-client.js')
-  modules.reference ??= await import('./helpers/reference-cover-appearance-orchestration.js')
   if (!modules.candidate) {
+    modules.reference = await import('./helpers/reference-cover-appearance-orchestration.js')
     modules.candidate = await import('../../src/js/cover-appearance.js')
-    // The first safe point of a page lets the shelf module adopt the start-up state (two handles, once).
-    await browser({}).run(() => modules.candidate.analyzeCoverAppearance('blob:first', '', { matchFont:false }))
+    // Once per page: the first safe point lets the shelf module adopt the start-up state, the analyser makes
+    // its two reactions, and the handful of fixed words it sets on a canvas ('2d', 'top', 'center'...) are
+    // kept as the page's strings. Both sides run the same first analysis, so both have asked for the fonts.
+    for (const module of [modules.reference, modules.candidate]) await browser({ worker:'missing' }).run(() => module.analyzeCoverAppearance('blob:first', 'Alpha beta'))
   }
   return modules
 }
