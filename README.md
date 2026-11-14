@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.7.331 — Bloques de carga en lugar de frases
+
+Mientras algo carga ya no aparece una frase («Abriendo libro…», «Conectando
+con Drive…», «Buscando…», «Preparando la voz natural…»), sino un bloque gris
+del tamaño de lo que va a llegar, con un brillo suave (quieto si el sistema
+pide menos movimiento). Desaparecen textos que repetían lo evidente:
+«Conectado», «Inicio»/«Final» bajo la barra de progreso y el subtítulo del
+widget de racha. Las frases siguen ahí para los lectores de pantalla.
+
 ## 1.7.330 — Autor y título a salvo, voz y portadas en Rust
 
 Un libro vuelve a recuperar de Drive el autor y el título de lomo que le

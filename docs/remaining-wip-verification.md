@@ -1,3 +1,12 @@
+# 1.7.331 — bloques de carga y menos texto (tanda integ-bar-10)
+
+- Rama: ready/ui-text-1 (una utilidad CSS `.ihr-skeleton` en src/css/base.css; sin JavaScript nuevo ni peticiones nuevas en el arranque).
+- Unitarias: cuatro tandas, 9180 pasan; solo falló una vez bookshelf-scene-veneer, la prueba frágil bajo carga ya descrita en la 1.7.330.
+- Capturas de estados estables: 22 comparadas con la 1.7.325, 16 idénticas bit a bit, máximo 1/255.
+- Navegador, en local: reader-loading, download-android, reading-streak, rust-native-import-gate y rust-reader-lists en verde; reader-interface 4 de 4 en la tercera pasada (las dos primeras fallaron en la espera de 8 s del PDF con carga 8-10; el tiempo de apertura medido intercalado es 4,3-5,4 s en esta versión y 4,5-5,2 s en la 1.7.328).
+- Evidencia visual: 108 pares de antes y después (móvil y escritorio, claro y oscuro) revisados por el autor del cambio.
+- Sin verificar: teléfono real y WebView de Android; un lector de pantalla real; navegadores sin `:has()` o `color-mix`; los bloques de voz, minirreproductor y catálogo ocupado se forzaron a mano.
+
 # 1.7.330 — fachada de voz, análisis de portada, censo de la escena y autor/título de Drive (tanda integ-bar-9)
 
 - Unitarias: cuatro tandas, 0 fallos reproducibles. Con la máquina a carga 10, bookshelf-scene-programs y bookshelf-scene-veneer (cuentan repintados del primer fotograma) fallan a ratos: candidato 14 de 16 repeticiones en verde, compilación de la 1.7.329 10 de 12; fragilidad previa bajo carga.
