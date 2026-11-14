@@ -431,9 +431,10 @@ impl RustBookGravity {
      if room>h*tilt.sin()+0.001{
       angle=if right>=left{-tilt}else{tilt};
       // It would fall onto the real pot or lamp that ends its free space and
-      // stay propped against it. Next to such a solid within its own height
-      // a fresh book simply stands.
-      if (if right>=left{right_decoration}else{left_decoration})&&room<h+0.01{angle=0.0;}
+      // stay propped against it. A book the reader never placed by hand
+      // (geometry kind 0.5) simply stands next to such a solid within its own
+      // height; one placed by hand keeps the seed it always had.
+      if g[1]==0.5&&(if right>=left{right_decoration}else{left_decoration})&&room<h+0.01{angle=0.0;}
      }
     }
     // Start a legacy lean around its original bottom toe, not its
