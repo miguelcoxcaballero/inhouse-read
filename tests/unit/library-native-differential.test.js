@@ -1,6 +1,6 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {Blob as NativeBlob,File as NativeFile} from 'node:buffer';
-import {LibraryStore,idForSource} from '../../src/js/library-store.js';
+import {LibraryStore,idForSource} from './helpers/library-store-doorways.js';
 import {LibraryStore as Frozen,idForSource as originalId} from './helpers/reference-library-store.js';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
 let serial=0;const opened=[];let clock;
