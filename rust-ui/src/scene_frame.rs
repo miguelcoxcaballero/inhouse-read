@@ -78,6 +78,17 @@ impl RustScene{
   self.trash_text_key.clear();self.trash_text_key.extend(numbers.iter().map(|value|value.to_bits()));
   Some(scene_trash_texts(&numbers[0..3],numbers[3],&numbers[4..7],numbers[7],numbers[8],&numbers[9..12],&numbers[12..15],numbers[15],numbers[16]))
  }
+ /// How a painted frame ends, from what moved in it (`moved`: 1 an entry, 2 the bin, 4 an entry
+ /// this device moves itself, 8 an entry flies, lands or previews). Returns 1 the canvas says it
+ /// animates, 2 the scene moves (another frame follows), 4 this device's own scene moves, 8 the
+ /// room is quiet (its physics may be saved and its motion published as at rest), 16 an
+ /// inspection gesture moves the view.
+ #[wasm_bindgen(js_name=framePlan)]
+ pub fn frame_plan(&self,moved:u32)->u32{
+  let view=self.turning()||self.reordering();
+  let (scene,local,inspecting)=(view||moved&3!=0,view||moved&6!=0,self.moving());
+  u32::from(scene||inspecting)|u32::from(scene)<<1|u32::from(local)<<2|u32::from(!scene&&!inspecting&&moved&8==0)<<3|u32::from(inspecting)<<4
+ }
  /// The bin is not shown in this view: only the diagonal view at its end shows it.
  #[wasm_bindgen(js_name=trashViewHidden)]
  pub fn trash_view_hidden(&self)->bool{!self.isometric||self.progress<0.86}

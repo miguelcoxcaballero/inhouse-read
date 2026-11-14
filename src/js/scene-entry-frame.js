@@ -8,7 +8,7 @@ export const ENTRY_STATE = 91, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
-  const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part),
+  const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part), showEntries:(active, summary) => native.showEntries(active, summary),
     hold, census, painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
     prepare, bind, refresh, step, poses, settle, place, settled, hits, exclusions, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {

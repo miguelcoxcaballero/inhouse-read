@@ -55,7 +55,7 @@ impl RustSceneEntryFrame{
  }
  /// The canvas' data attributes, for `show`.
  pub fn shows(&mut self,dataset:js_sys::Object){
-  self.dataset=Some(dataset);self.shown_last=[FRESH;19];self.shown_text.clear();
+  self.dataset=Some(dataset);self.shown_last=[FRESH;22];self.shown_text.clear();
   self.shown_keys=KEYS.iter().map(|key|JsValue::from_str(key)).collect();
  }
  /// The host's numbers for `show`: the lit lamps, the lamps casting a shadow, the renderer's
@@ -83,9 +83,25 @@ impl RustSceneEntryFrame{
    let _=js_sys::Reflect::set(dataset,&self.shown_keys[index],&value);
   }
  }
+ /// The entries' own diagnostics, at the end of their part of every frame (a held frame too): the
+ /// books the room holds (`active`, counted by the host as it places the models), whether a
+ /// placement preview eases and how many entries it moves (both in `summary`, the pose call's result).
+ #[wasm_bindgen(js_name=showEntries)]
+ pub fn show_entries(&mut self,active:f64,summary:f64){
+  let Some(dataset)=&self.dataset else{return};
+  let values=[active,f64::from((summary as u32)&4!=0),(summary/8.0).floor()];
+  for (index,value) in values.into_iter().enumerate(){
+   let bits=(value+0.0).to_bits();
+   if self.shown_last[19+index]==bits{continue;}
+   self.shown_last[19+index]=bits;
+   let value=if index==1{JsValue::from_bool(value!=0.0)}else{JsValue::from_f64(value+0.0)};
+   let _=js_sys::Reflect::set(dataset,&self.shown_keys[19+index],&value);
+  }
+ }
 }
 /// No number written yet (no shown value has these bits).
 const FRESH:u64=u64::MAX;
-const KEYS:[&str;19]=["activePlants","highResolutionPlants","activeLamps","lampLightCount","activeLampLights","lampShadowCount","lampLightTemperature",
+const KEYS:[&str;22]=["activePlants","highResolutionPlants","activeLamps","lampLightCount","activeLampLights","lampShadowCount","lampLightTemperature",
  "overviewBooks","highResolutionBooks","bookTextureResolutions","sceneGeometries","sceneTextures",
- "inspectionOverviewReady","pixelRatio","detailedBooks","bookQualityPending","shadowMapSize","furnitureMeshes","plantGeometry"];
+ "inspectionOverviewReady","pixelRatio","detailedBooks","bookQualityPending","shadowMapSize","furnitureMeshes","plantGeometry",
+ "activeBooks","previewAnimating","previewObjects"];

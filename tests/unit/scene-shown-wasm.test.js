@@ -111,4 +111,46 @@ describe('the view\'s and the bin\'s diagnostics written by Rust', () => {
       a.free(); b.free()
     }
   })
+
+  // How a painted frame ends (RustScene#framePlan), against the frozen expressions of draw() in 1.7.333.
+  it('ends a frame as the frozen JavaScript did, in every state of the view', () => {
+    const frozen = (view, moving, trashMoving, localMoving, busy) => {
+      const animating = Boolean(view.turning || view.reordering || moving || trashMoving || view.moving)
+      const lastSceneMoving = Boolean(view.turning || view.reordering || moving || trashMoving)
+      const lastLocalSceneMoving = Boolean(view.turning || view.reordering || localMoving || trashMoving)
+      const quiet = !lastSceneMoving && !view.moving && !busy
+      return (animating ? 1 : 0) | (lastSceneMoving ? 2 : 0) | (lastLocalSceneMoving ? 4 : 0) | (quiet ? 8 : 0) | (view.moving ? 16 : 0)
+    }
+    let states = 0
+    for (let state = 0; state < 8; state++) {
+      const view = new rustShelf.RustScene(600, 1200, 600, 250, false, false, 0)
+      if (state & 1) view.setMode(true, true, 1000, 0)
+      if (state & 2) view.beginReorder(1000)
+      if (state & 4) view.setInspection(1.5, 3, 4, true)
+      expect([view.turning, view.reordering, view.moving]).toEqual([Boolean(state & 1), Boolean(state & 2), Boolean(state & 4)])
+      for (let moved = 0; moved < 16; moved++, states++)
+        expect(view.framePlan(moved), `state ${state} moved ${moved}`).toBe(frozen(view, Boolean(moved & 1), Boolean(moved & 2), Boolean(moved & 4), Boolean(moved & 8)))
+      view.free()
+    }
+    expect(states).toBe(128)
+  })
+
+  // The entries' own diagnostics (RustSceneEntryFrame#showEntries), against the frozen writes of updateEntries.
+  it('writes the entries\' diagnostics as the frozen JavaScript did', () => {
+    const frame = new rustShelf.RustSceneEntryFrame(), now = {}, old = {}, shownData = new Map()
+    const showData = (key, value) => { if (shownData.get(key) === value) return; shownData.set(key, value); setData(old, key, value) }
+    frame.shows(now)
+    let seed = 99
+    const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
+    for (let step = 0; step < 2000; step++) {
+      const activeBooks = random() < .5 ? 12 : Math.floor(random() * 300), summary = random() < .5 ? 3 : Math.floor(random() * 64) + Math.floor(random() * 40) * 8
+      const writes = Object.keys(now).length
+      showData('activeBooks', String(activeBooks)); showData('previewAnimating', String(Boolean(summary & 4))); showData('previewObjects', String(Math.floor(summary / 8)))
+      frame.showEntries(activeBooks, summary)
+      expect(Object.keys(now)).toEqual(Object.keys(old))
+      for (const key of Object.keys(old)) expect(String(now[key]), `${key} step ${step}`).toBe(old[key])
+      expect(writes === 0 || writes === 3).toBe(true)
+    }
+    frame.free()
+  })
 })

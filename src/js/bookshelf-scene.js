@@ -1332,7 +1332,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(node, 'sceneLean', value.toFixed(6));
   }
   function updateEntries(scroll, zoom, now, finishedInsertions) {
-    let activeBooks = 0, moving = false, shelfMoving = false, previewing = false, previewed = 0, overlaying = false;
+    let activeBooks = 0, moving = false, shelfMoving = false, overlaying = false;
     insertedIds.length = 0; exclusionsReady = false;
     // Changes the observer has not yet delivered (a synchronous draw right after
     // a class or drag-variable write) are examined here, as the frame's own read.
@@ -1427,7 +1427,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // [material, strength, pan, kind]; a module without kinds reports book impacts in threes.
       if(sounds){const stride=bookGravity.sound_stride?.()||3;for(let at=0;at+2<sounds.length;at+=stride)playShelfSound(stride>3?sounds[at+3]:3,sounds[at],sounds[at+1],sounds[at+2]);}
     }
-    moving = Boolean(summary & 1); shelfMoving = Boolean(summary & 2); previewing = Boolean(summary & 4); previewed = Math.floor(summary / 8);
+    moving = Boolean(summary & 1); shelfMoving = Boolean(summary & 2);
     let roomWalked = false;
     const epoch = roomEpochNow();
     for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
@@ -1644,9 +1644,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // restyling (the loop wrote only left/top/width/height/z-index of observed
     // nodes): it carries no class or drag-variable change to react to.
     mutations.takeRecords();
-    showData('activeBooks', String(activeBooks));
-    showData('previewAnimating', String(previewing));
-    showData('previewObjects', String(previewed));
+    // The books the room holds and the placement preview (in `summary`), written when they change.
+    entryFrame.showEntries(activeBooks, summary);
     showData('returningBooks', insertedIds.join(','));
     showData('returningBookId', insertedIds.length === 1 ? insertedIds[0] : '');
     showData('returnRenderer', overlaying ? 'shared-depth-overlay' : 'shelf');
@@ -2364,10 +2363,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     entryFrame.show(0);
     showData('scenePrograms', String(info?.programs?.length || 0));
     entryFrame.show(1);
-    showData('animating', String(Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving || sceneView.moving)));
-    lastSceneMoving = Boolean(sceneView.turning || sceneView.reordering || moving || trashMoving);
-    lastLocalSceneMoving = Boolean(sceneView.turning || sceneView.reordering || localMoving || trashMoving);
-    if (settleBooks && physicsReady && !roomMotion.active(now) && !lastSceneMoving && !sceneView.moving && !busy) {
+    // How the frame ends, in one call (rust-ui/src/scene_frame.rs): 1 animating, 2 the scene moves,
+    // 4 this device's own scene moves, 8 the room is quiet, 16 an inspection gesture moves the view.
+    const plan = sceneView.framePlan((moving ? 1 : 0) | (trashMoving ? 2 : 0) | (localMoving ? 4 : 0) | (busy ? 8 : 0));
+    showData('animating', String(Boolean(plan & 1)));
+    lastSceneMoving = Boolean(plan & 2); lastLocalSceneMoving = Boolean(plan & 4);
+    if (settleBooks && physicsReady && !roomMotion.active(now) && plan & 8) {
       const saved = bookGravity.snapshot();
       if (saved !== undefined && saved !== null) {
         try {
@@ -2377,7 +2378,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         } catch {}
       }
     }
-    if (settleBooks) publishRoomMotion(now, !lastSceneMoving && !sceneView.moving && !busy);
+    if (settleBooks) publishRoomMotion(now, Boolean(plan & 8));
     paintedViewport = { width:frameLayout.innerWidth, height:frameLayout.innerHeight,
       ratio:frameLayout.ratio || 1, clientHeight:frameLayout.clientHeight, scrollTop:frameLayout.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
@@ -2400,7 +2401,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
     }
     // One more frame after any motion redraws its cheaper shadow at full quality.
-    if (sceneView.turning || sceneView.reordering || moving || trashMoving || (lighting.settling && !sceneView.moving)) invalidate(false);
+    if (plan & 2 || lighting.settling && !(plan & 16)) invalidate(false);
   }
 
   function noteInspectionDirty(source) {
