@@ -52,6 +52,30 @@ export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
   return mask;
 }
 
+// The raster of one mask stays here, one call from the Rust search: it is about twenty canvas calls, and
+// 144 masks a cover made that many imports measurably slower than this function.
+function fontMask(title, before, after, plan, maxWidth, rows, wraps, surface) {
+  const [upper, alignment, size, canvasHeight, x, lineHeight, lineWidth, key] = plan;
+  const align = ['center', 'left', 'right'][alignment];
+  const linesCanvas = surface.canvas ||= document.createElement('canvas');
+  if (linesCanvas.width !== maxWidth) linesCanvas.width = maxWidth;
+  if (linesCanvas.height !== canvasHeight) linesCanvas.height = canvasHeight;
+  const linesContext = surface.context ||= linesCanvas.getContext('2d', { willReadFrequently: true });
+  if (!linesContext) return null;
+  linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
+  linesContext.font = before + size + after;
+  linesContext.textAlign = align;
+  linesContext.textBaseline = 'top';
+  linesContext.fillStyle = '#fff';
+  const lines = wraps.lines(linesContext, upper ? title.toLocaleUpperCase() : title, lineWidth, key);
+  if (!lines.length) return null;
+  lines.forEach((line, index) => {
+    linesContext.fillText(line, x, 3 + index * lineHeight, lineWidth);
+  });
+  const mask = glyphMask(linesContext.getImageData(0, 0, maxWidth, linesCanvas.height).data, maxWidth, linesCanvas.height);
+  return mask && loadedRustCore().font_mask_fits(mask.width, mask.height, maxWidth, rows) ? mask : null;
+}
+
 export function nearEdgeMap(edges, width) {
   return rustNearEdgeMap(loadedRustCore(), edges, width);
 }
@@ -84,7 +108,7 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
 }
 
 const host = {
-  core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, color: rustCoverColor, glyph: rustGlyphMask,
+  core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, color: rustCoverColor, mask: fontMask,
   prepare: rustPrepareCoverPixels, scorer: createRustFontScorer, wraps: createRustFontWrapCache, plan: rustFontSearchPlan,
   max: rustFontFamilyMax, select: rustFontFamilySelect, open: openFontScoreJob, slices: runInSlices, yieldToMain,
   noop: () => {},

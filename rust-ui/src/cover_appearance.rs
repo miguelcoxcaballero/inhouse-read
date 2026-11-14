@@ -11,11 +11,13 @@
 //!
 //! Each host member is a typed import, so a call is one crossing with its numbers as numbers; the globals
 //! (`Image`, `document`, the timers, `performance`) are looked up by name at every call, as they were.
+//! One thing is deliberately not here: the raster of a mask (`fontMask`, about twenty canvas calls, 144 masks
+//! a cover) stays one host call, because driving a canvas call by call from here measured slower.
 use std::cell::{Cell,RefCell};
 use std::rc::Rc;
 use wasm_bindgen::{intern,prelude::*,JsCast};
-use js_sys::{Array,Float64Array,Function,JsString,Object,Promise};
-use crate::host::{absent,global,jmax,jmin,js_round,num,number_string,text_value,truthy};
+use js_sys::{Array,Function,JsString,Object,Promise};
+use crate::host::{absent,global,jmax,jmin,js_round,num,text_value,truthy};
 type R<T=()>=Result<T,JsValue>;
 
 #[wasm_bindgen]
@@ -40,7 +42,9 @@ extern "C"{
  #[wasm_bindgen(method,catch,js_name=requireCore)]fn require_core(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn ready(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn color(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn glyph(this:&Duck,core:&JsValue,raw:&JsValue,width:f64,rows:&JsValue,stride:f64)->R<JsValue>;
+ /// `fontMask(title, before, after, plan, width, rows, wraps, surface)`: the mask, or `null` without one that fits.
+ #[wasm_bindgen(method,catch)]fn mask(this:&Duck,title:&JsValue,before:&JsValue,after:&JsValue,plan:&JsValue,width:f64,rows:&JsValue,wraps:&JsValue,surface:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,getter,catch)]fn canvas(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn prepare(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64,edges:bool)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn scorer(this:&Duck,core:&JsValue,context:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn wraps(this:&Duck,core:&JsValue)->R<JsValue>;
@@ -80,7 +84,6 @@ extern "C"{
  #[wasm_bindgen(method,getter,catch,js_name=load)]fn loader(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn load(this:&Duck,font:&str)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=load)]fn load_for(this:&Duck,font:&str,text:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,getter,catch)]fn width(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn height(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,setter,catch,js_name=width)]fn set_width(this:&Duck,value:f64)->R<()>;
  #[wasm_bindgen(method,setter,catch,js_name=height)]fn set_height(this:&Duck,value:f64)->R<()>;
@@ -89,24 +92,12 @@ extern "C"{
  #[wasm_bindgen(method,setter,js_name=willReadFrequently)]fn set_will_read_frequently(this:&Duck,value:bool);
  #[wasm_bindgen(method,catch,js_name=drawImage)]fn draw_image(this:&Duck,image:&JsValue,x:f64,y:f64,width:f64,height:f64)->R<()>;
  #[wasm_bindgen(method,catch,js_name=getImageData)]fn get_image_data(this:&Duck,x:f64,y:f64,width:f64,height:f64)->R<JsValue>;
- #[wasm_bindgen(method,catch,js_name=getImageData)]fn get_image_rows(this:&Duck,x:f64,y:f64,width:f64,height:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn data(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,catch,js_name=clearRect)]fn clear_rect(this:&Duck,x:f64,y:f64,width:&JsValue,height:&JsValue)->R<()>;
- #[wasm_bindgen(method,catch,js_name=fillText)]fn fill_text(this:&Duck,text:&JsValue,x:f64,y:f64,max_width:f64)->R<()>;
- #[wasm_bindgen(method,setter,catch,js_name=font)]fn set_font(this:&Duck,value:&str)->R<()>;
- #[wasm_bindgen(method,setter,catch,js_name=textAlign)]fn set_text_align(this:&Duck,value:&str)->R<()>;
- #[wasm_bindgen(method,setter,catch,js_name=textAlign)]fn set_text_align_value(this:&Duck,value:&JsValue)->R<()>;
- #[wasm_bindgen(method,setter,catch,js_name=textBaseline)]fn set_text_baseline(this:&Duck,value:&str)->R<()>;
- #[wasm_bindgen(method,setter,catch,js_name=fillStyle)]fn set_fill_style(this:&Duck,value:&str)->R<()>;
- #[wasm_bindgen(method,catch,js_name=toLocaleUpperCase)]fn to_locale_upper_case(this:&Duck)->R<JsValue>;
- // The core's bridges' objects: prepared planes, the wrap cache, a mask, the core, the scorers.
+ // The core's bridges' objects: prepared planes, the wrap cache, the scorers.
  #[wasm_bindgen(method,getter,catch)]fn gray(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn near(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn busy(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn lines(this:&Duck,context:&JsValue,text:&JsValue,width:f64,key:f64)->R<JsValue>;
- #[wasm_bindgen(method,getter,catch)]fn length(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn dispose(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn font_mask_fits(this:&Duck,mask_width:&JsValue,mask_height:&JsValue,width:f64,rows:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=scoreMany)]fn score_many(this:&Duck,masks:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn close(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn steps(this:&Duck,mask:&JsValue)->R<JsValue>;
@@ -457,13 +448,13 @@ fn candidate_fonts(host:&Host,text:&JsValue)->R<JsValue>{
 
 /// One title search between its awaits: the cover's planes, the plans, the Worker job and the main-thread scorer.
 struct Search{host:Host,done:Rc<Deferred>,gray:JsValue,near:JsValue,width:f64,height:f64,title:JsValue,
- rows:RefCell<JsValue>,plans:RefCell<Vec<f64>>,worker:RefCell<JsValue>,local:RefCell<JsValue>,scores:Array}
+ rows:RefCell<JsValue>,plans:RefCell<Array>,plan_count:Cell<u32>,worker:RefCell<JsValue>,local:RefCell<JsValue>,scores:Array}
 
 /// `matchTitleFont(...)`: the index of the best family, or `null` when nothing can be matched.
 fn match_title_font(host:Host,gray:JsValue,width:f64,height:f64,title:JsValue,near:JsValue)->Promise{
  let done=Deferred::new();
  let promise=done.promise.clone();
- let search=Rc::new(Search{host,done,gray,near,width,height,title,rows:RefCell::new(undefined()),plans:RefCell::new(Vec::new()),
+ let search=Rc::new(Search{host,done,gray,near,width,height,title,rows:RefCell::new(undefined()),plans:RefCell::new(Array::new()),plan_count:Cell::new(0),
   worker:RefCell::new(JsValue::NULL),local:RefCell::new(JsValue::NULL),scores:Array::new()});
  match search.host.ready(){
   Ok(ready)=>{let search=search.clone();wait(&ready,move|outcome|if let Err(failure)=outcome.and_then(|_|search.open()){search.done.reject(&failure);})}
@@ -485,10 +476,11 @@ impl Search{
   let title=&self.title;
   if !truthy(title)||trimmed_length(title)<3||duck(&page()).document().is_undefined(){self.done.resolve(&JsValue::NULL);return Ok(())}
   let core=self.host.core()?;
-  // Eight numbers a plan: upper, alignment, size, canvas height, x, line height, line width, cache key.
   let plans=self.host.plan(&core,title,self.width)?;
   if !Array::is_array(&plans){return Err(js_sys::TypeError::new("plans is not iterable").into())}
-  *self.plans.borrow_mut()=Float64Array::new(&plans.unchecked_ref::<Array>().flat(1)).to_vec();
+  let plans:Array=plans.unchecked_into();
+  self.plan_count.set(plans.length());
+  *self.plans.borrow_mut()=plans;
   let work=new_canvas()?;
   duck(&work).set_width(self.width)?;duck(&work).set_height((self.height*0.82).floor())?;
   let context=duck(&work).get_context(intern("2d"))?;
@@ -585,31 +577,23 @@ impl Search{
 
 /// Where the family's raster generator stands: before the mask of plan `at`, or just after handing one over.
 enum Step{Bare,Mask(JsValue),Done}
-/// A canvas dimension as last read back: the value the canvas answered and, when it is a number, that number.
-/// Only this family writes to its canvas, so a dimension that already matches costs no call.
-struct Dimension{value:JsValue,number:Option<f64>}
-impl Dimension{
- fn unknown()->Dimension{Dimension{value:JsValue::UNDEFINED,number:None}}
- fn read(value:JsValue)->Dimension{Dimension{number:value.as_f64(),value}}
-}
-/// The family's CPU-backed raster surface.
-struct Surface{canvas:JsValue,context:Option<JsValue>,width:Dimension,height:Dimension}
-/// One family's rasters (`scoreFamily` driven by `runRemoteFamily`). The family owns one raster surface;
-/// masks are copied before they are handed over, so later plans reuse it.
-struct Family{search:Rc<Search>,done:Rc<Deferred>,index:usize,title:JsValue,masks:Array,wraps:RefCell<JsValue>,core:RefCell<JsValue>,surface:RefCell<Option<Surface>>,
- at:Cell<usize>,step:RefCell<Step>,slice_start:Cell<f64>,finished:Cell<bool>}
+/// One family's rasters (`scoreFamily` driven by `runRemoteFamily`). The family owns one CPU-backed raster
+/// surface; masks are copied before they are handed over, so later plans reuse it. The raster itself is the
+/// host's `fontMask`: a mask is about twenty canvas calls, which cost more from here than the mask's own work.
+struct Family{search:Rc<Search>,done:Rc<Deferred>,title:JsValue,before:JsValue,after:JsValue,masks:Array,wraps:RefCell<JsValue>,surface:JsValue,
+ at:Cell<u32>,step:RefCell<Step>,slice_start:Cell<f64>,finished:Cell<bool>}
 impl Family{
  fn run(search:&Rc<Search>,index:usize)->Promise{
   let done=Deferred::new();
   let promise=done.promise.clone();
-  let family=Rc::new(Family{search:search.clone(),done,index,title:text_value(&search.title),masks:Array::new(),wraps:RefCell::new(JsValue::NULL),
-   core:RefCell::new(JsValue::NULL),surface:RefCell::new(None),at:Cell::new(0),step:RefCell::new(Step::Done),slice_start:Cell::new(0.0),finished:Cell::new(true)});
+  // `${weight} ${size}px "${family}", ${fallback}` around the plan's size.
+  let (family,_,fallback,weight)=FONTS[index];
+  let family=Rc::new(Family{search:search.clone(),done,title:text_value(&search.title),before:format!("{weight} ").into(),after:format!("px \"{family}\", {fallback}").into(),
+   masks:Array::new(),wraps:RefCell::new(JsValue::NULL),surface:Object::new().into(),at:Cell::new(0),step:RefCell::new(Step::Done),slice_start:Cell::new(0.0),finished:Cell::new(true)});
   // The generator starts outside the driver's `try`: a wrap cache that cannot be made has nothing to release.
   let started=(||->R{
    family.slice_start.set(clock()?);
-   let core=search.host.core()?;
-   *family.wraps.borrow_mut()=search.host.wraps(&core)?;
-   *family.core.borrow_mut()=core;
+   *family.wraps.borrow_mut()=search.host.wraps(&search.host.core()?)?;
    family.finished.set(false);
    Ok(())
   })();
@@ -622,74 +606,27 @@ impl Family{
  fn release(&self)->R{
   if self.finished.replace(true){return Ok(())}
   duck(&self.wraps.borrow()).dispose()?;
-  let surface=self.surface.borrow_mut().take();
-  if let Some(surface)=surface{duck(&surface.canvas).set_width(0.0)?;duck(&surface.canvas).set_height(0.0)?;}
+  let canvas=duck(&self.surface).canvas()?;
+  if truthy(&canvas){duck(&canvas).set_width(0.0)?;duck(&canvas).set_height(0.0)?;}
   Ok(())
  }
  /// The top of the plan loop: the bare yield before plan `at`, or the end of the generator.
  fn arrive(&self)->R<Step>{
-  if self.at.get()*8<self.search.plans.borrow().len(){return Ok(Step::Bare)}
+  if self.at.get()<self.search.plan_count.get(){return Ok(Step::Bare)}
   self.release()?;
   Ok(Step::Done)
  }
- /// `task.next(0)`.
+ /// `task.next(0)`: the mask of plan `at` when it has lines and fits the cover, otherwise on to the next plan.
  fn next(&self)->R<Step>{
   let bare=matches!(*self.step.borrow(),Step::Bare);
   if bare{
-   let mut plan=[0.0;8];
-   plan.copy_from_slice(&self.search.plans.borrow()[self.at.get()*8..self.at.get()*8+8]);
-   if let Some(mask)=self.mask(&plan)?{
-    let fields=duck(&mask);
-    let fits=duck(&self.core.borrow()).font_mask_fits(&fields.width()?,&fields.height()?,self.search.width,&self.search.rows.borrow())?;
-    if truthy(&fits){return Ok(Step::Mask(mask))}
-   }
+   let search=&self.search;
+   let plan=search.plans.borrow().get(self.at.get());
+   let mask=search.host.mask(&self.title,&self.before,&self.after,&plan,search.width,&search.rows.borrow(),&self.wraps.borrow(),&self.surface)?;
+   if truthy(&mask){return Ok(Step::Mask(mask))}
   }
   self.at.set(self.at.get()+1);
   self.arrive()
- }
- /// `fontMask(...)`: the title in this family, wrapped by the plan and rastered on the family's surface.
- fn mask(&self,plan:&[f64;8])->R<Option<JsValue>>{
-  let [upper,alignment,size,canvas_height,x,line_height,line_width,key]=*plan;
-  let width=self.search.width;
-  // Nothing below comes back into this family before the mask is made.
-  let mut slot=self.surface.borrow_mut();
-  if slot.is_none(){*slot=Some(Surface{canvas:new_canvas()?,context:None,width:Dimension::unknown(),height:Dimension::unknown()});}
-  let surface=slot.as_mut().expect("the surface was just made");
-  let canvas=duck(&surface.canvas);
-  // `if (canvas.width !== maxWidth) canvas.width = maxWidth`, and the same for the height.
-  if surface.width.number.is_none(){surface.width=Dimension::read(canvas.width()?);}
-  if surface.width.number!=Some(width){canvas.set_width(width)?;surface.width=Dimension::read(canvas.width()?);}
-  if surface.height.number.is_none(){surface.height=Dimension::read(canvas.height()?);}
-  if surface.height.number!=Some(canvas_height){canvas.set_height(canvas_height)?;surface.height=Dimension::read(canvas.height()?);}
-  if surface.context.is_none(){
-   let context=cpu_context(&surface.canvas)?;
-   if !truthy(&context){return Ok(None)}
-   surface.context=Some(context);
-  }
-  let context=surface.context.as_ref().expect("the context was just kept");
-  let rows=&surface.height.value;
-  let pen=duck(context);
-  pen.clear_rect(0.0,0.0,&surface.width.value,rows)?;
-  let (family,_,fallback,weight)=FONTS[self.index];
-  pen.set_font(&format!("{weight} {}px \"{family}\", {fallback}",number_string(size)))?;
-  match alignment{
-   a if a==0.0=>pen.set_text_align(intern("center"))?,
-   a if a==1.0=>pen.set_text_align(intern("left"))?,
-   a if a==2.0=>pen.set_text_align(intern("right"))?,
-   _=>pen.set_text_align_value(&JsValue::UNDEFINED)?,
-  }
-  pen.set_text_baseline(intern("top"))?;
-  pen.set_fill_style(intern("#fff"))?;
-  let capitals;
-  let text=if upper!=0.0&&!upper.is_nan(){capitals=duck(&self.title).to_locale_upper_case()?;&capitals}else{&self.title};
-  let lines=duck(&self.wraps.borrow()).lines(context,text,line_width,key)?;
-  if !truthy(&duck(&lines).length()?){return Ok(None)}
-  let lines:&Array=lines.unchecked_ref();
-  for index in 0..lines.length(){pen.fill_text(&lines.get(index),x,3.0+f64::from(index)*line_height,line_width)?;}
-  let raw=duck(&pen.get_image_rows(0.0,0.0,width,rows)?).data()?;
-  let mask=self.search.host.glyph(&self.core.borrow(),&raw,width,rows,width)?;
-  if mask.is_undefined(){return Err(error("Invalid glyph raster"))}
-  Ok((!mask.is_null()).then_some(mask))
  }
  /// `runRemoteFamily`'s loop from the step just reached (`resumed`: straight after a slice's yield).
  fn advance(self:&Rc<Self>,reached:R,mut resumed:bool){
