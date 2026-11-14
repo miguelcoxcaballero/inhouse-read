@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 import {wasmReliefRgbaPlanes} from './helpers/reference-cover-relief-wasm.js';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,loadedRustCore:()=>state.core,requireRustCore:async()=>state.core}));
 import {reliefPlanesToRgba} from '../../src/js/cover-relief.js';
 let core;
 afterEach(()=>{state.core=core;});

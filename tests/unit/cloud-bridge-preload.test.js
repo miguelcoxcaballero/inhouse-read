@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 // a callback from the Android shell is answered immediately and handled when the module arrives.
 const runtime = vi.hoisted(() => ({ ui: null, gate: null }))
 vi.mock('../../src/js/rust-ui.js', () => ({ getRustUI: () => runtime.ui, requireRustUI: () => runtime.gate }))
-vi.mock('../../src/js/idle-startup.js', () => ({ shelfPresented: async () => true }))
+vi.mock('../../src/js/idle-startup.js', () => ({ shelfPresented: async () => true, shelfWorkReady: async () => true }))
 
 let ui
 beforeEach(async () => {

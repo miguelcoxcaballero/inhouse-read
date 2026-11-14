@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,it,expect,vi} from 'vitest';
 import assert from 'node:assert/strict';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,loadedRustCore:()=>state.core,requireRustCore:async()=>state.core}));
 import {rustReliefPalette} from './helpers/reference-palette-bridge.js';
 import {analyzePixels} from '../../src/js/cover-relief.js';
 import {seedOf,internals} from './helpers/reference-relief-color.js';

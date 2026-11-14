@@ -2,7 +2,7 @@
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,loadedRustCore:()=>state.core,requireRustCore:async()=>state.core}));
 import {buildMapsFromPixels} from '../../src/js/cover-relief.js';
 import {needRustShelf} from '../../src/js/rust-shelf.js';
 const shelf=needRustShelf();

@@ -2,7 +2,7 @@
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,it,expect,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,loadedRustCore:()=>state.core,requireRustCore:async()=>state.core}));
 import {prepareColorMaskJob,countPreparedMaskPixels} from './helpers/reference-color-mask-bridge.js';
 import {analyzePixels} from '../../src/js/cover-relief.js';
 import {analyzePixels as frozenAnalysis,internals} from './helpers/reference-relief-color.js';
