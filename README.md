@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.333 — Los libros ya no se apoyan en macetas ni lámparas
+
+Un libro que nunca has colocado a mano ya no cae inclinado contra una maceta o
+una lámpara: se queda de pie en su fila y, si no cabe, pasa al estante
+siguiente. Así la estantería llega a reposo y deja de repintarse. Los libros
+que colocaste tú se quedan donde los dejaste. Además, al abrir la app se
+reutiliza la sala guardada en el dispositivo en lugar de hornearla otra vez.
+
 ## 1.7.332 — El relieve de las portadas, en Rust
 
 Nada cambia a la vista: las capturas coinciden con la versión anterior. Por

@@ -1,3 +1,10 @@
+# Entrega 1.7.333 (tanda integ-bar-12): reposo de la estantería junto a macetas y lámparas
+
+Ramas: wip/product-fixes (4d9d2dc1), wip/ci-green-3 (e50cf623). Sin cambio en la barra (74,98 % Rust estimado en local).
+
+- rust-ui/src/book_gravity.rs: los cuerpos en reposo se duermen por isla de contacto, no uno a uno; un libro nunca colocado a mano no acepta caer contra una maceta o una lámpara, y rust-ui/src/bookshelf/screen_plan.rs lo lleva al siguiente hueco libre. Cambio visible: en las escenas de prueba con lámpara y maceta, los libros que antes quedaban inclinados entre ambas ahora están de pie o en el estante de abajo.
+- src/js/studio-environment-cache.js y src/js/app.js: la primera estantería espera hasta 120 ms a la sala guardada antes de crear el renderizador (5 líneas de JavaScript nuevas).
+
 # Entrega 1.7.332 (tanda integ-bar-11): relieve de portada y primer bucle de la escena
 
 Ramas: ready/book-model-16, ready/scene-frame-21, ready/ci-green-3.

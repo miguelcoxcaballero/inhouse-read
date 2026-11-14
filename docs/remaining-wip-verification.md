@@ -1,3 +1,10 @@
+# 1.7.333 — reposo junto a macetas y lámparas, sala guardada al arrancar (tanda integ-bar-12)
+
+- Unitarias: cuatro tandas, 9253 pasan, 4 omitidas, 0 fallos.
+- Capturas: 25 estados comparados con la 1.7.325; 16 sin cambio (13 idénticos bit a bit). Los 8 estados del mueble de nogal (04-07, móvil y escritorio) y el de veinte libros cambian a propósito: revisados a ojo, ningún libro inclinado ni apoyado en maceta, lámpara o pantalla; los que no caben pasan al estante siguiente.
+- Navegador, en local: 30 de 32 en smoke (incluida smoke:540, la vista isométrica con 80 libros, que estaba en rojo), shelf-decor-free-slots, shelf-launch, shelf-plant-lifecycle, bookshelf-polish y shelf-input-responsiveness. Siguen fallando shelf-close-placement:90 y shelf-placement:174, ya rojas en el CI de la 1.7.330 y la 1.7.331.
+- Sin verificar: teléfono real y WebView de Android; bibliotecas reales con libros colocados a mano junto a decoración (solo las escenas sembradas de la herramienta de capturas).
+
 # 1.7.332 — relieve de portada y primer bucle de la escena en Rust (tanda integ-bar-11)
 
 - Unitarias: cuatro tandas con la máquina en reposo, 9249 pasan, 4 omitidas, 0 fallos.
