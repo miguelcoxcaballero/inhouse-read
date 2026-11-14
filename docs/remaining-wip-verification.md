@@ -1,3 +1,10 @@
+# 1.7.332 — relieve de portada y primer bucle de la escena en Rust (tanda integ-bar-11)
+
+- Unitarias: cuatro tandas con la máquina en reposo, 9249 pasan, 4 omitidas, 0 fallos.
+- Capturas: 24 estados comparados con la 1.7.325, 15 idénticos bit a bit, máximo 1/255, media 0,0000. Los estados 10, 11, 13 y 14 (cambio a isométrica y veinte libros) no se capturan en ninguna versión con esta herramienta.
+- Navegador, en local: 82 de 84 en portadas, relieve, editor, smoke, papelera, zoom, tipos, plantas, follaje, energía del lector y continuidad de animación. Fallan cover-editor:206 (el gesto corta el balanceo en 1,0-1,1 s frente al límite de 0,9 s; falla igual, 3 de 3, con la compilación de la 1.7.328) y smoke:540 (vista isométrica con 80 libros, a la espera del arreglo de física).
+- Sin verificar: teléfono real y WebView de Android; el CI de esta versión se revisa después de publicar.
+
 # 1.7.331 — bloques de carga y menos texto (tanda integ-bar-10)
 
 - Rama: ready/ui-text-1 (una utilidad CSS `.ihr-skeleton` en src/css/base.css; sin JavaScript nuevo ni peticiones nuevas en el arranque).

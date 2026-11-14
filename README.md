@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.332 — El relieve de las portadas, en Rust
+
+Nada cambia a la vista: las capturas coinciden con la versión anterior. Por
+dentro, decodificar el relieve de una portada, sus miniaturas y su horneado
+sobre el libro pasan a Rust, y la escena de la estantería escribe en cada
+fotograma solo lo que ha cambiado. Coste asumido: unos 55 µs más por libro con
+relieve al arrancar y 54 KB más de wasm.
+
 ## 1.7.331 — Bloques de carga en lugar de frases
 
 Mientras algo carga ya no aparece una frase («Abriendo libro…», «Conectando
