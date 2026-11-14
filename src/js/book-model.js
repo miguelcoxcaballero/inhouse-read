@@ -18,7 +18,7 @@ import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface, rememberedPatch } from './book-reflection-surface.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from './gpu-programs.js';
-import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
+import { buildReliefMaps, composeMaterialMap, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from './native-renderer-presentation.js';
@@ -283,8 +283,8 @@ function blankPageMap() {
 // appearance updates, cover source, relief slots, ribbon and disposal (rust-ui/src/book_model_build.rs), all
 // over one plain state object `s`. Three's objects are made and wired here, in one pass: a shelf builds every
 // book at startup, and assembling them through the WebAssembly boundary property by property was slower than
-// this. What else stays here runs every frame of a flight (the pose setters below), the asynchronous relief
-// bake, and the adapters the module calls back. Shelf and lifted copies of a book overlap during a
+// this. What else stays here runs every frame of a flight (the pose setters below) and the adapters the module
+// calls back; the asynchronous relief bake is the module's too (rust-ui/src/relief_bake.rs). Shelf and lifted copies of a book overlap during a
 // transition: book-cover-images keeps the decoded image alive for exactly that overlap.
 export function createBookModel(book, style, width, height, thickness, coverUrl,
   { shelf = false, overview = false, inspectionResolution = 0, eagerRelief = true } = {}) {
@@ -452,7 +452,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   ud.coverRelief = () => normalizeCoverRelief(s.wantedRelief);
   ud.supportsCoverRelief = true;
   ud.prepareCoverRelief = rust.book_model_prepare_relief.bind(null, s);
-  ud.setCoverRelief = setCoverRelief.bind(null, s);
+  ud.setCoverRelief = rust.book_model_set_relief.bind(null, s);
   ud.updateCoverSource = rust.book_model_cover_source.bind(null, s);
   rust.book_model_cover_source(s, coverUrl, undefined, undefined, undefined);
   if (book.coverRelief) ud.setCoverRelief(book.coverRelief);
@@ -531,77 +531,6 @@ function applyPageTheme(s) {
   if (tone) { s.pagePaper.material.color.copy(tone); s.leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
 }
 
-// ---- cover relief: the asynchronous bake of the maps the shelf module installs -----------------------
-const reliefKey = choice => choice.layers ? JSON.stringify(['layers',...coverReliefLayers(choice)
-  .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>[layer.color,layer.tolerance])])
-  : JSON.stringify([choice.id, choice.color ?? null, choice.tolerance ?? null]);
-const reliefStrengthKey=choice=>choice.layers?JSON.stringify(coverReliefLayers(choice)
-  .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>layer.strength)):null;
-async function bakeReliefMaterial(s, revision, maps = s.reliefMaps, signal) {
-  if (!maps) return false;
-  const ticket = ++s.materialRevision;
-  const finishValue = s.coverSurfaceFinish, finish = SURFACE_FINISHES[finishValue];
-  const rgba = await runInSlices(composeMaterialMap(maps.pixels, {
-    clearcoat:finish.clearcoat, roughness:finish.roughness, clearcoatRoughness:finish.clearcoatRoughness
-  }));
-  if (revision !== s.reliefRevision || ticket !== s.materialRevision || signal?.aborted || s.disposed) return false;
-  // A finish can change while the first colour map is still being built;
-  // at that point there is no installed map for updateCoverAppearance to
-  // rebake. Do not commit material pixels computed for the old laminate.
-  if (finishValue !== s.coverSurfaceFinish) return bakeReliefMaterial(s, revision, maps, signal);
-  const { width, height } = maps.size, rust = needRustShelf();
-  rust.book_model_adopt_relief(s, maps.normalTexture, rust.book_model_map_texture(THREE, rgba, width, height));
-  s.reliefMaps = maps;
-  rust.book_model_relief_uniforms(s);
-  return true;
-}
-/** Apply (or clear, with null) a relief choice. Resolves true once drawn. */
-async function setCoverRelief(s, relief) {
-  if (s.disposed) return false;
-  s.reliefController?.abort();
-  const controller = s.reliefController = new AbortController();
-  const next = normalizeCoverRelief(relief), revision = ++s.reliefRevision, rust = needRustShelf();
-  s.wantedRelief = next;
-  if (!next) { if (s.reliefArmed) rust.book_model_clear_relief(s); return true; }
-  rust.book_model_arm_relief(s);
-  // Only installed maps may be reused. A pending bake owns no cached state.
-  const cached=s.reliefMaps && s.reliefMaps.key === reliefKey(next) && s.reliefMaps.source === rust.book_model_relief_source(s);
-  if (cached && (!next.layers || s.reliefMaps.strengthKey===reliefStrengthKey(next))) {
-    rust.book_model_relief_uniforms(s); s.group.userData.invalidate?.(); return true;
-  }
-  let built;
-  try {
-    await s.group.userData.ready;
-    if (revision !== s.reliefRevision || s.disposed || controller.signal.aborted) return false;
-    // The map uses the same fitted raster/UVs as the printed cover, including
-    // any aspect-ratio margins. Analysing the unfitted source shifts masks.
-    const source = rust.book_model_relief_source(s);
-    if (!source) return false;
-    built = cached ? await updateReliefMapStrengths(s.reliefMaps,next,{signal:controller.signal})
-      : await buildReliefMaps(source, next, { maxSize: s.overview ? 128 : s.shelf && !s.inspectionResolution ? 256 : 512, selectionAlpha: true, signal: controller.signal });
-    if (!built || revision !== s.reliefRevision || s.disposed || controller.signal.aborted) return false;
-    const { width, height } = built.size;
-    const normals = built.normalSelectionAlpha ? built.normal : built.normal.slice();
-    for (let i = 0; !built.normalSelectionAlpha && i < width * height; i++) {
-      // Alpha is not used by a normal map. Keep the selection there so the
-      // shader restores exact base-finish floats outside it (no byte-rounding
-      // drift), without another texture, mesh, draw or shader variant.
-      normals[i * 4 + 3] = built.pixels.mask?.[i]
-        ?? Math.max(built.pixels.gloss[i], built.pixels.foil[i], built.pixels.heightMap?.[i] ?? 0);
-    }
-    built.normalTexture = rust.book_model_map_texture(THREE, normals, width, height);
-    built.id = next.id; built.key = reliefKey(next); built.strengthKey=reliefStrengthKey(next); built.source = source;
-    if (!await bakeReliefMaterial(s, revision, built, controller.signal)) {
-      built.normalTexture.dispose(); return false;
-    }
-    s.group.userData.invalidate?.();
-    return true;
-  } catch {
-    if (built?.normalTexture && !s.reliefOwned.has(built.normalTexture)) built.normalTexture.dispose();
-    return false;
-  }
-}
-
 // What the shelf module calls back: three, the painters, the rust-core meshes and the asynchronous parts.
 let modelHostObject;
 function modelHost() {
@@ -615,7 +544,13 @@ function modelHost() {
     acquire:acquireCoverImage, reuse:reuseCoverRaster, cloth:replayCloth, paintWeave, drawDevice,
     title:displayBookTitle, author:normalizeBookAuthor, anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
     pageTheme:setPageTheme, getPageTheme:s => s.pageTheme, coverRelief:s => normalizeCoverRelief(s.wantedRelief),
-    setCoverRelief, rebake:(s, revision) => { bakeReliefMaterial(s, revision).then(done => { if (done) s.group.userData.invalidate?.(); }); },
+    // The relief bake (rust-ui/src/relief_bake.rs) builds its maps through these, in the page's slices.
+    buildRelief:(...args) => buildReliefMaps(...args), updateRelief:(...args) => updateReliefMapStrengths(...args),
+    materialMap(maps, value) {
+      const { clearcoat, roughness, clearcoatRoughness } = SURFACE_FINISHES[value];
+      return runInSlices(composeMaterialMap(maps.pixels, { clearcoat, roughness, clearcoatRoughness }));
+    },
+    rebake:needRustShelf().book_model_rebake_relief,
     coverOpen:setCoverOpen, bookmarkWithdraw:setBookmarkWithdraw, motionPose:setMotionPose, ribbonGeometry:updateRibbonGeometry,
     preparePresentation:(s, idle, current = () => true) => prepareBookPresentation(s.group, idle, () => !s.disposed && current()),
     prepareDetailPresentation:(s, idle, current = () => true) => prepareBookDetailPresentation(() => createBookModel(s.book, s.style,

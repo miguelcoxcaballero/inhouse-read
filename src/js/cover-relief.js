@@ -181,132 +181,36 @@ export function* shadePreview(image, maps, { slope = 7 } = {}) {
 }
 
 // ---- browser wrapper ----------------------------------------------------------------------
-
-async function decode(source, signal) {
-  if (signal?.aborted) throw abortError();
-  if (typeof source !== 'string') return source;
-  if (typeof Image === 'undefined') throw new Error('Sin imágenes en este entorno');
-  const image = new Image();
-  image.decoding = 'async';
-  let timer, onAbort;
-  const loaded = typeof image.decode === 'function' ? null : new Promise((resolve, reject) => {
-    image.onload = resolve;
-    image.onerror = () => reject(new Error('No se pudo leer la portada'));
-  });
-  image.src = source;
-  try {
-    await Promise.race([
-      loaded ?? image.decode(),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('La portada tardó demasiado')), 4000); }),
-      new Promise((_, reject) => {
-        onAbort = () => reject(abortError());
-        signal?.addEventListener('abort', onAbort, { once: true });
-        if (signal?.aborted) onAbort();
-      })
-    ]);
-    if (signal?.aborted) throw abortError();
-    return image;
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener('abort', onAbort);
-    image.onload = image.onerror = null;
-  }
-}
-
-function dimensionsOf(drawable) {
-  return { width: drawable.naturalWidth || drawable.videoWidth || drawable.displayWidth || drawable.width,
-    height: drawable.naturalHeight || drawable.videoHeight || drawable.displayHeight || drawable.height };
-}
-
-function raster(drawable, long, { sampleColors = false } = {}) {
-  const natural = dimensionsOf(drawable), size = fitDimensions(natural.width, natural.height, long);
-  const canvas = document.createElement('canvas');
-  canvas.width = size.width; canvas.height = size.height;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  // Analysis samples actual pixels, without manufacturing blend colors along
-  // two-color edges. Map/preview resizing retains the existing high quality.
-  context.imageSmoothingEnabled = !sampleColors; context.imageSmoothingQuality = 'high';
-  context.drawImage(drawable, 0, 0, size.width, size.height);
-  const { data } = context.getImageData(0, 0, size.width, size.height);
-  // Preserve alpha: transparent cutouts/board padding are excluded from colors.
-  return { data, width: size.width, height: size.height };
-}
-
-function toCanvas(rgba, width, height) {
-  const canvas = document.createElement('canvas');
-  canvas.width = width; canvas.height = height;
-  canvas.getContext('2d').putImageData(new ImageData(rgba, width, height), 0, 0);
-  return canvas;
-}
-
-async function thumbnailOf(work, maps, run) {
-  const shaded = await run(shadePreview(work, maps, { slope: maps.soft ? 2.2 : 7 })), canvas = toCanvas(shaded, work.width, work.height);
-  const size = needRustShelf().relief_thumbnail_size(work.width, work.height), small = document.createElement('canvas');
-  small.width = size.width; small.height = size.height;
-  const context = small.getContext('2d');
-  context.imageSmoothingQuality = 'high';
-  context.drawImage(canvas, 0, 0, small.width, small.height);
-  return small.toDataURL('image/jpeg', .82);
+// The bounded decode, the working rasters, the thumbnails and the three flows below are the shelf module's
+// (rust-ui/src/relief_flow.rs), promise for promise; it is handed the generators above and the slice driver.
+const host = { normalize:normalizeCoverRelief, ready, sliced:(task, signal, stats) => runSliced(task, { signal, stats }),
+  analysis:analyzePixels, maps:buildMapsFromPixels, render:(...args) => run(Job => Job.render(...args)),
+  preview:(image, maps, slope) => shadePreview(image, maps, { slope }) };
+function flow(name, ...args) {
+  let shelf;
+  try { shelf = needRustShelf(); } catch { return ready().then(() => needRustShelf()[name](host, ...args)); }
+  return shelf[name](host, ...args);
 }
 
 /** Find, rank and preview up to ten actual color proposals (URL or decoded
  * image). Returns fewer choices for covers with fewer supported colors. Heavy
  * loops run in main-thread slices; pass `signal` to cancel. */
-export async function analyzeCoverRelief(coverUrl, { title = '', author = '', signal, previews = true } = {}) {
-  void title; void author; // the picture decides: names never add a claim the pixels do not support
-  const stats = { slices: 0, longestSliceMs: 0, ms: 0, durations: [] };
-  const [drawable] = await Promise.all([decode(coverUrl, signal), ready()]);
-  const work = raster(drawable, WORK_SIZE, { sampleColors:true });
-  const found = await runSliced(analyzePixels(work), { signal, stats });
-  // Ten choices must not multiply full-size map construction. The small
-  // thumbnails only illustrate the selected ink; the model independently
-  // rebuilds its physical mask at the appropriate rendering resolution.
-  const preview = previews ? raster(drawable, 96, { sampleColors:true }) : null;
-  const proposals = [];
-  for (const choice of found.chosen) {
-    const maps = preview ? await runSliced(buildMapsFromPixels(work, preview, choice), { signal, stats }) : null;
-    const thumbnail = preview ? await thumbnailOf(preview, maps, task => runSliced(task, { signal, stats })) : '';
-    proposals.push(needRustShelf().relief_proposal(choice, thumbnail));
-  }
-  return { proposals, analysis:needRustShelf().relief_analysis_report(found, work, stats) };
-}
+export const analyzeCoverRelief = (coverUrl, options) => flow('relief_analyze_cover', coverUrl, options);
 
 /** The maps of one relief choice for a cover: `height` (bytes, in
  * MAX_RELIEF_MM units), `foil` and `gloss` canvases at the cover's aspect,
  * plus `normal` (tangent-space RGBA) ready for a texture. A saved HEX/radius is
  * classified directly at map resolution, without re-centering/re-clustering.
  * Legacy ids resolve to the first supported color but do not rewrite data. */
-export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, signal, selectionAlpha = false } = {}) {
-  const choice = normalizeCoverRelief(relief);
-  if (!choice) return null;
-  const stats = { slices: 0, longestSliceMs: 0, ms: 0 };
-  const [drawable] = await Promise.all([decode(coverUrl, signal), ready()]);
-  const hires = raster(drawable, needRustShelf().relief_map_resolution(maxSize));
-  const work = needRustShelf().relief_map_mode(choice) !== 0 ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
-  const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
-  const unit = needRustShelf().relief_normal_unit(maps.width, maps.height, 1);
-  const planes = await runSliced(run(Job => Job.render(maps, unit, selectionAlpha, true, null)), { signal, stats });
-  const { normal } = planes;
-  return { height: new ImageData(planes.height, maps.width, maps.height),
-    foil: new ImageData(planes.foil, maps.width, maps.height), gloss: new ImageData(planes.gloss, maps.width, maps.height),
-    normal, ...(selectionAlpha ? { normalSelectionAlpha: true } : {}), pixels: maps, size: { width: maps.width, height: maps.height }, foilColor: maps.foilColor,
-    stats: { ms: Math.round(stats.ms), longestSliceMs: stats.longestSliceMs, slices: stats.slices } };
-}
+export const buildReliefMaps = (coverUrl, relief, options) => flow('relief_build_maps', coverUrl, relief, options);
 
 /** Recompose installed multicolour maps from the same stored classification.
  * The returned normal/pixels are separate, so a cancelled bake cannot mutate
  * the cover that remains on screen. */
-export async function updateReliefMapStrengths(built, selection, { signal } = {}) {
-  await ready();
-  const maps = built.pixels;
-  const layers = needRustShelf().relief_selected_layers(maps, selection);
-  const unit = needRustShelf().relief_normal_unit(maps.width, maps.height, 1);
-  const { pixels, normal } = await runSliced(run(Job => Job.render(maps, unit, built.normalSelectionAlpha === true, false, layers)), { signal });
-  return { ...built,pixels,normal };
-}
+export const updateReliefMapStrengths = (built, selection, options) => flow('relief_update_strengths', built, selection, options);
 
 /** Convert the three material planes together without changing their pixel data. */
 export const reliefPlanesToRgba = maps => needRustShelf().relief_planes_rgba(maps);
 
 /** Pure steps the tests reach into: the colour naming. */
-export const internals = { colorName, raster };
+export const internals = { colorName };
