@@ -97,6 +97,7 @@ pub fn voice_host_split_segments(ids:JsValue)->R<Array>{
 
 /// The finished audio of one sentence of a Piper fragment: `{pcm, marks:[{offset, sample}]}` (see synth-flow.js).
 #[wasm_bindgen]
+#[inline(never)] // one instance, for the export and for the worker's job (voice_worker.rs): the engine optimizes it once
 pub fn voice_host_finish_piper(raw:Vec<f32>,durations:Option<Vec<f32>>,points:JsValue,text:JsValue,options:JsValue)->R{
  let mut raw=raw;
  let sample_rate=to_number(&get(&options,"sampleRate"))?;
@@ -120,6 +121,7 @@ pub fn voice_host_finish_piper(raw:Vec<f32>,durations:Option<Vec<f32>>,points:Js
 
 /// The finished audio of one Supertonic fragment (already at its final speed), or null for a sample that is not a number.
 #[wasm_bindgen]
+#[inline(never)] // one instance, for the export and for the worker's job (voice_worker.rs): the engine optimizes it once
 pub fn voice_host_finish_supertonic(raw:Vec<f32>,text:JsValue,timeline:JsValue,options:JsValue)->R{
  let mut raw=raw;
  let sample_rate=to_number(&get(&options,"sampleRate"))?;let room=capacity(raw.len(),sample_rate)?;

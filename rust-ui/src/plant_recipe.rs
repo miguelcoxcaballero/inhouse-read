@@ -8,7 +8,7 @@
 //! build, which is what made the separate calls slow (a plant is made per plant at start-up).
 use wasm_bindgen::{intern, prelude::*, JsCast};
 use js_sys::{Array, Float64Array, Object, Set};
-use crate::host::{absent, num, truthy};
+use crate::host::{num, truthy};
 use crate::plant_surface_policy::{appearance, finish_plan, leaf_look, leaf_plan, pot_key_text, pot_plan, soil_plan, Surface};
 use crate::plant_surface_queue::{plant_bake_get, plant_bake_remember, surface_maps};
 
@@ -59,6 +59,19 @@ extern "C" {
     #[wasm_bindgen(method, getter = clayColor, catch)] pub fn clay_color(this: &Thing) -> R<JsValue>;
     #[wasm_bindgen(method, getter = soilKind, catch)] pub fn soil_kind(this: &Thing) -> R<JsValue>;
     #[wasm_bindgen(method, getter, catch)] pub fn detailed(this: &Thing) -> R<JsValue>;
+
+    // The remembered bakes (plant_surface_queue) and what a plant's geometry is worked out from (decor_adapters).
+    #[wasm_bindgen(method, getter = shelfBakes, catch)] pub fn shelf_bakes(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter = savedModels, catch)] pub fn saved_models(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, setter = savedModels, catch)] pub fn set_saved_models(this: &Thing, value: &JsValue) -> R<()>;
+    #[wasm_bindgen(method, getter, catch)] pub fn id(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter = defaultPotId, catch)] pub fn default_pot_id(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, getter = modelId, catch)] pub fn model_id(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, catch, js_name = loadedShelfBakes)] pub fn loaded_shelf_bakes(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, catch, js_name = scheduleShelfBakeWrite)] pub fn schedule_shelf_bake_write(this: &Thing) -> R<JsValue>;
+    #[wasm_bindgen(method, catch, js_name = resolveCatalogPlant)] pub fn resolve_catalog_plant(this: &Thing, entry: &JsValue) -> R<JsValue>;
+    #[wasm_bindgen(method, catch, js_name = getCatalogPot)] pub fn get_catalog_pot(this: &Thing, id: &JsValue) -> R<JsValue>;
+    #[wasm_bindgen(method, catch, js_name = plantDimensions)] pub fn plant_dimensions(this: &Thing, id: &JsValue, pot: &JsValue) -> R<JsValue>;
 
     // The catalogue tables (plant_layout_policy).
     #[wasm_bindgen(method, getter, catch)] pub fn dimensions(this: &Thing) -> R<JsValue>;
@@ -158,24 +171,27 @@ extern "C" {
     #[wasm_bindgen(method, setter)] fn set_clay(this: &Fresh, value: &JsValue);
     #[wasm_bindgen(method, setter)] fn set_leaf(this: &Fresh, value: &JsValue);
     #[wasm_bindgen(method, setter)] fn set_soil(this: &Fresh, value: &JsValue);
-    #[wasm_bindgen(method, setter)] fn set_bake(this: &Fresh, value: &JsValue);
+    #[wasm_bindgen(method, setter)] pub fn set_bake(this: &Fresh, value: &JsValue);
+    #[wasm_bindgen(method, setter = catalogPlant)] pub fn set_catalog_plant(this: &Fresh, value: &JsValue);
+    #[wasm_bindgen(method, setter = potId)] pub fn set_pot_id(this: &Fresh, value: &JsValue);
+    #[wasm_bindgen(method, setter = potModelId)] pub fn set_pot_model_id(this: &Fresh, value: &JsValue);
+    #[wasm_bindgen(method, setter)] pub fn set_real(this: &Fresh, value: &JsValue);
+    #[wasm_bindgen(method, setter)] pub fn set_unit(this: &Fresh, value: f64);
 }
 
 /// `value.name` as `host::get` reads it: undefined for null/undefined and for a getter that throws.
 pub fn g(value: &JsValue, read: impl Fn(&Thing) -> R<JsValue>) -> JsValue {
-    if absent(value) { JsValue::UNDEFINED } else { read(value.unchecked_ref()).unwrap_or(JsValue::UNDEFINED) }
+    if nullish(value) { JsValue::UNDEFINED } else { read(value.unchecked_ref()).unwrap_or(JsValue::UNDEFINED) }
 }
+/// `value == null` in one call out of the module (asking for null and for undefined apart is two).
+pub fn nullish(value: &JsValue) -> bool { value.loose_eq(&JsValue::NULL) }
 /// `value.name` as `host::read` reads it: throwing like the engine for null/undefined or a failing getter.
-pub fn r(value: &JsValue, name: &str, read: impl Fn(&Thing) -> R<JsValue>) -> R<JsValue> {
-    if absent(value) {
-        return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{name}')", if value.is_null() { "null" } else { "undefined" })).into());
-    }
-    read(value.unchecked_ref())
-}
+/// The engine itself refuses a null or undefined `value`, with its own TypeError, as it did for the original.
+pub fn r(value: &JsValue, _name: &str, read: impl Fn(&Thing) -> R<JsValue>) -> R<JsValue> { read(value.unchecked_ref()) }
 /// `list.every(Number.isFinite)`.
 pub fn every_finite(list: &Array) -> bool { IS_FINITE.with(|test| list.unchecked_ref::<Thing>().every_passing(test)) }
 /// `value?.name` of a record read back from disk.
-pub fn p(value: &JsValue, read: impl Fn(&Plain) -> JsValue) -> JsValue { if absent(value) { JsValue::UNDEFINED } else { read(value.unchecked_ref()) } }
+pub fn p(value: &JsValue, read: impl Fn(&Plain) -> JsValue) -> JsValue { if nullish(value) { JsValue::UNDEFINED } else { read(value.unchecked_ref()) } }
 pub fn thing(value: &JsValue) -> &Thing { value.unchecked_ref() }
 pub fn fresh() -> Fresh { JsValue::from(Object::new()).unchecked_into() }
 
@@ -197,7 +213,7 @@ fn owned(state: &JsValue, host: &JsValue, plan: &Surface, refresh: &JsValue, tex
     Ok((map, data))
 }
 
-fn string_or_empty(value: &JsValue) -> String { if absent(value) { String::new() } else { value.as_string().unwrap_or_default() } }
+fn string_or_empty(value: &JsValue) -> String { value.as_string().unwrap_or_default() }
 
 /// Everything `createShelfPlant` needs before it makes three's objects. `refresh` is the plant's redraw
 /// request; it is only kept here (a surface still being painted calls it when done), never called.

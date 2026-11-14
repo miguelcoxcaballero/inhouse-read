@@ -3,10 +3,7 @@ import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
 import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle, planPageBounds,
   planPageZoom, planReadingPose, planReturnFrame } from './book-view-wasm.js';
-import { getRustCore, loadedRustCore } from './rust-core.js';
 import { needRustShelf } from './rust-shelf.js';
-
-import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
@@ -14,7 +11,7 @@ import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from './studio-renderer.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
-import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, drawDevice } from './spine-surface.js';
+import { spineSurface, releaseSurface, textSeed, replayCloth, paintWeave, drawDevice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
@@ -26,12 +23,9 @@ import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from './native-renderer-presentation.js';
 
-// The shelf renders only after requireRustCore() (app.js): every model is built with the core in.
-const rustCore = () => getRustCore() ?? loadedRustCore();
-
 // Procedural micro-detail shared by every book: the woven-cloth and printed-paper tooth, the swallowtail cut,
 // the page edges and the endpaper are built once by the shelf module (rust-ui/src/book_model_build.rs,
-// book_shared_texture); the cloth/paper/notch pixels come from the numeric core through the model's host.
+// book_shared_texture, with the cloth/paper/notch pixels of book_tiles.rs).
 const sharedTexture = (key, build) => needRustShelf().book_shared_texture(key, build);
 const clothNormals = () => needRustShelf().book_model_tile_normals(modelHost(), 'cloth');
 const endpaperTexture = () => needRustShelf().book_model_endpaper(modelHost());
@@ -230,18 +224,17 @@ const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
  * under and beside the page fades in step with it. A side that has no paper
  * (a full-bleed picture) yields to the other; with neither, null.
  */
-const toneScratch = { a:{}, b:{}, rgb:new Float64Array(6) };
-const paperMixHost = {
-  read(stock,theme) {
-    const a = stock.getRGB(toneScratch.a,THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b,THREE.SRGBColorSpace);
-    const rgb = toneScratch.rgb;
-    rgb[0] = a.r; rgb[1] = a.g; rgb[2] = a.b; rgb[3] = b.r; rgb[4] = b.g; rgb[5] = b.b;
-    return rgb;
-  },
-  write:(target,r,g,b) => target.setRGB(r,g,b,THREE.SRGBColorSpace)
-};
+// Every frame of an opening or closing book, in place: asked of the shelf module it took 3.4 times as long.
+const toneScratch = { a:{}, b:{} };
 export function mixPaperTone(target, stock, theme, mix) {
-  return needRustShelf().book_paper_mix(target,stock,theme,mix,paperMixHost);
+  const k = Math.max(0, Math.min(1, Number(mix)));
+  if (!stock && !theme) return null;
+  if (!stock) return target.copy(theme);
+  if (!theme) return target.copy(stock);
+  if (!(k > 0)) return target.copy(stock);
+  if (!(k < 1)) return target.copy(theme);
+  const a = stock.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
+  return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
 }
 
 export const fitCoverImage = fitImage;
@@ -617,10 +610,9 @@ function modelHost() {
     finish:(value, fallback) => SURFACE_FINISHES[surfaceFinish(value, fallback)], surfaceFinish, normalizeRelief:normalizeCoverRelief,
     reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFinish, metal:METAL_COLORS,
     rememberedPatch, spineFadePatches:new Map(), reliefPatches:new Map(), constant:value => value,
-    surfacePixels:kind => rustBookSurfacePixels(rustCore(), kind), notchPixels:(width, height) => rustRibbonNotchPixels(rustCore(), width, height),
     pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
     silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, paperTone, applyPageTheme,
-    acquire:acquireCoverImage, reuse:reuseCoverRaster, random:seededRandom, paintCloth, paintWeave, drawDevice,
+    acquire:acquireCoverImage, reuse:reuseCoverRaster, cloth:replayCloth, paintWeave, drawDevice,
     title:displayBookTitle, author:normalizeBookAuthor, anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
     pageTheme:setPageTheme, getPageTheme:s => s.pageTheme, coverRelief:s => normalizeCoverRelief(s.wantedRelief),
     setCoverRelief, rebake:(s, revision) => { bakeReliefMaterial(s, revision).then(done => { if (done) s.group.userData.invalidate?.(); }); },

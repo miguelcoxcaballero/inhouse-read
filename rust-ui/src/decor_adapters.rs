@@ -7,21 +7,26 @@ use crate::cloud_host::object;
 use crate::jsmath::{jmax,jmin};
 type R<T> = Result<T,JsValue>;
 fn number(value:f64)->JsValue{JsValue::from_f64(value)}
-fn optional(target:&JsValue,key:&str)->R<JsValue>{if absent(target){Ok(JsValue::UNDEFINED)}else{read(target,key)}}
-fn fallback(value:JsValue,default:impl FnOnce()->R<JsValue>)->R<JsValue>{if absent(&value){default()}else{Ok(value)}}
 
 #[wasm_bindgen]
 pub fn plant_geometry_spec(entry:JsValue,host:JsValue)->R<JsValue>{
-    let plant=method(&host,"resolveCatalogPlant",&[&entry])?;
-    let pot=method(&host,"getCatalogPot",&[&read(&entry,"potId")?])?;
-    let pot_id=fallback(optional(&pot,"id")?,||fallback(read(&plant,"defaultPotId")?,||Ok(JsValue::NULL)))?;
-    let pot=method(&host,"getCatalogPot",&[&pot_id])?;
-    let model=optional(&pot,"modelId")?;let model=if truthy(&model){model}else{pot_id.clone()};
-    let real=method(&host,"plantDimensions",&[&read(&plant,"id")?,&pot_id])?;
-    let height=num(&read(&entry,"height")?);
-    let height=jmax(1.0,if height==0.0||height.is_nan(){num(&read(&real,"height")?)*0.5}else{height});
-    let unit=height/num(&read(&real,"height")?);
-    Ok(object(&[("catalogPlant",plant),("potId",pot_id),("potModelId",model),("real",real),("height",number(height)),("unit",number(unit))]))
+    // Declared accessors: one direct call each, no key string built per read (a spec is made for every plant at
+    // start-up and again whenever the shelf measures or lays out its plants).
+    use crate::plant_recipe::{fresh,nullish,r,thing,Thing};
+    let host=thing(&host);
+    let plant=host.resolve_catalog_plant(&entry)?;
+    let pot=host.get_catalog_pot(&r(&entry,"potId",Thing::pot_id)?)?;
+    let found=if nullish(&pot){JsValue::UNDEFINED}else{r(&pot,"id",Thing::id)?};
+    let pot_id=if !nullish(&found){found}else{let default=r(&plant,"defaultPotId",Thing::default_pot_id)?;if nullish(&default){JsValue::NULL}else{default}};
+    let pot=host.get_catalog_pot(&pot_id)?;
+    let model=if nullish(&pot){JsValue::UNDEFINED}else{r(&pot,"modelId",Thing::model_id)?};let model=if truthy(&model){model}else{pot_id.clone()};
+    let real=host.plant_dimensions(&r(&plant,"id",Thing::id)?,&pot_id)?;
+    let height=num(&r(&entry,"height",Thing::height)?);
+    let height=jmax(1.0,if height==0.0||height.is_nan(){num(&r(&real,"height",Thing::height)?)*0.5}else{height});
+    let unit=height/num(&r(&real,"height",Thing::height)?);
+    let spec=fresh();
+    spec.set_catalog_plant(&plant);spec.set_pot_id(&pot_id);spec.set_pot_model_id(&model);spec.set_real(&real);spec.set_height(height);spec.set_unit(unit);
+    Ok(spec.into())
 }
 #[wasm_bindgen]
 pub fn lamp_geometry_spec(options:JsValue,host:JsValue)->R<JsValue>{

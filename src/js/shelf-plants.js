@@ -67,34 +67,51 @@ const needleMaterial = () => new THREE.LineBasicMaterial({ color:'#d9cda9', tran
 // The Rust shelf module draws it and reads its packet into this record
 // (rust-ui/src/plant_model.rs, plant_build.rs); a saved one is read back the same way.
 
+// The copy JSON makes of `userData`; an empty plain object (most are) needs no JSON.
+function copied(data) {
+  if (data != null) {
+    for (const key in data) return JSON.parse(JSON.stringify(data));
+    if (Object.getPrototypeOf(data) !== Object.prototype) return JSON.parse(JSON.stringify(data));
+  }
+  return {};
+}
+
+const strictlyEqual = (a, b) => a === b;
+
 function restoreGeometry(baked) {
-  const geometry = new THREE.BufferGeometry();
+  const geometry = new THREE.BufferGeometry(), attributes = baked.attributes, groups = baked.groups;
   geometry.type = baked.type;
-  for (const [name, [array, itemSize, normalized]] of Object.entries(baked.attributes))
-    geometry.setAttribute(name, new THREE.BufferAttribute(array, itemSize, normalized));
+  for (const name in attributes) {
+    const attribute = attributes[name];
+    geometry.setAttribute(name, new THREE.BufferAttribute(attribute[0], attribute[1], attribute[2]));
+  }
   if (baked.index) geometry.setIndex(new THREE.BufferAttribute(baked.index, 1));
-  for (const [start, count, materialIndex] of baked.groups) geometry.addGroup(start, count, materialIndex);
-  geometry.userData = JSON.parse(JSON.stringify(baked.userData ?? {}));
+  for (let index = 0; index < groups.length; index++) geometry.addGroup(groups[index][0], groups[index][1], groups[index][2]);
+  geometry.userData = copied(baked.userData);
   if (baked.box) geometry.boundingBox = new THREE.Box3(new THREE.Vector3().fromArray(baked.box), new THREE.Vector3().fromArray(baked.box, 3));
   return geometry;
 }
 
-function restoreContent(bake, content, materialFor, track) {
+function restoreContent(bake, content, materialFor, track, drawn) {
   const objects = bake.objects.map(baked => {
     const object = baked.kind === 'group' ? new THREE.Group() : new (baked.kind === 'lines' ? THREE.LineSegments : THREE.Mesh)(restoreGeometry(baked.geometry), materialFor(baked.role));
     object.name = baked.name;
     object.position.fromArray(baked.position); object.scale.fromArray(baked.scale);
-    // Euler and quaternion each follow whichever of them was set last.
+    // Euler and quaternion each follow whichever of them was set last. A quaternion alone gives the angles
+    // 0, 0, 0 back as -0, 0, -0: a plant just drawn keeps its own zeros, a remembered one those, as before.
     object.quaternion.fromArray(baked.quaternion);
-    const [x, y, z, rotationOrder] = baked.rotation;
-    if (object.rotation.x !== x || object.rotation.y !== y || object.rotation.z !== z || object.rotation.order !== rotationOrder) object.rotation.set(x, y, z, rotationOrder);
+    const turn = baked.rotation, rotation = object.rotation, same = drawn ? Object.is : strictlyEqual;
+    if (!same(rotation.x, turn[0]) || !same(rotation.y, turn[1]) || !same(rotation.z, turn[2]) || rotation.order !== turn[3]) rotation.set(turn[0], turn[1], turn[2], turn[3]);
     object.castShadow = baked.castShadow; object.receiveShadow = baked.receiveShadow;
-    object.userData = JSON.parse(JSON.stringify(baked.userData ?? {}));
+    object.userData = copied(baked.userData);
     if (baked.kind !== 'group') track(object);
     return object;
   });
-  const children = bake.objects.map((baked, index) => [baked.parent, baked.place, objects[index]]).sort((a, b) => a[1] - b[1]);
-  for (const [parent, , object] of children) (parent === -1 ? content : objects[parent]).add(object);
+  const order = bake.objects.map((baked, index) => index).sort((a, b) => bake.objects[a].place - bake.objects[b].place);
+  for (let index = 0; index < order.length; index++) {
+    const parent = bake.objects[order[index]].parent;
+    (parent === -1 ? content : objects[parent]).add(objects[order[index]]);
+  }
   return [...bake.parts];
 }
 
@@ -138,7 +155,7 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   const soilSurface = (level,notify) => plannedSurface(shelf.plant_soil_surface(soilKind,level),notify);
   const soil = new THREE.MeshStandardMaterial(recipe.soil);
   const roleMaterials = { clay, soil, leaf:leafMaterial, stem:stemMaterial, mineral, green, needles };
-  const parts = restoreContent(recipe.bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
+  const parts = restoreContent(recipe.bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); }, !recipe.baked);
   // Each shelf plant keeps its bake and its level-1 surfaces for the next launch.
   const levelOneSurfaces = () => shelf.plant_surface_keys(potKey(1),detailed,variant,soilKind);
   const shelfEntry = shelf.plant_recipe_keep(state(),paintHost,lifecycle,recipe,geometry,[stemMaterial,leafMaterial,mineral]);

@@ -216,6 +216,26 @@ impl RustSceneEntryFrame{
   self.published.len()/10
  }
  pub fn published_ptr(&self)->usize{self.published.as_ptr() as usize}
+ /// One placement preview (every drag move) over the arena's own preview columns (13-20),
+ /// formerly copied out to a batch of eighteen numbers per entry and back. `placed` lists only
+ /// the entries the arrangement places, in ascending row order, ten numbers each: the row, then
+ /// `scene_preview_target`'s inputs (`row left, row top, row bottom, centre, x, y, height,
+ /// under-shelf`). A placed entry heads for its target and every other one back to rest; each
+ /// offset then advances as `scene_preview_offset`. Returns whether any offset changed.
+ pub fn preview(&mut self,placed:&[f64],now:f64,reduced:bool)->bool{
+  let (mut changed,mut next)=(false,placed.chunks_exact(10).peekable());
+  for (index,row) in self.state.chunks_exact_mut(STATE).enumerate(){
+   let mut goal=[0.0;2];
+   if let Some(p)=next.next_if(|p|p[0]==index as f64){crate::scene_entries::scene_preview_target(p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8]!=0.0,&mut goal);}
+   let mut offset=[0.0;13];
+   offset[..7].copy_from_slice(&row[13..20]);offset[7]=if row[20]!=0.0{1.0}else{0.0};
+   offset[8]=goal[0];offset[9]=goal[1];offset[10]=now;offset[11]=if reduced{1.0}else{0.0};
+   crate::scene_entries::scene_preview_offset(&mut offset);
+   row[13..20].copy_from_slice(&offset[..7]);row[20]=if offset[7]!=0.0{1.0}else{0.0};
+   changed|=offset[12]!=0.0;
+  }
+  changed
+ }
 }
 
 /// One entry of `step`: the motion sample, the pose matrix, its place in the room and the projection.

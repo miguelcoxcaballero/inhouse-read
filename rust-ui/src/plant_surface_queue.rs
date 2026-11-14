@@ -11,6 +11,8 @@ const ERROR:&str="Las texturas de la planta no se pudieron calcular. Recarga la 
 fn val(value:f64)->JsValue{value.into()}
 fn obj(values:&[(&str,JsValue)])->R<JsValue>{let object=Object::new();for (key,value) in values{set(object.as_ref(),key,value)?;}Ok(object.into())}
 fn map(state:&JsValue,name:&str)->Map{get(state,name).unchecked_into()}
+/// `state.shelfBakes`, read through its declared accessor (no key string is built).
+fn bakes(state:&JsValue)->Map{g(state,Thing::shelf_bakes).unchecked_into()}
 fn array(state:&JsValue,name:&str)->Array{get(state,name).unchecked_into()}
 fn items(value:&JsValue)->R<Array>{Ok(Array::from(value))}
 
@@ -116,22 +118,22 @@ fn new_base(host:&JsValue,pigment:&JsValue,data:&JsValue,width:u32,height:u32,re
 
 #[wasm_bindgen]
 pub fn plant_bake_get(state:&JsValue,host:&JsValue,key:&JsValue)->R<JsValue>{
- let entry=map(state,"shelfBakes").get(key);if truthy(&entry){return Ok(entry);}
- let mut saved=get(state,"savedModels");
- if !truthy(&saved){let record=method(host,"loadedShelfBakes",&[])?;if truthy(&record){let models=Map::new();for item in array(&record,"models").iter(){models.set(&get_at(&item,0),&item);}saved=models.into();set(state,"savedModels",&saved)?;}}
+ let entry=bakes(state).get(key);if truthy(&entry){return Ok(entry);}
+ let mut saved=g(state,Thing::saved_models);
+ if !truthy(&saved){let record=thing(host).loaded_shelf_bakes()?;if truthy(&record){let models=Map::new();for item in array(&record,"models").iter(){models.set(&get_at(&item,0),&item);}saved=models.into();thing(state).set_saved_models(&saved)?;}}
  if absent(&saved){return Ok(JsValue::NULL);}
  let models:Map=saved.unchecked_into();let item=models.get(key);models.delete(key);
  let bake=get_at(&item,1);
- if truthy(&item)&&plant_valid_bake(&bake){obj(&[("bake",bake),("surfaces",JsValue::NULL)])}else{Ok(JsValue::NULL)}
+ if truthy(&item)&&plant_valid_bake(&bake){let entry=fresh();entry.set_bake(&bake);thing(entry.as_ref()).set_surfaces(&JsValue::NULL)?;Ok(entry.into())}else{Ok(JsValue::NULL)}
 }
 #[wasm_bindgen]
 pub fn plant_bake_remember(state:&JsValue,host:&JsValue,key:&JsValue,entry:&JsValue)->R<()>{
- let bakes=map(state,"shelfBakes");bakes.delete(key);bakes.set(key,entry);
+ let bakes=bakes(state);bakes.delete(key);bakes.set(key,entry);
  while bakes.size()>12{let first=bakes.keys().next()?.value();bakes.delete(&first);}
- method(host,"scheduleShelfBakeWrite",&[])?;Ok(())
+ thing(host).schedule_shelf_bake_write()?;Ok(())
 }
 #[wasm_bindgen]
-pub fn plant_bake_current(state:&JsValue,key:&JsValue,entry:&JsValue)->bool{map(state,"shelfBakes").get(key)==*entry}
+pub fn plant_bake_current(state:&JsValue,key:&JsValue,entry:&JsValue)->bool{bakes(state).get(key)==*entry}
 #[wasm_bindgen]
 pub fn plant_bake_record(state:&JsValue)->R<JsValue>{
  let models=Array::new();let painted=Map::new();let surfaces=map(state,"surfaces");

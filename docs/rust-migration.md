@@ -1,3 +1,15 @@
+# Entrega 1.7.329 (tanda integ-bar-8): papelera y lámparas en reposo, luces de lámpara, lomos y trabajador de voz
+
+Ramas: ready/scene-frame-17, ready/book-model-13, ready/decor-shell-10, ready/readers-voice-9.
+Barra estimada en local (bytes al estilo de GitHub): 73,73 % Rust; quedan 919.436 bytes de JavaScript (1.7.328: 73,36 %, 925.584).
+
+- Escena: las vistas previas de colocación avanzan en la arena de entradas (1,7 veces más rápido por movimiento de arrastre); una papelera quieta pasa de ~3,2 µs a ~0,05 µs por fotograma y una lámpara en reposo de ~0,95 a 0,02 µs; la superficie de toque de un libro en reposo conserva su matriz. Estos tres bloques añaden 7,7 KB de JavaScript a bookshelf-scene.js a cambio de velocidad.
+- Libros: el flujo aleatorio, la tela y el desgaste de un libro son nativos (llamadas importadas por lomo 1.645 → 597; por libro 2.115 → 1.634); se elimina src/js/book-surface-wasm.js. La mezcla de tono del papel vuelve a JavaScript porque en Rust tardaba 3,4 veces más por fotograma.
+- Decoración: las luces de todas las lámparas de un fotograma se deciden en dos llamadas; una planta recordada arranca con un tercio menos de llamadas; salen del código de la app seis funciones que solo usaban las pruebas.
+- Voz: el trabajador de síntesis (carga y liberación de voces, cola y síntesis Piper) y refresh/install/remove/warmUp del motor neuronal son Rust. Coste aceptado: la síntesis es ~0,2 ms más lenta por fragmento que el JavaScript congelado (frente a cientos de ms de inferencia) y más rápida que la 1.7.328; los caminos fríos del motor, 1–7 µs más lentos por llamada.
+
+Todas las cifras son de Node/WASM en una máquina cargada; nada se midió en navegador ni en teléfono.
+
 # Entrega 1.7.328 (tanda integ-bar-7): libros en reposo sin coste por fotograma, mallas del libro, texto de PDF y plantas
 
 Escena (bloques 2, 4, 5 parcial y 6 del plan): las entradas en reposo quedan fuera de los bucles del anfitrión, el movimiento compartido de la sala vive en la arena de entradas, los diagnósticos del lienzo se recuerdan en vez de leerse del DOM y la decisión de calidad de los libros asentados deja de cruzar a Rust una vez por libro y fotograma. Libro (bloques 2 y 3): hojas, guardas, lomo y cinta son llamadas únicas del módulo de la estantería (desaparecen `page-mesh-wasm.js`, `binding-wasm.js` y `bookmark-wasm.js`) y la aritmética de la vista corre dentro del módulo. Decoración: estudio de lámparas del catálogo, planta en dos llamadas en vez de catorce, consultas de tamaño y horneado más rápidas. Lectores y voz: una página de texto de PDF en una pasada por el núcleo; almacenes de Piper y Supertonic por un despachador. Barra de lenguajes (estimación local): 72,4 % → 73,4 % de Rust; quedan 925 KB de JavaScript. Cifras, verificación y lo no verificado: `docs/remaining-wip-verification.md`.

@@ -26,6 +26,7 @@ mod phonemizer_runtime;
 mod supertonic_catalog;
 #[cfg(not(feature = "ui"))]
 mod eager;
+mod quick_wait;
 mod voice_kernels;
 mod voice_phonemizer;
 mod voice_supertonic;

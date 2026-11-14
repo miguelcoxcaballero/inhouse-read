@@ -3,12 +3,12 @@
 //! board, and the lettering of a plain cloth case. Each makes the same calls in the same order with
 //! the same numbers as the JavaScript it replaces (tests/unit/helpers/reference-book-paint.js),
 //! so the pixels are the ones the page always drew: sines come from the engine's own Math, numbers
-//! become text the way the engine prints them, and a stream of random numbers the cloth painter
-//! began is continued through the host's function rather than copied.
+//! become text the way the engine prints them, and the stream of random numbers the cloth painter
+//! began is continued here (a book's own stream is native; a caller's function is called per value).
 use std::f64::consts::PI;
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array, Function, JsString, Math};
-use crate::host::{absent, get, jmax, jmin, js_round, method_opt, number_string, num};
+use crate::host::{jmax, jmin, js_round, number_string, num};
 
 #[wasm_bindgen]
 extern "C" {
@@ -39,24 +39,34 @@ extern "C" {
     #[wasm_bindgen(method, setter, js_name = font)] fn set_font(this: &Canvas2d, value: &JsString);
     #[wasm_bindgen(method, setter, js_name = textAlign)] fn set_text_align(this: &Canvas2d, value: &str);
     #[wasm_bindgen(method, setter, js_name = textBaseline)] fn set_text_baseline(this: &Canvas2d, value: &str);
+    // A colour as text: an interned literal crosses as the page's own string, with no handle made and dropped.
+    #[wasm_bindgen(method, setter, js_name = fillStyle)] fn set_fill_text(this: &Canvas2d, value: &str);
+    #[wasm_bindgen(method, setter, js_name = strokeStyle)] fn set_stroke_text(this: &Canvas2d, value: &str);
+    /// A gradient that takes stops, and the measure of a text.
+    type Stops;
+    #[wasm_bindgen(method, catch, js_name = addColorStop)] fn add_color_stop(this: &Stops, at: f64, color: &str) -> Result<(), JsValue>;
+    type Measure;
+    #[wasm_bindgen(method, catch, getter)] fn width(this: &Measure) -> Result<f64, JsValue>;
 }
 
 /// A literal sent with every book (the board finish and the case use the same few colours and names):
 /// interned, so the page keeps one string for it instead of decoding it again each time.
 fn lit(text: &'static str) -> &'static str { wasm_bindgen::intern(text) }
-fn fill_with(c: &Canvas2d, style: &'static str) { c.set_fill_style(&JsValue::from_str(lit(style))); }
-fn stroke_with(c: &Canvas2d, style: &'static str) { c.set_stroke_style(&JsValue::from_str(lit(style))); }
+fn fill_with(c: &Canvas2d, style: &'static str) { c.set_fill_text(lit(style)); }
+fn stroke_with(c: &Canvas2d, style: &'static str) { c.set_stroke_text(lit(style)); }
 /// A colour built for one stroke: sent as it is.
-fn fill_built(c: &Canvas2d, style: &str) { c.set_fill_style(&JsValue::from_str(style)); }
-fn stroke_built(c: &Canvas2d, style: &str) { c.set_stroke_style(&JsValue::from_str(style)); }
+fn fill_built(c: &Canvas2d, style: &str) { c.set_fill_text(style); }
+fn stroke_built(c: &Canvas2d, style: &str) { c.set_stroke_text(style); }
 fn literal_text(text: &'static str) -> JsString { JsValue::from_str(lit(text)).unchecked_into() }
 
-/// `withStops(gradient, stops)`: tolerant of partial canvas implementations.
+/// `withStops(gradient, stops)`: tolerant of partial canvas implementations. Whether there is a gradient that
+/// takes stops is asked once for all of them; a stop that fails is passed over, as before.
 fn with_stops(gradient: JsValue, stops: &[(f64, &'static str)]) -> JsValue {
-    if !absent(&gradient) {
-        for (at, color) in stops {
-            let _ = method_opt(&gradient, lit("addColorStop"), &[&JsValue::from_f64(*at), &JsValue::from_str(lit(color))]);
-        }
+    let takes = gradient.is_object()
+        && crate::book_model_build::with_key("addColorStop", |name| js_sys::Reflect::get(&gradient, name)).is_ok_and(|add| add.is_function());
+    if takes {
+        let target: &Stops = gradient.unchecked_ref();
+        for (at, color) in stops { let _ = target.add_color_stop(*at, lit(color)); }
     }
     gradient
 }
@@ -208,6 +218,10 @@ fn draw(random: &Function) -> f64 { random.call0(&JsValue::UNDEFINED).map(|value
 /// that came before continues here.
 #[wasm_bindgen]
 pub fn book_finish_board(c: &Canvas2d, design_width: f64, random: &Function, wear: bool) {
+    finish_board(c, design_width, &mut || draw(random), wear);
+}
+/// The same over any stream: a book's own is the shelf module's (spine_surface.rs, `Stream`).
+pub(crate) fn finish_board(c: &Canvas2d, design_width: f64, next: &mut dyn FnMut() -> f64, wear: bool) {
     let hinge = HINGE_GROOVE * 1024.0;
     let edge = 14.0;
     c.set_global_alpha(1.0);
@@ -230,8 +244,8 @@ pub fn book_finish_board(c: &Canvas2d, design_width: f64, random: &Function, wea
     for (length, vertical, at) in [(design_width, false, 0.0), (design_width, false, 1021.6), (1024.0, true, design_width - 2.4)] {
         let mut p = 0.0;
         while p < length {
-            let run = 6.0 + draw(random) * 42.0;
-            c.set_global_alpha(if draw(random) < 0.45 { draw(random) * 0.24 } else { 0.0 });
+            let run = 6.0 + next() * 42.0;
+            c.set_global_alpha(if next() < 0.45 { next() * 0.24 } else { 0.0 });
             if vertical { c.fill_rect(at, p, 2.4, run); } else { c.fill_rect(p, at, run, 2.4); }
             p += run;
         }
@@ -254,6 +268,12 @@ pub fn book_finish_board(c: &Canvas2d, design_width: f64, random: &Function, wea
 #[allow(clippy::too_many_arguments)]
 pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author: &JsString, ink: &JsValue, font_weight: &JsValue,
     family: &JsString, thumb: bool, device: f64, draw_device: &Function, random: &Function) -> Result<(), JsValue> {
+    cover_case(c, design_width, title, author, ink, font_weight, family, thumb, device, draw_device, &mut || draw(random))
+}
+/// The same over any stream.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author: &JsString, ink: &JsValue, font_weight: &JsValue,
+    family: &JsString, thumb: bool, device: f64, draw_device: &Function, next: &mut dyn FnMut() -> f64) -> Result<(), JsValue> {
     // Design in physical cover proportions so lettering is never stretched, centred on the board
     // beyond the joint as a real case is.
     let hinge = HINGE_GROOVE * 1024.0;
@@ -280,7 +300,8 @@ pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author
     let lines = Array::new();
     for word in words.iter() {
         let word: JsString = word.unchecked_into();
-        let width = num(&get(&c.measure_text(&line.concat(&word)), lit("width")));
+        // `measureText(text).width` as a number; no measure, no number.
+        let width = c.measure_text(&line.concat(&word)).unchecked_ref::<Measure>().width().unwrap_or(f64::NAN);
         if width > title_width && line.length() > 0 {
             lines.push(&line.trim());
             line = literal_text("");
@@ -319,6 +340,6 @@ pub fn book_cover_case(c: &Canvas2d, design_width: f64, title: &JsString, author
         draw_device.call3(&JsValue::UNDEFINED, c, &JsValue::from_f64(device), &JsValue::from_f64(24.0))?;
         c.restore();
     }
-    book_finish_board(c, design_width, random, !thumb);
+    finish_board(c, design_width, next, !thumb);
     Ok(())
 }

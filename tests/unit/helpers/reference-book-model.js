@@ -9,7 +9,7 @@ import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, pl
 import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';
 
-import { rustBookSurfacePixels, rustRibbonNotchPixels } from '../../../src/js/book-surface-wasm.js';
+import { rustBookSurfacePixels, rustRibbonNotchPixels } from './reference-book-surface-wasm.js';
 import { rustBookmarkBuffers } from './reference-bookmark-wasm.js';
 import { rustBindingBuffers } from './reference-binding-wasm.js';
 import { rustPageBlockBuffers, rustLeafStackBuffers, rustBookPaperBuffers } from './reference-page-mesh-wasm.js';
@@ -20,7 +20,9 @@ import { bookReturnCompatibility } from '../../../src/js/bookshelf-return.js';
 import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from '../../../src/js/studio-renderer.js';
 import { configureNativeRendererSize } from '../../../src/js/native-renderer-size.js';
-import { spineSurface, releaseSurface, seededRandom, textSeed, paintCloth, paintWeave, spineLayout, drawDevice } from '../../../src/js/spine-surface.js';
+import { spineSurface, releaseSurface, textSeed, paintWeave, spineLayout, drawDevice } from '../../../src/js/spine-surface.js';
+// The book's stream and its cloth as they were while the stream lived in JavaScript (production: native).
+import { seededRandom, paintCloth } from './reference-spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from '../../../src/js/book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from '../../../src/js/book-title.js';
 import { pageRaster } from '../../../src/js/page-raster.js';
@@ -337,18 +339,17 @@ const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
  * under and beside the page fades in step with it. A side that has no paper
  * (a full-bleed picture) yields to the other; with neither, null.
  */
-const toneScratch = { a:{}, b:{}, rgb:new Float64Array(6) };
-const paperMixHost = {
-  read(stock,theme) {
-    const a = stock.getRGB(toneScratch.a,THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b,THREE.SRGBColorSpace);
-    const rgb = toneScratch.rgb;
-    rgb[0] = a.r; rgb[1] = a.g; rgb[2] = a.b; rgb[3] = b.r; rgb[4] = b.g; rgb[5] = b.b;
-    return rgb;
-  },
-  write:(target,r,g,b) => target.setRGB(r,g,b,THREE.SRGBColorSpace)
-};
+// The original blend (helpers/reference-book-surface-policy.js), as before the shelf module was asked for it.
+const toneScratch = { a:{}, b:{} };
 export function mixPaperTone(target, stock, theme, mix) {
-  return needRustShelf().book_paper_mix(target,stock,theme,mix,paperMixHost);
+  const k = Math.max(0, Math.min(1, Number(mix)));
+  if (!stock && !theme) return null;
+  if (!stock) return target.copy(theme);
+  if (!theme) return target.copy(stock);
+  if (!(k > 0)) return target.copy(stock);
+  if (!(k < 1)) return target.copy(theme);
+  const a = stock.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
+  return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
 }
 
 export const fitCoverImage = fitImage;

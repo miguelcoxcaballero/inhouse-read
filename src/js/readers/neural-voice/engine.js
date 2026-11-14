@@ -23,6 +23,9 @@ import { NativeSynthClient } from './native-client.js'
 import { audioContext, nativeAudio, nativePcmBridge, unlockAudio } from './audio.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 
+// What was an `async` method: the promise of the Rust flow itself (neural_engine_flows.rs), a rejected one when the module is missing.
+const waiting = flow => { try { return flow(ui()) } catch (error) { return Promise.reject(error) } }
+
 export const LIMITS = {
   idleMs: 90_000,          // without speech for this long the worker (and its ~0.6 GB) is terminated; the next speak rebuilds it
   lookaheadSec: 30,        // synthesise ahead while less than this much audio is waiting to be played
@@ -114,50 +117,18 @@ export class NeuralEngine extends EventTarget {
   /** Whitelisted numeric state, sampled without reading book text or calling the native clock. */
   getDiagnosticState() { return ui().neural_diagnostic_state(this) }
 
-  async refresh() {
-    let next
-    try { const [listing, legacy] = ui().neural_list(this); next = ui().neural_listed(this, await listing, legacy) } catch { next = new Set() }
-    ui().neural_installed_changed(this, next)
-  }
+  refresh() { return waiting(ui => ui.neural_refresh(this)) }
 
   // ----------------------------------------------------------------- downloads
-  async install(id, { signal } = {}) {
-    const begun = ui().neural_install_begin(this, id, signal)
-    if (!Array.isArray(begun)) return begun // nothing to do, or the download of this model that is already running
-    const [voice, siblings, abort] = begun
-    let last = 0
-    const job = (async () => {
-      try {
-        await this.store.download(voice.piperId, { signal: abort.signal, onProgress: progress => { last = ui().neural_install_progress(this, siblings, last, progress) } })
-        ui().neural_install_done(this, siblings)
-      } catch (error) { throw ui().neural_install_failed(this, siblings, error, storeError) }
-      finally { ui().neural_install_finally(this, voice.piperId, abort) }
-    })()
-    this.installing.set(voice.piperId, job)
-    return job
-  }
+  install(id, options = undefined) { return waiting(ui => ui.neural_install(this, id, options, ui, storeError)) }
   /** Aborts the download of the model this voice belongs to (whichever of its speakers asked for it). */
   cancel(id) { ui().neural_cancel(this, id) }
-  async remove(id) {
-    const voice = ui().neural_remove_begin(this, id)
-    if (!voice) return
-    await this.store.remove(voice.piperId)
-    ui().neural_remove_end(this, voice)
-  }
+  remove(id) { return waiting(ui => ui.neural_remove(this, id)) }
 
   // ----------------------------------------------------------------- reading aloud
   unlock(options) { ui().neural_unlock(this, options, nativePcmBridge) }
-  /**
-   * Starts the worker and loads the voice's model ahead of the first speak() (a cold start is 3-6 s: worker, ONNX
-   * Runtime, a 63 MB model). Resolves when ready, never rejects; the idle teardown still applies if nothing is spoken.
-   */
-  async warmUp(voiceId) {
-    const voice = ui().neural_warm_begin(this, voiceId)
-    if (!voice) return false
-    let client = this.client
-    try { client = ui().neural_client(this); await client.prepare(voice.piperId); return ui().neural_warm_done(this, client) }
-    catch { return ui().neural_warm_failed(this, client) }
-  }
+  /** Starts the worker and loads the voice's model ahead of the first speak(). Resolves when ready, never rejects. */
+  warmUp(voiceId) { return waiting(ui => ui.neural_warm_up(this, voiceId)) }
   /** Prepare up to six opening fragments silently; Play adopts even in-flight synthesis. */
   prime(request) { return ui().neural_prime(this, request) }
   speak(request) { ui().neural_speak(this, request) }
@@ -181,12 +152,7 @@ export class NeuralEngine extends EventTarget {
   _emit(detail) { queueMicrotask(() => this.env.dispatchEvent?.(new CustomEvent('inhouse-tts', { detail }))) }
   _listen(ctx) { ctx.addEventListener?.('statechange', () => ui().neural_state_change(this, ctx)) }
   _aborter(abort) { return () => abort.abort() }
-  _prepare(run) {
-    let begun
-    try { begun = ui().neural_prepare_begin(this, run) } catch { ui().neural_prepare_failed(this, run); return }
-    const [promise, started, cold] = begun
-    Promise.resolve(promise).then(() => ui().neural_prepare_ready(this, run, started, cold), () => ui().neural_prepare_failed(this, run))
-  }
+  _prepare(run) { ui().neural_prepare(this, run) }
 }
 
 export { storeError }

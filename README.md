@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.7.329 — Lámparas, papelera y voz con menos trabajo
+
+Sin cambios visibles. La papelera y las lámparas en reposo ya no cuestan
+trabajo en cada fotograma, las luces de todas las lámparas se calculan en dos
+llamadas, cada lomo necesita un tercio de las llamadas entre JavaScript y Rust
+que antes, y el trabajador que sintetiza la voz y la instalación de voces son
+Rust. Medido en Node, no en teléfono. Detalle en
+[docs/rust-migration.md](docs/rust-migration.md).
+
 ## 1.7.328 — Estantería y PDF más rápidos
 
 Sin cambios visibles. Los libros en reposo ya no cuestan trabajo en cada

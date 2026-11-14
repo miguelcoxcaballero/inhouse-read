@@ -19,7 +19,7 @@ export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
   const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null,
-    prepare, bind, refresh, step, poses, settle, place, settled, hits, motionRest, motionBegin, motionPoses, free };
+    prepare, bind, refresh, step, poses, settle, place, settled, hits, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
     if (buffer === memory.buffer) return;
@@ -86,6 +86,9 @@ export function createSceneEntryFrame(rust) {
       poses.push([motionFrame.name(rows[at]), rows[at+1], rows[at+2], rows[at+3], rows[at+4], rows[at+5], rows[at+6], rows[at+7], rows[at+8], rows[at+9]]);
     return poses;
   }
+  // A drag move's placement previews, over the arena's preview columns: `placed` is ten numbers per
+  // placed entry, in row order (rust-ui/src/scene_entry_frame.rs `preview`). Whether any offset changed.
+  function preview(placed, now, reduced) { const changed = native.preview(placed, now, reduced); refresh(); return changed; }
   function hits(projectionFrame, scene) { refresh(); native.hits(projectionFrame, scene); refresh(); }
   function free() {
     if (disposed) return;
