@@ -4,7 +4,7 @@
 // takes every button's hit target. The host writes a column of `state` only when its source
 // changes and reads the results from the arena; `refresh` follows any growth of memory (call
 // it before using the views after other native work).
-export const ENTRY_STATE = 85, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
+export const ENTRY_STATE = 89, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
 // A settled entry's frame: its overview flag and resolution are stored on it as
 // rust.scene_update_quality stores them, and the answer is whether that call has anything else
 // to do: the model is at another quality (scene_quality.rs `matches`), or a replacement or a
@@ -17,13 +17,14 @@ export function settledQualityWork(entry, overview, resolution) {
 }
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
-  let count = -1, at = null, buffer = null, room = null, disposed = false;
-  const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null,
+  let count = -1, at = null, buffer = null, room = null, disposed = false, resolutions = '';
+  const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, get resolutions() { return resolutions; },
+    census, painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
     prepare, bind, refresh, step, poses, settle, place, settled, hits, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
     if (buffer === memory.buffer) return;
-    buffer = memory.buffer; room = new Float64Array(buffer, roomAt, 16);
+    buffer = memory.buffer; room = new Float64Array(buffer, roomAt, 16); frame.counts = new Float64Array(buffer, native.census_ptr(), 9);
     frame.input = new Float64Array(buffer, at[0], count * ENTRY_INPUT);
     frame.output = new Float64Array(buffer, at[1], count * ENTRY_OUTPUT);
     frame.hitInput = new Float64Array(buffer, at[2], count * HIT_INPUT);
@@ -53,6 +54,23 @@ export function createSceneEntryFrame(rust) {
       if (reset) state.fill(0, to + 9, to + 21);
       state[to + 71] = state[to + 73] = 1; entry.row = index;
     }
+  }
+  // What the host holds of each entry now, for the frame's own questions (rust-ui/src/scene_census.rs):
+  // the result's bits are loading 2, overlay insertion 4, native insertion 8, busy 16, touched 32;
+  // `counts` holds the casters' signature and the diagnostics' counts, and the books' resolutions follow.
+  function census(entries, trashVisible) {
+    refresh();
+    for (let index = 0, state = frame.state, to = 85; index < entries.length; index++, to += ENTRY_STATE) {
+      const entry = entries[index], model = entry.model, data = model?.userData, insertion = entry.insertion, quality = entry.plantQuality;
+      state[to] = (model ? data.overview ? 9 : 1 : 0) | (model?.visible ? 2 : 0) | (entry.qualityReplacement || quality ? 4 : 0) |
+        (insertion ? insertion.overlayCanvas ? 80 : 16 : 0) | (entry.trashDrop ? 32 : 0) | (insertion?.nativePresentation ? 128 : 0) |
+        (entry.qualityReplacement && !entry.replacementReady || quality && !quality.ready ? 256 : 0);
+      state[to + 1] = data?.inspectionResolution; state[to + 2] = model ? model.id : 0;
+    }
+    const held = native.census(trashVisible);
+    if (held & 1) resolutions = native.resolutions();
+    refresh();
+    return held;
   }
   function step(motionFrame, scene, motion, transition, now, arranging, roomMatrix) {
     refresh(); room.set(roomMatrix.elements);
@@ -92,7 +110,7 @@ export function createSceneEntryFrame(rust) {
   function hits(projectionFrame, scene) { refresh(); native.hits(projectionFrame, scene); refresh(); }
   function free() {
     if (disposed) return;
-    native.free(); disposed = true; buffer = room = frame.state = frame.input = frame.output = frame.hitInput = frame.hitOutput = null;
+    native.free(); disposed = true; buffer = room = frame.counts = frame.state = frame.input = frame.output = frame.hitInput = frame.hitOutput = null;
   }
   return frame;
 }

@@ -31,8 +31,11 @@ use super::projection::RustSceneProjectionFrame;
 ///   host holds nothing of this row yet;
 /// - 72 the previous frame's motion flags; 73 in: the host holds no hit target of this row yet;
 /// - 74 the number of the shared key the entry's local pose was sampled under (0: it has none
-///   yet) and 76-84 that pose, as the room publishes it: `[shelf, x, y, z, quaternion, scale]`.
-const STATE:usize=85;
+///   yet) and 76-84 that pose, as the room publishes it: `[shelf, x, y, z, quaternion, scale]`;
+/// - 85-87 in, every frame: what the host holds now (`scene_census.rs`), its model's texture
+///   resolution and its model's id; 88 the room was last painted without this away book.
+const STATE:usize=89;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;
+#[path="scene_census.rs"] mod census;
 const HOST:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
@@ -56,12 +59,16 @@ const HIT_OUTPUT:usize=17;const HIT_MOVED:u32=8192;
 pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit_input:Vec<f64>,hit_output:Vec<f64>,room:Box<[f64;16]>,
  /// The shared room's local motion: each key's pose at rest (nine numbers, valid when its stamp
  /// is the current generation), the keys a gesture has moved and the rows last published.
- rest:Vec<f64>,rest_stamp:Vec<u32>,rest_generation:u32,affected:Vec<bool>,published:Vec<f64>}
+ rest:Vec<f64>,rest_stamp:Vec<u32>,rest_generation:u32,affected:Vec<bool>,published:Vec<f64>,
+ /// The census: the counts' inputs as last counted, its nine numbers, the resolutions' text,
+ /// whether a quality map was loading and the quality hold's deadline.
+ counted:Vec<f64>,count_dirty:bool,census:Box<[f64;9]>,resolutions:String,loading:bool,paint_deadline:f64}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
  pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16]),
-  rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new()}}
+  rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
+  counted:Vec::new(),count_dirty:true,census:Box::new([0.0;9]),resolutions:String::new(),loading:false,paint_deadline:0.0}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);

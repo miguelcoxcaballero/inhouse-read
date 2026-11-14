@@ -111,14 +111,18 @@ pub fn scene_quality_delay(entries:&Array,state:&JsValue,moving:bool,now:f64)->R
 /// The bounded fallback commits available work even if one decoder is slow.
 #[wasm_bindgen]
 pub fn scene_quality_hold(entries:&Array,state:&JsValue,scene:&RustScene,eligible:bool,now:f64)->R<f64>{
- if !eligible||!scene.can_inspect()||scene.moving()||scene.reordering(){set(state,"paintDeadline",&0.into())?;return Ok(0.0);}
- let loading=entries.iter().any(|entry|flag(&entry,"qualityReplacement")&&!flag(&entry,"replacementReady")||{
+ let loading=eligible&&entries.iter().any(|entry|flag(&entry,"qualityReplacement")&&!flag(&entry,"replacementReady")||{
   let pending=get(&entry,"plantQuality");truthy(&pending)&&!flag(&pending,"ready")
  });
- if !loading{set(state,"paintDeadline",&0.into())?;return Ok(0.0);}
  let mut deadline=num(&get(state,"paintDeadline"));
- if deadline==0.0||!deadline.is_finite(){deadline=now+240.0;set(state,"paintDeadline",&deadline.into())?;}
- Ok((deadline-now).max(0.0))
+ let wait=hold(&mut deadline,eligible,loading,scene,now);
+ set(state,"paintDeadline",&deadline.into())?;Ok(wait)
+}
+/// The same decision from what the scene's census found (`scene_census.rs`).
+pub(crate) fn hold(deadline:&mut f64,eligible:bool,loading:bool,scene:&RustScene,now:f64)->f64{
+ if !eligible||!scene.can_inspect()||scene.moving()||scene.reordering()||!loading{*deadline=0.0;return 0.0;}
+ if *deadline==0.0||!deadline.is_finite(){*deadline=now+240.0;}
+ (*deadline-now).max(0.0)
 }
 
 /// Commit the projected quality target in one crossing per entry. The model
