@@ -13,11 +13,16 @@ const number = (low, high) => pick(low + random() * (high - low), low + random()
 const matrix = () => Array.from({ length:16 }, (_, at) => at % 5 === 0 ? .5 + random() * 2 : (random() - .5) * (at > 11 ? 400 : .3));
 const camera = () => ({ matrixWorldInverse:{ elements:matrix() }, projectionMatrix:{ elements:matrix() } });
 const point = () => ({ x:(random() - .5) * 300, y:(random() - .5) * 400, z:(random() - .5) * 80 });
+// Same value, same keys in the same order, at every depth. The comparison itself is plain JavaScript and only a
+// difference reaches `expect`: this file makes over half a million comparisons, and an `expect` with its message for
+// each one took 6 of the 20,000-view case's 6.5 seconds (the two planners together take 0.4), which a slower CI
+// runner turned into a timeout (run 43557481806: 5.0 s against 3.6 s in the runs before, with the whole suite 1.4x slower).
 const exact = (actual, expected, label) => {
   if (expected && typeof expected === 'object') {
-    expect(Object.keys(actual), label).toEqual(Object.keys(expected));
-    for (const key of Object.keys(expected)) exact(actual[key], expected[key], `${label}.${key}`);
-  } else expect(Object.is(actual, expected), `${label}: ${actual} vs ${expected}`).toBe(true);
+    const keys = Object.keys(expected), found = actual && typeof actual === 'object' ? Object.keys(actual) : null;
+    if (!found || found.length !== keys.length || keys.some((key, at) => found[at] !== key)) expect(found, label).toEqual(keys);
+    for (const key of keys) exact(actual[key], expected[key], label + '.' + key);
+  } else if (!Object.is(actual, expected)) expect.fail(`${label}: ${actual} vs ${expected}`);
 };
 const both = (label, run) => exact(run(production), run(frozen), label);
 
