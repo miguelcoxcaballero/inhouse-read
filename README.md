@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.7.328 — Estantería y PDF más rápidos
+
+Sin cambios visibles. Los libros en reposo ya no cuestan trabajo en cada
+fotograma de la estantería (antes una llamada a Rust por libro y fotograma),
+las mallas de cada libro se construyen en una sola llamada (alrededor de un
+tercio menos de tiempo), el texto de una página de PDF se prepara en una
+pasada (un 28 % menos) y las plantas arrancan antes. Medido en Node, no en
+teléfono. Detalle en [docs/rust-migration.md](docs/rust-migration.md).
+
 ## 1.7.327 — Estantería más fluida en Rust
 
 Sin cambios visibles. El estado de animación de cada libro (elevación, caída,
