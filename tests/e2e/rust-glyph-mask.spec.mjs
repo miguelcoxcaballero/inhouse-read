@@ -3,7 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><link rel="stylesheet" href="/src/css/fonts.css"><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {rustGlyphMask} from '/inhouse-read/src/js/font-glyph-wasm.js';
+import {rustGlyphMask} from '/inhouse-read/tests/unit/helpers/reference-font-glyph-wasm.js';
 import {analyzeCoverAppearance} from '/inhouse-read/src/js/cover-appearance.js';
 import {glyphMask as reference,analyzeCoverAppearance as originalAnalyze} from '/inhouse-read/tests/unit/helpers/reference-cover-appearance.js';
 const core=await loadRustCore();if(!core?.font_glyph_mask)throw Error('Actual glyph core required');
@@ -42,6 +42,6 @@ test('actual Rust glyph cropping keeps every font mask and sample',async({page},
 
 test('complete cover analysis invokes the real glyph kernel and keeps the same chosen font',async({page},testInfo)=>{
  test.setTimeout(120000);const errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.addInitScript(()=>{window.glyphCalls=0;for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name].bind(WebAssembly);WebAssembly[name]=async(...args)=>{const result=await original(...args),instance=result.instance||result,actual=instance.exports;if(!actual.font_glyph_mask)return result;const exports={...actual,font_glyph_mask(...args){window.glyphCalls++;return actual.font_glyph_mask(...args);}};return result.instance?{module:result.module,instance:{exports}}:{exports};};}});
+ await page.addInitScript(()=>{window.glyphCalls=0;for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name].bind(WebAssembly);WebAssembly[name]=async(...args)=>{const result=await original(...args),instance=result.instance||result,actual=instance.exports;if(!actual.title_glyph_mask)return result;const exports={...actual,title_glyph_mask(...args){window.glyphCalls++;return actual.title_glyph_mask(...args);}};const observed=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});return result.instance?{module:result.module,instance:observed}:observed;};}});
  await page.goto(url);await page.waitForFunction(()=>typeof window.checkProductionGlyphs==='function',null,{timeout:15000});const result=await page.evaluate(()=>window.checkProductionGlyphs());expect(result.calls).toBeGreaterThan(0);expect(result.actual).not.toBeNull();expect(result.actual).toEqual(result.expected);expect(errors).toEqual([]);await testInfo.attach('production-glyph-call',{body:JSON.stringify(result,null,2),contentType:'application/json'});
 });

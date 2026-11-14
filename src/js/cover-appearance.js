@@ -1,10 +1,9 @@
 import { loadedRustCore, requireRustCore } from './rust-core.js';
 import { rustCoverColor } from './cover-color-wasm.js';
-import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from './font-glyph-wasm.js';
 import { createRustFontScorer } from './font-score-wasm.js';
 export { scoreFontMask } from './font-score-core.js';
 import { shelfWorkReady } from './idle-startup.js';
-import { getRustShelf, loadRustShelf } from './rust-shelf.js';
+import { getRustShelf, loadRustShelf, needRustShelf } from './rust-shelf.js';
 /*
  * Appearance extracted from a book cover image. This stays local to the
  * browser: a small pixel sample supplies the dominant binding colour, while
@@ -14,9 +13,9 @@ import { getRustShelf, loadRustShelf } from './rust-shelf.js';
  * visible on the cover instead of assigning every book the same serif.
  *
  * The analysis itself (decode bounds, sample, colour, font loads, the single-flight search and its
- * slices, the title wraps and the choice of family) is rust-ui/src/cover_appearance.rs and font_policy.rs.
- * This module hands it the core's colour, plane and score bridges, the generator slice driver and the
- * Worker client, and keeps the two values a page owns between analyses.
+ * slices, the title wraps, the pixel planes and the choice of family) is rust-ui/src/cover_appearance.rs,
+ * font_policy.rs and font_planes.rs. This module hands it the core's colour and score bridges, the generator
+ * slice driver and the Worker client, and keeps the two values a page owns between analyses.
  */
 
 // Relative modules cannot resolve when this self-contained analyzer is imported from a data URL.
@@ -46,11 +45,7 @@ export function coverColorFromPixels(data, width, height) {
   return style;
 }
 
-export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
-  const mask = rustGlyphMask(loadedRustCore(), raw, maxWidth, rows, stride);
-  if (mask === undefined) throw new Error('Invalid glyph raster');
-  return mask;
-}
+export const glyphMask = (raw, maxWidth, rows, stride) => needRustShelf().glyph_mask(raw, maxWidth, rows, stride);
 
 // The raster of one mask stays here, one call from the Rust search: it is about twenty canvas calls, and
 // 144 masks a cover made that many imports measurably slower than this function.
@@ -72,13 +67,10 @@ function fontMask(title, before, after, plan, maxWidth, rows, wraps, surface) {
   lines.forEach((line, index) => {
     linesContext.fillText(line, x, 3 + index * lineHeight, lineWidth);
   });
-  const mask = glyphMask(linesContext.getImageData(0, 0, maxWidth, linesCanvas.height).data, maxWidth, linesCanvas.height);
-  return mask && loadedRustCore().font_mask_fits(mask.width, mask.height, maxWidth, rows) ? mask : null;
+  return getRustShelf().title_glyph_mask(linesContext.getImageData(0, 0, maxWidth, linesCanvas.height).data, maxWidth, linesCanvas.height, rows);
 }
 
-export function nearEdgeMap(edges, width) {
-  return rustNearEdgeMap(loadedRustCore(), edges, width);
-}
+export const nearEdgeMap = (edges, width) => needRustShelf().near_edge_map(edges, width);
 
 // The search is a few hundred million operations: run it in slices short
 // enough that scrolling and the animation loop keep their frames, and one
@@ -109,7 +101,7 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
 
 const host = {
   core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, color: rustCoverColor, mask: fontMask,
-  prepare: rustPrepareCoverPixels, scorer: createRustFontScorer, open: openFontScoreJob, slices: runInSlices, yieldToMain,
+  scorer: createRustFontScorer, open: openFontScoreJob, slices: runInSlices, yieldToMain,
   noop: () => {},
   // One cover is searched at a time; the six candidate faces are requested once per page.
   turn: Promise.resolve(), fonts: undefined

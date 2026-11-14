@@ -3,7 +3,7 @@
 // compare the Rust analyser against this file microtask by microtask.
 import { loadedRustCore, requireRustCore } from '../../../src/js/rust-core.js';
 import { rustCoverColor } from '../../../src/js/cover-color-wasm.js';
-import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from '../../../src/js/font-glyph-wasm.js';
+import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from './reference-font-glyph-wasm.js';
 import { createRustFontScorer } from '../../../src/js/font-score-wasm.js';
 export { scoreFontMask } from '../../../src/js/font-score-core.js';
 import { createRustFontWrapCache, rustFontSearchPlan, rustFontFamilyMax, rustFontFamilySelect } from './reference-font-policy-wasm.js';
