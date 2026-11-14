@@ -292,20 +292,25 @@ test('a cold native import retains its real page while the first cover analysis 
   },{timeout:20_000}).toBe(true);
   const before=await storedFixture(page);
   expect(before.bytes).toEqual(bytes);expect(before.words).toBe(4);expect(before.hasSavedAppearance).toBe(false);
-  await expect(page.locator('.ihr-bookshelf')).toHaveCount(0); // the actual cold native shelf gate
+  // The Android importer is Rust (rust-ui/src/android_import.rs) and its module is not fetched before the shelf has
+  // drawn its first live frame (cloud-native.js `cloudModule`): the room of the boot library therefore exists when the
+  // import begins. The actual cold native shelf gate is what follows: the stored book gets no slot while it is read.
+  await expect(page.locator('.ihr-bookshelf')).toHaveCount(1);
+  await expect(page.locator('.ihr-spine')).toHaveCount(0);
   expect(instrumentedModules).toBeGreaterThan(0);
   await observeBeforeBack(page,before.id);
   await page.locator('#reader-back').click();
   try {
     await page.waitForFunction(() => window.__coldReturnProbe.analysisCalls===1);
-    // Both frames occur with the analysis entry deliberately held. They expose
+    // Both frames occur with the analysis entry deliberately held: the boot room is still the one painted before the
+    // import (no slot, no loader over it) and the reader's own page covers it. They expose
     // the old return-false/finally-removes-overlay race without a timed sleep.
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const held=await page.evaluate(() => window.__coldReturnProbe.heldFacts());
     await testInfo.attach('cold-return-delayed-analysis.json',{body:JSON.stringify({before,held}),contentType:'application/json'});
     expect(held).toMatchObject({analysisCalls:1,released:false,closingSeen:true,closing:true,pageLeaving:false,
       overlayAttached:true,overlayPainted:true,retainedPixels:true,sameReaderPixels:true,
-      prematureRemoval:false,handoffBeforeRelease:false,semanticSlots:0,rooms:0,loader:true,flyouts:0});
+      prematureRemoval:false,handoffBeforeRelease:false,semanticSlots:0,rooms:1,loader:false,flyouts:0});
   } finally { await page.evaluate(() => window.__coldReturnProbe.release()); }
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:30_000});
   const room=page.locator('.ihr-bookshelf-scene');

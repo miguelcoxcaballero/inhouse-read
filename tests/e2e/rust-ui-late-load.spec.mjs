@@ -1,18 +1,16 @@
 import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
 import {longReflowPDF} from './fixtures/pdf-reflow-navigation.mjs'
+import {observeSpeechPaint} from './helpers/speech-paint-probe.mjs'
 
 test('a slow Rust download holds the reader until it arrives, then every operation uses that one instance',async({page},info)=>{
  test.setTimeout(60000);await page.emulateMedia({reducedMotion:'reduce'})
  await page.addInitScript(fakeEngineScript({installed:['piper:en_US-lessac-high'],holdAfter:1}))
  await page.addInitScript(()=>{
   localStorage.setItem('inhouse-read-reading-preferences',JSON.stringify({pdfMode:'text',voice:'piper:en_US-lessac-high'}))
-  window.lateRust={instances:0,paints:0,maps:0,views:0,preferences:0}
+  window.lateRust={instances:0,maps:0,views:0,preferences:0}
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.speech_paint)return result
    window.lateRust.instances++;const exports={...actual}
-   // The PDF source paints its sentence inside Rust (pdf_speech_highlight clears, then paints): speech_paint is no
-   // longer an export the page calls.
-   exports.pdf_speech_highlight=(...args)=>{window.lateRust.paints++;return actual.pdf_speech_highlight(...args)}
    exports.speech_map=(...args)=>{window.lateRust.maps++;return actual.speech_map(...args)}
    exports.rustreaderview_new=(...args)=>{window.lateRust.views++;return actual.rustreaderview_new(...args)}
    exports.rustreaderview_applyPreferences=(...args)=>{window.lateRust.preferences++;return actual.rustreaderview_applyPreferences(...args)}
@@ -20,6 +18,9 @@ test('a slow Rust download holds the reader until it arrives, then every operati
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
+ // The PDF source paints its sentence from a Rust closure (pdf_sources.rs), behind no export the page calls: the
+ // paints are read where they land, with the wasm module that made each one.
+ await observeSpeechPaint(page,{store:'latePaint'})
  let release;const gate=new Promise(resolve=>{release=resolve});let requests=0
  await page.route(/inhouse_read_ui_bg.*\.wasm/,async route=>{requests++;await gate;await route.continue()})
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
@@ -43,9 +44,10 @@ test('a slow Rust download holds the reader until it arrives, then every operati
   await page.locator('#file-picker').setInputFiles({name:'Next Rust PDF.pdf',mimeType:'application/pdf',buffer:longReflowPDF()})
   await expect(page.locator('.pdf-reflow-page')).toBeVisible({timeout:30000})
   await page.getByRole('button',{name:'Escuchar el libro'}).click();await page.getByRole('button',{name:'Reproducir',exact:true}).click()
-  await expect.poll(()=>page.evaluate(()=>window.lateRust.paints)).toBeGreaterThan(0)
+  await expect.poll(()=>page.evaluate(()=>window.latePaint.paints.filter(paint=>paint.key==='inhouse-speech'&&paint.text.length>0).length)).toBeGreaterThan(0)
+  for(const paint of await page.evaluate(()=>window.latePaint.paints))expect(paint.native).toMatch(/^inhouse_read_ui_bg/)
   await expect.poll(()=>page.evaluate(()=>[...(CSS.highlights.get('inhouse-speech')||[])].map(range=>range.toString()).join('').length)).toBeGreaterThan(0)
-  const proof=await page.evaluate(()=>window.lateRust)
+  const proof=await page.evaluate(()=>({...window.lateRust,paints:window.latePaint.paints.length}))
   expect(proof.instances).toBe(1);expect(proof.maps).toBeGreaterThan(0);expect(requests).toBe(1);expect(errors).toEqual([])
   await info.attach('late-module-adoption',{body:JSON.stringify(proof),contentType:'application/json'})
  }finally{release()}

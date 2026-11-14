@@ -8,11 +8,13 @@ const root=resolve(process.cwd());
 const fixtureRoot=process.env.IHR_COLD_FIXTURE_ROOT;
 if (!fixtureRoot || !isAbsolute(fixtureRoot)) throw new Error('IHR_COLD_FIXTURE_ROOT must be the fresh absolute directory owned by this test.');
 const outDir=join(fixtureRoot,'dist');
-// The analysis is rust-ui/src/cover_appearance.rs; this is its one JavaScript entry. The barrier holds a
-// colour-only request (matchFont false) once, then lets the same request through.
+// The analysis is rust-ui/src/cover_appearance.rs; this is its one JavaScript entry. The shelf asks for one kind of
+// analysis only (rust-ui/src/bookshelf/covers.rs `appearance_task`: colour and lettering, no options), so the barrier
+// holds the first request made while the probe is armed, whatever its options, then lets that same request through
+// untouched. The entry is synchronous up to the Rust call, so the pass-through flag cannot leak to another request.
 const signature="export function analyzeCoverAppearance(url, title = '', options) {";
-const barrier="\n  if (options && options.matchFont !== undefined && !options.matchFont && !options.coldReturnHeld && globalThis.__coldReturnProbe?.armed)"
-  +" return globalThis.__coldReturnProbe.holdAnalysis(url).then(() => analyzeCoverAppearance(url, title, { ...options, coldReturnHeld:true }));";
+const barrier="\n  { const probe = globalThis.__coldReturnProbe;"
+  +" if (probe?.armed && !probe.passing) return probe.holdAnalysis(url).then(() => { probe.passing = true; try { return analyzeCoverAppearance(url, title, options); } finally { probe.passing = false; } }); }";
 const lengthImport="import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'";
 let previewServer=null, stopping=false, startBuild;
 const buildRequested=new Promise(resolve => { startBuild=resolve; });
