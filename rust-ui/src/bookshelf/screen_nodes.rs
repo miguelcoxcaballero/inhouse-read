@@ -4,13 +4,25 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use super::{util::*,ctx::{Ctx,RustShelfCtx},objects,drag,trash,style};
 
+// Every press accepted on a book, plant or lamp button starts a new gesture. A touch marks its button so that the
+// compatibility click the browser sends right after it is not taken for a second tap; that click always arrives
+// before the next press anywhere. A touch that produces no click (a swipe that changes the view, a scroll) left the
+// mark behind, and it swallowed the next real click on that book when the press itself had landed on a neighbour's
+// overlapping tap rectangle (which is the button that got reset). A mark therefore only counts within its gesture.
+thread_local!{static GESTURE:std::cell::Cell<f64>=const{std::cell::Cell::new(0.0)};}
+fn gesture()->f64{GESTURE.with(|g|g.get())}
 struct Press(JsValue);
 impl Press{
+ /// The click that follows a touch on this button within the same gesture; clears the marks either way.
+ fn swallows_click(&self)->bool{
+  let touch=self.touch();
+  let marked=gb(&self.0,"ignore")&&gn(&self.0,"gesture")==gesture()||truthy(&touch)&&gn(&touch,"gesture")==gesture();
+  self.set_ignore(false);self.set_touch(null());marked
+ }
  fn new()->Self{Self(obj(&[("start",&null()),("touch",&null()),("ignore",&JsValue::FALSE)]))}
  fn start(&self)->Option<(f64,f64)>{let start=get(&self.0,"start");if nullish(&start){None}else{Some((gn(&start,"x"),gn(&start,"y")))}}
  fn set_start(&self,start:Option<(f64,f64)>){put(&self.0,"start",&match start{Some((x,y))=>obj(&[("x",&f(x)),("y",&f(y))]),None=>null()});}
- fn ignore(&self)->bool{gb(&self.0,"ignore")}
- fn set_ignore(&self,value:bool){putb(&self.0,"ignore",value);}
+ fn set_ignore(&self,value:bool){putb(&self.0,"ignore",value);put(&self.0,"gesture",&f(gesture()));}
  fn touch(&self)->JsValue{get(&self.0,"touch")}
  fn set_touch(&self,value:JsValue){put(&self.0,"touch",&value);}
  fn cancel_touch(&self){let touch=self.touch();if truthy(&touch){putb(&touch,"cancelled",true);}}
@@ -58,11 +70,12 @@ fn gesture_start(ctx:&Rc<Ctx>,press:&Press,node:&JsValue,event:&JsValue,is_book:
   if truthy(&drag){putb(&drag,"cancelled",true);ctx.clear_timeout(&get(&drag,"timer"));}
   return Ok(false);
  }
+ GESTURE.with(|g|g.set(g.get()+1.0));
  press.set_ignore(false);
  if is_book{ctx.st_set("suppressOpenBookId",&null());press.set_start(Some((gn(event,"clientX"),gn(event,"clientY"))));}
  let touch=if get(event,"pointerType")==s("touch"){
   let valid=absent(&ctx.scene())||ctx.scene_call(if is_book{"getBookAtPoint"}else{"getObjectAtPoint"},&[&get(event,"clientX"),&get(event,"clientY")])?==*node;
-  obj(&[("pointerId",&get(event,"pointerId")),("x",&get(event,"clientX")),("y",&get(event,"clientY")),("cancelled",&JsValue::FALSE),("valid",&b(valid))])
+  obj(&[("pointerId",&get(event,"pointerId")),("x",&get(event,"clientX")),("y",&get(event,"clientY")),("cancelled",&JsValue::FALSE),("valid",&b(valid)),("gesture",&f(gesture()))])
  }else{null()};
  press.set_touch(touch);Ok(true)
 }
@@ -344,7 +357,7 @@ fn handle_input(ctx:&Rc<Ctx>,binding:&JsValue,event:JsValue)->R{
  },
   "build_lamp-click-1"=>{
   let pointer=trash::pointer_click(&event);
-  if pointer&&(press.ignore()||truthy(&press.touch())){press.set_ignore(false);press.set_touch(null());return Ok(());}
+  if pointer&&press.swallows_click(){return Ok(());}
   if pointer&&ctx.st("suppressLampClickKey")==objects::object_key(node){ctx.st_set("suppressLampClickKey",&null());return Ok(());}
   if !pointer{ctx.st_set("suppressLampClickKey",&null());}
   if pointer&&!absent(&ctx.scene())&&ctx.scene_call("getObjectAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?!=*node{return Ok(());}
@@ -377,7 +390,7 @@ fn handle_input(ctx:&Rc<Ctx>,binding:&JsValue,event:JsValue)->R{
  },
   "build_spine-click-1"=>{
   let pointer=trash::pointer_click(&event);
-  if pointer&&(press.ignore()||truthy(&press.touch())){press.set_ignore(false);press.set_touch(null());return Ok(());}
+  if pointer&&press.swallows_click(){return Ok(());}
   if ctx.st_true("arranging")||ctx.st_true("suppressOpenBookId"){ctx.st_set("suppressOpenBookId",&null());return Ok(());}
   let hit=if pointer{ctx.scene_call("getBookAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?}else{null()};
   if pointer&&!absent(&ctx.scene())&&!truthy(&hit){return Ok(());}

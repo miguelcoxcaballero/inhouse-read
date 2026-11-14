@@ -97,3 +97,17 @@ it('never drops a book onto a pot: it lands beside it',()=>{
  const landed=f.drop('hand',300);expect(landed).toHaveLength(1);expect(Math.abs(landed[0]-300)).toBeGreaterThan(30);
  expect(f.step()[1]).toEqual(before[1]);f.free();
 });
+it('a never-placed book moved to the free end of its board lies down exactly like the end book of a hand-placed row',()=>{
+ // animation-continuity.spec.mjs:194 with decoration-free slots: the pot keeps its place, seven books stand packed
+ // beside it and the one that did not fit takes the free end of the board. Like every end book with an open side it
+ // lies down (it is not propped on anything) and the shelf sleeps. The never-placed mark (kind .5) only matters when
+ // the open side ends at a pot or lamp; here the result is bit-identical to a row of hand-placed books.
+ const rows=unplaced=>[book('pot',70,{kind:1,width:100,height:160}),
+  ...Array.from({length:7},(_,i)=>book('b'+i,131+i*21,{unplaced})),book('end',131+7*21,{unplaced})];
+ const run=unplaced=>{const f=fixture(rows(unplaced));f.decoration('pot',1,'muskot','muskot',Float64Array.of(.03,.07,.16,0));
+  const rest=f.step(900);expect(rest.every(row=>row.active===0)).toBe(true);expect(f.step(30)).toEqual(rest);f.free();return rest;};
+ const rest=run(true),end=rest.at(-1);
+ expect(Math.abs(Math.abs(end.angle)-Math.PI/2)).toBeLessThan(.02);expect(end.x).toBeGreaterThan(131+7*21);
+ for(const standing of rest.slice(1,-1))expect(Math.abs(standing.angle)).toBeLessThan(.02);
+ expect(rest[0].x).toBeCloseTo(70,4);expect(rest).toEqual(run(false));
+});
