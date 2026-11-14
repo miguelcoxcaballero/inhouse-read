@@ -19,7 +19,7 @@ fn boxed(values:&[f64])->Option<Box3>{
  Some(Box3{min:[values[0],values[1],values[2]],max:[values[3],values[4],values[5]]})
 }
 fn put(out:&mut [f64],values:&[f64]){for (slot,value) in out.iter_mut().zip(values){*slot=*value;}}
-fn fixed(value:f64,digits:u8)->String{js_sys::Number::from(value).to_fixed(digits).ok().and_then(|text|text.as_string()).unwrap_or_default()}
+pub(crate) fn fixed(value:f64,digits:u8)->String{js_sys::Number::from(value).to_fixed(digits).ok().and_then(|text|text.as_string()).unwrap_or_default()}
 
 /// One frame of a book's flight into the bin on the bounded clock: the clock after the frame, how
 /// far the flight is (`t`), the lid's opening and its bounce. `out = [elapsed, last frame, t, openness, bounce]`.
@@ -52,14 +52,17 @@ pub fn scene_trash_overflow(right:f64,scene_width:f64,t:f64,out:&mut [f64]){
 /// the world places of both, radius and height.
 #[wasm_bindgen]
 pub fn scene_trash_texts(position:&[f64],scale:f64,rotation:&[f64],foot_y:f64,floor_y:f64,foot_world:&[f64],floor_world:&[f64],radius:f64,height:f64)->Array{
- let three=|v:&[f64]|format!("{},{},{}",fixed(v[0],6),fixed(v[1],6),fixed(v[2],6));
  let texts=Array::new();
  if position.len()<3||rotation.len()<3||foot_world.len()<3||floor_world.len()<3{return texts;}
- for text in [three(position),fixed(scale,6),format!("{},{},{}",number_string(rotation[0]),number_string(rotation[1]),number_string(rotation[2])),
-  fixed(foot_y,6),fixed(floor_y,6),three(foot_world),three(floor_world),number_string(radius),number_string(height)]{
-  texts.push(&JsValue::from_str(&text));
- }
+ for text in trash_strings(position,scale,rotation,foot_y,floor_y,foot_world,floor_world,radius,height){texts.push(&JsValue::from_str(&text));}
  texts
+}
+/// `scene_trash_texts` as text (every slice holds three numbers).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn trash_strings(position:&[f64],scale:f64,rotation:&[f64],foot_y:f64,floor_y:f64,foot_world:&[f64],floor_world:&[f64],radius:f64,height:f64)->[String;9]{
+ let three=|v:&[f64]|format!("{},{},{}",fixed(v[0],6),fixed(v[1],6),fixed(v[2],6));
+ [three(position),fixed(scale,6),format!("{},{},{}",number_string(rotation[0]),number_string(rotation[1]),number_string(rotation[2])),
+  fixed(foot_y,6),fixed(floor_y,6),three(foot_world),three(floor_world),number_string(radius),number_string(height)]
 }
 
 #[wasm_bindgen]
@@ -74,6 +77,17 @@ impl RustScene{
   if self.trash_text_key.len()==numbers.len()&&self.trash_text_key.iter().zip(numbers).all(|(held,value)|*held==value.to_bits()){return None;}
   self.trash_text_key.clear();self.trash_text_key.extend(numbers.iter().map(|value|value.to_bits()));
   Some(scene_trash_texts(&numbers[0..3],numbers[3],&numbers[4..7],numbers[7],numbers[8],&numbers[9..12],&numbers[12..15],numbers[15],numbers[16]))
+ }
+ /// How a painted frame ends, from what moved in it (`moved`: 1 an entry, 2 the bin, 4 an entry
+ /// this device moves itself, 8 an entry flies, lands or previews). Returns 1 the canvas says it
+ /// animates, 2 the scene moves (another frame follows), 4 this device's own scene moves, 8 the
+ /// room is quiet (its physics may be saved and its motion published as at rest), 16 an
+ /// inspection gesture moves the view.
+ #[wasm_bindgen(js_name=framePlan)]
+ pub fn frame_plan(&self,moved:u32)->u32{
+  let view=self.turning()||self.reordering();
+  let (scene,local,inspecting)=(view||moved&3!=0,view||moved&6!=0,self.moving());
+  u32::from(scene||inspecting)|u32::from(scene)<<1|u32::from(local)<<2|u32::from(!scene&&!inspecting&&moved&8==0)<<3|u32::from(inspecting)<<4
  }
  /// The bin is not shown in this view: only the diagonal view at its end shows it.
  #[wasm_bindgen(js_name=trashViewHidden)]

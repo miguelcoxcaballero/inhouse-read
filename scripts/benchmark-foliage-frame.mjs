@@ -5,6 +5,7 @@ import {performance} from 'node:perf_hooks';
 import * as THREE from 'three';
 import * as rust from '../src/wasm/shelf/inhouse_read_shelf.js';
 import {createFoliageFrame} from '../src/js/foliage-frame.js';
+import {prepareAreas} from '../tests/unit/helpers/reference-foliage-areas.js';
 rust.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});
 const box=(left,top,width,height)=>({left,top,width,height,right:left+width,bottom:top+height});
 function legacy(){
@@ -31,10 +32,10 @@ for(const [objects,plants] of [[24,4],[96,8],[240,12]])for(const mode of ['stati
  let tick=0,checksum=0;
  function shift(){if(mode==='stationary')return;const x=(tick++%25)*.07;for(let i=0;i<areas.length;i++){areas[i].left=i*13+x;areas[i].right=areas[i].left+8;}for(let i=0;i<rects.length;i++){rects[i].left=i*23+x;rects[i].right=rects[i].left+150;}}
  function old(){for(let i=0;i<plants;i++)checksum+=previous[i].step(models[i],q,rects[i],areas).length;}
- function current(){frame.prepare(areas);for(let i=0;i<plants;i++){states[i].pose(models[i],q,rects[i]);checksum+=states[i].clip().length;}}
+ function current(){prepareAreas(frame,areas);for(let i=0;i<plants;i++){states[i].pose(models[i],q,rects[i]);checksum+=states[i].clip().length;}}
  try{
   for(let i=0;i<120;i++){
-   shift();frame.prepare(areas);
+   shift();prepareAreas(frame,areas);
    for(let p=0;p<plants;p++){
     states[p].pose(models[p],q,rects[p]);const actual=states[p].clip(),expected=previous[p].step(models[p],q,rects[p],areas);
     if(actual!==expected)throw Error(`clip mismatch ${objects}/${plants}/${mode}/${i}/${p}`);
