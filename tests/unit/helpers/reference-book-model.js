@@ -339,18 +339,17 @@ const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
  * under and beside the page fades in step with it. A side that has no paper
  * (a full-bleed picture) yields to the other; with neither, null.
  */
-const toneScratch = { a:{}, b:{}, rgb:new Float64Array(6) };
-const paperMixHost = {
-  read(stock,theme) {
-    const a = stock.getRGB(toneScratch.a,THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b,THREE.SRGBColorSpace);
-    const rgb = toneScratch.rgb;
-    rgb[0] = a.r; rgb[1] = a.g; rgb[2] = a.b; rgb[3] = b.r; rgb[4] = b.g; rgb[5] = b.b;
-    return rgb;
-  },
-  write:(target,r,g,b) => target.setRGB(r,g,b,THREE.SRGBColorSpace)
-};
+// The original blend (helpers/reference-book-surface-policy.js), as before the shelf module was asked for it.
+const toneScratch = { a:{}, b:{} };
 export function mixPaperTone(target, stock, theme, mix) {
-  return needRustShelf().book_paper_mix(target,stock,theme,mix,paperMixHost);
+  const k = Math.max(0, Math.min(1, Number(mix)));
+  if (!stock && !theme) return null;
+  if (!stock) return target.copy(theme);
+  if (!theme) return target.copy(stock);
+  if (!(k > 0)) return target.copy(stock);
+  if (!(k < 1)) return target.copy(theme);
+  const a = stock.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
+  return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
 }
 
 export const fitCoverImage = fitImage;
