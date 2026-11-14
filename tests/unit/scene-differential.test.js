@@ -47,6 +47,25 @@ describe('bookshelf scene against its frozen original', () => {
     same('fractional units',await runScenario(frozen,3,options),await runScenario(live,3,options))
   }, 120000)
 
+  // The bin and the lamps at rest are left alone by the frame (their lid, matrices, box, emission and
+  // data stand as written). These sessions dwell on them: hovers, drops, switches and temperatures between
+  // frames, view changes and layouts, with the bin's world matrices and lid and each lamp's emission
+  // recorded at every render.
+  let binRenders = 0, lampRenders = 0
+  it.each([101, 102, 103, 104, 105, 106, 107, 108])('fixture session %i leaves identical state', async seed => {
+    const options = { steps: 90, bin: true,
+      weights: { hover: 12, trash: 4, trashCancel: 7, trashThrough: 3, mode: 6, lampPower: 9, lampKelvin: 7, frames: 14, advance: 4, zoomTo: 3, layout: 3, scroll: 2, class: 2, query: 1 } }
+    await runScenario(frozen, seed, options)
+    const original = await runScenario(frozen, seed, options), current = await runScenario(live, seed, options)
+    same(`fixture seed ${seed}`, original, current)
+    binRenders += current.join('').split('"bin"').length - 1
+    lampRenders += current.join('').split('"lamp:').length - 1
+  }, 180000)
+  it('recorded the bin and the lamps in the fixture sessions\' renders', () => {
+    if (binRenders + lampRenders === 0) return // The sessions were filtered out of this run.
+    expect(binRenders).toBeGreaterThan(400); expect(lampRenders).toBeGreaterThan(400)
+  })
+
   it.each(Array.from({ length: Number(process.env.SCENE_SEEDS) || 24 }, (_, index) => index + 1))('session %i leaves identical state', async seed => {
     // A session's second run finds what its first one painted already cached (plant surfaces, bakes), which
     // settles asynchronous work sooner. Both scenes are therefore compared from the same warm state.
