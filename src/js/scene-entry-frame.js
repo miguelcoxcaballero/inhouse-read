@@ -4,22 +4,12 @@
 // takes every button's hit target. The host writes a column of `state` only when its source
 // changes and reads the results from the arena; `refresh` follows any growth of memory (call
 // it before using the views after other native work).
-export const ENTRY_STATE = 89, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
-// A settled entry's frame: its overview flag and resolution are stored on it as
-// rust.scene_update_quality stores them, and the answer is whether that call has anything else
-// to do: the model is at another quality (scene_quality.rs `matches`), or a replacement or a
-// plant texture is under way. Every visible book and plant passes here in every frame.
-export function settledQualityWork(entry, overview, resolution) {
-  entry.overview = overview; entry.inspectionResolution = resolution;
-  const data = entry.model?.userData;
-  return Boolean(entry.plantQuality || entry.qualityReplacement ||
-    data && !(Boolean(data.overview) === overview && (data.inspectionResolution || 0) === resolution));
-}
+export const ENTRY_STATE = 91, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
   const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part),
-    census, painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
+    hold, census, painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
     prepare, bind, refresh, step, poses, settle, place, settled, hits, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {
     if (disposed) throw new Error('Scene entry frame has been disposed');
@@ -56,11 +46,13 @@ export function createSceneEntryFrame(rust) {
       state[to + 71] = state[to + 73] = 1; entry.row = index;
     }
   }
-  // What the host holds of each entry now, for the frame's own questions (rust-ui/src/scene_census.rs):
-  // the result's bits are loading 2, overlay insertion 4, native insertion 8, busy 16, touched 32;
-  // `counts` holds the casters' signature and the diagnostics' counts. `show` then writes the canvas'
-  // diagnostics that follow from them and from the host's seven numbers in `shown` (`shows` names the canvas' data).
-  function census(entries, trashVisible) {
+  // What the host holds of each entry, told to the arena whenever it may have changed (`hold`): a settled
+  // entry's quality is decided from it in the pose call, and the census answers the frame's own questions
+  // from it (rust-ui/src/scene_census.rs): the result's bits are loading 2, overlay insertion 4, native
+  // insertion 8, busy 16, touched 32; `counts` holds the casters' signature and the diagnostics' counts.
+  // `show` then writes the canvas' diagnostics that follow from them and from the host's seven numbers in
+  // `shown` (`shows` names the canvas' data).
+  function hold(entries) {
     refresh();
     for (let index = 0, state = frame.state, to = 85; index < entries.length; index++, to += ENTRY_STATE) {
       const entry = entries[index], model = entry.model, data = model?.userData, insertion = entry.insertion, quality = entry.plantQuality;
@@ -69,6 +61,8 @@ export function createSceneEntryFrame(rust) {
         (entry.qualityReplacement && !entry.replacementReady || quality && !quality.ready ? 256 : 0);
       state[to + 1] = data?.inspectionResolution; state[to + 2] = model ? model.id : 0;
     }
+  }
+  function census(trashVisible) {
     const held = native.census(trashVisible);
     refresh();
     return held;

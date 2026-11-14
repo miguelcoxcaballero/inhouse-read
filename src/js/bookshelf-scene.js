@@ -2,7 +2,7 @@ import { createGravityFrame } from './gravity-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneProjectionFrame } from './scene-projection-frame.js';
-import { createSceneEntryFrame, settledQualityWork, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
+import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
@@ -703,6 +703,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
   const insertedIds = [], exclusionRects = [];
   let exclusionsReady = false, staticStale = true;
+  // What the entries hold (model, visibility, quality, return, drop) may have changed: the entry arena is told again.
+  let censusStale = true;
+  const tellHeld = () => { if (censusStale) { censusStale = false; entryFrame.hold(bookEntries); } };
 
   // What a book's materials are compared by, per book and record (JavaScript: through Rust it measured
   // about 14 times slower, 10 ms for 300 books). A plant's or a lamp's model key: rust-ui/src/scene_dom.rs.
@@ -759,7 +762,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       return;
     }
     // Same bookkeeping as invalidate(true), without asking for a frame yet.
-    noteInspectionDirty(source);
+    noteInspectionDirty(source); censusStale = true;
     shelfSnapshotDirty = shadowDirty = true;
     if (!preserveInspectionOverview) inspectionOverview = null;
     drawPending = gate.held = true;
@@ -832,7 +835,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function cancelReplacement(entry) {
-    entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
+    entry.plantQuality?.plan.dispose(); entry.plantQuality = null; censusStale = true;
     releaseCandidate(entry.replacement);
     entry.replacement = null;
     entry.qualityReplacement = false; entry.replacementReady = false;
@@ -943,7 +946,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (t === 1 && !drop.complete) {
         drop.complete = true;
         sceneView.trashFinishDrop();
-        dropEntry.model.visible = false;
+        dropEntry.model.visible = false; censusStale = true;
         finishedDrops.push(() => { if (!drop.settled) { drop.settled = true; drop.resolve(true); } });
       }
       // The lid wobbles and the bin's box follows it: the next still frame takes both again.
@@ -1075,9 +1078,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     programsChanged() { if (batchQuality) programsStale = true; },
     get disposed() { return disposed; },
     watch(ready,entry,pending,previous,plant) {
-      Promise.resolve(ready).then(
-        loaded => rust.scene_quality_complete(entry,qualityHost,pending,previous,plant,loaded,false),
-        () => rust.scene_quality_complete(entry,qualityHost,pending,previous,plant,undefined,true));
+      const complete = (loaded,failed) => { censusStale = true; rust.scene_quality_complete(entry,qualityHost,pending,previous,plant,loaded,failed); };
+      Promise.resolve(ready).then(loaded => complete(loaded,false), () => complete(undefined,true));
     }
   };
 
@@ -1407,6 +1409,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         }
         if (entry.bits & 6) physicsInteracted = true;
       }
+      if (entry.insertion || entry.trashDrop) censusStale = true;
       // A completed insertion remains painted until its owner restores the
       // semantic shelf book. This avoids an empty frame at the final handoff.
       if (entry.insertion?.complete && !entry.flags.away) {
@@ -1440,6 +1443,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // One native call eases every lift, landing and preview (or steps the rigid bodies), samples the
     // shared room's motion, composes each pose matrix, places it in the room and projects it
     // (scene-entry-frame.js). Its results are applied below, in order.
+    tellHeld();
     let summary;
     if (!usePhysics) summary = entryFrame.poses(sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging, furniture.matrixWorld);
     else {
@@ -1494,24 +1498,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         rect.width = live[at + 62]; rect.height = live[at + 63]; rect.closest = live[at + 64];
       }
       const visible = live[at + 65] === 1, modelVisible = live[at + 69] === 1;
-      if (live[at + 66] === 1) {
-        // Every settled, visible book and plant passes here in every frame. Its overview flag and
-        // resolution are stored as scene_update_quality stores them, and Rust is called only for
-        // an entry with work to do: a model at another quality (scene_quality.rs `matches`), a
-        // replacement or a plant texture under way. The call per entry cost more than the frame.
-        const overview = live[at + 67] === 1, resolution = live[at + 68];
-        if (settledQualityWork(entry, overview, resolution)) rust.scene_update_quality(entry,qualityHost,overview,resolution);
-      }
+      // A settled book's or plant's quality has work to do (decided in the pose call: scene_entry_frame.rs).
+      if (changed & 8) { censusStale = true; rust.scene_update_quality(entry,qualityHost,live[at + 67] === 1,live[at + 68]); }
       let created = null, still = false;
       if (visible && !entry.model) {
-        created = entry.model = makeModel(entry);
+        created = entry.model = makeModel(entry); censusStale = true;
         furniture.add(entry.model);
         if (entry.kind === 'plant' || entry.kind === 'lamp') programsStale = true;
       } else if (!visible && entry.model && !away) {
         releaseEntry(entry);
       }
       if (entry.model) {
-        entry.model.visible = modelVisible;
+        if (entry.model.visible !== modelVisible) { entry.model.visible = modelVisible; censusStale = true; }
         if (trashDrop) {
           entry.posed = null;
           moving ||= !trashDrop.complete;
@@ -2137,6 +2135,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function draw(now = performance.now(), force = false) {
     pointerHit = null;
+    // A frame nobody scheduled follows an event (a layout, a return, a drop, a flush).
+    if (!raf) censusStale = true;
     raf = 0;
     if (disposed) return;
     if (!canPresent()) { drawPending = true; return; }
@@ -2194,7 +2194,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       return;
     }
     // What the entries hold now answers the frame's questions about them in one call (scene-entry-frame.js).
-    const held = entryFrame.census(bookEntries, Boolean(trash?.visible)), busy = Boolean(held & 16), casters = entryFrame.counts[0];
+    tellHeld();
+    const held = entryFrame.census(Boolean(trash?.visible)), busy = Boolean(held & 16), casters = entryFrame.counts[0];
     const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
     const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight:sceneView.viewportHeight,
       shadowDirty:contentDirty, transform:furniture.matrixWorld });
@@ -2407,16 +2408,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const saved = bookGravity.snapshot();
       if (saved !== undefined && saved !== null) {
         try {
-          const records = roomRecords();
-          const canonical = rust.room_physics_canonical(saved, records);
-          const existing = localStorage.getItem(physicsStorageKey);
-          // Received resting geometry is authoritative. A passive render/resize
-          // must neither rewrite it nor turn solver roundoff into a local edit.
-          const preserve = !physicsInteracted && existing && rust.room_physics_passive_compatible(existing, canonical);
-          if (!preserve) {
-            localStorage.setItem(physicsStorageKey, canonical);
-            acknowledgeRoom(canonical);
-          }
+          // Stored and acknowledged unless a passive frame finds the same room stored (rust-ui/src/scene_events.rs).
+          rust.scene_room_save(saved, roomRecords(), physicsStorageKey, physicsInteracted, acknowledgeRoom);
           if (physicsInteracted) { physicsInteracted = false; notifyCloudSettingsChanged(physicsStorageKey); }
         } catch {}
       }
@@ -2436,23 +2429,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (entry) {
         bookPresentationScheduled = true;
         const model = entry.model;
-        const current = () => !disposed &&
-          entry.model === model && model.visible && canPreparePresentation();
-        void (async () => {
-          let prepared = false;
-          try {
-            if (!await model.userData.preparePresentation(idleSlice, current) || !current()) return;
-            prepared = typeof model.userData.prepareDetailPresentation !== 'function' ||
-              await model.userData.prepareDetailPresentation(idleSlice, current);
-          } catch (error) {
-            console.warn('No se pudo preparar el libro en reposo:', error);
-          } finally {
-            // A busy/hidden owner or failed driver can cancel either phase.
-            // Permit another already-required stable paint to retry; settling
-            // background preparation must never schedule a frame of its own.
-            if (!prepared && !disposed) bookPresentationScheduled = false;
-          }
-        })();
+        // Its resting phase, then its detail, in idle slices (rust-ui/src/scene_events.rs). A cancelled
+        // phase lets a later required stable paint retry; this never schedules a frame of its own.
+        rust.scene_prepare_resting(model.userData, idleSlice,
+          () => !disposed && entry.model === model && model.visible && canPreparePresentation(),
+          () => { if (!disposed) bookPresentationScheduled = false; });
       }
     }
     // One more frame after any motion redraws its cheaper shadow at full quality.
@@ -2466,6 +2447,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function invalidate(dirty = true, preserveInspectionOverview = false, source = '') {
     if (disposed) return;
+    if (dirty) censusStale = true;
     if (dirty && preserveInspectionOverview && sceneView.moving) {
       // A decoded quality replacement stays pending while the captured image
       // follows the fingers. Its ready flag is applied by the settled paint.
@@ -2875,15 +2857,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // The planner already validated the index and clamps its horizontal slot.
       if (!row) return Number.isInteger(position.shelf) && position.shelf >= rows.length ? position : null;
       if (entry.kind === 'lamp' && entry.mount === 'undershelf') return position;
-      const left = row.left || 0, right = row.right ?? width, padding = row.padding ?? 16;
-      const available = right - left - padding * 2;
-      const pixelsPerMetre = unitWidth / SHELF_SPECS[shelfType].width * 1000;
-      const result = bookGravity.drop_position(entry.key, new Float64Array([
-        position.shelf, left + padding + position.x * available, left, right,
-        row.bottom, row.ceiling ?? row.top, pixelsPerMetre
-      ]));
-      return result.length && available > 0
-        ? { ...position, x:(result[0] - left - padding) / available } : null;
+      // The solver's place for it between the bay's paddings, or none (rust-ui/src/scene_events.rs).
+      const left = row.left || 0, padding = row.padding ?? 16;
+      const x = rust.scene_drop_x(bookGravity, entry.key, position.shelf, position.x, left, row.right ?? width, padding,
+        row.bottom, row.ceiling ?? row.top, unitWidth / SHELF_SPECS[shelfType].width * 1000);
+      return x === undefined ? null : { ...position, x };
     },
     setDropPosition(position) {
       if (disposed) return;

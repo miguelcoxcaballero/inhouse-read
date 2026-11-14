@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 import { getBookRenderer } from '../../src/js/book-model.js';
+import { censusAudit } from './helpers/scene-census-audit.js'
+// Every census that does not walk the entries is checked against a walk (helpers/scene-census-audit.js).
+vi.mock('../../src/js/scene-entry-frame.js', async actual => (await import('./helpers/scene-census-audit.js')).auditedEntryFrame(actual))
 
 // The renderer double links programs "in the background": they report ready
 // only once the test says so, like KHR_parallel_shader_compile's completion.
@@ -64,6 +67,7 @@ beforeEach(() => {
   stage.getBoundingClientRect = () => rect(0, 60, 390, parseFloat(stage.style.height) || 715);
 });
 afterEach(() => {
+  expect(censusAudit.misses.splice(0)).toEqual([]);
   shelf?.dispose(); shelf = null; document.body.innerHTML = '';
   vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });

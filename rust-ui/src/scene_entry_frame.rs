@@ -27,14 +27,15 @@ use super::projection::RustSceneProjectionFrame;
 /// - 56 the pose's Euler order (0 `XYZ`, 1 `ZYX`), which a frame without rigid bodies keeps;
 /// - 57-60 the pose's quaternion (`Quaternion#setFromEuler`, recomputed when the Euler moved);
 /// - 61-68 the pose last handed to the host; 69 the lean; 70 out: 1 the pose differs from the
-///   one the host holds, 2 its matrix differs, 4 its projected rectangle differs; 71 in: the
-///   host holds nothing of this row yet;
+///   one the host holds, 2 its matrix differs, 4 its projected rectangle differs, 8 its quality
+///   has work to do (`scene_update_quality`); 71 in: the host holds nothing of this row yet;
 /// - 72 the previous frame's motion flags; 73 in: the host holds no hit target of this row yet;
 /// - 74 the number of the shared key the entry's local pose was sampled under (0: it has none
 ///   yet) and 76-84 that pose, as the room publishes it: `[shelf, x, y, z, quaternion, scale]`;
-/// - 85-87 in, every frame: what the host holds now (`scene_census.rs`), its model's texture
-///   resolution and its model's id; 88 the room was last painted without this away book.
-const STATE:usize=89;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;
+/// - 85-87 in, whenever it may have changed: what the host holds now (`scene_census.rs`), its
+///   model's texture resolution and its model's id; 88 the room was last painted without this
+///   away book; 89-90 the overview flag and the resolution the entry was last told to be drawn at.
+const STATE:usize=91;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TOLD:usize=89;
 #[path="scene_census.rs"] mod census;
 const HOST:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
@@ -157,7 +158,21 @@ impl RustSceneEntryFrame{
    let flags=place_entry(index,input,output,&room,motion_frame,scene,motion,transition,now,arranging);
    let matrix_changed=fresh||held.iter().zip(&output[26..42]).any(|(bits,value)|*bits!=value.to_bits());
    let rect_changed=fresh||rect.iter().zip(&output[58..65]).any(|(bits,value)|*bits!=value.to_bits());
-   row[CHANGED]=f64::from(u32::from(pose_changed)|u32::from(matrix_changed)<<1|u32::from(rect_changed)<<2);
+   // A settled, visible book or plant is drawn at the quality its projection chose. The host is
+   // called for it (`scene_update_quality`, which stores both numbers on the entry) only when
+   // there is something to do: the numbers are not the ones the entry was told last, its model is
+   // at another quality (scene_quality.rs `matches`), or a replacement or a plant texture is
+   // under way. What the host holds is the census' record, which the host refreshes before
+   // this call whenever it may have changed.
+   let mut quality=false;
+   if output[66]==1.0{
+    let (overview,resolution,held)=(f64::from(output[67]==1.0),output[68],row[HOSTED] as u32);
+    let kept=if row[HOSTED+1].is_nan()||row[HOSTED+1]==0.0{0.0}else{row[HOSTED+1]};
+    quality=held&4!=0||held&1!=0&&!(f64::from(held&8!=0)==overview&&kept==resolution)
+     ||row[TOLD]!=overview||row[TOLD+1].to_bits()!=resolution.to_bits();
+    if quality{row[TOLD]=overview;row[TOLD+1]=resolution;}
+   }
+   row[CHANGED]=f64::from(u32::from(pose_changed)|u32::from(matrix_changed)<<1|u32::from(rect_changed)<<2|u32::from(quality)<<3);
    row[FRESH]=0.0;row[LIVE]=f64::from(flags);
    // The entry's local pose in the shared room, kept until it is sampled again.
    if flags&1!=0{row[LOCAL..LOCAL+9].copy_from_slice(&output[1..10]);row[LOCAL_KEY]=f64::from(motion_frame.id(index));}

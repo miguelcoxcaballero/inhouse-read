@@ -50,14 +50,14 @@ it('answers what the frozen per-entry scans answered, over random rooms and layo
     frame.bind(entries,false);
    }else for(const e of entries)if(chance(.25))Object.assign(e,entry(),{row:e.row});
    write(frame,entries);
-   const trash=chance(.5),held=frame.census(entries,trash),expected=flags(entries,frame);
+   const trash=chance(.5),held=(frame.hold(entries),frame.census(trash)),expected=flags(entries,frame);
    expect({loading:Boolean(held&2),overlay:Boolean(held&4),native:Boolean(held&8),busy:Boolean(held&16),touched:Boolean(held&32)}).toEqual(expected);
    expect(frame.counts[0]).toBe(referenceCasters(entries,trash));
    const counts=new Float64Array(8),text=referenceCounts(rust.scene_counts,entries,counts);
    expect(Array.from(frame.counts.subarray(1))).toEqual(Array.from(counts));
    // The counts are rebuilt only when a counted number differs.
    if(held&1)rebuilt++;
-   expect(frame.census(entries,trash)&1).toBe(0);
+   expect(frame.census(trash)&1).toBe(0);
    if(chance(.8)){
     // A painted frame: its diagnostics reach the canvas' data as the frozen writes did, in their order, and no more often.
     const lampLighting={activeCount:pick([0,0,1,3]),shadowCount:pick([0,1])},overviewReady=pick([null,null,{}]),ratio=pick([1,1,1.5,2,2.625]);
@@ -90,7 +90,7 @@ it('holds a paint for loading quality maps exactly as the object-reading kernel'
    if(chance(.1))for(const e of entries){e.qualityReplacement=false;e.plantQuality=null;}
    if(chance(.05))scene.setInspection(pick([1,2]),0,0,chance(.5));
    const eligible=chance(.8);
-   write(frame,entries);frame.census(entries,false);
+   write(frame,entries);frame.hold(entries);frame.census(false);
    const wait=frame.qualityHold(scene,eligible,now);
    expect(wait).toBe(rust.scene_quality_hold(entries,state,scene,eligible,now));
    if(wait>0)held++;
@@ -106,7 +106,7 @@ it('follows a growth of the memory',()=>{
   frame.bind(entries,false);write(frame,entries);
   other.memory().grow(1);
   const dataset=document.createElement('canvas').dataset;frame.shows(dataset);
-  expect(frame.census(entries,true)&1).toBe(1);
+  frame.hold(entries);expect(frame.census(true)&1).toBe(1);
   other.memory().grow(1);frame.refresh();frame.shown.fill(2);frame.show(0);frame.show(1);
   expect(dataset.bookTextureResolutions).toBe('[1024]');expect(dataset.pixelRatio).toBe('2');expect(Object.keys(dataset).length).toBe(19);
   expect(frame.counts[0]).toBe(36);expect(frame.counts[8]).toBe(1);

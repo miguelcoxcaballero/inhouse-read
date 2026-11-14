@@ -1,5 +1,5 @@
-//! What the host holds of every entry, taken once per frame: the host writes three numbers per
-//! entry (columns 85-87 of the entry arena) and one call answers what the frame formerly asked
+//! What the host holds of every entry: the host writes three numbers per entry (columns 85-87 of
+//! the entry arena) whenever they may have changed, and one call per frame answers what the frame formerly asked
 //! entry by entry in JavaScript: the diagnostics' counts (`scene_counts`, rebuilt only when a
 //! number differs), the shadow casters' signature (`scene_casters`), whether a quality map is
 //! still loading, whether a returning book is painted on the overlay or by the native layer,
