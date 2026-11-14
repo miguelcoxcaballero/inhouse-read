@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { VoiceStore, CACHE_NAME, voiceUrls } from '../../src/js/readers/neural-voice/store.js'
 import { fakeCaches } from './neural-fakes.js'
-import { fetchDictionary } from '../../src/js/readers/neural-voice/dictionary-cache.js'
+import { fetchDictionary } from './helpers/live-dictionary-cache.js'
 
 const ID = 'he_IL-saspeech-medium', BASE = 'https://mirror.test/voices/'
 const model = Uint8Array.of(9, 8, 7, 6), aux = Uint8Array.of(1, 2, 3)

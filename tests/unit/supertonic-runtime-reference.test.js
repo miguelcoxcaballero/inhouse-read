@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSupertonicRuntime } from '../../src/js/readers/neural-voice/supertonic-runtime.js'
+import { createSupertonicRuntime } from './helpers/live-supertonic-runtime.js'
 import { createSupertonicRuntime as frozen } from './helpers/reference-supertonic-runtime.js'
 import { SUPERTONIC_STYLES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
 

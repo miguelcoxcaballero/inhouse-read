@@ -227,7 +227,7 @@ async fn utterance(inner: Shared, value: JsValue, lang: JsValue, style: JsValue,
         // Typed arrays are host audio buffers; their initial zeroes also supply the planned inter-chunk gaps.
         let pcm = Float32Array::new_with_length(unsafe { runtime::supertonic_join_length(join) } as u32);
         for part in parts.iter() { pcm.set(&get(&part, "pcm"), num(&get(&part, "offset")) as u32); }
-        let sped = call(&get(&inner.kit, "speedUp"), "speedUpSpeech", &[&pcm.into(), &n(inner.sample_rate), &rate, &timeline.clone().into()])?;
+        let sped = crate::voice_kernels::voice_host_speed_up(pcm.into(), n(inner.sample_rate), rate, timeline.clone().into())?;
         let out = Object::assign(&Object::new(), &Object::from(sped));
         set(&out, "sampleRate", &n(inner.sample_rate))?;
         Ok(JsValue::from(out))

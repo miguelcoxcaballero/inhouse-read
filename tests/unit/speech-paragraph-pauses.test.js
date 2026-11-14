@@ -2,7 +2,7 @@ import {expect,it} from 'vitest'
 import './helpers/rust-ui-ready.js'
 import {mapSpeechText} from '../../src/js/readers/speech-map.js'
 import {normalizeSpeech,planSpeech} from '../../src/js/readers/speech-text.js'
-import {finishPiper,finishSupertonic} from '../../src/js/readers/neural-voice/synth-flow.js'
+import {finishPiper,finishSupertonic} from './helpers/live-synth-flow.js'
 const map=html=>{const doc=new DOMParser().parseFromString(html,'text/html');return mapSpeechText(doc.body)}
 it('pauses after titles written as ordinary paragraphs or divs without adding visible punctuation',()=>{
  const source=map('<p class="title">El arte de gobernar</p><p>Para jóvenes políticos y otros</p><div>Lee, escucha y mira</div><p>Conviene aprender.</p>')

@@ -2,10 +2,10 @@
 // voice module ran it): the synthesis worker as JavaScript, the reference of tests/unit/voice-worker-runtime-wasm.test.js.
 // The only changes: the worker scope and the three factories the tests replace are parameters, so two workers can live in
 // one realm, and the module body is a function.
-import { exposePiperDurations, phonemeMarks } from '../../../src/js/readers/neural-voice/piper-alignment.js'
-import { createHebrewPhonemizer } from '../../../src/js/readers/neural-voice/hebrew.js'
+import { exposePiperDurations, phonemeMarks } from './live-piper-alignment.js'
+import { createHebrewPhonemizer } from './live-hebrew.js'
 import { VoiceClientPlan } from '../../../src/js/readers/neural-voice/client-plan.js'
-import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, piperScales } from '../../../src/js/readers/neural-voice/synth-flow.js'
+import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, piperScales } from './live-synth-flow.js'
 
 export function createReferenceWorker(self, { createPhonemizer, createSupertonicRuntime, yieldToMessages }) {
   let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()

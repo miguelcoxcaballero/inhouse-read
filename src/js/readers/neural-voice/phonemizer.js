@@ -12,7 +12,6 @@
 // The rebuilds, the retry, the dictionaries and the reading of the output are the voice module (rust-ui/src/
 // voice_phonemizer.rs over rust-core/src/phonemizer_runtime.rs); this file keeps the Emscripten factory and its print hooks,
 // the dictionary download and its AbortController, and the chain that runs one text at a time.
-import { fetchDictionary, dictionaryUrl } from './dictionary-cache.js'
 import { loadPhonemizerFactory } from './phonemizer-assets.js'
 import { loadedRustVoiceUI, requireRustVoiceUI } from '../../rust-voice-ui.js'
 
@@ -43,7 +42,9 @@ export async function createPhonemizer({ base, importModule = loadPhonemizerFact
     // The program prints one JSON object per call; only the current module is heard. The glue asks for
     // 'piper_phonemize.wasm' and 'piper_phonemize.data': both come from our own folder (never a CDN).
     create: token => factory({ print: text => phon.print(token, text), printErr: text => phon.print_error(token, text), locateFile: assetUrl }),
-    fetch: name => { const url = dictionaryUrl(base, name); return fetchFile ? fetchFile(url) : fetchDictionary(url, { signal:downloads.signal }) },
+    // dict/<name>_dict, kept verified in Cache Storage by the voice module (voice_dictionary.rs): install and playback use
+    // this same URL and cache, so a downloaded voice's first sentence can be spoken offline.
+    fetch: name => { const url = `${base}dict/${name}_dict`; return fetchFile ? fetchFile(url) : (async () => voice.voice_dictionary_fetch(url, { signal:downloads.signal }))() },
     abort: () => downloads.abort()
   }, EXTRA_DICTIONARIES)
   await phon.start()

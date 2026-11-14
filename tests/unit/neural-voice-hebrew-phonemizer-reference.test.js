@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
-import { createHebrewPhonemizer } from '../../src/js/readers/neural-voice/hebrew.js'
+import { createHebrewPhonemizer } from './helpers/live-hebrew.js'
 import { createHebrewPhonemizer as frozen } from './helpers/reference-hebrew.js'
 
 // The Hebrew phonemizer's session checks, queue, inference and release (rust-ui voice_hebrew.rs) against the frozen

@@ -5,14 +5,13 @@
 // the injected services, the ONNX Runtime tensors and runs, and the closures the promises call back.
 import {createNativeOrt} from './native-ort.js'
 import {createPhonemizer} from './phonemizer.js'
-import {exposePiperDurations,phonemeMarks} from './piper-alignment.js'
-import {createHebrewPhonemizer} from './hebrew.js'
-import {createSupertonicRuntime} from './supertonic-runtime.js'
-import {silence,splitSegments,limitIds,piperScales,finishPiper,finishSupertonic} from './synth-flow.js'
+import {supertonicNoise} from './supertonic-plan.js'
+import {loadedRustVoiceUI as voice} from '../../rust-voice-ui.js'
 import {VoiceClientPlan} from './client-plan.js'
 import {readerUI as ui} from '../rust-ui-required.js'
 const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
-const kit={createSupertonicRuntime,createHebrewPhonemizer,exposePiperDurations,phonemeMarks,silence,splitSegments,finishPiper,finishSupertonic,immediate:()=>Promise.resolve()}
+// `voice`: the voice module, whose kernels the Rust client calls by name; the rest is what its runtimes need from the page.
+const kit={voice,noise:supertonicNoise,always:()=>true,noop(){},immediate:()=>Promise.resolve()}
 export class NativeSynthClient {
   constructor({store,phonBase,env=globalThis,createOrt=createNativeOrt,createPhon=createPhonemizer}={}) {
     Object.assign(this,{store,phonBase,env,createOrt,createPhon})
@@ -46,10 +45,10 @@ export class NativeSynthClient {
     return {id,cancel:()=>{this.plan.cancel(id);this.jobs.delete(id)}}
   }
   // The text -> phoneme ids of the loaded voice: Nakdimon + Hebrew rules, or espeak.
-  _phonemizer(kind,hebrew,phon,config){return async value=>limitIds(kind===1?await hebrew.phonemize(value):await phon.phonemize(value,config.espeak.voice),config.num_symbols)}
+  _phonemizer(kind,hebrew,phon,config){return async value=>voice().voice_host_limit_ids(kind===1?await hebrew.phonemize(value):await phon.phonemize(value,config.espeak.voice),config.num_symbols)}
   // One Piper run on the native executor: the original feeds, a copy of the audio and of the phoneme durations.
   async _run(ort,session,part,config,rate,speaker,durationOutput) {
-    const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',piperScales(config.inference||{},rate),[3])}
+    const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',voice().voice_host_piper_scales(config.inference||{},rate),[3])}
     if(session.inputNames.includes('sid'))feeds.sid=new ort.Tensor('int64',BigInt64Array.of(BigInt(speaker||0)),[1])
     const out=await session.run(feeds)
     const tensor=out[session.outputNames[0]],raw=new Float32Array(tensor.data)

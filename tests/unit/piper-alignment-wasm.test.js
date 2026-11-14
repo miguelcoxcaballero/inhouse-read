@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { rustVoiceCore } from './helpers/rust-voice-ready.js'
-import { exposePiperDurations, phonemeMarks } from '../../src/js/readers/neural-voice/piper-alignment.js'
+import { exposePiperDurations, phonemeMarks } from './helpers/live-piper-alignment.js'
 import * as frozen from './helpers/reference-piper-alignment.js'
 
 // The protobuf walk/rewrite and the boundary planning moved to rust-core onnx_durations.rs.
@@ -107,7 +107,7 @@ describe('Piper duration output from the Rust voice core', () => {
     vi.resetModules()
     vi.doMock('../../src/js/rust-voice-ui.js', () => ({ loadedRustVoiceUI:() => { throw new Error('El módulo de voz no está cargado.') } }))
     try {
-      const isolated = await import('../../src/js/readers/neural-voice/piper-alignment.js')
+      const isolated = await import('./helpers/live-piper-alignment.js')
       expect(() => isolated.exposePiperDurations(new Uint8Array(4))).toThrow('El módulo de voz no está cargado.')
       await expect(isolated.phonemeMarks('ab', [1], [1], async () => [1])).rejects.toThrow('El módulo de voz no está cargado.')
     } finally { vi.doUnmock('../../src/js/rust-voice-ui.js'); vi.resetModules() }

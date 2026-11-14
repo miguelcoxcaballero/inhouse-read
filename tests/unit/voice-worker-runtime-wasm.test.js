@@ -10,7 +10,12 @@ import { createReferenceWorker } from './helpers/reference-voice-worker.js'
 
 const world = vi.hoisted(() => ({ now: null }))
 vi.mock('../../src/js/readers/neural-voice/phonemizer.js', () => ({ createPhonemizer: options => world.now.createPhonemizer(options) }))
-vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js', () => ({ createSupertonicRuntime: options => world.now.createSupertonicRuntime(options) }))
+vi.mock('../../src/js/rust-voice-ui.js',async original=>(await import('./helpers/voice-kernel-fakes.js')).withKernels(await original(),{
+  // The worker asks the voice module for the runtime with the six steps, the browser's random source and its own yield.
+  voice_supertonic_create:({steps,random,yieldToMessages,...options},kit)=>{
+    if(steps!==6||random!==Math.random||typeof yieldToMessages!=='function'||typeof kit.noise!=='function'||kit.always()!==true)throw new Error('unexpected Supertonic runtime request')
+    return world.now.createSupertonicRuntime(options)
+  }}))
 vi.mock('../../src/js/readers/neural-voice/task-yield.js', () => ({ yieldToMessages: () => world.now.yieldToMessages() }))
 
 const ORT = pathToFileURL(resolve('tests/unit/fixtures/neural-ort') + '/').href

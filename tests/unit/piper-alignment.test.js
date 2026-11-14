@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {describe,it,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
-import {exposePiperDurations,phonemeMarks} from '../../src/js/readers/neural-voice/piper-alignment.js'
+import {exposePiperDurations,phonemeMarks} from './helpers/live-piper-alignment.js'
 import {kernelDurationMarks} from './helpers/voice-kernels.js'
 const core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_voice.wasm'))).instance.exports
 const durationMarks=(marks,durations,cfg)=>kernelDurationMarks(core,marks,durations,cfg)

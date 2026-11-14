@@ -4,7 +4,7 @@ import {pathToFileURL} from 'node:url'
 import {resolve} from 'node:path'
 const mocks=vi.hoisted(()=>({phon:vi.fn(),runtime:vi.fn()}))
 vi.mock('../../src/js/readers/neural-voice/phonemizer.js',()=>({createPhonemizer:mocks.phon}))
-vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:mocks.runtime}))
+vi.mock('../../src/js/rust-voice-ui.js',async original=>(await import('./helpers/voice-kernel-fakes.js')).withKernels(await original(),{voice_supertonic_create:options=>mocks.runtime(options)}))
 const base=pathToFileURL(resolve('tests/unit/fixtures/neural-ort')+'/').href
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done});return{promise,resolve}}
 const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve()}
