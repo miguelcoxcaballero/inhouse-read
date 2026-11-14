@@ -34,8 +34,11 @@ fn noop()->JsValue{NOOP.with(|function|function.as_ref().clone())}
 /// `ui[name].bind(null, ...head)`: a callback the page owns, answered by this module when it runs. What
 /// it is called with follows `head`; an export reads as many arguments as it declares and no more.
 pub(crate) fn bound(ui:&JsValue,name:&str,head:&[&JsValue])->R<js_sys::Function>{
- let export=read(ui,name)?;let args=Array::new();args.push(&JsValue::NULL);for value in head{args.push(value);}
- Ok(Reflect::apply(read(&export,"bind")?.unchecked_ref(),&export,&args)?.unchecked_into())
+ let export:js_sys::Function=read(ui,name)?.unchecked_into();let this=JsValue::NULL;
+ Ok(match head{
+  []=>export.bind(&this),[a]=>export.bind1(&this,a),[a,b]=>export.bind2(&this,a,b),[a,b,c]=>export.bind3(&this,a,b,c),
+  _=>{let args=Array::new();args.push(&this);for value in head{args.push(value);}Reflect::apply(read(&export,"bind")?.unchecked_ref(),&export,&args)?.unchecked_into()}
+ })
 }
 /// `places.map(place => place.label || host.label(place))`.
 fn place_labels(host:&JsValue,places:&JsValue,ui:&JsValue)->R<JsValue>{

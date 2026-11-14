@@ -67,7 +67,7 @@ for(let round=0;round<2;round++){
 
 it('delegates every start and the visible-page decision to the Rust functions',async()=>{
  const {host}=setup(false,1);host.restartFromVisiblePage=()=>restartVisibleVoice(host)
- const native={voice_method:vi.fn(ui.voice_method)};fixture.ui=native
+ const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
  await playReadingVoice(host);expect(host.state).toBe('playing')
  host.state='paused';await playReadingVoice(host)
  const names=native.voice_method.mock.calls.map(call=>call[1]);expect(names.filter(name=>name==='play')).toHaveLength(2);expect(names).toContain('restartFromVisiblePage');expect(host.state).toBe('playing')

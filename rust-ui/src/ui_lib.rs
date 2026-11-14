@@ -38,6 +38,8 @@ mod language_data;
 mod picker_policy;
 mod picker_actions;
 mod picker_members;
+mod picker_shell;
+mod voice_shell;
 mod picker_warm;
 mod voice_session;
 mod voice_advance;
