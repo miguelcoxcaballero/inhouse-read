@@ -1165,6 +1165,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const viewSizes = new Float64Array(4), viewPixels = new Float64Array(2), viewFrame = new Float64Array(8), binBox = new Float64Array(9);
+  // The bin's footprint and place, for the view's fit and the shadow's bounds (written element by
+  // element: a temporary array and TypedArray#set cost several times more, twice per frame).
+  function packBin() {
+    const { min, max } = trashBounds, { position } = trash;
+    binBox[0] = min.x; binBox[1] = min.y; binBox[2] = min.z; binBox[3] = max.x; binBox[4] = max.y; binBox[5] = max.z;
+    binBox[6] = position.x; binBox[7] = position.y; binBox[8] = position.z;
+  }
   function viewport() {
     sceneView.sizeViewport(scroller.clientHeight, window.innerHeight, window.devicePixelRatio, viewSizes);
     const ratio = viewSizes[1];
@@ -1227,10 +1234,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // leaves room around the diagonal furniture instead of cropping its edges.
     let rooftop = -Infinity;
     for (const entry of bookEntries) if (entry.rooftop) rooftop = Math.max(rooftop, -entry.y + entry.height / 2);
-    if (trash) {
-      const { min, max } = trashBounds, { position } = trash;
-      binBox.set([min.x, min.y, min.z, max.x, max.y, max.z, position.x, position.y, position.z]);
-    }
+    if (trash) packBin();
     // The diagnostics are formatted again only when a number they show moved; the texts held are written otherwise.
     const texts = viewTexts = sceneView.transformFresh(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
     // The fitted room: turned, scaled and placed as the Rust view decided.
@@ -1276,7 +1280,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     catalog.updateMatrixWorld(true);
     const stageBounds = frameLayout.stage, clip = frameLayout.scroller;
     const { min, max } = catalog.userData.bounds;
-    catalogBox.set([min.x, min.y, min.z, max.x, max.y, max.z]);
+    catalogBox[0] = min.x; catalogBox[1] = min.y; catalogBox[2] = min.z; catalogBox[3] = max.x; catalogBox[4] = max.y; catalogBox[5] = max.z;
     // The printed cover inside the (clip and edge inclusive) hit box: the
     // catalogue page flies out of exactly this rectangle.
     const { width:coverWidth = 76, height:coverHeight = 108, thickness = 3.4 } = catalog.userData;
@@ -1565,7 +1569,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
             // The room's own matrices are walked once per frame; every other surface starts below them.
             if (roomWalked) refreshWorldBelowRoom(surface);
             else { surface.updateWorldMatrix(true, false); for (let above = surface.parent; above; above = above.parent) if (above === furniture) { roomWalked = true; break; } }
-            hits.set(surface.matrixWorld.elements, h + 8);
+            // Copied element by element: TypedArray#set from a plain array measured eight times slower.
+            const world = surface.matrixWorld.elements;
+            hits[h + 8] = world[0]; hits[h + 9] = world[1]; hits[h + 10] = world[2]; hits[h + 11] = world[3];
+            hits[h + 12] = world[4]; hits[h + 13] = world[5]; hits[h + 14] = world[6]; hits[h + 15] = world[7];
+            hits[h + 16] = world[8]; hits[h + 17] = world[9]; hits[h + 18] = world[10]; hits[h + 19] = world[11];
+            hits[h + 20] = world[12]; hits[h + 21] = world[13]; hits[h + 22] = world[14]; hits[h + 23] = world[15];
           }
           const { min, max } = surface.geometry.boundingBox;
           hits[h + 2] = min.x; hits[h + 3] = min.y; hits[h + 4] = min.z; hits[h + 5] = max.x; hits[h + 6] = max.y; hits[h + 7] = max.z;
@@ -2254,10 +2263,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (batchQuality) hideInspectionSnapshot();
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
-    if (trash) {
-      const { min, max } = trashBounds, { position } = trash;
-      binBox.set([min.x, min.y, min.z, max.x, max.y, max.z, position.x, position.y, position.z]);
-    }
+    if (trash) packBin();
     sceneView.shadowBounds(trash ? binBox : NO_NUMBERS, furniture.matrixWorld.elements, shadowOut);
     shadowBounds.min.set(shadowOut[0], shadowOut[1], shadowOut[2]); shadowBounds.max.set(shadowOut[3], shadowOut[4], shadowOut[5]);
     // Scrolling creates and releases culled models: those change the casters.

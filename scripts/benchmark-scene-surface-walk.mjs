@@ -77,9 +77,13 @@ function styles(c,entry,node,dirtyStyle,hit,h,plant,lamp){
    if(dirtyStyle&64)coverStyle.background='transparent';if(dirtyStyle&4096)coverStyle.pointerEvents=coverEvents?'inherit':'none';}
  }
 }
-function hitInput(c,entry,entryIndex,node,surface,plant,stands=false){
+function hitInput(c,entry,entryIndex,node,surface,plant,stands){
  const hits=c.entryFrame.hitInput,h=entryIndex*HIT_INPUT,{min,max}=surface.geometry.boundingBox;
- hits[h+2]=min.x;hits[h+3]=min.y;hits[h+4]=min.z;hits[h+5]=max.x;hits[h+6]=max.y;hits[h+7]=max.z;if(!stands)hits.set(surface.matrixWorld.elements,h+8);
+ hits[h+2]=min.x;hits[h+3]=min.y;hits[h+4]=min.z;hits[h+5]=max.x;hits[h+6]=max.y;hits[h+7]=max.z;
+ if(stands===undefined)hits.set(surface.matrixWorld.elements,h+8);
+ else if(!stands){const world=surface.matrixWorld.elements;
+  hits[h+8]=world[0];hits[h+9]=world[1];hits[h+10]=world[2];hits[h+11]=world[3];hits[h+12]=world[4];hits[h+13]=world[5];hits[h+14]=world[6];hits[h+15]=world[7];
+  hits[h+16]=world[8];hits[h+17]=world[9];hits[h+18]=world[10];hits[h+19]=world[11];hits[h+20]=world[12];hits[h+21]=world[13];hits[h+22]=world[14];hits[h+23]=world[15];}
  const resetHit=entry.written?.node!==node;
  if(resetHit)entry.written={node};
  hits[h]=1|(resetHit?8:0)|(!plant&&!c.covers.has(node)?16:0);hits[h+1]=entry.bits;
