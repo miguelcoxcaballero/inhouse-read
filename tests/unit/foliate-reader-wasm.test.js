@@ -164,6 +164,77 @@ it('behaves exactly like the original on two hundred scripted sessions', async (
   expect(seen.boxes).toBeGreaterThan(100)
 }, 240000)
 
+// The members answered by foliate_members.rs: every call on the view and the settling of every promise at the same
+// microtask as the JavaScript method (the sessions above only order them between timers).
+async function probe(Reader, flavour) {
+  vi.useFakeTimers()
+  dims = { width:390, height:720 }
+  localStorage.clear(); gestures.attached.length = 0
+  vi.stubGlobal('matchMedia', () => ({ matches:false }))
+  const w = world(flavour), rows = []
+  const watch = async (label, start) => {
+    let settled = 'pending', promise
+    try { promise = start() } catch (error) { rows.push([label, 'threw', error?.constructor?.name]); return }
+    rows.push([label, 'answered', promise instanceof Promise, w.log.length])
+    Promise.resolve(promise).then(value => { settled = `resolved ${value === null ? 'null' : typeof value}` }, error => { settled = `rejected ${error?.constructor?.name}` })
+    let seen = ''
+    for (let round = 0; round < 3; round++) {
+      for (let tick = 0; tick < 30; tick++) {
+        await Promise.resolve()
+        const now = `${w.log.length} ${settled}`
+        if (now !== seen) { rows.push([label, round, tick, now]); seen = now }
+      }
+      await vi.advanceTimersByTimeAsync(200)
+    }
+  }
+  const closed = new Reader()
+  await watch('unopened goToFraction', () => closed.goToFraction(.2))
+  await watch('unopened goToCfi', () => closed.goToCfi('c'))
+  await watch('unopened text', () => closed.getSpeechText())
+  await watch('unopened cover', () => closed.getCoverBlob())
+  await watch('unopened length', () => closed.getLengthMetadata())
+  await watch('unopened marks', () => { closed.clearSearch(); closed.addQuoteAnnotation({ locator:{ kind:'cfi', value:'q' } }); closed.removeQuoteAnnotation(null); closed.stopSpeech(); closed.browseSpeech(); return closed.getNextSpeechSource() })
+  await watch('unopened return', () => closed.returnToSpeech())
+  const reader = new Reader()
+  await watch('open with null', () => reader.open(w.container, new File(['epub'], 'book.epub'), null))
+  await watch('open', () => reader.open(w.container, new File(['epub'], 'book.epub'), { onRelocate:() => {} }))
+  await watch('preferences', () => reader.applyPreferences({ flow:'paginated', theme:'sepia' }))
+  await watch('next', () => reader.next())
+  await watch('three turns', () => Promise.allSettled([reader.next(), reader.prev(), reader.next({ isActive:() => false })]))
+  await watch('next with null', () => reader.next(null))
+  await watch('goToFraction', () => reader.goToFraction(.4))
+  await watch('goToCfi', () => reader.goToCfi('epubcfi(/6/4)'))
+  await watch('goToCfi empty', () => reader.goToCfi(''))
+  await watch('goToTarget', () => reader.goToTarget('#chapter'))
+  await watch('text', () => reader.getSpeechText())
+  await watch('source', () => reader.getSpeechSource({ visible:true }))
+  await watch('source of the chapter', () => reader.getSpeechSource())
+  await watch('source with null', () => reader.getSpeechSource(null))
+  await watch('browse', () => reader.browseSpeech())
+  await watch('next source', () => reader.getNextSpeechSource({ isActive:() => true }))
+  await watch('return', () => reader.returnToSpeech())
+  await watch('stop', () => reader.stopSpeech())
+  await watch('cover', () => reader.getCoverBlob())
+  await watch('length', () => reader.getLengthMetadata())
+  rows.push(['length is cached', reader.getLengthMetadata() === reader.getLengthMetadata(), reader.s ? 'state' : 'private'])
+  await watch('marks', () => { reader.clearSearch(); reader.addQuoteAnnotation({ locator:{ kind:'cfi', value:'q' }, color:'pink' }); reader.removeQuoteAnnotation({ locator:{ kind:'cfi', value:'q' } }) })
+  reader.close()
+  await vi.advanceTimersByTimeAsync(600)
+  rows.push(['log', JSON.stringify(w.log)])
+  vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals()
+  return rows
+}
+
+it('settles every member at the microtask the original did', async () => {
+  for (const flavour of [{}, { scrolled:true }, { coverFails:true, rtl:true }, { cover:'blob', page:true }]) {
+    const expected = await probe(ReferenceFoliateReader, { ...flavour })
+    const actual = await probe(FoliateReader, { ...flavour })
+    const comparable = rows => rows.map(row => row[0] === 'length is cached' ? row.slice(0, 2) : row[0] === 'log' ? [row[0], row[1].replace(/\["attr","margin","[^"]*"\]/g, '["attr","margin","4px"]')] : row)
+    expect(comparable(actual)).toEqual(comparable(expected))
+    expect(expected.length).toBeGreaterThan(60)
+  }
+}, 60000)
+
 it('page box heights, remembered boxes and the search outline match the original', () => {
   let state = 31337
   const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296 }

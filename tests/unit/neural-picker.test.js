@@ -11,9 +11,9 @@ import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-c
 // The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
 const runtime=vi.hoisted(()=>({ui:null}))
-// Downloads and removals call their Rust steps directly; the picker's other actions reach them through its
-// Rust dispatcher (picker_method), observed by member name.
-const actionExports=["picker_install_begin","picker_install_done","picker_install_error","picker_remove_begin","picker_remove_done"],actionCalls={},observedUI={...rustUI},viewCalls={render:0,progress:0}
+// Downloads and removals run inside Rust (picker_member, whose steps picker-members-wasm.test.js compares with the
+// frozen methods); the picker's other actions reach Rust through picker_method. Both are observed by member name.
+const actionExports=["install","remove"],actionCalls={},observedUI={...rustUI},viewCalls={render:0,progress:0}
 const dispatchedActions=["click","cancel","voiceName","use","dismissed","snoozed","dismiss"],dispatchCalls={}
 observedUI.picker_method=(host,name,...rest)=>{dispatchCalls[name]=(dispatchCalls[name]||0)+1;return rustUI.picker_method(host,name,...rest)}
 afterAll(()=>{for(const name of dispatchedActions)expect(dispatchCalls[name],name).toBeGreaterThan(0)})
@@ -23,7 +23,7 @@ observedUI.RustNeuralView=class extends rustUI.RustNeuralView {
   renderPicker(...args){viewCalls.render++;return super.renderPicker(...args)}
   patchPickerProgress(...args){viewCalls.progress++;return super.patchPickerProgress(...args)}
 }
-for(const name of actionExports)observedUI[name]=(...args)=>{actionCalls[name]=(actionCalls[name]||0)+1;return rustUI[name](...args)}
+observedUI.picker_member=(host,name,...rest)=>{actionCalls[name]=(actionCalls[name]||0)+1;return rustUI.picker_member(host,name,...rest)}
 afterAll(()=>{for(const name of actionExports)expect(actionCalls[name],name).toBeGreaterThan(0)})
 afterAll(()=>{expect(viewCalls.render).toBeGreaterThan(0);expect(viewCalls.progress).toBeGreaterThan(0)})
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

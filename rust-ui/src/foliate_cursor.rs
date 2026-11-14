@@ -114,7 +114,10 @@ pub fn cursor_remember(host: &JsValue, state: &JsValue, start: &JsValue, end: &J
 /// the book, or the new source with the facts its callbacks need.
 #[wasm_bindgen]
 pub fn cursor_next(host: JsValue, is_active: Function, map_text: Function) -> Promise {
-  eager(async move {
+  eager(next_chapter(host, is_active, map_text))
+}
+/// The body of `cursor_next`, for a caller that goes on in the same turn (foliate_members.rs).
+pub async fn next_chapter(host: JsValue, is_active: Function, map_text: Function) -> Result<JsValue, JsValue> {
     let previous = get(&host, "current");
     if !hidden(&host) && !truthy(&get(&host, "browsing")) && !truthy(&get(&previous, "detached")) { return Ok(JsValue::UNDEFINED); }
     let epoch = get(&host, "epoch");
@@ -145,7 +148,6 @@ pub fn cursor_next(host: JsValue, is_active: Function, map_text: Function) -> Pr
     }
     if !cursor_check(&host, &epoch, &previous, &is_active)? { return Err(cancelled()); }
     Ok(JsValue::NULL)
-  })
 }
 
 /// The pages of a chapter first read with the screen off, cut where the rendered copy of the same text breaks.

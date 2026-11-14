@@ -1,6 +1,6 @@
 //! The natural-voice engine: look-ahead synthesis, gapless hand-off, the buffering gate, downloads and idle release.
 //! The state stays in the plain JavaScript objects the engine host exposes (run, entries, stats, cache), because the
-//! reader and the diagnostics read them; every decision is made here. Timer, handler and event closures belong to the host.
+//! reader and the diagnostics read them; every decision is made here. The functions the browser calls back are neural_engine_shell.rs.
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Object,Number};
 use crate::host::{get,read,set,num,absent,method,jmin};
@@ -91,14 +91,14 @@ fn set_status(e:&JsValue,status:&str)->R<()>{
 }
 fn changed(e:&JsValue)->R<()>{dispatch(e,"change")}
 fn clear_timer(e:&JsValue,id:&JsValue)->R<()>{method(e,"clearTimer",&[id])?;Ok(())}
-fn arm(e:&JsValue,run:&JsValue,kind:&str,ms:f64)->R{method(e,"_arm",&[run,&st(kind),&n(ms)])}
+fn arm(e:&JsValue,run:&JsValue,kind:&str,ms:f64)->R{crate::neural_engine_shell::neural_arm(e,run,kind,ms)}
 /// The host reports to the reader through 'inhouse-tts' on the environment, one microtask later.
 fn emit(e:&JsValue,kind:&str,id:&JsValue,reason:&JsValue,offset:&JsValue)->R<()>{
  if absent(id){return Ok(());}
  let detail=Object::new();set(&detail,"type",&st(kind))?;set(&detail,"id",id)?;
  if t(reason){set(&detail,"reason",reason)?;}
  if Number::is_integer(offset){set(&detail,"offset",offset)?;}
- method(e,"_emit",&[&detail])?;Ok(())
+ crate::neural_engine_shell::neural_emit(e,&detail)
 }
 fn emit_plain(e:&JsValue,kind:&str,id:&JsValue,reason:&str)->R<()>{emit(e,kind,id,&st(reason),&JsValue::UNDEFINED)}
 
@@ -245,7 +245,7 @@ fn pump(e:&JsValue)->R<()>{
  set(&request,"text",&spoken)?;set(&request,"rate",&read(&run,"rate")?)?;set(&request,"speaker",&read(&voice,"speaker")?)?;
  if t(&read(&marks,"length")?){set(&request,"marks",&marks)?;}
  if read(&voice,"runtime")?==st("supertonic3"){set(&request,"lang",&read(&voice,"lang")?)?;set(&request,"style",&read(&voice,"style")?)?;}
- let handlers=method(e,"_handlers",&[&run,&entry])?;
+ let handlers=crate::neural_engine_shell::neural_handlers(e,&run,&entry)?;
  let job=method(&read(e,"client")?,"synth",&[&request,&handlers])?;
  set(&run,"job",&job)
 }
@@ -475,7 +475,7 @@ pub fn neural_player_error(e:JsValue,reason:JsValue)->R<()>{
 pub fn neural_watch(e:JsValue,ctx:JsValue)->R<()>{
  if !t(&ctx)||ctx==read(&e,"watched")?{return Ok(());}
  set(&e,"watched",&ctx)?;set(&e,"sawRunning",&JsValue::from_bool(read(&ctx,"state")?==st("running")))?;
- method(&e,"_listen",&[&ctx])?;Ok(())
+ crate::neural_engine_shell::neural_listen(&e,&ctx)
 }
 #[wasm_bindgen]
 pub fn neural_state_change(e:JsValue,ctx:JsValue)->R<()>{
@@ -633,7 +633,7 @@ pub fn neural_install_begin(e:JsValue,id:JsValue,signal:JsValue)->R{
  if t(&get(&signal,"aborted")){method(&abort,"abort",&[])?;}
  else if !absent(&signal){
   let once=Object::new();set(&once,"once",&JsValue::TRUE)?;
-  crate::host::method_opt(&signal,"addEventListener",&[&st("abort"),&method(&e,"_aborter",&[&abort])?,&once])?;
+  crate::host::method_opt(&signal,"addEventListener",&[&st("abort"),&crate::neural_engine_shell::neural_aborter(&abort)?,&once])?;
  }
  method(&read(&e,"aborts")?,"set",&[&piper,&abort])?;
  Ok(Array::of3(&voice,&siblings,&abort).into())

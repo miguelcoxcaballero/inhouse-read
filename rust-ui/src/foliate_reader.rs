@@ -280,32 +280,34 @@ pub fn foliate_follow(s: &JsValue, doc: &JsValue, range: &JsValue) -> Result<JsV
 /// `{ view, doc, map, content, pageBreaks, start }`.
 #[wasm_bindgen]
 pub fn foliate_speech_prepare(s: JsValue, visible_only: bool, map_text: Function, page_breaks: Function) -> Promise {
-    eager(async move {
-        let cursor = cursor_of(&s);
-        if !visible_only && truthy(&get(&document(), "hidden")) && truthy(&get(&cursor, "active")) {
-            return plain(&[("done", JsValue::TRUE), ("value", method(&cursor, "currentSource", &[])?)]);
-        }
-        if !visible_only && truthy(&get(&cursor, "active")) && !truthy(&get(&cursor, "browsing")) { settled(method(&cursor, "reveal", &[])?).await?; }
-        if !visible_only { method_opt(&cursor_of(&s), "reset", &[])?; }
-        let view = get(&s, "view");
-        let visible = get(&get(&view, "lastLocation"), "range");
-        let doc = get(&get(&visible, "startContainer"), "ownerDocument");
-        let contents = method_opt(&get(&view, "renderer"), "getContents", &[])?;
-        let content = contents.and_then(|items| Array::from(&items).iter().find(|item| get(item, "doc") == doc)).unwrap_or(JsValue::UNDEFINED);
-        if !truthy(&content) || !truthy(&get(&doc, "body")) { return plain(&[("done", JsValue::TRUE), ("value", JsValue::NULL)]); }
-        crate::speech_highlight::speech_style(doc.clone(), &crate::host::text_of(&get(&get(&s, "preferences"), "theme")))?;
-        let map = map_text.call1(&JsValue::UNDEFINED, &get(&doc, "body"))?;
-        let renderer = get(&view, "renderer");
-        let live = {
-            let (state, view, doc) = (s.clone(), view.clone(), doc.clone());
-            Closure::<dyn FnMut() -> Result<JsValue, JsValue>>::new(move || Ok(foliate_live(&state, &view, &doc)?.into()))
-        };
-        let measured = settled(page_breaks.call3(&JsValue::UNDEFINED, &map, &renderer, &plain(&[("isCurrent", live.as_ref().clone())])?)?).await;
-        let page_breaks = measured?;
-        if !foliate_live(&s, &view, &doc)? { return plain(&[("done", JsValue::TRUE), ("value", JsValue::NULL)]); }
-        let start = method(&map, "offsetOf", &[&get(&visible, "startContainer"), &get(&visible, "startOffset")])?;
-        plain(&[("done", JsValue::FALSE), ("view", view), ("doc", doc), ("map", map), ("content", content), ("pageBreaks", page_breaks), ("start", start)])
-    })
+    eager(speech_prepare(s, visible_only, map_text, page_breaks))
+}
+/// The body of `foliate_speech_prepare`, for a caller that goes on in the same turn (foliate_members.rs).
+pub async fn speech_prepare(s: JsValue, visible_only: bool, map_text: Function, page_breaks: Function) -> Result<JsValue, JsValue> {
+    let cursor = cursor_of(&s);
+    if !visible_only && truthy(&get(&document(), "hidden")) && truthy(&get(&cursor, "active")) {
+        return plain(&[("done", JsValue::TRUE), ("value", method(&cursor, "currentSource", &[])?)]);
+    }
+    if !visible_only && truthy(&get(&cursor, "active")) && !truthy(&get(&cursor, "browsing")) { settled(method(&cursor, "reveal", &[])?).await?; }
+    if !visible_only { method_opt(&cursor_of(&s), "reset", &[])?; }
+    let view = get(&s, "view");
+    let visible = get(&get(&view, "lastLocation"), "range");
+    let doc = get(&get(&visible, "startContainer"), "ownerDocument");
+    let contents = method_opt(&get(&view, "renderer"), "getContents", &[])?;
+    let content = contents.and_then(|items| Array::from(&items).iter().find(|item| get(item, "doc") == doc)).unwrap_or(JsValue::UNDEFINED);
+    if !truthy(&content) || !truthy(&get(&doc, "body")) { return plain(&[("done", JsValue::TRUE), ("value", JsValue::NULL)]); }
+    crate::speech_highlight::speech_style(doc.clone(), &crate::host::text_of(&get(&get(&s, "preferences"), "theme")))?;
+    let map = map_text.call1(&JsValue::UNDEFINED, &get(&doc, "body"))?;
+    let renderer = get(&view, "renderer");
+    let live = {
+        let (state, view, doc) = (s.clone(), view.clone(), doc.clone());
+        Closure::<dyn FnMut() -> Result<JsValue, JsValue>>::new(move || Ok(foliate_live(&state, &view, &doc)?.into()))
+    };
+    let measured = settled(page_breaks.call3(&JsValue::UNDEFINED, &map, &renderer, &plain(&[("isCurrent", live.as_ref().clone())])?)?).await;
+    let page_breaks = measured?;
+    if !foliate_live(&s, &view, &doc)? { return plain(&[("done", JsValue::TRUE), ("value", JsValue::NULL)]); }
+    let start = method(&map, "offsetOf", &[&get(&visible, "startContainer"), &get(&visible, "startOffset")])?;
+    plain(&[("done", JsValue::FALSE), ("view", view), ("doc", doc), ("map", map), ("content", content), ("pageBreaks", page_breaks), ("start", start)])
 }
 
 /// Is the document of this speech source still the one on screen?

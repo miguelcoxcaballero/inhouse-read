@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import { readFileSync } from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 
