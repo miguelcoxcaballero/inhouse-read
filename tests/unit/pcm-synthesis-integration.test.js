@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { beforeAll, afterEach, expect, it, vi } from 'vitest';
 const state=vi.hoisted(()=>({core:null,calls:0,raw:null}));
 vi.mock('../../src/js/rust-voice-core.js',()=>({requireRustVoiceCore:async()=>state.core,loadedRustVoiceCore:()=>state.core,loadRustVoiceCore:async()=>state.core,getRustVoiceCore:()=>state.core}));
-// One call of the voice module finishes a chunk, whichever route and runtime asked for it.
+// The voice module finishes a chunk, whichever route and runtime asked for it.
 vi.mock('../../src/js/rust-voice-ui.js',async original=>{
   const real=await original(),voice=real.loadedRustVoiceUI();
   const counted={...voice,voice_host_finish_piper(...args){state.calls++;return voice.voice_host_finish_piper(...args);},
@@ -59,7 +59,10 @@ it(`executes compiled Rust in ${route}/${runtime}, retaining full chunk bytes, t
   }
   try{
     await vi.waitFor(()=>expect(messages.some(m=>m.type==='end')).toBe(true));
-    expect(messages.filter(m=>m.type==='error')).toEqual([]);expect(state.calls).toBe(1);
+    expect(messages.filter(m=>m.type==='error')).toEqual([]);
+    // The Android client asks the voice module once per chunk; the worker's job runs inside it (voice_worker.rs) and
+    // finishes its chunk there, without a JavaScript call to count.
+    expect(state.calls).toBe(route==='worker'?0:1);
     const chunks=messages.filter(m=>m.type==='chunk');expect(chunks).toHaveLength(1);
     const sr=runtime==='piper'?22050:24000,raw=state.raw.slice();peakNormalize(raw,{model:runtime==='piper'?key:''});
     const normal=fadeEdges(trimSilence(raw,sr),sr);
