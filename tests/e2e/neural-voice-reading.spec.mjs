@@ -236,7 +236,10 @@ test('cold offline app: locally stored book and downloaded Piper start with a ne
   })
   let page=await context.newPage()
   try {
-    await open(page,PDF);const shell=await waitForOfflineShell(page)
+    // The offline shell is start-up work of the shelf: it is parked while the reader owns the screen (idle-startup.js),
+    // so it is awaited on the shelf, before the book opens, as the general offline-shell suite does.
+    await page.goto('./');await expect(page.locator('.ihr-bookshelf')).toBeVisible(SLOW);const shell=await waitForOfflineShell(page)
+    await open(page,PDF)
     await openAudio(page)
     await pickLanguage(page,'es');await openAudioMenu(page,'Voz')
     await row(page,DAVEFX_ID).locator('[data-neural-action="install"]').click()
