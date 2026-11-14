@@ -6,6 +6,8 @@ use js_sys::{Array,Function};
 use web_sys::{Document,Element,Event,HtmlElement};
 use crate::{attr,prop,js_string,element,append,Listener};
 
+/// Three rows the size of a search hit, shown while the book is being searched.
+const SEARCH_PLACEHOLDER:&str=r#"<span class="reading-search-placeholder ihr-skeleton" aria-hidden="true"></span><span class="reading-search-placeholder ihr-skeleton" aria-hidden="true"></span><span class="reading-search-placeholder ihr-skeleton" aria-hidden="true"></span>"#;
 fn fallback(value:JsValue,other:JsValue)->JsValue{if value.is_undefined(){other}else{value}}
 fn text_value(value:&JsValue)->Option<String>{if value.is_null()||value.is_undefined(){None}else{Some(js_string(value))}}
 fn listen(node:&Element,callback:&Function,args:Array)->Result<Listener,JsValue>{
@@ -63,11 +65,17 @@ impl RustReaderLists{
   self.listeners.borrow_mut().insert(name.to_owned(),listeners);Ok(())
  }
  #[wasm_bindgen(js_name=clearSearch)]
- pub fn clear_search(&self,message:&str)->Result<(),JsValue>{self.clear("search","[data-search-results]")?;self.query("[data-search-status]")?.set_text_content(Some(message));Ok(())}
+ // A message here is the search in progress: the status is marked busy and three placeholder rows stand
+ // where the hits will be listed (skeleton styles, base.css). The sentence stays for assistive technology.
+ pub fn clear_search(&self,message:&str)->Result<(),JsValue>{
+  let list=self.clear("search","[data-search-results]")?;let status=self.query("[data-search-status]")?;status.set_text_content(Some(message));
+  if message.is_empty(){status.remove_attribute("aria-busy")?;}else{attr(&status,"aria-busy","true");list.set_inner_html(SEARCH_PLACEHOLDER);}Ok(())
+ }
  #[wasm_bindgen(js_name=renderSearch)]
  pub fn render_search(&self,results:Array,select:Function)->Result<(),JsValue>{
   let list=self.clear("search","[data-search-results]")?;let mut listeners=Vec::new();let count=results.length();
-  self.query("[data-search-status]")?.set_text_content(Some(&if count==0{"Sin resultados".to_owned()}else{format!("{count} {}",if count==1{"resultado"}else{"resultados"})}));
+  let status=self.query("[data-search-status]")?;status.remove_attribute("aria-busy")?;
+  status.set_text_content(Some(&if count==0{"Sin resultados".to_owned()}else{format!("{count} {}",if count==1{"resultado"}else{"resultados"})}));
   for result in results.iter(){
    let button=self.button("reading-search-hit",None)?;let label=prop(&result,"label");
    if label.is_truthy(){let where_=element(&self.document,"small","",Some(&js_string(&label)))?;where_.remove_attribute("class")?;append(&button,&where_);}

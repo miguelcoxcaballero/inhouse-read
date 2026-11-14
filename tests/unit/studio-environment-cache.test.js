@@ -90,6 +90,33 @@ describe('studio atlas kept on this device', () => {
     expect(put).toHaveBeenCalledTimes(1);
   });
 
+  // The renderer takes the atlas synchronously when it is created. The first shelf therefore waits for the read that
+  // started with the page, as it does for the saved bakes; it never waits past its deadline for a store that hangs.
+  it('settles with the stored atlas ready for the renderer, without polling for it', async () => {
+    const first = await start(), put = vi.spyOn(IDBObjectStore.prototype, 'put');
+    first.prepareStudioEnvironmentCache({ readRenderTargetPixelsAsync:validRead }, target());
+    await until(() => put.mock.calls.length); await pause();
+    const later = await start();
+    expect(later.cachedStudioEnvironment()).toBeNull();
+    await later.studioEnvironmentSettled(5000);
+    expect(Array.from(later.cachedStudioEnvironment().image.data)).toEqual(Array(64).fill(0x3c00));
+    // Already read: a later shelf render does not wait at all.
+    let waited = true; later.studioEnvironmentSettled(5000).then(() => { waited = false; });
+    await settle(); expect(waited).toBe(false);
+  });
+  it('gives a store that never answers only its deadline, and nothing to wait for without a store', async () => {
+    const open = vi.spyOn(indexedDB, 'open').mockImplementation(() => ({}));
+    const stalled = await start(), began = performance.now();
+    expect(open).toHaveBeenCalled();
+    await stalled.studioEnvironmentSettled(40);
+    expect(performance.now() - began).toBeGreaterThanOrEqual(35); expect(performance.now() - began).toBeLessThan(2000);
+    expect(stalled.cachedStudioEnvironment()).toBeNull();
+    open.mockRestore(); vi.stubEnv('PROD', false);
+    const development = await start(); let waited = true;
+    development.studioEnvironmentSettled(5000).then(() => { waited = false; });
+    await settle(); expect(waited).toBe(false);
+  });
+
   it('bakes again for another build or browser, and never in development', async () => {
     const first = await start();
     first.prepareStudioEnvironmentCache({ readRenderTargetPixelsAsync:validRead }, target());

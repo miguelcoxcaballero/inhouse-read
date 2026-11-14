@@ -52,7 +52,7 @@ export const legacyReaderActions = {
       const results = await this.reader.search(query)
       this.searchActive = results.length > 0
       this.lists.renderSearch(results,result => { this.keepSearchHits = true; this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator}) })
-    } catch { this.panel.querySelector('[data-search-status]').textContent = 'No se pudo buscar.' }
+    } catch { this.lists.clearSearch(''); this.panel.querySelector('[data-search-status]').textContent = 'No se pudo buscar.' }
   },
   endSearch() {
     if (!this.searchActive) return

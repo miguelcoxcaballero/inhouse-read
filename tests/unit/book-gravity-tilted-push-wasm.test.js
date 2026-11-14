@@ -14,7 +14,7 @@ function fixture(rows,metal=false,animated=false){
     states.set([b.kind===3?2:b.kind??0,b.kind===3?1:0,b.flags??0,b.drag??0,b.dragY??0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,b.x,y,150,height,150,0],i*37);
     states[i*37+13]=b.previewX??0;states[i*37+14]=b.previewY??0;states[i*37+21]=b.offsetX??0;states[i*37+22]=b.offsetY??0;
     if(animated&&previous.has(b.id))states.set(previous.get(b.id).subarray(5,23),i*37+5);
-    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,b.ceiling??((b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0)),b.grip??0],i*9);
+    geometry.set([b.width??20,b.unplaced?.5:b.kind??0,b.shelf??0,1000,0,600,b.floor??300,b.ceiling??((b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0)),b.grip??0],i*9);
    });
    output=new Float64Array(rows.length*4);solver.step(rows.map(b=>b.id),states,geometry,scene,clock,reduced,output);clock+=frameMs;
    if(animated)rows.forEach((b,i)=>previous.set(b.id,states.slice(i*37,i*37+37)));
@@ -80,4 +80,20 @@ it('lets a real pot and thin-book contact stack sleep together after a cross-she
  // (1.19e-7 rad in this capture). Translation and sleeping flags stay exact.
  for(let i=0;i<out.length;i++){if(i%4===0)expect(restored[i]).toBeCloseTo(out[i],6);else expect(restored[i]).toBe(out[i]);}
  reopened.free();scene.free();
+});
+
+it('a never-placed fresh book whose free side ends at a real pot within its own height stands instead of falling against it',()=>{
+ const rows=unplaced=>[book('lone',40,{unplaced}),book('pot',200,{kind:1,width:120,height:160})];
+ // A book the reader placed there by hand keeps the old seed and tips over, exactly as before.
+ const placed=fixture(rows(false));placed.decoration('pot',1,'muskot','muskot',Float64Array.of(.03,.07,.16,0));
+ const tipped=placed.step(600);expect(Math.abs(tipped[0].angle)).toBeGreaterThan(.05);placed.free();
+ const f=fixture(rows(true));f.decoration('pot',1,'muskot','muskot',Float64Array.of(.03,.07,.16,0));
+ const rest=f.step(600);expect(Math.abs(rest[0].angle)).toBeLessThan(.005);expect(rest[0].x).toBeCloseTo(40,0);
+ expect(rest.every(row=>row.active===0)).toBe(true);expect(f.step(30)).toEqual(rest);f.free();
+});
+it('never drops a book onto a pot: it lands beside it',()=>{
+ const f=fixture([book('hand',100,{flags:2,width:20,height:160,shelf:1,floor:620}),book('pot',300,{kind:1,width:120,height:160})]);
+ f.decoration('pot',1,'muskot','muskot',Float64Array.of(.03,.07,.16,0));const before=f.step(600);
+ const landed=f.drop('hand',300);expect(landed).toHaveLength(1);expect(Math.abs(landed[0]-300)).toBeGreaterThan(30);
+ expect(f.step()[1]).toEqual(before[1]);f.free();
 });

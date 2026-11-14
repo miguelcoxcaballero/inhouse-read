@@ -33,9 +33,12 @@ test('la racha se amplía tras 5 minutos de lectura y muestra la celebración', 
   await expect(panel.locator('.streak-day.is-done').first()).toBeVisible()
   await expect(panel.locator('.streak-day.is-today')).toHaveCount(1)
   // Android ofrece anclar el widget desde el panel.
+  // The offer is its title and its drawing; the line under it appears only to say what to do next.
+  await expect(panel.locator('[data-streak-widget-text]')).toBeHidden()
   await panel.getByRole('button', { name: /Añade la racha a tu pantalla de inicio/ }).click()
   expect(await page.evaluate(() => window.__pinRequested)).toBe(true)
   await expect(panel).toContainText('Confírmalo en el aviso de Android')
+  await expect(panel.locator('[data-streak-widget-text]')).toHaveText('También puedes añadirlo desde los widgets del lanzador.')
   await page.keyboard.press('Escape')
   await expect(panel).toBeHidden()
   await expect(homeChip).toBeFocused()

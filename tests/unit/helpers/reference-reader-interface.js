@@ -43,7 +43,6 @@ export const readerPanelMarkup = `
   <section id="reading-navigation" aria-label="Contenido del libro" hidden>
     <div class="reading-position-row"><p class="reading-position" aria-live="polite"></p><button type="button" class="reading-icon-button" data-bookmark aria-label="Marcar esta página" title="Marcar esta página">${readerIcon('bookmark')}</button></div>
     <input class="reading-scrubber" type="range" min="0" max="100" step="0.1" data-progress aria-label="Progreso del libro">
-    <div class="reading-progress-ends" aria-hidden="true"><span>Inicio</span><span>Final</span></div>
     <form class="reading-page-form" data-pdf><label>Ir a la página<input type="number" min="1" step="1" inputmode="numeric" aria-label="Ir a la página" required></label><button type="submit" class="reading-text-button">Ir</button></form>
     <nav class="reading-tabs" role="tablist" aria-label="Contenido">
       <button type="button" id="reading-tab-toc" role="tab" data-place-tab="toc" aria-controls="reading-list-toc">Índice</button>

@@ -61,3 +61,51 @@ a {
 [hidden] {
   display: none !important;
 }
+
+/* ---- Loading placeholders -------------------------------------------------
+   One neutral block the size of what is coming, with a slow sheen, instead of
+   a sentence that only says "loading". The tone is mixed from the ink of the
+   surface it sits on, so it is right on the light and dark themes and on every
+   reading paper without a rule of its own. The sentence stays in the element
+   (unpainted) or in a .visually-hidden child, with role="status"/aria-busy on
+   the owner: assistive technology still hears it.
+
+   Markup takes .ihr-skeleton; states the app already marks (aria-busy,
+   .is-syncing, a disabled play button) are listed here rather than restyled
+   one by one. The two :has() states sit in :where(), so a browser without
+   :has() loses only those. --ihr-skeleton-trim slims a line of text to a bar
+   without changing its box, so nothing moves when the real text arrives. */
+.ihr-skeleton,
+.ihr-library-loading__spinner,
+.ihr-relief-card.is-skeleton .ihr-relief-card__preview,
+.ihr-relief-card.is-skeleton .ihr-relief-card__label,
+#reader-top-title[aria-busy="true"],
+.drive-sync-status.is-syncing,
+[data-search-status][aria-busy="true"],
+:where(.reading-audio-controls:has([data-play]:disabled) + .reading-audio-status),
+:where(.reading-mini-player:has([data-mini-play]:disabled) [data-mini-status]) {
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  user-select: none;
+  background-color: rgba(128, 128, 128, .16);
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+  background-image: linear-gradient(100deg, transparent 38%, rgba(128, 128, 128, .12) 50%, transparent 62%);
+  background-image: linear-gradient(100deg, transparent 38%, color-mix(in srgb, currentColor 8%, transparent) 50%, transparent 62%);
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0;
+  clip-path: inset(var(--ihr-skeleton-trim, 0px) 0 round var(--ihr-skeleton-radius, 6px));
+  animation: ihr-skeleton-sheen 1.6s ease-in-out infinite;
+}
+@keyframes ihr-skeleton-sheen { to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ihr-skeleton,
+  .ihr-library-loading__spinner,
+  .ihr-relief-card.is-skeleton .ihr-relief-card__preview,
+  .ihr-relief-card.is-skeleton .ihr-relief-card__label,
+  #reader-top-title[aria-busy="true"],
+  .drive-sync-status.is-syncing,
+  [data-search-status][aria-busy="true"],
+  :where(.reading-audio-controls:has([data-play]:disabled) + .reading-audio-status),
+  :where(.reading-mini-player:has([data-mini-play]:disabled) [data-mini-status]) { animation: none; background-image: none; }
+}

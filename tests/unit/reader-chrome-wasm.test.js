@@ -96,3 +96,13 @@ it('fails with a clear error instead of working around a missing core',()=>{
  const {host}=setup(false,1),chrome=new ReaderChrome(host);runtime.ui=null
  expect(()=>chrome.voiceState('playing','x')).toThrow('Rust UI is not loaded')
 })
+it('marks the status line when it only repeats the play button, and never when it carries a message',()=>{
+ const {host}=setup(true,1),status=host.panel.querySelector('.reading-audio-status')
+ for(const [state,word] of [['stopped','Detenido'],['playing','Leyendo'],['paused','En pausa']]){
+  host.voiceState(state,'');expect(status.textContent).toBe(word);expect(status.hasAttribute('data-state-only')).toBe(true)
+ }
+ host.voiceState('stopped','Final del libro.');expect(status.textContent).toBe('Final del libro.');expect(status.hasAttribute('data-state-only')).toBe(false)
+ // Loading: the sentence stays for assistive technology and the disabled play button is the busy mark the placeholder styles follow.
+ host.voiceState('loading','Preparando la voz natural…');expect(status.textContent).toBe('Preparando la voz natural…');expect(status.hasAttribute('data-state-only')).toBe(false)
+ expect(host.panel.querySelector('[data-play]').disabled).toBe(true);expect(host.panel.querySelector('[data-play]').getAttribute('aria-label')).toBe('Preparando…')
+})

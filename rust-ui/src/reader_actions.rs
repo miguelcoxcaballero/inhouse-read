@@ -77,7 +77,7 @@ pub async fn reader_search(host:JsValue,query:JsValue,activate:Function)->Result
   set(&host,"searchActive",&JsValue::from(get(&results,"length")?.as_f64().unwrap_or(0.0)>0.0))?;
   two(&get(&host,"lists")?,"renderSearch",&results,&activate)?;Ok::<(),JsValue>(())
  }.await;
- if result.is_err(){let status=one(&get(&host,"panel")?,"querySelector",&"[data-search-status]".into())?;set(&status,"textContent",&"No se pudo buscar.".into())?;}Ok(())
+ if result.is_err(){one(&get(&host,"lists")?,"clearSearch",&"".into())?;let status=one(&get(&host,"panel")?,"querySelector",&"[data-search-status]".into())?;set(&status,"textContent",&"No se pudo buscar.".into())?;}Ok(())
 }
 #[wasm_bindgen]
 pub fn reader_search_activate(host:JsValue,result:JsValue)->Result<(),JsValue>{

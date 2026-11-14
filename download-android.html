@@ -54,7 +54,12 @@
       </section>
 
       <section class="dl-card" id="release-card" aria-live="polite">
-        <p class="dl-status">Buscando versión…</p>
+        <!-- Until the latest version answers: blocks where its tag, button, file name and link will be. -->
+        <p class="visually-hidden" role="status">Buscando versión…</p>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--version" aria-hidden="true"></span>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--button" aria-hidden="true"></span>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--file" aria-hidden="true"></span>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--link" aria-hidden="true"></span>
       </section>
 
       <section class="dl-alt">

@@ -2,6 +2,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { createBookshelfScene as liveScene } from '../../src/js/bookshelf-scene.js'
 import { createBookshelfScene as frozen } from './helpers/reference-bookshelf-scene.js'
 import { runScenario } from './helpers/scene-differential.js'
+import { censusAudit } from './helpers/scene-census-audit.js'
+
+// The live scene's censuses that do not walk the entries are checked against a walk (helpers/scene-census-audit.js).
+vi.mock('../../src/js/scene-entry-frame.js', async actual => (await import('./helpers/scene-census-audit.js')).auditedEntryFrame(actual))
 
 // The independent JS reference adopts the requested hidden-page and opaque-reader
 // suspension policies (1.7.303, faef7e1b) only; arithmetic, geometry, the 24 seeded scripts and strict
@@ -90,4 +94,9 @@ describe('bookshelf scene against its frozen original', () => {
     const original = await runScenario(frozen, seed), current = await runScenario(live, seed)
     same(`seed ${seed}`, original, current)
   }, 180000)
+
+  it('told the entry arena of every change in what the entries hold', () => {
+    expect(censusAudit.misses).toEqual([])
+    expect(censusAudit.kept).toBeGreaterThan(censusAudit.walked ? 100 : -1)
+  })
 })

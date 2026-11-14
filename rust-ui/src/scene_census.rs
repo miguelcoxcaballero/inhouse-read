@@ -1,5 +1,5 @@
-//! What the host holds of every entry, taken once per frame: the host writes three numbers per
-//! entry (columns 85-87 of the entry arena) and one call answers what the frame formerly asked
+//! What the host holds of every entry: the host writes three numbers per entry (columns 85-87 of
+//! the entry arena) whenever they may have changed, and one call per frame answers what the frame formerly asked
 //! entry by entry in JavaScript: the diagnostics' counts (`scene_counts`, rebuilt only when a
 //! number differs), the shadow casters' signature (`scene_casters`), whether a quality map is
 //! still loading, whether a returning book is painted on the overlay or by the native layer,
@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::*;
 use crate::scene_view::RustScene;
 use super::{RustSceneEntryFrame,STATE,HOSTED,PAINTED_AWAY};
 
-/// Column 85's bits.
+/// Column 85's bits (512, a completed drop, is read by the pose call only).
 const MODEL:u32=1;const VISIBLE:u32=2;const PENDING:u32=4;const OVERVIEW:u32=8;const INSERTION:u32=16;
 const DROP:u32=32;const OVERLAY:u32=64;const NATIVE:u32=128;const LOADING:u32=256;
 

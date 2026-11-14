@@ -19,6 +19,9 @@ use wasm_bindgen::{intern,prelude::*,JsCast};
 use js_sys::{Array,Function,JsString,Object,Promise};
 use crate::host::{absent,global,jmax,jmin,js_round,num,text_value,truthy};
 type R<T=()>=Result<T,JsValue>;
+// The cover relief's flows share this module's promise plumbing (tickets, timers, the image and canvas bindings).
+#[path="relief_flow.rs"]
+mod relief_flow;
 
 #[wasm_bindgen]
 extern "C"{

@@ -21,6 +21,30 @@ test('muestra la versión y el tamaño del canal A consultado en vivo', async ({
   await expect(button).toHaveAttribute('href', APK_URL)
 })
 
+test('mientras consulta la versión dibuja la tarjeta con bloques del tamaño final y solo lo dice a los lectores de pantalla', async ({ page }) => {
+  let answer
+  const asked = new Promise(resolve => { answer = resolve })
+  await page.route(API_URL, async route => {
+    await asked
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAKE_RELEASE) })
+  })
+  await page.reload()
+  const card = page.locator('#release-card')
+  try {
+    await expect(card.getByRole('status')).toHaveText('Buscando versión…')
+    // The sentence is clipped to one pixel: nothing to read on screen, only the blocks.
+    expect(await card.getByRole('status').evaluate(node => { const box = node.getBoundingClientRect(); return box.width <= 1 && box.height <= 1 })).toBe(true)
+    await expect(card.locator('.ihr-skeleton')).toHaveCount(4)
+    expect(await card.locator('.ihr-skeleton').evaluateAll(blocks => blocks.every(block => block.getAttribute('aria-hidden') === 'true' && block.getBoundingClientRect().width > 100))).toBe(true)
+  } finally { var placeholder = await card.locator('.dl-skeleton--button').boundingBox(); answer() }
+  await expect(page.locator('.dl-button')).toBeVisible()
+  await expect(card.locator('.ihr-skeleton')).toHaveCount(0)
+  // The real button lands where its placeholder stood: the card does not jump.
+  const button = await page.locator('.dl-button').boundingBox()
+  expect(Math.abs(button.y - placeholder.y)).toBeLessThanOrEqual(2)
+  expect(Math.abs(button.height - placeholder.height)).toBeLessThanOrEqual(1)
+})
+
 test('si la API de GitHub falla, muestra un enlace de respaldo a Releases', async ({ page }) => {
   await page.route(API_URL, route =>
     route.fulfill({ status: 500, body: 'error' })

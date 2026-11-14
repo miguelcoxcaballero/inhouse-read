@@ -33,6 +33,7 @@ export class LegacyReaderChrome{
       this.panel.querySelector('[data-play]').innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
       this.panel.querySelector('[data-play]').disabled = state === 'loading'
       this.panel.querySelector('.reading-audio-status').textContent = message || (state === 'playing' ? 'Leyendo' : state === 'paused' ? 'En pausa' : 'Detenido')
+      this.panel.querySelector('.reading-audio-status').toggleAttribute('data-state-only', !message)
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
       if (state === 'stopped') this.setSleepChoice(0)
       this.updateMiniPlayer(state, message)

@@ -46,6 +46,14 @@ it('allows an absent mini title and does not overwrite it during initial documen
  const {view,mini}=setup(true);view.setDocumentInfo('Initial','Author','About',false);expect(mini.textContent).toBe('')
  mini.innerHTML='';expect(()=>view.setDocumentInfo('Updated','Author','About',true)).not.toThrow();view.free()
 })
+it('ends the header title placeholder when the book names itself',()=>{
+ for(const native of [false,true]){
+  const {view}=setup(native),title=document.getElementById('reader-top-title')
+  title.setAttribute('aria-busy','true');title.textContent='Abriendo libro…'
+  view.setDocumentInfo('Claros del bosque','María Zambrano','About',false)
+  expect(title.textContent).toBe('Claros del bosque');expect(title.hasAttribute('aria-busy')).toBe(false);view.free?.()
+ }
+})
 it('is the Rust view of the loaded core and fails clearly without it',()=>{
  const {screen,panel,mini,back}=setup(false)
  runtime.ui=ui;const next=new ReaderView(screen,panel,mini,back);expect(next).toBeInstanceOf(ui.RustReaderView);next.free()

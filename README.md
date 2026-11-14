@@ -1,5 +1,30 @@
 # inhouse read
 
+## 1.7.333 — Los libros ya no se apoyan en macetas ni lámparas
+
+Un libro que nunca has colocado a mano ya no cae inclinado contra una maceta o
+una lámpara: se queda de pie en su fila y, si no cabe, pasa al estante
+siguiente. Así la estantería llega a reposo y deja de repintarse. Los libros
+que colocaste tú se quedan donde los dejaste. Además, al abrir la app se
+reutiliza la sala guardada en el dispositivo en lugar de hornearla otra vez.
+
+## 1.7.332 — El relieve de las portadas, en Rust
+
+Nada cambia a la vista: las capturas coinciden con la versión anterior. Por
+dentro, decodificar el relieve de una portada, sus miniaturas y su horneado
+sobre el libro pasan a Rust, y la escena de la estantería escribe en cada
+fotograma solo lo que ha cambiado. Coste asumido: unos 55 µs más por libro con
+relieve al arrancar y 54 KB más de wasm.
+
+## 1.7.331 — Bloques de carga en lugar de frases
+
+Mientras algo carga ya no aparece una frase («Abriendo libro…», «Conectando
+con Drive…», «Buscando…», «Preparando la voz natural…»), sino un bloque gris
+del tamaño de lo que va a llegar, con un brillo suave (quieto si el sistema
+pide menos movimiento). Desaparecen textos que repetían lo evidente:
+«Conectado», «Inicio»/«Final» bajo la barra de progreso y el subtítulo del
+widget de racha. Las frases siguen ahí para los lectores de pantalla.
+
 ## 1.7.330 — Autor y título a salvo, voz y portadas en Rust
 
 Un libro vuelve a recuperar de Drive el autor y el título de lomo que le

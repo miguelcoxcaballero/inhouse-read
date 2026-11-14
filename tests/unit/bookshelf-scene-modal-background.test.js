@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
+import { censusAudit } from './helpers/scene-census-audit.js'
+// Every census that does not walk the entries is checked against a walk (helpers/scene-census-audit.js).
+vi.mock('../../src/js/scene-entry-frame.js', async actual => (await import('./helpers/scene-census-audit.js')).auditedEntryFrame(actual))
 
 // A frame that changes nothing must leave the DOM alone, and a frame that
 // changes something must still leave it exactly as a full rewrite would.
@@ -81,6 +84,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  expect(censusAudit.misses.splice(0)).toEqual([]);
   shelf?.dispose(); shelf = null; document.body.innerHTML = '';
   if (originalFonts) Object.defineProperty(document, 'fonts', originalFonts); else delete document.fonts;
   vi.restoreAllMocks(); vi.unstubAllGlobals();

@@ -1,3 +1,22 @@
+# Entrega 1.7.333 (tanda integ-bar-12): reposo de la estantería junto a macetas y lámparas
+
+Ramas: wip/product-fixes (4d9d2dc1), wip/ci-green-3 (e50cf623). Sin cambio en la barra (74,98 % Rust estimado en local).
+
+- rust-ui/src/book_gravity.rs: los cuerpos en reposo se duermen por isla de contacto, no uno a uno; un libro nunca colocado a mano no acepta caer contra una maceta o una lámpara, y rust-ui/src/bookshelf/screen_plan.rs lo lleva al siguiente hueco libre. Cambio visible: en las escenas de prueba con lámpara y maceta, los libros que antes quedaban inclinados entre ambas ahora están de pie o en el estante de abajo.
+- src/js/studio-environment-cache.js y src/js/app.js: la primera estantería espera hasta 120 ms a la sala guardada antes de crear el renderizador (5 líneas de JavaScript nuevas).
+
+# Entrega 1.7.332 (tanda integ-bar-11): relieve de portada y primer bucle de la escena
+
+Ramas: ready/book-model-16, ready/scene-frame-21, ready/ci-green-3.
+Barra estimada en local (bytes al estilo de GitHub): 74,98 % Rust; quedan unos 880 KB de JavaScript (1.7.331: 74,7 %, 891 KB).
+
+- Portadas: cover-relief.js 17,6 → 12,6 KB y book-model.js 63,2 → 59,1 KB. Decodificación, rásteres, miniaturas y los tres flujos públicos del relieve están en rust-ui/src/relief_flow.rs; setCoverRelief, el horneado del material y sus claves de caché, en rust-ui/src/relief_bake.rs. Coste aceptado: unos 55 µs más por libro con relieve en el arranque, el wasm crece 54 KB y el enlace generado 22 KB.
+- Escena: el primer bucle del fotograma escribe solo lo que cambió; la calidad en reposo se decide dentro de la llamada de pose; los eventos de la escena viven en rust-ui/src/scene_events.rs.
+- Pruebas: la prueba de seguimiento de página cuenta la descarga de la voz donde Rust la hace hoy (la instalación funciona); las pruebas que cuentan repintados del primer fotograma congelan el reloj y dejan de fallar con la máquina cargada.
+- Pendiente por el límite de uso de los agentes: la física de la fila que no se duerme (wip/product-fixes), las lecturas de propiedades en un solo cruce (wip/decor-shell) y la cuarta ronda de CI.
+
+Todas las cifras de velocidad son de Node/WASM; nada se midió en navegador ni en teléfono.
+
 # Entrega 1.7.330 (tanda integ-bar-9): fachada de voz, análisis de portada, censo de la escena y autor/título de Drive
 
 Ramas: ready/scene-frame-19, ready/book-model-14, ready/readers-voice-15, ready/product-fixes-1 (sin su cambio de física 4ec5beff, retenido), ready/ci-green-2, ready/probes-1.

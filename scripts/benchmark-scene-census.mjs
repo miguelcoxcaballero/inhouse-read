@@ -65,7 +65,7 @@ for(const count of [40,120,300]){
    return [casterSignature,hold,overlay,refresh,busy,...countOut];
   }
   function census(now){
-   const held=frame.census(entries,true),casters=frame.counts[0];
+   frame.hold(entries);const held=frame.census(true),casters=frame.counts[0];
    const hold=frame.qualityHold(scene,inspecting,now);
    const overlay=Boolean(held&4),refresh=inspecting&&!(held&32);
    frame.painted();
@@ -96,7 +96,7 @@ for(const count of [40,120,300]){
  const entries=room(120),frame=createSceneEntryFrame(rust);
  frame.bind(entries,false);
  for(let i=0;i<entries.length;i++)frame.state[i*S]=entries[i].kind==='plant'?1:entries[i].kind==='lamp'?2:0;
- frame.census(entries,true);
+ frame.hold(entries);frame.census(true);
  const counts=new Float64Array(8),text=referenceCounts(rust.scene_counts,entries,counts);
  // An element's data keeps String(value) of what it is given: both sides write through the same stand-in.
  const data=()=>new Proxy({},{set(target,key,value){target[key]=String(value);return true;}});

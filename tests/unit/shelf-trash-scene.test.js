@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
 import { minimumBookTapWidth } from './helpers/plant-dimensions-doorways.js';
+import { censusAudit } from './helpers/scene-census-audit.js'
+// Every census that does not walk the entries is checked against a walk (helpers/scene-census-audit.js).
+vi.mock('../../src/js/scene-entry-frame.js', async actual => (await import('./helpers/scene-census-audit.js')).auditedEntryFrame(actual))
 
 // Static renderer/picking fixture: physical contacts are covered with the
 // default simulation in book-gravity tests and the mobile motion suite.
@@ -141,6 +144,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  expect(censusAudit.misses.splice(0)).toEqual([]);
   shelf?.dispose(); shelf = null; document.body.innerHTML = '';
   vi.restoreAllMocks(); vi.unstubAllGlobals();
 });

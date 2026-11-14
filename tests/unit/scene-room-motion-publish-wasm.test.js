@@ -60,7 +60,7 @@ for(const seed of [1,2,3,4,5,6])it(`publishes the frozen bookkeeping's rows (ses
    entries.forEach((e,index)=>{
     const at=index*S,state=entryFrame.state,kind=e.kind==='plant'?1:e.kind==='lamp'?2:0;
     if(e.stale){e.stale=false;state[at]=kind;state[at+23]=e.x;state[at+24]=e.y;state[at+25]=e.width;state[at+26]=e.height;state[at+27]=e.depth;state[at+28]=e.depthInset;state.set(e.box,at+50);}
-    state[at+2]=e.bits;state[at+3]=e.dragNumberX;state[at+4]=e.dragNumberY;state[at+49]=4;
+    state[at+2]=e.bits;state[at+3]=e.dragNumberX;state[at+4]=e.dragNumberY;state[at+85]=1;
    });
    if(tick%53===0)shelfWasm.memory.grow(1);
    entryFrame.poses(motionFrame.native,sceneView,roomMotion,roomTransition,now,gesture,room.matrixWorld);

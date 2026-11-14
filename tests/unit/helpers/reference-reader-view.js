@@ -3,6 +3,7 @@ export class LegacyReaderView {
  setDocumentInfo(title,author,about,updateMini){
   this.panel.querySelector('#reading-book-title').textContent=title
   document.getElementById('reader-top-title').textContent=title
+  document.getElementById('reader-top-title').removeAttribute('aria-busy')
   document.getElementById('reader-top-byline').textContent=author
   this.panel.querySelector('#reading-document-about').textContent=about
   if(updateMini){const mini=this.miniPlayer?.querySelector('[data-mini-title]');if(mini)mini.textContent=title}

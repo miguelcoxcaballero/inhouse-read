@@ -61,8 +61,16 @@ async function launchFrame(page) {
   try{return await new Promise(resolve=>{const r=db.transaction('frame').objectStore('frame').get('latest');r.onsuccess=()=>resolve(r.result?{key:r.result.key,size:r.result.image.size}:null);r.onerror=()=>resolve(null)})}finally{db.close()}
  });
 }
+// The first live frame of a seeded room is not what this file times (that is the cached picture, shown in ~0.3 s):
+// it is the point the test waits for before looking at the room. In software WebGL that frame is almost entirely
+// program compilation and linking inside the browser: 8-12 s after a reload on the builds of 1.7.232, 1.7.325 and
+// 1.7.330 alike, and 9.3 s in the CI trace of the run that failed here, against the 8 s default this wait used to
+// inherit (it failed from this file's first run on, on slower runners). Like the other suites it has the first
+// shelf's own budget.
+const FIRST_SHELF_TIMEOUT = 60_000;
 async function liveFrame(page) {
- await expect.poll(()=>page.locator('.ihr-bookshelf-scene').getAttribute('data-render-count').then(Number).catch(()=>0)).toBeGreaterThan(0);
+ await expect.poll(()=>page.locator('.ihr-bookshelf-scene').getAttribute('data-render-count').then(Number).catch(()=>0),
+  {timeout:FIRST_SHELF_TIMEOUT}).toBeGreaterThan(0);
 }
 for (const host of ['web', 'Android shell']) test(`${host}: warm launch paints the exact saved room before WASM, then hands over to the interactive scene`,async({page},info)=>{
  if (host === 'Android shell') {

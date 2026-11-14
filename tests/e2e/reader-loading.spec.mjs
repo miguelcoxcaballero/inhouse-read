@@ -19,13 +19,29 @@ test('keeps audiobook and reader tools unavailable while the real ebook engine l
   try {
     await page.locator('#file-picker').setInputFiles(fileURLToPath(new URL('./fixtures/reading-journey.epub', import.meta.url)))
     await requestSeen
-    await expect(page.locator('#reader-loading')).toBeVisible()
+    // Loading is drawn, not written: bars where the page will be, a bar where the title will be. The sentences
+    // stay for assistive technology (a status that still reads "Abriendo el libro…"), unpainted.
+    const loading = page.locator('#reader-loading')
+    await expect(loading).toBeVisible()
+    await expect(loading).toHaveRole('status')
+    await expect(loading).toHaveText('Abriendo el libro…')
+    await expect(loading.locator('.visually-hidden')).toHaveText('Abriendo el libro…')
+    await expect(loading.locator('.ihr-skeleton').first()).toBeVisible()
+    expect(await loading.locator('.ihr-skeleton').evaluateAll(bars => bars.every(bar => bar.getAttribute('aria-hidden') === 'true' && bar.getBoundingClientRect().height >= 10 && getComputedStyle(bar).backgroundColor !== 'rgba(0, 0, 0, 0)'))).toBe(true)
+    const title = page.locator('#reader-top-title')
+    await expect(title).toHaveAttribute('aria-busy', 'true')
+    await expect(title).toHaveText('Abriendo libro…')
+    expect(await title.evaluate(node => { const style = getComputedStyle(node); return { ink: style.webkitTextFillColor, block: style.backgroundColor !== 'rgba(0, 0, 0, 0)', motion: style.animationName } }))
+      .toEqual({ ink: 'rgba(0, 0, 0, 0)', block: true, motion: 'none' }) // reduced motion (emulated above): a still block
     await expect(page.locator('#reader-screen')).toHaveAttribute('aria-busy','true')
     await expect(page.locator('#reader-toolbar')).toBeHidden()
     expect(await page.locator('.reader-heading-actions').evaluate(element => element.inert)).toBe(true)
   } finally { releaseEngine() }
   await expect(page.locator('#reader-toolbar')).toBeVisible({ timeout:30_000 })
   await expect(page.locator('#reader-loading')).toBeHidden()
+  await expect(page.locator('#reader-top-title')).not.toHaveAttribute('aria-busy', 'true')
+  await expect(page.locator('#reader-top-title')).toHaveText('The Reading Room')
+  expect(await page.locator('#reader-top-title').evaluate(node => getComputedStyle(node).webkitTextFillColor)).not.toBe('rgba(0, 0, 0, 0)')
   await expect(page.locator('#reader-screen')).toHaveAttribute('aria-busy','false')
   expect(await page.locator('.reader-heading-actions').evaluate(element => element.inert)).toBe(false)
   expect(await page.evaluate(() => document.querySelector('foliate-view')?.lastLocation?.range?.toString()?.trim().length || 0)).toBeGreaterThan(0)
