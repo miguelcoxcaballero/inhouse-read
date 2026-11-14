@@ -2,7 +2,7 @@
 //! first await, preserving cancellation and selection-generation ownership.
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Object,Promise,Reflect};
-use crate::host::{read,method,truthy,set};
+use crate::host::{read,method,truthy,set,later};
 use crate::cloud_host;
 type R<T> = Result<T,JsValue>;
 #[wasm_bindgen]
@@ -40,7 +40,7 @@ pub fn app_remove_from_shelf(host:JsValue,book:JsValue)->Promise{cloud_host::sta
  method(&host,"scheduleLibraryBackup",&[])?;
  if owns{
   let caught=method(&preparing,"catch",&[&read(&host,"ignoreRemovalPreparationError")?])?;
-  let cleanup=method(&host,"removedPreparationCleanup",&[&book,&generation])?;
+  let cleanup=later(&host,"app_finish_removed_preparation",0,&[&host,&book,&generation])?;
   let finished=method(&caught,"then",&[&cleanup])?;
   method(&finished,"catch",&[&read(&host,"warnRemovalPreparation")?])?;
  }
@@ -103,14 +103,14 @@ pub fn app_order_record(host:JsValue,row:JsValue)->R<JsValue>{
  Ok(app_persist_book_state(host,id,Object::from_entries(entries.as_ref())?.into()).into())
 }
 fn mapped(host:&JsValue,rows:&JsValue,key:&str)->R<Promise>{
- let function=read(rows,"map")?;let callback=method(host,key,&[])?;
+ let function=read(rows,"map")?;let callback=later(host,key,1,&[host])?;
  let function=function.dyn_ref::<js_sys::Function>().ok_or_else(||js_sys::TypeError::new("map is not a function"))?;
  let values=function.call1(rows,&callback)?;Ok(Promise::all(values.unchecked_ref()))
 }
 #[wasm_bindgen]
 pub fn app_placement_changed(host:JsValue,options:JsValue)->R<Promise>{
  let rows=read(&options,"books")?;let rows=if rows.is_undefined(){Array::new().into()}else{rows};
- mapped(&host,&rows,"placementMapper")
+ mapped(&host,&rows,"app_placement_record")
 }
 #[wasm_bindgen]
-pub fn app_order_changed(host:JsValue,rows:JsValue)->R<Promise>{mapped(&host,&rows,"orderMapper")}
+pub fn app_order_changed(host:JsValue,rows:JsValue)->R<Promise>{mapped(&host,&rows,"app_order_record")}

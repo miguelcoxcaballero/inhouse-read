@@ -10,7 +10,7 @@ const scoped=(env,text)=>new Function('env',`with(env){return (${typeof text==='
 const flush=async()=>{for(let n=0;n<12;n++)await Promise.resolve()};
 function fixture(native,{reject=false}={}){
  const calls=[];const host={progressWrites:{patch(id,fields){calls.push(['patch',id,fields]);return reject?Promise.reject(Error('write')):Promise.resolve()}},scheduleLibraryBackup(){calls.push(['backup'])}};
- host.placementMapper=()=>row=>bookDataModule().app_placement_record(host,row);host.orderMapper=()=>row=>bookDataModule().app_order_record(host,row);
+ host.later=(name,take,...head)=>(...tail)=>bookDataModule()[name](...head,...tail.slice(0,take));
  const env={bookDataModule,shelfRefreshHost:host,normalizeShelfPosition,progressWrites:host.progressWrites,scheduleLibraryBackup:host.scheduleLibraryBackup,renderBookshelf(_root,_books,settings){return settings},els:{bookshelfRoot:'root'},openBookRecord(){},prepareBookOpen(){},dismissPreparedPage(){},handleCoverAction(){},pickLocalFile(){},preparedBooks:new Map(),wordCountQueue:{},bookCloudState(){},hasDriveSession(){},readingExperience:{}};
  env.persistBookState=scoped(env,referencePersist);
  return{calls,host,handlers:scoped(env,native?factory:referenceFactory)([])};

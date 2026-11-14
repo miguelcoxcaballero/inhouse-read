@@ -31,8 +31,7 @@ function fixture(native, options={}, module=rustShelf) {
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:value=>state[key]=value,configurable:true});
  const host={...env,state,ignorePreparationError:()=>{},warnPagePreparation:error=>env.console.warn('No se pudo preparar la página guardada de antemano:',error),
   createStageGate:settled=>env.createStageGate(settled),
-  preparationRunner:(b,g,gate,files)=>()=>module.app_run_preparation(host,b,g,gate,files),
-  reprepareRunner:(b,g,gate)=>ready=>module.app_reprepare_page(host,b,g,gate,ready)};
+  later:(name,take,...head)=>(...tail)=>module[name](...head,...tail.slice(0,take))};
  const names={prepareBookOpen:'app_prepare_book',openPageGate:'app_open_page_gate',releasePageGate:'app_release_page_gate',supersedePreparation:'app_supersede_preparation',dismissPreparedPage:'app_dismiss_prepared_page',pageKeyFor:'app_page_key',restoreAndSnapshot:'app_restore_and_snapshot',preparePageStage:'app_prepare_page_stage',openingPageSnapshot:'app_opening_page_snapshot'};
  for(const[key,exported]of Object.entries(names))env[key]=native?(...args)=>module[exported](host,...args):scope(env,reference[key]);
  if(native)env.prepareBookOpen=(b,{settled}={})=>module.app_prepare_book(host,b,settled);

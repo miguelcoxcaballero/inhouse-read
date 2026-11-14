@@ -17,7 +17,7 @@ const SHELF: f64 = 1.0;
 const LAMP: f64 = 2.0;
 
 fn kind(state: &JsValue) -> f64 { get(state, "kind").as_f64().unwrap_or(-1.0) }
-fn flag(state: &JsValue, key: &str) -> bool { truthy(&get(state, key)) }
+fn flag(state: &JsValue, key: &str) -> bool { crate::host::flag(state, key) }
 fn put(state: &JsValue, key: &str, value: impl Into<JsValue>) -> R<()> { set(state, key, &value.into()) }
 fn host(state: &JsValue) -> JsValue { get(state, "host") }
 fn hidden() -> bool { get(&get(&global(), "document"), "visibilityState") == JsValue::from_str("hidden") }

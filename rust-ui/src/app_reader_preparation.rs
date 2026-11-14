@@ -3,7 +3,7 @@
 //! live here. No native registry retains the host or its DOM after a task ends.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array, Object, Promise};
-use crate::host::{read, set, method, truthy, absent};
+use crate::host::{read, set, method, truthy, absent, later};
 use crate::cloud_host as c;
 type R<T> = Result<T, JsValue>;
 
@@ -68,7 +68,7 @@ pub fn app_prepare_book(host: JsValue, book: JsValue, settled: JsValue) -> R<JsV
         let generation = read(&state, "preparationGeneration")?;
         let gate = app_open_page_gate(host.clone(), read(&book, "id")?, settled)?;
         let existing = method(&books, "get", &[&read(&book, "id")?])?;
-        let callback = method(&host, "reprepareRunner", &[&book, &generation, &gate])?;
+        let callback = later(&host, "app_reprepare_page", 1, &[&host, &book, &generation, &gate])?;
         let again = method(&existing, "then", &[&callback])?;
         set(&state, "readerPreparationQueue", &ignore(&host, &again)?)?;
         method(&books, "set", &[&read(&book, "id")?, &again])?;
@@ -95,7 +95,7 @@ pub fn app_prepare_book(host: JsValue, book: JsValue, settled: JsValue) -> R<JsV
     ignore(&host, &files_ready)?;
     let gate = app_open_page_gate(host.clone(), read(&book, "id")?, settled)?;
     let queued = ignore(&host, &read(&state, "readerPreparationQueue")?)?;
-    let callback = method(&host, "preparationRunner", &[&book, &generation, &gate, &files_ready])?;
+    let callback = later(&host, "app_run_preparation", 0, &[&host, &book, &generation, &gate, &files_ready])?;
     let task = method(&queued, "then", &[&callback])?;
     set(&state, "readerPreparationQueue", &ignore(&host, &task)?)?;
     method(&books, "set", &[&read(&book, "id")?, &task])?;

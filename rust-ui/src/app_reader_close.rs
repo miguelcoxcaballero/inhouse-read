@@ -2,7 +2,7 @@
 //! are GC-owned adapters; this module owns ordering, cancellation and cleanup.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Object,Promise};
-use crate::host::{read,set,method,method_opt,truthy,absent};
+use crate::host::{read,set,method,method_opt,truthy,absent,later};
 use crate::cloud_host as c;
 type R<T> = Result<T,JsValue>;
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let entries=Array::new();for(k,v)in fields{c::data_entry(&entries,&(*k).into(),v);}Ok(Object::from_entries(entries.as_ref())?.into())}
@@ -25,7 +25,7 @@ pub fn app_return_page_handoff(host:JsValue,flight:JsValue)->R<()>{
   let reduced=read(&method(&host,"matchMedia",&[&"(prefers-reduced-motion: reduce)".into()])?,"matches")?;
   let fade=method(&still,"animate",&[frames.as_ref(),&object(&[("duration",if truthy(&reduced){1.0.into()}else{220.0.into()}),("fill","both".into())])?])?;
   set(&flight,"stillFade",&fade)?;
-  let callback=method(&host,"closeStillRemoval",&[&flight])?;
+  let callback=later(&host,"app_remove_return_page",0,&[&flight])?;
   ignore(&host,&method(&read(&fade,"finished")?,"then",&[&callback])?)?;
  }
  Ok(())
@@ -39,9 +39,9 @@ pub fn app_warn_closed_progress(host:JsValue,error:JsValue)->R<JsValue>{
 fn flush_progress(host:&JsValue,id:&JsValue,pending:&JsValue)->R<()>{
  // Keep the original Promise reactions, including rejected pending writes.
  // GC-owned adapters forward directly to native exports without extra awaits.
- let callback=method(host,"closeProgressFlush",&[id])?;
+ let callback=later(host,"app_flush_closed_progress",0,&[host,id])?;
  let task=method(Promise::resolve(pending).as_ref(),"then",&[&callback])?;
- method(&task,"catch",&[&read(host,"warnClosedProgress")?])?;Ok(())
+ method(&task,"catch",&[&later(host,"app_warn_closed_progress",1,&[host])?])?;Ok(())
 }
 async fn close_body(host:&JsValue,flight:&JsValue,id:&JsValue)->R<()>{
  let experience=read(host,"readingExperience")?;let reader=read(host,"reader")?;let state=read(host,"state")?;let els=read(host,"els")?;
@@ -81,7 +81,7 @@ async fn close_body(host:&JsValue,flight:&JsValue,id:&JsValue)->R<()>{
  let shelf=read(&state,"shelf")?;let origin=if absent(&shelf){JsValue::UNDEFINED}else{method(&shelf,"hasReaderOrigin",&[id])?};
  if !truthy(&origin)||!geometry{c::settle(method(host,"refreshShelf",&[&object(&[("immediate",JsValue::TRUE)])?])).await?;}
  let returned=if geometry{
-  let settings=object(&[("pageSnapshot",snapshot),("book",book),("onPageReady",method(host,"closeHandoff",&[flight])?)])?;
+  let settings=object(&[("pageSnapshot",snapshot),("book",book),("onPageReady",later(host,"app_return_page_handoff",0,&[host,flight])?)])?;
   let shelf=read(&state,"shelf")?;c::settle(Ok(if absent(&shelf){JsValue::UNDEFINED}else{method(&shelf,"returnToShelf",&[id,&settings])?})).await?
  }else{JsValue::FALSE};
  if !truthy(&returned){
