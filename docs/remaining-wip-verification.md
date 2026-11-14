@@ -1,3 +1,10 @@
+# 1.7.334 — retirada de la regla de decoración y siete bloques de migración (tanda integ-bar-13)
+
+- Unitarias: cuatro tandas, 668 archivos pasan y 2 omitidos; 9268 pruebas pasan, 5 omitidas, 0 fallos.
+- Capturas: antes de retirar la regla, el candidato coincidía con la 1.7.333 (26 estados, 15 idénticos, máximo 1/255), así que la migración no cambia píxeles. Tras retirarla, frente a la 1.7.325: 23 comparados, 13 idénticos; cambian 04 y 06 de escritorio (0,59 % de píxeles, límite 0,5 %) y el de veinte libros (11,5 %). La diferencia es el reposo de los libros con «dormir por isla»: revisado a ojo, mismos libros, inclinaciones distintas junto a la maceta.
+- Navegador, en local: 72 de 74. animation-continuity:194 pasa. Fallan smoke:540 (vuelve al rojo al retirar la regla) y lamp-switches:136 (ya roja en CI).
+- Sin verificar: teléfono real y WebView de Android (incluida la ruta nativa de voces, solo con dobles de prueba); lector de pantalla real.
+
 # 1.7.333 — reposo junto a macetas y lámparas, sala guardada al arrancar (tanda integ-bar-12)
 
 - Unitarias: cuatro tandas, 9253 pasan, 4 omitidas, 0 fallos.

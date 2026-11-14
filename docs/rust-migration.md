@@ -1,3 +1,14 @@
+# Entrega 1.7.334 (tanda integ-bar-13): retirada de la regla de decoración y siete bloques de migración
+
+Ramas: ready/scene-frame-24 (6ae7bb3f), ready/book-model-18 (f2868ab2), ready/readers-voice-16 (fb95e3a6), ready/decor-shell-12 (3fb164cf).
+Barra estimada en local (bytes al estilo de GitHub): 75,44 % Rust; quedan unos 863 KB de JavaScript (1.7.333: 74,98 %, 880 KB).
+
+- Física: se revierten a9a7b6c3 y 4d9d2dc1 (libros no colocados a mano fuera de macetas y lámparas). Causaban una regresión real: tests/e2e/animation-continuity.spec.mjs:194 dejaba un libro tumbado y el siguiente toque no abría nada. Se conserva 261ae25e (dormir por isla de contacto). Consecuencia conocida: smoke:540 vuelve a fallar.
+- scene-frame: rust-ui/src/bookshelf/scene_shown.rs, scene_exclusions.rs y el plan de fotograma (−2,2 KB de JavaScript).
+- book-model: relief_job.rs (ReliefJob.build) y font_policy.rs; se borra font-policy-wasm.js (−5,7 KB de JavaScript; el wasm de la estantería crece unos 26 KB).
+- readers-voice: se borran cinco módulos reenviadores de las voces neuronales (−7,5 KB).
+- decor-shell: rust-ui/src/host.rs accede a propiedades del anfitrión en un solo cruce con nombres literales internados; app.js baja de 34,1 a 31,0 KB. El glue de wasm emite ahora snippets/<hash>/inlineN.js junto al .js; dos pruebas de navegador que sirven módulos a mano (phonemizer-rebuild, rust-select-menu) se adaptan.
+
 # Entrega 1.7.333 (tanda integ-bar-12): reposo de la estantería junto a macetas y lámparas
 
 Ramas: wip/product-fixes (4d9d2dc1), wip/ci-green-3 (e50cf623). Sin cambio en la barra (74,98 % Rust estimado en local).

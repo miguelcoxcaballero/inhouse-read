@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.7.334 — Se retira la regla de macetas y lámparas
+
+La 1.7.333 hacía que un libro no colocado a mano no cayera contra una maceta o
+una lámpara. Esa regla tenía un fallo: tras abrir y cerrar varios libros, uno
+podía quedar tumbado y el siguiente toque no abría nada. Se retira; los libros
+vuelven a colocarse como en la 1.7.332 y pueden quedar inclinados junto a la
+decoración. Por dentro, más código de la escena, del relieve, de las voces y
+del arranque pasa a Rust (estimación local: 75,4 % Rust).
+
 ## 1.7.333 — Los libros ya no se apoyan en macetas ni lámparas
 
 Un libro que nunca has colocado a mano ya no cae inclinado contra una maceta o
