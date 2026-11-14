@@ -83,6 +83,7 @@ mod package_store;
 mod store_methods;
 mod synth_client;
 mod native_synth_client;
+mod client_prepare;
 mod native_ort;
 mod reader_lists;
 mod foliate_cursor;
