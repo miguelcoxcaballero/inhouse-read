@@ -44,24 +44,24 @@ impl Deferred{
  fn settle(&self,result:R<JsValue>){match result{Ok(value)=>self.resolve(&value),Err(reason)=>self.reject(&reason)}}
 }
 
-type Reaction=Closure<dyn FnMut(JsValue)>;
-/// `promise.then(value => next(Ok(value)), reason => next(Err(reason)))`. Both reactions are released as
-/// soon as one has run; the derived promise always fulfils, so nothing is left unhandled.
+/// A callback JavaScript owns: it runs once at most and gives up what it captured when it runs; one that is
+/// never called (a cleared timer, the other reaction of a pair) is collected with the function itself.
+/// `Closure::once_into_js` would keep such a callback, and a handle to it, for the life of the page.
+fn js_owned<T:?Sized+wasm_bindgen::closure::WasmClosure>(closure:Closure<T>)->JsValue{closure.into_js_value()}
+/// `promise.then(value => next(Ok(value)), reason => next(Err(reason)))`. The reaction that runs takes the
+/// continuation and everything it holds; its twin keeps nothing and goes with the promise, as does the pair
+/// of a promise that never settles. The derived promise always fulfils, so nothing is left unhandled.
 fn settled(promise:&Promise,next:impl FnOnce(R<JsValue>)+'static){react(promise,Box::new(next))}
 fn react(promise:&Promise,next:Box<dyn FnOnce(R<JsValue>)>){
- let pair:Rc<RefCell<Option<(Reaction,Reaction)>>>=Rc::new(RefCell::new(None));
- let next:Rc<RefCell<Option<Box<dyn FnOnce(R<JsValue>)>>>>=Rc::new(RefCell::new(Some(next)));
+ let next=Rc::new(RefCell::new(Some(next)));
  let reaction=|fulfilled:bool|{
-  let (pair,next)=(pair.clone(),next.clone());
-  Closure::wrap(Box::new(move|value:JsValue|{
+  let next=next.clone();
+  js_owned(Closure::<dyn FnMut(JsValue)>::once(move|value:JsValue|{
    let work=next.borrow_mut().take();
    if let Some(work)=work{work(if fulfilled{Ok(value)}else{Err(value)});}
-   pair.borrow_mut().take();
-  })as Box<dyn FnMut(JsValue)>)
+  }))
  };
- let (fulfilled,rejected)=(reaction(true),reaction(false));
- let _=promise.then2(&fulfilled,&rejected);
- *pair.borrow_mut()=Some((fulfilled,rejected));
+ let _=method(promise,"then",&[&reaction(true),&reaction(false)]);
 }
 /// One `await value`.
 fn wait(value:&JsValue,next:impl FnOnce(R<JsValue>)+'static){settled(&Promise::resolve(value),next)}
@@ -94,10 +94,29 @@ fn loaded(image:&JsValue)->Promise{
   if let Err(failure)=set(image,"onload",&resolve).and_then(|_|set(image,"onerror",&reject)){let _=reject.call1(&JsValue::UNDEFINED,&failure);}
  })
 }
-/// `setTimeout(() => reject(new Error(SLOW)), delay)`.
-fn reject_later(reject:&Function,delay:f64)->R<JsValue>{
- let reject=reject.clone();
- set_timeout(&Closure::once_into_js(move||{let _=reject.call1(&JsValue::UNDEFINED,&error(SLOW));}),delay)
+/// `setTimeout(() => reject(new Error(SLOW)), delay)` for a wait that `settle` may end first. Whichever comes
+/// first takes the settlers, so neither a cleared timer nor a decode that never ends keeps them.
+/// A browser's timer id is a number and is kept as one, so a decode that never ends holds no handle at all.
+struct Timeout{id:Result<f64,JsValue>,settlers:Rc<RefCell<Option<(Function,Function)>>>}
+impl Timeout{
+ fn start(resolve:&Function,reject:&Function,delay:f64)->R<Timeout>{
+  let settlers=Rc::new(RefCell::new(Some((resolve.clone(),reject.clone()))));
+  let fired=settlers.clone();
+  let id=set_timeout(&js_owned(Closure::<dyn FnMut()>::once(move||{
+   let waiting=fired.borrow_mut().take();
+   if let Some((_,reject))=waiting{let _=reject.call1(&JsValue::UNDEFINED,&error(SLOW));}
+  })),delay)?;
+  Ok(Timeout{id:id.as_f64().ok_or(id),settlers})
+ }
+ /// `clearTimeout(timer)`, then the wait's outcome if the timer has not already rejected it.
+ fn settle(&self,outcome:R<JsValue>)->R{
+  let waiting=self.settlers.borrow_mut().take();
+  self.stop()?;
+  if let Some((resolve,reject))=waiting{let _=match outcome{Ok(value)=>resolve.call1(&JsValue::UNDEFINED,&value),Err(reason)=>reject.call1(&JsValue::UNDEFINED,&reason)};}
+  Ok(())
+ }
+ fn clear(&self)->R{self.settlers.borrow_mut().take();self.stop()}
+ fn stop(&self)->R{match &self.id{Ok(number)=>clear_timeout(&JsValue::from_f64(*number)),Err(id)=>clear_timeout(id)}}
 }
 
 /// `readCoverAspectRatio(url)`: only the decoded dimensions, 1.5 s at most.
@@ -113,12 +132,12 @@ pub fn cover_aspect_read(url:JsValue)->Promise{
   Ok(Some(image))
  })();
  let image=match started{Ok(Some(image))=>image,Ok(None)=>{done.resolve(&JsValue::NULL);return promise}Err(failure)=>{done.reject(&failure);return promise}};
- let timeout=Rc::new(RefCell::new(undefined()));
+ let timeout:Rc<RefCell<Option<Timeout>>>=Rc::new(RefCell::new(None));
  let raced=(||->R<JsValue>{
   let first:JsValue=if get(&image,"decode").is_function(){method(&image,"decode",&[])?}else{loaded(&image).into()};
   let timer=timeout.clone();
-  let second=Promise::new(&mut|_resolve,reject|match reject_later(&reject,1500.0){
-   Ok(id)=>*timer.borrow_mut()=id,
+  let second=Promise::new(&mut|resolve,reject|match Timeout::start(&resolve,&reject,1500.0){
+   Ok(started)=>*timer.borrow_mut()=Some(started),
    Err(failure)=>{let _=reject.call1(&JsValue::UNDEFINED,&failure);}
   });
   method(&get(&global(),"Promise"),"race",&[&Array::of2(&first,&second)])
@@ -126,8 +145,8 @@ pub fn cover_aspect_read(url:JsValue)->Promise{
  // `finally { clearTimeout(timeout) }` runs before the answer leaves, whatever it is.
  let finish=move|outcome:R<JsValue>|{
   let value=match outcome{Ok(_)=>aspect_ratio(&get(&image,"naturalWidth"),&get(&image,"naturalHeight")),Err(_)=>JsValue::NULL};
-  let id=timeout.borrow().clone();
-  match clear_timeout(&id){Ok(())=>done.resolve(&value),Err(failure)=>done.reject(&failure)}
+  let cleared=match timeout.borrow_mut().take(){Some(timeout)=>timeout.clear(),None=>clear_timeout(&JsValue::UNDEFINED)};
+  match cleared{Ok(())=>done.resolve(&value),Err(failure)=>done.reject(&failure)}
  };
  match raced{Ok(race)=>wait(&race,finish),Err(failure)=>finish(Err(failure))}
  promise
@@ -147,7 +166,6 @@ pub fn cover_appearance_analyze(host:JsValue,url:JsValue,title:JsValue,options:J
  let started=(||->R<Option<(Rc<Analysis>,bool)>>{
   // `{ matchFont = true, image } = {}`
   let (match_font,decoded)=if options.is_undefined(){(true,undefined())}else{
-   if options.is_null(){return Err(js_sys::TypeError::new("Cannot destructure property 'matchFont' of 'object null' as it is null.").into())}
    let chosen=read(&options,"matchFont")?;
    (chosen.is_undefined()||truthy(&chosen),read(&options,"image")?)
   };
@@ -186,16 +204,12 @@ impl Analysis{
    let delay=if self.match_font{3000.0}else{1200.0};
    Promise::new(&mut|resolve,reject|{
     let begun=(||->R{
-     let timer=reject_later(&reject,delay)?;
+     let timer=Timeout::start(&resolve,&reject,delay)?;
      let source=image.clone();
-     let decode=Closure::once_into_js(move|_:JsValue|->R<JsValue>{method(&source,"decode",&[])});
+     let decode=js_owned(Closure::<dyn FnMut(JsValue)->R<JsValue>>::once(move|_:JsValue|method(&source,"decode",&[])));
      let decoded:Promise=method(&Promise::resolve(&JsValue::UNDEFINED),"then",&[&decode])?.unchecked_into();
-     let (resolve,reject)=(resolve.clone(),reject.clone());
-     settled(&decoded,move|outcome|{
-      // A timer that cannot be cleared leaves the wait to its timeout, as the reaction's own failure did.
-      if clear_timeout(&timer).is_err(){return}
-      let _=match outcome{Ok(value)=>resolve.call1(&JsValue::UNDEFINED,&value),Err(reason)=>reject.call1(&JsValue::UNDEFINED,&reason)};
-     });
+     // A timer that cannot be cleared leaves the wait as it is, as the reaction's own failure did.
+     settled(&decoded,move|outcome|{let _=timer.settle(outcome);});
      Ok(())
     })();
     if let Err(failure)=begun{let _=reject.call1(&JsValue::UNDEFINED,&failure);}
@@ -267,7 +281,7 @@ impl Analysis{
   *self.prepared.borrow_mut()=prepared;
   // One cover at a time, so a whole shelf of new books does not pile up long tasks.
   let host=self.host.clone();
-  let search=Closure::once_into_js(move|_:JsValue|->JsValue{match_title_font(host,gray,width,height,title,near).into()});
+  let search=js_owned(Closure::<dyn FnMut(JsValue)->JsValue>::once(move|_:JsValue|match_title_font(host,gray,width,height,title,near).into()));
   let turn=method(&read(&self.host.0,"turn")?,"then",&[&search])?;
   set(&self.host.0,"turn",&method(&turn,"catch",&[&get(&self.host.0,"noop")])?)?;
   self.then(&turn,|analysis,found|{

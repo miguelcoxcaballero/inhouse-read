@@ -48,10 +48,11 @@ fn call_present(target:&JsValue,name:&str,args:&[&JsValue])->R{
  let function:&Function=function.dyn_ref().ok_or_else(||JsValue::from(js_sys::TypeError::new(&format!("{name} is not a function"))))?;
  function.apply(target,&args.iter().copied().collect::<Array>())?;Ok(())
 }
-/// `setTimeout(() => client.dispose(error), delay)`; the callback holds the client weakly.
+/// `setTimeout(() => client.dispose(error), delay)`; the callback holds the client weakly and belongs to
+/// JavaScript, so a timer cleared by its reply (every request's) is collected instead of kept for the page.
 fn dispose_later(client:&Rc<Client>,delay:f64,message:Option<&'static str>)->R<JsValue>{
  let weak=Rc::downgrade(client);
- let callback=Closure::once_into_js(move||->R{if let Some(client)=weak.upgrade(){client.dispose(message.map(error))?;}Ok(())});
+ let callback=Closure::<dyn FnMut()->R>::once(move||->R{if let Some(client)=weak.upgrade(){client.dispose(message.map(error))?;}Ok(())}).into_js_value();
  set_timeout(&callback,delay)
 }
 
