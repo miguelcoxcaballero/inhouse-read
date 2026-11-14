@@ -1638,7 +1638,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   }
 
-  // Placement previews: 18 numbers per entry, advanced for every entry in one native call.
+  // Placement previews: ten numbers per placed entry, advanced for every entry in one native call.
   let previewBatch = new Float64Array(0);
 
   function updateDropMarker() {
@@ -2825,34 +2825,24 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (disposed) return;
       const placements = new Map((Array.isArray(objects) ? objects : []).map(object => [String(object.key), object]));
       const now = performance.now(), count = bookEntries.length;
-      if (previewBatch.length !== count * 18) previewBatch = new Float64Array(count * 18);
+      if (previewBatch.length < count * 10) previewBatch = new Float64Array(count * 10);
       const io = previewBatch;
+      let used = 0;
       for (let index = 0; index < count; index++) {
-        const entry = bookEntries[index], at = index * 18;
+        const entry = bookEntries[index];
         const objectKey = String(entry.node?.dataset.objectId ?? entry.key);
         const placement = objectKey !== String(draggedKey) ? placements.get(objectKey) : null;
         const row = placement && rows[placement.shelf];
         const center = Number(placement?.center);
-        io[at] = 0;
         if (row && Number.isFinite(center)) {
           const undershelf = entry.kind === 'lamp' && entry.mount === 'undershelf';
-          io[at] = 1; io[at + 1] = row.left || 0; io[at + 2] = undershelf ? row.ceiling ?? row.top : 0; io[at + 3] = row.bottom;
-          io[at + 4] = center; io[at + 5] = entry.x; io[at + 6] = entry.y; io[at + 7] = entry.height; io[at + 8] = undershelf ? 1 : 0;
+          io[used] = index; io[used + 1] = row.left || 0; io[used + 2] = undershelf ? row.ceiling ?? row.top : 0; io[used + 3] = row.bottom;
+          io[used + 4] = center; io[used + 5] = entry.x; io[used + 6] = entry.y; io[used + 7] = entry.height; io[used + 8] = undershelf ? 1 : 0;
+          used += 10;
         }
-        // The preview's eight numbers, as the frame left them in the entry arena.
-        entryFrame.refresh();
-        const state = entryFrame.state, from = entry.row * ENTRY_STATE + 13;
-        for (let field = 0; field < 7; field++) io[at + 9 + field] = state[from + field];
-        io[at + 16] = state[from + 7] !== 0 ? 1 : 0;
       }
-      // The target of each placed object and every offset's easing, in Rust (scene_preview_entries).
-      const changed = rust.scene_preview_entries(io, now, reducedMotion.matches);
-      entryFrame.refresh();
-      for (let index = 0; index < count; index++) {
-        const state = entryFrame.state, to = bookEntries[index].row * ENTRY_STATE + 13, at = index * 18 + 9;
-        for (let field = 0; field < 7; field++) state[to + field] = io[at + field];
-        state[to + 7] = io[at + 7] !== 0 ? 1 : 0;
-      }
+      // The target of each placed object and every offset's easing, over the entry arena's own previews (Rust).
+      const changed = entryFrame.preview(io.subarray(0, used), now, reducedMotion.matches);
       if (changed) invalidate();
     },
     adoptMetadataRecords(previous, records) {
