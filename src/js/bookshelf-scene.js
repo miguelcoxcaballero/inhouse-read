@@ -1384,7 +1384,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         state.set(entry.box, at + 50);
         // The rigid bodies' geometry and bay (and the grip: setObjectGrip).
         const row = rows[entry.shelf || 0] || rows[0] || {};
-        state[at + 40] = kind ? entry.width : entry.thickness; state[at + 41] = undershelf ? 3 : kind;
+        state[at + 40] = kind ? entry.width : entry.thickness;
+        // Kind .5 is a book the reader never placed by hand: the solver treats it as a book (kind 0) that it may
+        // not seed to fall against a pot or lamp.
+        state[at + 41] = undershelf ? 3 : kind || (entry.book && !entry.book.shelfPosition ? .5 : 0);
         state[at + 42] = entry.shelf || 0; state[at + 43] = pixelsPerMetre;
         state[at + 44] = row.left || 0; state[at + 45] = row.right ?? width;
         state[at + 46] = row.bottom ?? entry.y + entry.height / 2;
