@@ -163,6 +163,8 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
  let (config,ort,key,session)=(read(s,"config")?,read(s,"ort")?,read(s,"loaded")?,read(s,"session")?);
  let (phon,hebrew,duration_output,kind)=(read(s,"phon")?,read(s,"hebrew")?,read(s,"durationOutput")?,read(&plan(s)?,"runtimeKind")?);
  if !t(&config)||!t(&ort){return Err(failure("No voice loaded")?);}
+ // The voice module, read once for the whole fragment: its kernels are then called straight from here.
+ let voice=call(&read(kit,"voice")?,"voice",&[])?;
  let live=||->R<bool>{Ok(t(&call(active,"active",&[])?))};
  let supertonic=read(s,"supertonic")?;
  if t(&supertonic){
@@ -174,7 +176,7 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
   let timeline=if timeline.is_undefined(){Array::new().into()}else{timeline};
   if !live()?{return Ok(());}
   if !raw.is_instance_of::<Float32Array>(){return Err(failure("Invalid audio")?);}
-  let done=kernel(kit,"voice_host_finish_supertonic",&[&raw,&text,&timeline,&options(&[("sampleRate",&sample_rate),("rate",&rate)])?])?;
+  let done=method(&voice,"voice_host_finish_supertonic",&[&raw,&text,&timeline,&options(&[("sampleRate",&sample_rate),("rate",&rate)])?])?;
   if !t(&done){return Err(failure("Invalid audio")?);} // a sample that is not a number
   let pcm=if t(&read(&raw,"length")?){read(&done,"pcm")?}else{silence(&sample_rate,120.0)?};
   let ms=n(clock()?-start);
@@ -183,9 +185,9 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
  }
  let phonemize=method(s,"_phonemizer",&[&kind,&hebrew,&phon,&config])?;
  let ids=settle(call(&phonemize,"phonemize",&[&text])?).await?;
- let points=if t(&duration_output){settle(promised(kernel(kit,"voice_host_phoneme_marks",&[&text,&marks,&ids,&phonemize]))).await?}else{Array::new().into()};
+ let points=if t(&duration_output){settle(promised(method(&voice,"voice_host_phoneme_marks",&[&text,&marks,&ids,&phonemize]))).await?}else{Array::new().into()};
  if !live()?{return Ok(());}
- let segments=Array::from(&kernel(kit,"voice_host_split_segments",&[&ids])?);
+ let segments=Array::from(&method(&voice,"voice_host_split_segments",&[&ids])?);
  let sample_rate=read(&read(&config,"audio")?,"sample_rate")?;
  let counts=if segments.length()>0{segments.iter().map(|part|get(&part,"length")).collect::<Array>()}else{Array::of1(&n(0.0))};
  on_plan(handlers,&counts)?;
@@ -194,7 +196,7 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
   method(handlers,"onChunk",&[&chunk(&[("index",&n(0.0)),("last",&JsValue::TRUE),("pcm",&pcm),("sampleRate",&sample_rate),("ms",&n(0.0))])?])?;
   return Ok(());
  }
- let mut base=0.0;
+ let mut base=0.0;let finish=read(&voice,"voice_host_finish_piper")?;
  for index in 0..segments.length(){
   if !live()?{return Ok(());}
   let part=segments.get(index);let start=clock()?;
@@ -202,7 +204,7 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
   if !live()?{return Ok(());}
   let last=index+1==segments.length();let count=num(&get(&part,"length"));
   let shape=options(&[("sampleRate",&sample_rate),("model",&key),("rate",&rate),("last",&JsValue::from_bool(last)),("first",&JsValue::from_bool(index==0)),("base",&n(base)),("count",&n(count))])?;
-  let done=kernel(kit,"voice_host_finish_piper",&[&read(&out,"raw")?,&read(&out,"durations")?,&points,&text,&shape])?;
+  let done=call(&finish,"voice_host_finish_piper",&[&read(&out,"raw")?,&read(&out,"durations")?,&points,&text,&shape])?;
   base+=count;
   let ms=n(clock()?-start);
   method(handlers,"onChunk",&[&chunk(&[("index",&n(f64::from(index))),("last",&JsValue::from_bool(last)),("pcm",&read(&done,"pcm")?),("sampleRate",&sample_rate),("ms",&ms),("marks",&read(&done,"marks")?)])?])?;
