@@ -29,10 +29,15 @@ fn options(pairs:&[(&str,&JsValue)])->R{let o=Object::new();for (key,value) in p
 /// `Promise.reject(error)` when a synchronous host call threw, so it settles like the async function that made it.
 fn promised(result:R)->JsValue{match result{Ok(value)=>value,Err(error)=>Promise::reject(&error).into()}}
 
+/// A kernel of the voice module, which the client's plan awaited before any voice is prepared (`kit.voice()` is it).
+fn kernel(kit:&JsValue,name:&str,args:&[&JsValue])->R{method(&call(&read(kit,"voice")?,"voice",&[])?,name,args)}
+/// `ms` of silence.
+fn silence(sample_rate:&JsValue,ms:f64)->R{construct("Float32Array",&[&n(crate::host::jmax(0.0,js_sys::Math::round(num(sample_rate)*ms/1000.0)))])}
+
 /// The aligned Piper model: the duration output it exposes, and its session on the native executor.
 async fn piper_session(s:&JsValue,ort:&JsValue,model:JsValue,kit:&JsValue)->R{
  let bytes=construct("Uint8Array",&[&model])?;
- let aligned=call(&read(kit,"exposePiperDurations")?,"exposePiperDurations",&[&bytes])?;
+ let aligned=kernel(kit,"voice_host_expose_durations",&[&bytes])?;
  set(s,"durationOutput",&read(&aligned,"name")?)?;
  settle(method(&read(ort,"InferenceSession")?,"create",&[&read(&aligned,"bytes")?])?).await
 }
@@ -59,15 +64,15 @@ async fn prepare(s:JsValue,key:JsValue,generation:JsValue,kit:JsValue)->R{
   // Inference itself yields to the native executor. A microtask between lightweight recipe steps adds no frozen
   // MessageChannel dependency.
   let request=options(&[("ort",&ort),("buffers",&buffers),("config",&read(&config,"config")?),("indexer",&read(&config,"indexer")?),
-   ("styles",&read(&config,"styles")?),("yieldToMessages",&read(&kit,"immediate")?)])?;
-  let runtime=settle(call(&read(&kit,"createSupertonicRuntime")?,"createSupertonicRuntime",&[&request])?).await?;
+   ("styles",&read(&config,"styles")?),("steps",&n(6.0)),("random",&read(&read(&js_sys::global().into(),"Math")?,"random")?),("yieldToMessages",&read(&kit,"immediate")?)])?;
+  let runtime=settle(promised(kernel(&kit,"voice_supertonic_create",&[&request,&kit]))).await?;
   if !current(&s,&generation)?{settle(method(&runtime,"dispose",&[])?).await?;check(&s,&generation)?;}
   set(&s,"supertonic",&runtime)?;
  }else if kind==1.0{
   // Both Hebrew graphs share the single native upload slot.
   let pointing=settle(method(&read(&s,"store")?,"readPhonemizerModel",&[&key])?).await?;check(&s,&generation)?;
   let request=options(&[("ort",&ort),("model",&pointing),("config",&config)])?;
-  let hebrew=settle(call(&read(&kit,"createHebrewPhonemizer")?,"createHebrewPhonemizer",&[&request])?).await?;
+  let hebrew=settle(promised(kernel(&kit,"voice_hebrew_create",&[&request,&kit]))).await?;
   if !current(&s,&generation)?{settle(method(&hebrew,"destroy",&[])?).await?;check(&s,&generation)?;}
   set(&s,"hebrew",&hebrew)?;
   let model=settle(method(&read(&s,"store")?,"readModel",&[&key])?).await?;check(&s,&generation)?;
@@ -93,7 +98,7 @@ async fn prepare(s:JsValue,key:JsValue,generation:JsValue,kit:JsValue)->R{
    eager(async move{
     let model=settle(model).await?;check(&s,&generation)?;
     let bytes=construct("Uint8Array",&[&model])?;
-    let aligned=call(&read(&kit,"exposePiperDurations")?,"exposePiperDurations",&[&bytes])?;
+    let aligned=kernel(&kit,"voice_host_expose_durations",&[&bytes])?;
     set(&s,"durationOutput",&read(&aligned,"name")?)?;
     let made=settle(method(&read(&ort,"InferenceSession")?,"create",&[&read(&aligned,"bytes")?])?).await?;
     *session.borrow_mut()=made;check(&s,&generation)?;Ok(JsValue::UNDEFINED)
@@ -169,23 +174,23 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
   let timeline=if timeline.is_undefined(){Array::new().into()}else{timeline};
   if !live()?{return Ok(());}
   if !raw.is_instance_of::<Float32Array>(){return Err(failure("Invalid audio")?);}
-  let done=call(&read(kit,"finishSupertonic")?,"finishSupertonic",&[&raw,&text,&timeline,&options(&[("sampleRate",&sample_rate),("rate",&rate)])?])?;
+  let done=kernel(kit,"voice_host_finish_supertonic",&[&raw,&text,&timeline,&options(&[("sampleRate",&sample_rate),("rate",&rate)])?])?;
   if !t(&done){return Err(failure("Invalid audio")?);} // a sample that is not a number
-  let pcm=if t(&read(&raw,"length")?){read(&done,"pcm")?}else{call(&read(kit,"silence")?,"silence",&[&sample_rate,&n(120.0)])?};
+  let pcm=if t(&read(&raw,"length")?){read(&done,"pcm")?}else{silence(&sample_rate,120.0)?};
   let ms=n(clock()?-start);
   method(handlers,"onChunk",&[&chunk(&[("index",&n(0.0)),("last",&JsValue::TRUE),("pcm",&pcm),("sampleRate",&sample_rate),("ms",&ms),("marks",&read(&done,"marks")?)])?])?;
   return Ok(());
  }
  let phonemize=method(s,"_phonemizer",&[&kind,&hebrew,&phon,&config])?;
  let ids=settle(call(&phonemize,"phonemize",&[&text])?).await?;
- let points=if t(&duration_output){settle(call(&read(kit,"phonemeMarks")?,"phonemeMarks",&[&text,&marks,&ids,&phonemize])?).await?}else{Array::new().into()};
+ let points=if t(&duration_output){settle(promised(kernel(kit,"voice_host_phoneme_marks",&[&text,&marks,&ids,&phonemize]))).await?}else{Array::new().into()};
  if !live()?{return Ok(());}
- let segments=Array::from(&call(&read(kit,"splitSegments")?,"splitSegments",&[&ids])?);
+ let segments=Array::from(&kernel(kit,"voice_host_split_segments",&[&ids])?);
  let sample_rate=read(&read(&config,"audio")?,"sample_rate")?;
  let counts=if segments.length()>0{segments.iter().map(|part|get(&part,"length")).collect::<Array>()}else{Array::of1(&n(0.0))};
  on_plan(handlers,&counts)?;
  if segments.length()==0{
-  let pcm=call(&read(kit,"silence")?,"silence",&[&sample_rate,&n(120.0)])?;
+  let pcm=silence(&sample_rate,120.0)?;
   method(handlers,"onChunk",&[&chunk(&[("index",&n(0.0)),("last",&JsValue::TRUE),("pcm",&pcm),("sampleRate",&sample_rate),("ms",&n(0.0))])?])?;
   return Ok(());
  }
@@ -197,7 +202,7 @@ async fn synthesize(s:&JsValue,request:&JsValue,handlers:&JsValue,active:&JsValu
   if !live()?{return Ok(());}
   let last=index+1==segments.length();let count=num(&get(&part,"length"));
   let shape=options(&[("sampleRate",&sample_rate),("model",&key),("rate",&rate),("last",&JsValue::from_bool(last)),("first",&JsValue::from_bool(index==0)),("base",&n(base)),("count",&n(count))])?;
-  let done=call(&read(kit,"finishPiper")?,"finishPiper",&[&read(&out,"raw")?,&read(&out,"durations")?,&points,&text,&shape])?;
+  let done=kernel(kit,"voice_host_finish_piper",&[&read(&out,"raw")?,&read(&out,"durations")?,&points,&text,&shape])?;
   base+=count;
   let ms=n(clock()?-start);
   method(handlers,"onChunk",&[&chunk(&[("index",&n(f64::from(index))),("last",&JsValue::from_bool(last)),("pcm",&read(&done,"pcm")?),("sampleRate",&sample_rate),("ms",&ms),("marks",&read(&done,"marks")?)])?])?;

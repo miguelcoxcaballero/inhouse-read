@@ -10,7 +10,7 @@
 // that text is tried once more on the fresh module.
 
 // Frozen pre-Rust lifetime implementation (960e2879), only imports relocated.
-import { fetchDictionary, dictionaryUrl } from '../../../src/js/readers/neural-voice/dictionary-cache.js'
+import { fetchDictionary, dictionaryUrl } from './live-dictionary-cache.js'
 import { loadPhonemizerFactory } from '../../../src/js/readers/neural-voice/phonemizer-assets.js'
 
 /**

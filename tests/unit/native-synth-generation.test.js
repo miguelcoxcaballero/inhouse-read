@@ -1,7 +1,7 @@
 import {beforeEach,expect,it,vi} from 'vitest'
 const factories=vi.hoisted(()=>({supertonic:vi.fn(),hebrew:vi.fn()}))
-vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:factories.supertonic}))
-vi.mock('../../src/js/readers/neural-voice/hebrew.js',()=>({createHebrewPhonemizer:factories.hebrew}))
+// The runtimes are exports of the voice module, which the client calls by name.
+vi.mock('../../src/js/rust-voice-ui.js',async original=>(await import('./helpers/voice-kernel-fakes.js')).withKernels(await original(),{voice_supertonic_create:options=>factories.supertonic(options),voice_hebrew_create:options=>factories.hebrew(options)}))
 // The client's preparation, job chain and synthesis loop are rust-ui: the module is loaded as the reader loads it.
 import './helpers/rust-ui-ready.js'
 import {NativeSynthClient} from '../../src/js/readers/neural-voice/native-client.js'
@@ -41,4 +41,17 @@ it('still reports an unloaded native voice after reuse without downloading or le
  const handlers={onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()};client.synth({text:'No voice.'},handlers);await flush()
  expect(handlers.onError).toHaveBeenCalledOnce();expect(handlers.onError.mock.calls[0][0]).toMatchObject({message:'No voice loaded',code:'synth-failed'})
  expect(client.jobs.size).toBe(0);client.dispose()
+})
+it('asks the voice module for the Supertonic runtime as the page wrapper did and fills an empty utterance with 120 ms of silence',async()=>{
+ const {client}=fixture(),requests=[]
+ factories.supertonic.mockImplementation(async request=>{requests.push(request);return{dispose:vi.fn(),synthesize:async()=>({pcm:new Float32Array(),sampleRate:22051})}})
+ await client.prepare('voice')
+ expect(Object.keys(requests[0])).toEqual(['ort','buffers','config','indexer','styles','steps','random','yieldToMessages'])
+ expect(requests[0].steps).toBe(6);expect(requests[0].random).toBe(Math.random);expect(requests[0].yieldToMessages()).toBeInstanceOf(Promise)
+ const chunks=[],handlers={onChunk:chunk=>chunks.push(chunk),onEnd:vi.fn(),onError:vi.fn(),onPlan:vi.fn()}
+ client.synth({text:'…',voice:'voice',rate:1},handlers);await flush();await flush()
+ expect(handlers.onError).not.toHaveBeenCalled()
+ // Math.round(22051 * 120 / 1000): 2646.12 -> 2646 zero samples, as silence() of the removed synth-flow.js made them.
+ expect(chunks[0].pcm).toBeInstanceOf(Float32Array);expect(chunks[0].pcm.length).toBe(2646);expect(chunks[0].pcm.every(sample=>sample===0)).toBe(true)
+ client.dispose()
 })

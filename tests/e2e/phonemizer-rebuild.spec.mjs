@@ -12,7 +12,7 @@ test('real espeak renews its heap beyond 120 calls offline without fetching its 
     if(name==='index.html')return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Real phonemizer rebuild</title>'})
     if(name==='inhouse_read_voice_ui_bg.wasm')return route.fulfill({contentType:'application/wasm',body:readFileSync(resolve('src/wasm/voice',name))})
     const shared=name==='rust-voice-ui.js',glue=name==='inhouse_read_voice_ui.js'
-    if(!shared&&!glue&&!['phonemizer.js','phonemizer-assets.js','dictionary-cache.js'].includes(name))throw new Error('Unknown phonemizer harness module')
+    if(!shared&&!glue&&!['phonemizer.js','phonemizer-assets.js'].includes(name))throw new Error('Unknown phonemizer harness module')
     let body=readFileSync(resolve(glue?'src/wasm/voice':shared?'src/js':'src/js/readers/neural-voice',name),'utf8')
     // This raw-module fixture performs only the URL rewriting Vite would do;
     // readiness, runtime decisions and the actual voice WASM stay production.

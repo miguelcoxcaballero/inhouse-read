@@ -18,8 +18,8 @@ describe('finite message-task inference yield',()=>{
     expect(order).toEqual(Array.from({length:100},(_,i)=>i));await yieldToMessages()
   })
   it('uses message tasks in both runtimes and waits for actual drain completion without polling',()=>{
-    const worker=readFileSync('src/js/readers/neural-voice/worker.js','utf8'),runtime=readFileSync('src/js/readers/neural-voice/supertonic-runtime.js','utf8'),pages=readFileSync('src/js/readers/speech-page-breaks.js','utf8')
-    for(const source of [worker,runtime,pages]){expect(source).toContain('task-yield.js');expect(source).not.toContain('setTimeout(')}
+    const worker=readFileSync('src/js/readers/neural-voice/worker.js','utf8'),pages=readFileSync('src/js/readers/speech-page-breaks.js','utf8')
+    for(const source of [worker,pages]){expect(source).toContain('task-yield.js');expect(source).not.toContain('setTimeout(')}
     // The waits of a load and of a free for the running job are rust-ui/src/voice_worker.rs since the worker's runtime moved there.
     const rust=readFileSync('rust-ui/src/voice_worker.rs','utf8')
     expect(rust).toContain('while truthy(&get(w, "plan"), "draining") { settled(get(w, "drainDone")).await?; }')

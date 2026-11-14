@@ -9,8 +9,7 @@
 // before a voice module does (the routing of a message that arrives first, `init` with its dynamic imports) and `host`,
 // the state both sides read.
 import { createPhonemizer } from './phonemizer.js'
-import { createHebrewPhonemizer } from './hebrew.js'
-import { createSupertonicRuntime } from './supertonic-runtime.js'
+import { supertonicNoise } from './supertonic-plan.js'
 import { yieldToMessages } from './task-yield.js'
 import { VoiceClientPlan } from './client-plan.js'
 import { loadedRustVoiceUI } from '../../rust-voice-ui.js'
@@ -23,8 +22,13 @@ const post = (message, transfer = []) => self.postMessage(message, transfer)
 const stage = (domain, stage, id, part = 0) => { if (plan.pointer ? plan.diagnostics : bootstrapDiagnostics) post({type:'stage',domain,stage,id,part}) }
 // `jobs`: host message handles; admission, FIFO and cancellation are Rust. The text -> phoneme ids of the loaded voice
 // are Nakdimon + the Hebrew rules, or espeak.
+// The Hebrew phonemizer and the Supertonic runtime are the voice module's (voice_hebrew.rs, voice_supertonic.rs): `kit`
+// hands them the random noise with the browser's Math.log/Math.cos; six steps kept the tested intelligibility under 1 RTF.
+const kit = { noise: supertonicNoise, always: () => true, noop() {} }
 const host = {
-  plan, post, stage, yieldToMessages, createPhonemizer, createHebrewPhonemizer, createSupertonicRuntime, noop() {}, jobs: new Map(),
+  plan, post, stage, yieldToMessages, createPhonemizer, noop() {}, jobs: new Map(),
+  createHebrewPhonemizer: options => loadedRustVoiceUI().voice_hebrew_create(options, kit),
+  createSupertonicRuntime: options => loadedRustVoiceUI().voice_supertonic_create({ ...options, steps: 6, random: Math.random, yieldToMessages }, kit),
   ort: null, phonemizer: null, phonBase: null, hebrew: null, supertonic: null, session: null, config: null, voice: null, durationOutput: null,
   loadChain: Promise.resolve(), drainDone: Promise.resolve(),
   phonemize: async value => loadedRustVoiceUI().voice_host_limit_ids(plan.runtimeKind === 1 ? await host.hebrew.phonemize(value) : await host.phonemizer.phonemize(value, host.config.espeak.voice), host.config.num_symbols)
