@@ -1545,11 +1545,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const resetHit = entry.written?.node !== node;
         if (resetHit) entry.written = { node };
         // Without a surface the stand-in box goes under the entry's own placed matrix (32).
-        // 64: the room shows its model (a plant's foliage takes no taps over it).
+        // 64: the room shows its model, as set above (a plant's foliage takes no taps over it).
         hits[h] = 1 | (undershelf ? 2 : 0) | (node.disabled || node.inert ? 4 : 0) | (resetHit ? 8 : 0) |
-          (!plant && !semanticCovers.has(node) ? 16 : 0) | placed | (entry.model?.visible ? 64 : 0);
+          (!plant && !semanticCovers.has(node) ? 16 : 0) | placed | (entry.model && modelVisible ? 64 : 0);
         hits[h + 1] = entry.bits;
-      } else hits[h] = entry.model?.visible ? 64 : 0;
+      } else hits[h] = entry.model && modelVisible ? 64 : 0;
       if (entry.insertion) {
         insertedIds.push(String(entry.book?.id ?? ''));
         overlaying ||= Boolean(entry.insertion.overlayCanvas);
