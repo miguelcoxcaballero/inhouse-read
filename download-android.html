@@ -27,10 +27,10 @@
       if (isFinite(top) && top >= 0 && top < 200) document.documentElement.style.setProperty('--ihr-safe-top', top + 'px')
     } catch { /* Navegador o APK anterior: env(). */ }
   </script>
-  <script type="module" crossorigin src="/inhouse-read/assets/androidDownload-HJ4t2vXu.js"></script>
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-ngl1FyFA.js">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-DIqaOcRq.css">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/androidDownload-D7DwbcZ_.css">
+  <script type="module" crossorigin src="/inhouse-read/assets/androidDownload-CijoqWwG.js"></script>
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-C8NeUL7h.js">
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-C3U25Qiw.css">
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/androidDownload-CpZmvn7k.css">
 </head>
 <body>
   <div class="dl-page">
@@ -55,7 +55,12 @@
       </section>
 
       <section class="dl-card" id="release-card" aria-live="polite">
-        <p class="dl-status">Buscando versión…</p>
+        <!-- Until the latest version answers: blocks where its tag, button, file name and link will be. -->
+        <p class="visually-hidden" role="status">Buscando versión…</p>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--version" aria-hidden="true"></span>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--button" aria-hidden="true"></span>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--file" aria-hidden="true"></span>
+        <span class="ihr-skeleton dl-skeleton dl-skeleton--link" aria-hidden="true"></span>
       </section>
 
       <section class="dl-alt">

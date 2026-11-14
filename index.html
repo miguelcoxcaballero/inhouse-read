@@ -85,7 +85,7 @@
   </script>
   <!-- The live shelf's pointer controllers (swipe, pinch zoom): a small module compiled with the page
        head. The first shelf render awaits it; rust-shelf.js adopts the compiled module once. -->
-  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-DAn-HVEV.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_shelf_bg-XwoTbZkv.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -138,7 +138,7 @@
     // shell signs in natively (PKCE), so its WebView skips downloading and
     // running the library while the shelf is starting.
     // It is a third-party script of its own to download and run, so it waits
-    // until the page has loaded and the browser is idle (the Drive button says
+    // until the page has loaded and the browser is idle (connecting says
     // "Google está cargando" if somebody is quicker than that).
     if (!/\bInhouseReadApp\/\d/i.test(navigator.userAgent)) {
       const loadGsi = () => {
@@ -152,13 +152,13 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-CWtWOslz.js"></script>
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-ngl1FyFA.js">
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-aUKBhb47.js">
+  <script type="module" crossorigin src="/inhouse-read/assets/main-D9tFN_L8.js"></script>
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-C8NeUL7h.js">
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/shelf-launch-cache-Bs3BO1x7.js">
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-5T8MLxyM.js">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-DIqaOcRq.css">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-CIcPt7sp.css">
-  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-DBegnM70.js"></script>
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-C3U25Qiw.css">
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-sG4_R4Be.css">
+  <script type="module" crossorigin src="/inhouse-read/assets/shelf-launch-C_YBpnd-.js"></script>
 </head>
 <body>
   <script>
@@ -190,7 +190,7 @@
             <path d="M15 18l-6-6 6-6"/>
           </svg>
         </button>
-        <span class="reader-heading-copy"><span id="reader-top-title">Abriendo libro…</span><small id="reader-top-byline"></small></span>
+        <span class="reader-heading-copy"><span id="reader-top-title" aria-busy="true">Abriendo libro…</span><small id="reader-top-byline"></small></span>
         <div class="reader-heading-actions" aria-label="Herramientas del libro">
           <button class="streak-chip" type="button" data-streak-chip data-state="idle" aria-label="Racha de lectura"></button>
           <button id="reader-search-shortcut" class="icon-btn" type="button" aria-label="Buscar en el libro" title="Buscar en el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></button>
@@ -230,7 +230,7 @@
             <label class="drive-theme-row" for="reading-focus-toggle" data-reading-focus-setting hidden><span>Sin avisos al leer</span><input id="reading-focus-toggle" type="checkbox" aria-label="Ocultar las notificaciones emergentes del móvil mientras lees" aria-describedby="reading-focus-hint" /></label>
             <p id="reading-focus-hint" class="drive-setting-hint" hidden>Activa Inhouse Read en «Acceso a No molestar» de Android y vuelve.</p>
             <label class="drive-theme-row" for="widget-book-toggle" data-widget-book-setting hidden><span>Libro en el widget</span><input id="widget-book-toggle" type="checkbox" checked aria-label="Mostrar en el widget la portada y el tiempo que queda del último libro" /></label>
-            <p id="drive-sync-status" class="drive-sync-status" role="status" aria-live="polite">Conectado</p>
+            <p id="drive-sync-status" class="drive-sync-status" role="status" aria-live="polite"></p>
             <div class="drive-profile-actions">
               <button id="drive-sync-btn" class="drive-menu-btn" type="button" aria-label="Sincronizar ahora">Sincronizar</button>
               <button data-inhouse-update-settings hidden class="drive-menu-btn drive-updates-toggle" type="button" aria-expanded="false" aria-controls="drive-update-settings">Actualizaciones<span aria-hidden="true">⌄</span></button>
@@ -259,7 +259,8 @@
     </section>
 
     <section id="reader-screen" class="screen" data-screen="reader" hidden>
-      <p id="reader-loading" class="reader-loading" role="status" hidden>Abriendo el libro…</p>
+      <!-- The page while the reader's engine loads: bars where its heading and lines will be (.ihr-skeleton, base.css). -->
+      <div id="reader-loading" class="reader-loading" role="status" hidden><span class="visually-hidden">Abriendo el libro…</span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span><span class="ihr-skeleton" aria-hidden="true"></span></div>
       <div id="reader-viewport" class="reader-viewport" tabindex="-1"></div>
       <div id="reader-toolbar" class="reader-toolbar">
         <button id="reader-prev" class="icon-btn" type="button" aria-label="Página anterior">
@@ -284,7 +285,6 @@
   <div id="drive-upload-screen" class="drive-upload-screen" role="status" aria-live="polite" aria-busy="false" hidden>
     <div class="drive-upload-card">
       <span class="drive-upload-spinner" aria-hidden="true"></span>
-      <p class="drive-upload-brand">inhouse read</p>
       <h1 id="drive-upload-title">Subiendo a Google Drive</h1>
       <p id="drive-upload-book" class="drive-upload-book"></p>
       <div class="drive-upload-track" aria-hidden="true"><span></span></div>
