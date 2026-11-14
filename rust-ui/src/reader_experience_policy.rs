@@ -1,6 +1,6 @@
 //! Reader experience coordination after requireRustUI has completed. Browser
 //! callbacks retain their original identities; book/session decisions live here.
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::{future_to_promise, JsFuture};
 use js_sys::{Array, Object, Promise, Reflect, Symbol};
 use crate::host::*;
@@ -29,6 +29,35 @@ fn greater(value:&JsValue,boundary:f64,inclusive:bool)->R<bool>{
 fn concat(prefix:&str,values:&[&JsValue])->R<JsValue>{method(&prefix.into(),"concat",values)}
 fn resolved(value:&JsValue)->R<JsValue>{method(&read(&global(),"Promise")?,"resolve",&[value])}
 fn promise(value:JsValue)->R<Promise>{Ok(resolved(&value)?.unchecked_into())}
+thread_local!{static NOOP:Closure<dyn FnMut(JsValue)>=Closure::new(|_|{});}
+fn noop()->JsValue{NOOP.with(|function|function.as_ref().clone())}
+/// `ui[name].bind(null, ...head)`: a callback the page owns, answered by this module when it runs. What
+/// it is called with follows `head`; an export reads as many arguments as it declares and no more.
+pub(crate) fn bound(ui:&JsValue,name:&str,head:&[&JsValue])->R<js_sys::Function>{
+ let export=read(ui,name)?;let args=Array::new();args.push(&JsValue::NULL);for value in head{args.push(value);}
+ Ok(Reflect::apply(read(&export,"bind")?.unchecked_ref(),&export,&args)?.unchecked_into())
+}
+/// `places.map(place => place.label || host.label(place))`.
+fn place_labels(host:&JsValue,places:&JsValue,ui:&JsValue)->R<JsValue>{
+ let Some(list)=places.dyn_ref::<Array>()else{return method(places,"map",&[bound(ui,"reader_experience_place_label",&[host])?.as_ref()]);};
+ let labels=Array::new_with_length(list.length());
+ for index in 0..list.length(){if Reflect::has(list,&index.into())?{labels.set(index,reader_experience_place_label(host,&list.get(index))?);}}
+ Ok(labels.into())
+}
+/// `current => host.actions.returnToReading(place, current)`, the step a return waits in the queue as.
+#[wasm_bindgen]
+pub fn reader_experience_return_action(host:&JsValue,place:&JsValue,current:&JsValue)->R<JsValue>{method(&read(host,"actions")?,"returnToReading",&[place,current])}
+/// `href => host.jump(null, href)`, a line of the table of contents.
+#[wasm_bindgen]
+pub fn reader_experience_toc_jump(host:&JsValue,href:&JsValue)->R<JsValue>{method(host,"jump",&[&JsValue::NULL,href])}
+/// `async index => reader_experience_remove_place(host, name, places, index)`: a failure to start is a rejection.
+#[wasm_bindgen]
+pub fn reader_experience_remove_later(host:JsValue,name:JsValue,places:JsValue,index:JsValue)->Promise{
+ match reader_experience_remove_place(host,name,places,index){Ok(pending)=>Promise::resolve(&pending),Err(error)=>Promise::reject(&error)}
+}
+/// `() => URL.revokeObjectURL(url)`.
+#[wasm_bindgen]
+pub fn reader_revoke_url(url:&JsValue)->R<()>{method(&read(&global(),"URL")?,"revokeObjectURL",&[url]).map(drop)}
 fn preferences(normalize:&JsValue)->R<JsValue>{
  crate::reading_preferences_policy::stored(normalize)
 }
@@ -96,11 +125,12 @@ pub fn reader_experience_reset_appearance(host:&JsValue,normalize:&JsValue)->R<(
  let value=call(normalize,"normalizeReadingPreferences",&[&object(&fields)?])?;set(host,"preferences",&value)?;method(host,"applyPreferences",&[])?;Ok(())
 }
 #[wasm_bindgen]
-pub fn reader_experience_open(host:&JsValue,record:&JsValue,kit:&JsValue)->R<JsValue>{
+pub fn reader_experience_open(host:&JsValue,record:&JsValue,ui:&JsValue)->R<JsValue>{
  set(host,"lengthMetadata",record)?;let pending=method(&read(host,"lifecycle")?,"open",&[record])?;
  let epoch=read(&read(host,"reader")?,"epoch")?;
  if !truthy(&read(record,"wordCountComplete")?)&&truthy(&read(&read(host,"reader")?,"getLengthMetadata")?){
-  let count=method(&read(host,"reader")?,"getLengthMetadata",&[])?;method(kit,"metadata",&[host,&count,record,&epoch])?;
+  let count=method(&read(host,"reader")?,"getLengthMetadata",&[])?;// Promise.resolve(count).then(metadata => reader_experience_metadata(host, record, epoch, metadata)).catch(() => {})
+  let then=bound(ui,"reader_experience_metadata",&[host,record,&epoch])?;method(&method(&resolved(&count)?,"then",&[then.as_ref()])?,"catch",&[&noop()])?;
  }
  Ok(pending)
 }
@@ -167,15 +197,15 @@ pub fn reader_experience_bookmark(host:&JsValue,marked:&JsValue)->R<()>{
 #[wasm_bindgen]
 pub fn reader_experience_current(host:&JsValue,book:&JsValue,generation:&JsValue)->R<bool>{Ok(read(host,"book")?==*book&&read(&read(host,"navigation")?,"generation")?==*generation)}
 #[wasm_bindgen]
-pub fn reader_experience_queue(host:&JsValue,action:&JsValue,kit:&JsValue)->R<JsValue>{
+pub fn reader_experience_queue(host:&JsValue,action:&JsValue,ui:&JsValue)->R<JsValue>{
  if !truthy(&read(host,"book")?){return resolved(&JsValue::UNDEFINED);}
  let book=read(host,"book")?;let generation=read(&read(host,"navigation")?,"generation")?;
- let check=method(kit,"current",&[host,&book,&generation])?;method(&read(host,"navigation")?,"enqueue",&[action,&check])
+ let check:JsValue=bound(ui,"reader_experience_current",&[host,&book,&generation])?.into();method(&read(host,"navigation")?,"enqueue",&[action,&check])
 }
 #[wasm_bindgen]
-pub fn reader_experience_return(host:&JsValue,index:&JsValue,kit:&JsValue)->R<JsValue>{
+pub fn reader_experience_return(host:&JsValue,index:&JsValue,ui:&JsValue)->R<JsValue>{
  let place=Reflect::get(&read(host,"history")?,index)?;if !truthy(&place){return resolved(&JsValue::UNDEFINED);}
- let action=method(kit,"returnAction",&[host,&place])?;method(host,"queueNavigation",&[&action])
+ let action:JsValue=bound(ui,"reader_experience_return_action",&[host,&place])?.into();method(host,"queueNavigation",&[&action])
 }
 #[wasm_bindgen]
 pub fn reader_experience_page_step(host:&JsValue,direction:&JsValue)->R<JsValue>{let next=greater(direction,0.0,false)?;method(&read(host,"reader")?,if next{"next"}else{"prev"},&[])}
@@ -196,18 +226,18 @@ pub fn reader_experience_remove_place(host:JsValue,name:JsValue,places:JsValue,i
  Ok(future_to_promise(async move{JsFuture::from(pending).await?;method(&host,"renderPlaces",&[])?;Ok(JsValue::UNDEFINED)}).into())
 }
 #[wasm_bindgen]
-pub fn reader_experience_places(host:&JsValue,kit:&JsValue)->R<()>{
+pub fn reader_experience_places(host:&JsValue,ui:&JsValue)->R<()>{
  method(host,"updateBookmarkButton",&[])?;method(host,"updateReturnButton",&[])?;
  let mut groups=Vec::new();for name in ["history","bookmarks","quotes"]{groups.push((JsValue::from_str(name),read(host,name)?));}
  for(name,places)in groups{
-  let labels=method(kit,"labels",&[host,&places])?;let select=method(kit,"select",&[host,&name])?;let remove=method(kit,"remove",&[host,&name,&places])?;let icon:JsValue=crate::reader_markup::icon("close").into();
+  let labels=place_labels(host,&places,ui)?;let select:JsValue=bound(ui,"reader_experience_select_place",&[host,&name])?.into();let remove:JsValue=bound(ui,"reader_experience_remove_later",&[host,&name,&places])?.into();let icon:JsValue=crate::reader_markup::icon("close").into();
   method(&read(host,"lists")?,"renderPlaces",&[&name,&places,&labels,&select,&remove,&icon])?;
  }
  Ok(())
 }
 #[wasm_bindgen]
-pub fn reader_experience_toc(host:&JsValue,kit:&JsValue)->R<()>{
- let toc=read(&read(host,"reader")?,"toc")?;let jump=method(kit,"toc",&[host])?;
+pub fn reader_experience_toc(host:&JsValue,ui:&JsValue)->R<()>{
+ let toc=read(&read(host,"reader")?,"toc")?;let jump:JsValue=bound(ui,"reader_experience_toc_jump",&[host])?.into();
  let available=method(&read(host,"lists")?,"renderToc",&[&toc,&jump])?;
  method(host,"showPlaceTab",&[&if truthy(&available){JsValue::from_str("toc")}else{"bookmarks".into()}])?;Ok(())
 }
@@ -238,7 +268,7 @@ pub fn reader_experience_rotate(host:JsValue)->R<JsValue>{
 }
 fn share_failure(host:&JsValue,error:&JsValue)->R<()>{if read(error,"name")?!=JsValue::from_str("AbortError"){method(host,"error",&[&"No se pudo compartir.".into()])?;}Ok(())}
 #[wasm_bindgen]
-pub fn reader_experience_share(host:JsValue,kit:&JsValue)->R<JsValue>{
+pub fn reader_experience_share(host:JsValue,kit:&JsValue,ui:&JsValue)->R<JsValue>{
  let content=optional(&read(&host,"book")?,"content")?;
  if !truthy(&content){method(&host,"error",&[&"Archivo original no disponible.".into()])?;return resolved(&JsValue::UNDEFINED);}
  // Creating the File was outside the original try/catch too: preserve its
@@ -266,7 +296,7 @@ pub fn reader_experience_share(host:JsValue,kit:&JsValue)->R<JsValue>{
   let url=method(&read(&global(),"URL")?,"createObjectURL",&[&file])?;
   let link=method(&read(&global(),"document")?,"createElement",&[&"a".into()])?;
   set(&link,"href",&url)?;set(&link,"download",&read(&file,"name")?)?;method(&link,"click",&[])?;
-  set_timeout(&method(kit,"revoker",&[&url])?,30000.0)?;
+  set_timeout(bound(ui,"reader_revoke_url",&[&url])?.as_ref(),30000.0)?;
   method(&read(&host,"panel")?,"close",&[])?;Ok(None)
  })();
  match start{

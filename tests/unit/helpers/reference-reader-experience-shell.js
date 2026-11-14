@@ -1,0 +1,95 @@
+// FROZEN copy of src/js/readers/reader-experience.js as it was before its constructor, jump and step moved to
+// rust-ui (experience_shell.rs, experience_methods.rs). It is the reference of reader-experience-shell.test.js:
+// do not edit it to follow the production class.
+import {readerUI,rustMethods} from '../../../src/js/readers/rust-ui-required.js'
+import {ReaderChrome} from '../../../src/js/readers/reader-chrome.js'
+import {ReaderLifecycle} from '../../../src/js/readers/reader-lifecycle.js'
+import {VoiceFlow} from '../../../src/js/readers/voice-flow.js'
+import {PreferenceFlow} from '../../../src/js/readers/preference-flow.js'
+import { normalizeReadingPreferences, rateLabel } from '../../../src/js/readers/reading-preferences.js'
+import * as runtime from '../../../src/js/readers/neural-runtime.js'
+import * as preferences from '../../../src/js/readers/reading-preferences.js'
+import * as state from '../../../src/js/readers/reading-state.js'
+import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
+import { NeuralVoicePicker } from '../../../src/js/readers/neural-picker.js'
+import { ReaderActions } from '../../../src/js/readers/reader-actions.js'
+import { displayBookTitle } from '../../../src/js/book-title.js'
+
+// Promise and callback adapters retain browser/engine identities. The reader
+// chunk is instantiated only after requireRustUI; these never start a load.
+const experienceKit = {
+  title:displayBookTitle, rate:rateLabel,
+  metadata:(host, value, record, epoch) => Promise.resolve(value)
+    .then(metadata => readerUI().reader_experience_metadata(host, record, epoch, metadata)).catch(() => {}),
+  current:(host, book, generation) => () => readerUI().reader_experience_current(host, book, generation),
+  returnAction:(host, place) => current => host.actions.returnToReading(place, current),
+  labels:(host, places) => places.map(place => readerUI().reader_experience_place_label(host, place)),
+  select:(host, name) => (index, place) => readerUI().reader_experience_select_place(host, name, index, place),
+  remove:(host, name, places) => async index => readerUI().reader_experience_remove_place(host, name, places, index),
+  toc:host => href => host.jump(null, href),
+  revoker:url => () => URL.revokeObjectURL(url),
+}
+
+export class ReferenceReaderExperience {
+  chrome = new ReaderChrome(this)
+  lifecycle = new ReaderLifecycle(this)
+  voiceFlow = new VoiceFlow(this)
+  preferenceFlow = new PreferenceFlow(this)
+  actions = new ReaderActions(this)
+  navigation = new (readerUI().RustReaderNavigation)()
+  get navigating() { return this.navigation.navigating }
+
+  constructor(reader, { persist = async () => {}, onLengthMetadata = async () => {} } = {}) {
+    this.reader = reader
+    this.persist = persist
+    this.onLengthMetadata = onLengthMetadata
+    const ui = readerUI()
+    ui.reader_experience_init(this, normalizeReadingPreferences)
+    this.chrome.create()
+    this.view = new ui.RustReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
+    this.lists = new ui.RustReaderLists(this.panel)
+    if (typeof ResizeObserver === 'function') {
+      this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
+      this.miniPlayerResizeObserver.observe(this.miniPlayer)
+      this.returnResizeObserver = new ResizeObserver(() => this.syncReturnLayout())
+      this.returnResizeObserver.observe(this.returnButton)
+    }
+    document.body.append(this.panel)
+    readerUI().reader_experience_selection_init(this)
+    document.addEventListener('selectionchange', () => readerUI().reader_experience_selection_changed(this))
+    window.addEventListener('inhouse-reader-selection',event => readerUI().reader_experience_remember_selection(this,event.detail))
+    this.voice = new ReadingVoice(reader, (state,message) => this.chrome.voiceState(state,message))
+    this.voice.onProgress = () => this.updateReadingMetrics()
+    // The Rust controls hold the experience weakly: it owns them, not the reverse.
+    const self = typeof WeakRef === 'function' ? new WeakRef(this) : { deref:() => this }
+    this.controls = new ui.RustReaderControls(() => self.deref(), this.panel, this.miniPlayer)
+    // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
+    // the downloadable natural voices of the chosen language live at the end of the voice list.
+    this.languageMenu = new ui.RustSelectMenu('Idioma', null, value => this.chooseLanguage(value))
+    this.voiceMenu = new ui.RustSelectMenu('Voz', this.panel.querySelector('[data-neural]'), value => this.setPreference('voice', value))
+    this.panel.querySelector('[data-voice-menus]').append(this.languageMenu.root, this.voiceMenu.root)
+    this.neuralPicker = new NeuralVoicePicker(this)
+    this.populateVoices()
+    const resize = () => this.chrome.resize()
+    window.visualViewport?.addEventListener('resize', resize)
+    window.visualViewport?.addEventListener('scroll', resize)
+    window.addEventListener('resize', resize)
+    this.resizePanel = resize
+  }
+  syncMiniPlayerLayout() { this.view.syncMiniPlayerLayout() }
+  syncReturnLayout() { this.view.syncReturnLayout() }
+  jump(place, target) {
+    return this.queueNavigation(current => this.actions.jump(place,target,current))
+  }
+  step(direction) {
+    // Consult another page without moving the independent audible cursor.
+    return this.queueNavigation(() => this.voice.continueFromPage(() => readerUI().reader_experience_page_step(this,direction)))
+  }
+}
+// Answered by rust-ui experience_methods.rs: what Rust decides (reader_experience_policy.rs) and the hand-offs to
+// the lifecycle, preference and voice flows, actions, view and navigation queue that own the rest.
+rustMethods(ReferenceReaderExperience,'experience_method',`resetAppearance ~rotateReading open relocate readingMetrics updateReadingMetrics label
+ showTab showPlaceTab updateMiniPlayer updateBookmarkButton queueNavigation returnToReading ~shareBook formatSize renderPlaces renderToc
+ updateReturnButton refreshNames closeVoice reset show setSleepChoice setPreference applyPreferences bookLanguage
+ chooseLanguage voiceBase populateVoices error savePlaces cancelNavigation addBookmark addQuote search endSearch`,
+ {experience:experienceKit,runtime,preferences,state})
