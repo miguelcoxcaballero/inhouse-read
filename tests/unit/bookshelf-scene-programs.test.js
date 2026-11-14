@@ -47,6 +47,10 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
+  // The solver settles a saved room inside its first frame within 80 ms of wall time (book_gravity.rs)
+  // and animates what is left: on a loaded machine that budget ran out and the scene painted more
+  // frames than this file counts. The wall clock stands still here, like the frame clock.
+  vi.spyOn(Date, 'now').mockImplementation(() => 0);
   vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation(() => new THREE.Texture());
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
     createImageData:(width, height) => ({ data:new Uint8ClampedArray(width * height * 4) }),

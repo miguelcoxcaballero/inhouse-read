@@ -63,6 +63,10 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(url => new Promise(resolve => downloads.push({ url, finish:() => resolve({ ok:true, blob:async () => new Blob() }) }))));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => decoded));
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
+  // The solver settles a saved room inside its first frame within 80 ms of wall time (book_gravity.rs)
+  // and animates what is left: on a loaded machine that budget ran out and the scene painted more
+  // frames than this file counts. The wall clock stands still here, like the frame clock.
+  vi.spyOn(Date, 'now').mockImplementation(() => 0);
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
     createImageData:(width, height) => ({ data:new Uint8ClampedArray(width * height * 4) }),
     putImageData() {}, drawImage() {}, clearRect() {}, fillRect() {}
