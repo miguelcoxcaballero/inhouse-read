@@ -1,0 +1,2 @@
+import{ac as s,ad as u,ae as a}from"./main-CMduBZQ6.js";import"./updater-C8NeUL7h.js";import"./shelf-launch-cache-BXqcey-p.js";import"./three-5T8MLxyM.js";const r=()=>new Worker(new URL("/inhouse-read/assets/font-score-worker-Cg76NYNI.js",import.meta.url),{type:"module"});async function f(t,{factory:e=r,events:n=globalThis}={}){if(e===r&&typeof Worker!="function")return null;const o=s()||await u().catch(()=>null);return o?o.font_score_open(t,e,n,a):null}export{f as openFontScoreJob};
+//# sourceMappingURL=font-score-client-DI_kObLH.js.map
