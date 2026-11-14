@@ -3,7 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {rustPrepareCoverPixels} from '/inhouse-read/src/js/font-glyph-wasm.js';
+import {rustPrepareCoverPixels} from '/inhouse-read/tests/unit/helpers/reference-font-glyph-wasm.js';
 import {referencePrepare} from '/inhouse-read/tests/unit/helpers/reference-cover-preparation.js';
 const core=await loadRustCore();if(!core?.font_prepare_pixels)throw Error('Actual cover preparation required');
 window.checkPreparation=()=>{
