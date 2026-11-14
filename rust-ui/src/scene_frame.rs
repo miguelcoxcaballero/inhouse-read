@@ -19,7 +19,7 @@ fn boxed(values:&[f64])->Option<Box3>{
  Some(Box3{min:[values[0],values[1],values[2]],max:[values[3],values[4],values[5]]})
 }
 fn put(out:&mut [f64],values:&[f64]){for (slot,value) in out.iter_mut().zip(values){*slot=*value;}}
-fn fixed(value:f64,digits:u8)->String{js_sys::Number::from(value).to_fixed(digits).ok().and_then(|text|text.as_string()).unwrap_or_default()}
+pub(crate) fn fixed(value:f64,digits:u8)->String{js_sys::Number::from(value).to_fixed(digits).ok().and_then(|text|text.as_string()).unwrap_or_default()}
 
 /// One frame of a book's flight into the bin on the bounded clock: the clock after the frame, how
 /// far the flight is (`t`), the lid's opening and its bounce. `out = [elapsed, last frame, t, openness, bounce]`.
@@ -52,14 +52,17 @@ pub fn scene_trash_overflow(right:f64,scene_width:f64,t:f64,out:&mut [f64]){
 /// the world places of both, radius and height.
 #[wasm_bindgen]
 pub fn scene_trash_texts(position:&[f64],scale:f64,rotation:&[f64],foot_y:f64,floor_y:f64,foot_world:&[f64],floor_world:&[f64],radius:f64,height:f64)->Array{
- let three=|v:&[f64]|format!("{},{},{}",fixed(v[0],6),fixed(v[1],6),fixed(v[2],6));
  let texts=Array::new();
  if position.len()<3||rotation.len()<3||foot_world.len()<3||floor_world.len()<3{return texts;}
- for text in [three(position),fixed(scale,6),format!("{},{},{}",number_string(rotation[0]),number_string(rotation[1]),number_string(rotation[2])),
-  fixed(foot_y,6),fixed(floor_y,6),three(foot_world),three(floor_world),number_string(radius),number_string(height)]{
-  texts.push(&JsValue::from_str(&text));
- }
+ for text in trash_strings(position,scale,rotation,foot_y,floor_y,foot_world,floor_world,radius,height){texts.push(&JsValue::from_str(&text));}
  texts
+}
+/// `scene_trash_texts` as text (every slice holds three numbers).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn trash_strings(position:&[f64],scale:f64,rotation:&[f64],foot_y:f64,floor_y:f64,foot_world:&[f64],floor_world:&[f64],radius:f64,height:f64)->[String;9]{
+ let three=|v:&[f64]|format!("{},{},{}",fixed(v[0],6),fixed(v[1],6),fixed(v[2],6));
+ [three(position),fixed(scale,6),format!("{},{},{}",number_string(rotation[0]),number_string(rotation[1]),number_string(rotation[2])),
+  fixed(foot_y,6),fixed(floor_y,6),three(foot_world),three(floor_world),number_string(radius),number_string(height)]
 }
 
 #[wasm_bindgen]

@@ -264,6 +264,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // The camera framing, the turn between the views, the inspection zoom and pan and the drop guide's place
   // live in Rust (rust-ui/src/scene_view.rs); the sizes are the same ones this closure keeps for its objects.
   const sceneView = new rust.RustScene(width, height, sceneWidth, depth, shelfType === 'baggebo', mode === 'isometric', scroller.scrollTop);
+  // The view's and the bin's diagnostics reach the canvas and the bin's node from Rust, when they change (rust-ui/src/scene_shown.rs).
+  sceneView.shows(canvas.dataset); sceneView.labels(shelfType, SHELF_DIMENSIONS[shelfType]);
   let bookGravity = new rust.RustBookGravity();
   const roomMotion = new rust.RustRoomMotion();
   const roomTransition = new rust.RustRoomTransition();
@@ -574,18 +576,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let inspectionDirtyCount = 0;
   let compositorFrames = 0;
   let trashWritten = null, catalogWritten = null;
-  // The bin's data as last written to its node, how many entries are falling into it, and the
-  // numbers its box on screen was last taken from (see updateTrash).
-  const binShown = new Map(), binNow = new Float64Array(27), binHeld = new Float64Array(27);
+  // How many entries are falling into the bin, and the numbers its box on screen was last taken from (see updateTrash).
+  const binNow = new Float64Array(27), binHeld = new Float64Array(27);
   const binNowBits = new Uint32Array(binNow.buffer), binHeldBits = new Uint32Array(binHeld.buffer);
   let trashDrops = 0, binStale = true;
   const trashBox = new THREE.Box3(), footPoint = new THREE.Vector3(), floorPoint = new THREE.Vector3();
   const trashOriginalStates = new Map();
   function rememberTrashNode(node) {
+    sceneView.binShows(node?.dataset);
     if (node && !trashOriginalStates.has(node)) trashOriginalStates.set(node, rust.scene_remember_node(node, true));
   }
   function restoreTrashNode(node) {
-    binShown.clear();
     const original = trashOriginalStates.get(node);
     if (!original) return;
     if (trashWritten?.node === node) trashWritten = null;
@@ -860,18 +861,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     trashDrops--;
     rust.scene_cancel_trash_drop(entry, restore, furniture, trashNode, canvas);
     // It removed the drop's diagnostics from the canvas and from the bin's node.
-    for (const key of ['trashDropProgress', 'trashingBookId', 'trashingObjectId', 'trashingObjectKind']) shownData.delete(key);
-    binShown.delete('trashDropProgress'); binShown.delete('dropProgress');
+    for (const key of ['trashingBookId', 'trashingObjectId', 'trashingObjectKind']) shownData.delete(key);
+    sceneView.dropUnshown();
   }
-
-  // The bin's diagnostics are mirrored on its semantic node and on the canvas. Like the canvas'
-  // (shownData), the node's are remembered as this scene last wrote them: nothing else writes them.
-  const binData = (key, value) => { if (binShown.get(key) !== value) { binShown.set(key, value); setData(trashNode, key, value); } };
-  const trashData = (key, value) => { binData(key, value); showData(key, value); };
 
   const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
   const scrollerClip = new Float64Array(4), trashRect0 = {}, trashNumbers = new Float64Array(17);
-  let trashTexts = null, viewTexts = null;
+  let viewTexts = null;
   // What the bin's box on screen was last taken from: its lid's opening, the room's world matrix
   // and its own place, turn and size (`binHeld`).
   function binStands(openness) {
@@ -889,12 +885,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return false;
   }
   function updateTrash(scroll, now, finishedDrops) {
-    if (!trash || !trashNode) {
-      for (const key of ['trash3d', 'trashHover', 'trashVisible', 'trashViewHidden', 'trashLocalPosition', 'trashLocalScale',
-        'trashLocalRotation', 'trashFootY', 'cabinetFloorY', 'trashCameraInFrame', 'trashFootWorld', 'floorContactWorld'])
-        hideData(key);
-      return false;
-    }
+    if (!trash || !trashNode) { sceneView.trashUnshown(); return false; }
     const scrollerBounds = frameLayout.scroller;
     // Read with the frame's other geometry (viewport()): reading the visual viewport after the
     // entries restyled their buttons would force a second layout of the page in every frame.
@@ -936,9 +927,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           dropEntry.model.updateMatrixWorld(true);
         }
       }
-      const value = t.toFixed(4);
-      binData('trashDropProgress', value); binData('dropProgress', value);
-      showData('trashDropProgress', value);
+      sceneView.dropShown(t.toFixed(4));
       showData('trashingBookId', String(dropEntry.book?.id ?? ''));
       showData('trashingObjectId', String(dropEntry.node?.dataset.objectId ?? dropEntry.key));
       showData('trashingObjectKind', dropEntry.kind === 'plant' || dropEntry.kind === 'lamp' ? dropEntry.kind : 'book');
@@ -963,7 +952,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const stageBounds = frameLayout.stage;
     scrollerClip[0] = scrollerBounds.left; scrollerClip[1] = scrollerBounds.top; scrollerClip[2] = scrollerBounds.right; scrollerClip[3] = scrollerBounds.bottom;
     sceneView.trashFrame(trashPacked, scroll, stageBounds.left, stageBounds.top, scrollerClip, frameLayout.innerWidth, frameLayout.innerHeight, visualBottom, trashOut);
-    const visible = trashOut[0] === 1, inFrame = trashOut[1] === 1;
+    const visible = trashOut[0] === 1;
     if (trashNode.hidden !== !visible) trashNode.hidden = !visible;
     if (trashNode.inert !== !visible) trashNode.inert = !visible;
     const tabIndex = String(visible ? 0 : -1), ariaHidden = String(!visible);
@@ -980,12 +969,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // setMode also writes pointer-events on this node, so compare the live value.
     const events = visible ? 'auto' : 'none';
     if (style.pointerEvents !== events) style.pointerEvents = events;
-    const hover = String(sceneView.trashHover);
-    binData('trash3d', 'true');
-    binData('trashVisible', String(visible)); binData('trashViewHidden', String(viewHidden));
-    binData('trashHover', hover); binData('hover', hover);
-    showData('trash3d', 'true'); showData('trashHover', hover);
-    showData('trashVisible', String(visible)); showData('trashViewHidden', String(viewHidden));
     const footY = trash.position.y + trashBounds.min.y * trash.scale.y;
     const footWorld = furniture.localToWorld(footPoint.set(trash.position.x, footY, trash.position.z));
     const floorContact = furniture.localToWorld(floorPoint.set(trash.position.x, floorY, trash.position.z));
@@ -993,15 +976,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     n[0] = position.x; n[1] = position.y; n[2] = position.z; n[3] = trash.scale.x; n[4] = rotation.x; n[5] = rotation.y; n[6] = rotation.z;
     n[7] = footY; n[8] = floorY; n[9] = footWorld.x; n[10] = footWorld.y; n[11] = footWorld.z;
     n[12] = floorContact.x; n[13] = floorContact.y; n[14] = floorContact.z; n[15] = trash.userData.radius; n[16] = trash.userData.height;
-    // Formatted again only when one of the numbers moved; the texts held are written otherwise.
-    const texts = trashTexts = sceneView.trashTexts(n) || trashTexts;
-    trashData('trashLocalPosition', texts[0]);
-    trashData('trashLocalScale', texts[1]); trashData('trashLocalRotation', texts[2]);
-    trashData('trashFootY', texts[3]); trashData('cabinetFloorY', texts[4]);
-    trashData('trashCameraInFrame', String(inFrame));
-    trashData('trashFootWorld', texts[5]);
-    trashData('floorContactWorld', texts[6]);
-    trashData('trashRadius', texts[7]); trashData('trashHeight', texts[8]);
+    // Formatted and written to the node and the canvas only when a number or a state they show moved.
+    sceneView.trashShown(n, visible, trashOut[1] === 1);
     return moving;
   }
 
@@ -1234,8 +1210,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     let rooftop = -Infinity;
     for (const entry of bookEntries) if (entry.rooftop) rooftop = Math.max(rooftop, -entry.y + entry.height / 2);
     if (trash) packBin();
-    // The diagnostics are formatted again only when a number they show moved; the texts held are written otherwise.
-    const texts = viewTexts = sceneView.transformFresh(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
+    // The diagnostics are formatted and written only when a number they show moved; the four the
+    // finger-following image also writes are handed over then, and held otherwise.
+    const texts = viewTexts = sceneView.transformShown(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
     // The fitted room: turned, scaled and placed as the Rust view decided.
     furniture.rotation.set(viewFrame[1], viewFrame[0], 0); furniture.scale.setScalar(viewFrame[2]);
     furniture.position.set(viewFrame[3], viewFrame[4], 0);
@@ -1244,20 +1221,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // each entry updates its new pose and the renderer walks the scene again.
     furniture.updateWorldMatrix(false, false);
     stage.style.height = `${viewFrame[6]}px`;
-    showData('shelfView', texts[0]);
-    showData('viewProgress', texts[1]);
-    showData('yaw', texts[2]);
-    showData('pitch', texts[3]);
-    showData('zoom', texts[4]);
-    showData('inspectionZoom', texts[5]);
-    showData('inspectionMoving', texts[6]);
-    showData('inspectionPan', texts[7]);
-    showData('cabinetWidth', texts[8]); showData('trashReserve', texts[9]);
-    showData('shelfType', shelfType);
-    showData('shelfUnits', texts[10]);
-    showData('shelfDimensions', SHELF_DIMENSIONS[shelfType]);
-    showData('sceneFitHeight', texts[11]); showData('floorVisible', texts[12]);
-    showData('fullCabinetInFrame', texts[13]);
+    showData('zoom', texts[0]); showData('inspectionZoom', texts[1]); showData('inspectionMoving', texts[2]); showData('inspectionPan', texts[3]);
     inverseRotation.copy(furniture.quaternion).invert();
     return viewFrame[2];
   }
@@ -2981,7 +2945,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         stage = next.stage; stagePixelOffset = 0;
       }
       width = next.width; height = next.height; rows = next.rows;
-      shelfType = normalizeShelfType(next.shelfType);
+      shelfType = normalizeShelfType(next.shelfType); sceneView.labels(shelfType, SHELF_DIMENSIONS[shelfType]);
       unitWidth = next.unitWidth || width; unitCount = next.unitCount || 1;
       depth = specDepth();
       sceneWidth = Math.max(1, Number(next.sceneWidth) || width);
