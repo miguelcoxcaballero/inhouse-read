@@ -8,7 +8,11 @@ const root=resolve(process.cwd());
 const fixtureRoot=process.env.IHR_COLD_FIXTURE_ROOT;
 if (!fixtureRoot || !isAbsolute(fixtureRoot)) throw new Error('IHR_COLD_FIXTURE_ROOT must be the fresh absolute directory owned by this test.');
 const outDir=join(fixtureRoot,'dist');
-const signature="export async function analyzeCoverAppearance(url, title = '', { matchFont = true, image:decodedImage } = {}) {";
+// The analysis is rust-ui/src/cover_appearance.rs; this is its one JavaScript entry. The barrier holds a
+// colour-only request (matchFont false) once, then lets the same request through.
+const signature="export function analyzeCoverAppearance(url, title = '', options) {";
+const barrier="\n  if (options && options.matchFont !== undefined && !options.matchFont && !options.coldReturnHeld && globalThis.__coldReturnProbe?.armed)"
+  +" return globalThis.__coldReturnProbe.holdAnalysis(url).then(() => analyzeCoverAppearance(url, title, { ...options, coldReturnHeld:true }));";
 const lengthImport="import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'";
 let previewServer=null, stopping=false, startBuild;
 const buildRequested=new Promise(resolve => { startBuild=resolve; });
@@ -52,7 +56,7 @@ try {
       if (path.endsWith('/src/js/cover-appearance.js')) {
         if (code.split(signature).length!==2) throw new Error('The actual cover-analysis entry changed; update the causal probe explicitly.');
         transforms.analysis++;
-        return { code:code.replace(signature,signature+'\n  if (!matchFont && globalThis.__coldReturnProbe?.armed) await globalThis.__coldReturnProbe.holdAnalysis(url);'),map:null };
+        return { code:code.replace(signature,signature+barrier),map:null };
       }
       if (path.endsWith('/src/js/app.js')) {
         if (code.split(lengthImport).length!==2) throw new Error('The actual imported length predicate changed; update the causal probe explicitly.');
