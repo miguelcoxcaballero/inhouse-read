@@ -219,6 +219,12 @@ mod book_surface_policy;
 mod reading_display;
 mod app_shell;
 mod font_score_client;
+// The title-font policy: the core's wrap, plan and selection kernels, called natively by the cover analyser.
+#[path="../../rust-core/src/speech_normalize.rs"]
+mod speech_normalize;
+#[path="../../rust-core/src/font.rs"]
+mod font;
+mod font_policy;
 mod cover_appearance;
 mod launch_frames;
 mod app_controller;

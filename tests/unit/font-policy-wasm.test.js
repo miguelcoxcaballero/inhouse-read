@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
-import {rustTitleLines,rustFontSearchPlan,rustFontFamilyMax,rustFontFamilySelect,createRustFontWrapCache} from '../../src/js/font-policy-wasm.js';
+import {rustTitleLines,rustFontSearchPlan,rustFontFamilyMax,rustFontFamilySelect,createRustFontWrapCache} from './helpers/reference-font-policy-wasm.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;});
 function reference(context,title,maxWidth){

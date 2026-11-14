@@ -6,7 +6,7 @@ import { rustCoverColor } from '../../../src/js/cover-color-wasm.js';
 import { rustGlyphMask, rustPrepareCoverPixels, rustNearEdgeMap } from '../../../src/js/font-glyph-wasm.js';
 import { createRustFontScorer } from '../../../src/js/font-score-wasm.js';
 export { scoreFontMask } from '../../../src/js/font-score-core.js';
-import { createRustFontWrapCache, rustFontSearchPlan, rustFontFamilyMax, rustFontFamilySelect } from '../../../src/js/font-policy-wasm.js';
+import { createRustFontWrapCache, rustFontSearchPlan, rustFontFamilyMax, rustFontFamilySelect } from './reference-font-policy-wasm.js';
 import { shelfWorkReady } from '../../../src/js/idle-startup.js';
 /*
  * Appearance extracted from a book cover image. This stays local to the

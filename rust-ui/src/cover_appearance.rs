@@ -6,8 +6,10 @@
 //! Every `async` function of the original is one promise here and every `await` one
 //! `Promise.resolve(value).then(...)`, in the same order, so a caller sees its answers on the same
 //! microtask as before (tests/unit/cover-appearance-orchestration-differential.test.js runs both against
-//! a frozen copy). The numeric kernels stay where they were: the host hands over the core's bridges, the
-//! slice driver and the Worker client, and keeps the two values the module owned (`turn`, `fonts`).
+//! a frozen copy). The title wraps, the raster plan and the choice among scores are this module's own calls
+//! (font_policy.rs, over the core's kernels). The colour, the planes and the scorer stay where they were: the
+//! host hands over those bridges of the core, the slice driver and the Worker client, and keeps the two
+//! values the module owned (`turn`, `fonts`).
 //!
 //! Each host member is a typed import, so a call is one crossing with its numbers as numbers; the globals
 //! (`Image`, `document`, the timers, `performance`) are looked up by name at every call, as they were.
@@ -50,10 +52,6 @@ extern "C"{
  #[wasm_bindgen(method,getter,catch)]fn canvas(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn prepare(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64,edges:bool)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn scorer(this:&Duck,core:&JsValue,context:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn wraps(this:&Duck,core:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn plan(this:&Duck,core:&JsValue,title:&JsValue,width:f64)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn max(this:&Duck,core:&JsValue,scores:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn select(this:&Duck,core:&JsValue,scores:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn open(this:&Duck,context:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn slices(this:&Duck,task:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=yieldToMain)]fn yield_to_main(this:&Duck)->R<JsValue>;
@@ -478,10 +476,8 @@ impl Search{
  fn open(self:&Rc<Self>)->R{
   let title=&self.title;
   if !truthy(title)||trimmed_length(title)<3||duck(&page()).document().is_undefined(){self.done.resolve(&JsValue::NULL);return Ok(())}
-  let core=self.host.core()?;
-  let plans=self.host.plan(&core,title,self.width)?;
-  if !Array::is_array(&plans){return Err(js_sys::TypeError::new("plans is not iterable").into())}
-  let plans:Array=plans.unchecked_into();
+  self.host.core()?;
+  let plans=crate::font_policy::search_plan(title,self.width);
   self.plan_count.set(plans.length());
   *self.plans.borrow_mut()=plans;
   let work=new_canvas()?;
@@ -507,7 +503,8 @@ impl Search{
    Ok(())
   })();
   self.done.settle(closed.and(outcome).and_then(|_|{
-   let best=num(&self.host.select(&self.host.core()?,&self.scores)?);
+   self.host.core()?;
+   let best=f64::from(crate::font_policy::family_select(&self.scores));
    Ok(if best<0.0{JsValue::NULL}else{number(best)})
   }));
  }
@@ -596,7 +593,8 @@ impl Family{
   // The generator starts outside the driver's `try`: a wrap cache that cannot be made has nothing to release.
   let started=(||->R{
    family.slice_start.set(clock()?);
-   *family.wraps.borrow_mut()=search.host.wraps(&search.host.core()?)?;
+   search.host.core()?;
+   *family.wraps.borrow_mut()=crate::font_policy::FontWraps::new().into();
    family.finished.set(false);
    Ok(())
   })();
@@ -658,10 +656,10 @@ impl Family{
    Ok(true)=>{}
    // Scores only select a maximum; they never alter which glyphs are sampled.
    Ok(false)=>match self.search.host.core(){
-    Ok(core)=>{
+    Ok(_)=>{
      let family=self.clone();
      wait(&self.search.score_masks(self.masks.clone()),move|outcome|{
-      match outcome.and_then(|scores|family.search.host.max(&core,&scores)){Ok(best)=>family.done.resolve(&best),Err(failure)=>family.fail(failure)}
+      match outcome{Ok(scores)=>family.done.resolve(&number(crate::font_policy::family_max(&scores))),Err(failure)=>family.fail(failure)}
      });
     }
     Err(failure)=>self.fail(failure),
