@@ -47,6 +47,11 @@ export function ihr_c1(f,k,a){if(typeof f!=='function')throw no(k);return f.call
 export function ihr_c2(f,k,a,b){if(typeof f!=='function')throw no(k);return f.call(undefined,a,b)}
 export function ihr_c3(f,k,a,b,c){if(typeof f!=='function')throw no(k);return f.call(undefined,a,b,c)}
 export function ihr_cn(f,k,l){if(typeof f!=='function')throw no(k);return f.apply(undefined,l)}
+export function ihr_f0(t,k){const f=t[K[k]];if(typeof f!=='function')throw no(k);return f()}
+export function ihr_f1(t,k,a){const f=t[K[k]];if(typeof f!=='function')throw no(k);return f(a)}
+export function ihr_f2(t,k,a,b){const f=t[K[k]];if(typeof f!=='function')throw no(k);return f(a,b)}
+export function ihr_f3(t,k,a,b,c){const f=t[K[k]];if(typeof f!=='function')throw no(k);return f(a,b,c)}
+export function ihr_fn(t,k,l){const f=t[K[k]];if(typeof f!=='function')throw no(k);return f.apply(undefined,l)}
 export function ihr_flag(v,k){try{return v===null||v===undefined?false:!!v[K[k]]}catch{return false}}
 export function ihr_number(v,k){let x;try{x=v===null||v===undefined?undefined:v[K[k]]}catch{}return typeof x==='number'?x:Number(x)}
 const G=k=>{let f;try{f=globalThis[K[k]]}catch{}if(typeof f!=='function')throw no(k);return f};
@@ -75,6 +80,11 @@ extern "C"{
  #[wasm_bindgen(catch)]fn ihr_c2(function:&JsValue,name:u32,a:&JsValue,b:&JsValue)->Result<JsValue,JsValue>;
  #[wasm_bindgen(catch)]fn ihr_c3(function:&JsValue,name:u32,a:&JsValue,b:&JsValue,c:&JsValue)->Result<JsValue,JsValue>;
  #[wasm_bindgen(catch)]fn ihr_cn(function:&JsValue,name:u32,list:&Array)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(catch)]fn ihr_f0(target:&JsValue,key:u32)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(catch)]fn ihr_f1(target:&JsValue,key:u32,a:&JsValue)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(catch)]fn ihr_f2(target:&JsValue,key:u32,a:&JsValue,b:&JsValue)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(catch)]fn ihr_f3(target:&JsValue,key:u32,a:&JsValue,b:&JsValue,c:&JsValue)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(catch)]fn ihr_fn(target:&JsValue,key:u32,list:&Array)->Result<JsValue,JsValue>;
  fn ihr_flag(value:&JsValue,key:u32)->bool;
  fn ihr_number(value:&JsValue,key:u32)->f64;
  #[wasm_bindgen(catch)]fn ihr_g1(name:u32,a:&JsValue)->Result<JsValue,JsValue>;
@@ -166,6 +176,14 @@ pub fn method(target:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValu
  let function=read(target,name)?;
  let function=function.dyn_ref::<Function>().ok_or_else(||not_a_function(name))?;
  apply(function,target,args)
+}
+/// `target.name(...args)` called as a plain function (`this` undefined), in one visit.
+pub fn function_of(target:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
+ if let Some(key)=key(name){return match args{
+  []=>ihr_f0(target,key),[a]=>ihr_f1(target,key,a),[a,b]=>ihr_f2(target,key,a,b),[a,b,c]=>ihr_f3(target,key,a,b,c),
+  _=>ihr_fn(target,key,&list_of(args)),
+ };}
+ call(&read(target,name)?,name,args)
 }
 /// `target?.name?.(...args)`: absent target or method yield `None`.
 pub fn method_opt(target:&JsValue,name:&str,args:&[&JsValue])->Result<Option<JsValue>,JsValue>{
