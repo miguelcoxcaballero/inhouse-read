@@ -93,6 +93,7 @@ mod foliate_open;
 mod foliate_members;
 mod pdf_reader;
 mod pdf_speech;
+mod pdf_sources;
 mod reader_controller;
 mod pdf_reflow;
 mod pdf_theme;

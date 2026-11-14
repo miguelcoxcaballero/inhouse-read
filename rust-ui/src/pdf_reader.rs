@@ -745,7 +745,7 @@ pub fn pdf_length(s: JsValue) -> Promise {
         let pdf = get(&s, "doc");
         if !truthy(&pdf) { return Ok(JsValue::NULL); }
         if get(&get(&s, "lengthMetadata"), "pdf") != pdf {
-            let measured = invoke(&s, "measurePDFBookLength", &[&pdf, &invoke(&s, "lengthOptions", &[&s, &pdf])?])?;
+            let measured = invoke(&s, "measurePDFBookLength", &[&pdf, &crate::pdf_sources::length_options(&s, &pdf)?])?;
             set(&s, "lengthMetadata", &plain(&[("pdf", pdf.clone()), ("promise", measured)])?)?;
         }
         let result = settled(get(&get(&s, "lengthMetadata"), "promise")).await?;

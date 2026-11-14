@@ -8,8 +8,8 @@
 //
 // Which page is drawn, how it is fitted, adapted to a text mode, re-themed,
 // restored, spoken, searched and captured is Rust (pdf_* in rust-ui); this
-// class holds the reader's state, the PDF.js objects and the callbacks they
-// invoke (listeners, observers and the handlers of a spoken source).
+// class holds the reader's state, the PDF.js objects and the listeners of the
+// container (the handlers of a spoken source are rust-ui pdf_sources.rs).
 
 // Android WebViews may lag behind Chrome. Use Mozilla's official compatibility
 // build in BOTH contexts so a missing Promise.try cannot strand the worker.
@@ -32,39 +32,11 @@ import { readerUI, rustMethods } from './rust-ui-required.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-// A spoken source: the handlers the audiobook calls, over the state `q` they share.
-function makeSource(s, page, first, layout) {
-  const ui = readerUI(), q = ui.pdf_speech_begin(s, page, first)
-  const source = {
-    text:first.text, start:0, clear:() => ui.pdf_speech_clear(q), physicalPage:page,
-    offsetAtPoint:(tapped, x, y) => ui.pdf_speech_offset(s, q, tapped, x, y),
-    // Geometric paragraphs are real body text, including repeated dialogue.
-    // No marginal header is confirmed by page-local layout alone: preserve
-    // those paragraphs even when the legacy header-skipping option is on.
-    ...(layout?.geometric || s.preferences.pdfMode === 'text' ? { headerRanges:Object.freeze([]) } : {}),
-    highlight:(start, end) => ui.pdf_speech_highlight(s, q, start, end),
-    follow:(start, end) => ui.pdf_speech_follow(s, q, source, start, end)
-  }
-  return { source, current:() => ui.pdf_speech_current(s, q) }
-}
-// The page prepared off screen becomes the visible one only when its voice starts.
-function stage(s, source, q) {
-  const ui = readerUI()
-  source.isValid = () => ui.pdf_source_valid(s, q)
-  source.activate = () => ui.pdf_source_activate(s, q)
-  source.clear = () => ui.pdf_source_clear(s, q)
-}
-function detach(s, source, pdf, isActive) {
-  source.isValid = () => s.doc === pdf && isActive()
-  source.activate = () => source.isValid()
-}
-
 // What the Rust reader calls: PDF.js and the page pipelines, passed in rather than imported there.
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
   pdfImagePaths, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
-  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, pdfPlaceFigures, pdfImageRects, extractPDFText, mapPDFTextLayer,
-  lengthOptions:(s, pdf) => ({ isActive:() => s.doc === pdf }), makeSource, stage, detach
+  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, pdfPlaceFigures, pdfImageRects, extractPDFText, mapPDFTextLayer
 }
 
 export class PdfReader {
