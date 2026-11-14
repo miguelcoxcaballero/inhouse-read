@@ -81,3 +81,18 @@ it('lets a real pot and thin-book contact stack sleep together after a cross-she
  for(let i=0;i<out.length;i++){if(i%4===0)expect(restored[i]).toBeCloseTo(out[i],6);else expect(restored[i]).toBe(out[i]);}
  reopened.free();scene.free();
 });
+
+it('a fresh book whose free side ends at a real pot within its own height stands instead of falling against it',()=>{
+ const rows=()=>[book('lone',40),book('pot',200,{kind:1,width:120,height:160})];
+ // Against the bare silhouette of an unregistered decoration the old seed still applies: the book tips over.
+ const bare=fixture(rows()),tipped=bare.step(600);expect(Math.abs(tipped[0].angle)).toBeGreaterThan(.05);bare.free();
+ const f=fixture(rows());f.decoration('pot',1,'muskot','muskot',Float64Array.of(.03,.07,.16,0));
+ const rest=f.step(600);expect(Math.abs(rest[0].angle)).toBeLessThan(.005);expect(rest[0].x).toBeCloseTo(40,0);
+ expect(rest.every(row=>row.active===0)).toBe(true);expect(f.step(30)).toEqual(rest);f.free();
+});
+it('never drops a book onto a pot: it lands beside it',()=>{
+ const f=fixture([book('hand',100,{flags:2,width:20,height:160,shelf:1,floor:620}),book('pot',300,{kind:1,width:120,height:160})]);
+ f.decoration('pot',1,'muskot','muskot',Float64Array.of(.03,.07,.16,0));const before=f.step(600);
+ const landed=f.drop('hand',300);expect(landed).toHaveLength(1);expect(Math.abs(landed[0]-300)).toBeGreaterThan(30);
+ expect(f.step()[1]).toEqual(before[1]);f.free();
+});

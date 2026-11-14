@@ -1730,13 +1730,29 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function freelyPlacedShelves(shelves) {
     const cfg = placementConfig(), innerWidth = cfg.shelfWidth - cfg.padding * 2;
     const objects = [], initialPlants = [];
+    // 1.7.330: in a physical scene a book whose packed slot runs through one of the reader's plants or lamps is
+    // placed automatically (first free space of its board, or of the next board with room) instead of inside it.
+    const decoration = [];
+    if (cfg.physicalPlacement === true) {
+      const placed = [];
+      if (state.plantsInitialized) { const scale = plantScale(); for (const plant of state.plants) placed.push(plantShelfObject(plant, scale)); }
+      for (const lamp of state.lamps) { const object = lampShelfObject(lamp); if (object.mount !== 'undershelf') placed.push(object); }
+      for (const object of placed) {
+        const shelf = Number(object.shelf), x = Number(object.x), given = Number(object.width);
+        if (!Number.isFinite(shelf) || !Number.isFinite(x) || !Number.isFinite(given) || given <= 0) continue;
+        const width = Math.min(given, innerWidth);
+        const centre = Math.min(cfg.padding + innerWidth - width / 2, Math.max(cfg.padding + width / 2, cfg.padding + Math.min(1, Math.max(0, x)) * innerWidth));
+        decoration.push([Math.floor(shelf), centre - width / 2, centre + width / 2]);
+      }
+    }
     for (const shelf of shelves) {
       let cursor = cfg.padding;
       for (const item of shelf.items) {
         const key = item.kind === 'book' ? `book:${item.book.id}` : `plant:${item.seed}`;
         const x = (cursor + item.width / 2 - cfg.padding) / innerWidth;
         const newBookInPlacedLibrary = item.kind === 'book' && !item.book.shelfPosition &&
-          state.books.some(book => book.shelfPosition);
+          (state.books.some(book => book.shelfPosition) ||
+            decoration.some(([row, left, right]) => row === Number(shelf.index) && cursor < right && cursor + item.width > left));
         const object = { ...item, key, shelf:shelf.index, x:newBookInPlacedLibrary ? undefined : x, tilt:0 };
         if (item.kind === 'book') objects.push(object);
         else initialPlants.push(object);
