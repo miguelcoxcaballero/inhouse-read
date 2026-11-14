@@ -288,7 +288,13 @@ it('holds no WebAssembly handle once a model is built and disposed', async () =>
   const live = () => shelf.shelf_live_handles?.() ?? null;
   // The first models intern their literals and fill the shared caches.
   for (let i = 0; i < 6; i++) production.createBookModel(books[i % 3][0], books[i % 3][1], 132, 200, 30, null, levels[i % levels.length]).userData.dispose();
+  // A book with a saved relief starts its bake (rust-ui/src/relief_bake.rs), which waits for the cover on a
+  // promise that disposal settles: what that wait holds is released on the next promise jobs, not before.
+  const settled = () => new Promise(resolve => setTimeout(resolve, 0));
+  await settled();
   const before = live();
   for (let i = 0; i < 20; i++) production.createBookModel(books[i % 3][0], books[i % 3][1], 132, 200, 30, null, levels[i % levels.length]).userData.dispose();
+  expect(live()).toBeGreaterThanOrEqual(before);
+  await settled();
   expect(live()).toBe(before);
 });

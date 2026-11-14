@@ -13,6 +13,10 @@ use crate::cover_relief::{relief_analysis_report,relief_fit_dimensions,relief_ma
  relief_selected_layers,relief_thumbnail_size};
 use crate::host::{get_at,method,read,set};
 
+// A book model's relief bake drives these flows and shares their plumbing.
+#[path="relief_bake.rs"]
+mod relief_bake;
+
 #[wasm_bindgen]
 extern "C"{
  #[wasm_bindgen(js_namespace=Promise,js_name=all,catch)]fn all(list:&JsValue)->R<JsValue>;
