@@ -19,6 +19,8 @@ mod local_drop;
 mod scene_view;
 mod scene_frame;
 mod scene_shown;
+mod scene_layout;
+mod scene_begin;
 mod scene_entries;
 mod book_gravity;
 mod cozy_audio;

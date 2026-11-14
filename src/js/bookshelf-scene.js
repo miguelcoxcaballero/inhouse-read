@@ -421,7 +421,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let pageSuspended = false;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
   // This separate modal gate never changes home/reader presentation ownership.
-  let modalDeferredEntry = null, inactiveModalEntry = null, paintedModalView = null;
+  let modalDeferredEntry = null, inactiveModalEntry = null;
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
   let programsReady = null, programsPoll = 0, unpainted = [], catalogPrelinked = false;
@@ -891,7 +891,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
-  const scrollerClip = new Float64Array(4), trashRect0 = {}, trashNumbers = new Float64Array(17);
+  const trashRect0 = {}, trashNumbers = new Float64Array(17);
   let viewTexts = null;
   // What the bin's box on screen was last taken from: its lid's opening, the room's world matrix
   // and its own place, turn and size (`binHeld`).
@@ -909,21 +909,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     binHeld.set(now); binStale = false;
     return false;
   }
-  function updateTrash(scroll, now, finishedDrops) {
+  function updateTrash(now, finishedDrops) {
     if (!trash || !trashNode) { sceneView.trashUnshown(); return false; }
-    const scrollerBounds = frameLayout.scroller;
-    // Read with the frame's other geometry (viewport()): reading the visual viewport after the
-    // entries restyled their buttons would force a second layout of the page in every frame.
-    const visualBottom = frameLayout.visualBottom;
-    const viewHidden = sceneView.trashViewHidden();
-    if (viewHidden) {
-      sceneView.trashReset();
-      if (trashNode.classList.contains('is-over')) trashNode.classList.remove('is-over');
-    }
+    // A view that does not show the bin closes it (1); its lid's ease advances (2 while it moves).
+    const begun = sceneView.trashBegin(now, reducedMotion.matches);
+    if (begun & 1 && trashNode.classList.contains('is-over')) trashNode.classList.remove('is-over');
     let dropEntry = null;
     if (trashDrops) for (const entry of bookEntries) if (entry.trashDrop) { dropEntry = entry; break; }
     const drop = dropEntry?.trashDrop;
-    let moving = sceneView.trashStep(now, reducedMotion.matches);
+    let moving = begun > 1;
     let openness = sceneView.trashOpenness, bounce = 0;
     if (drop) {
       rust.scene_trash_drop(drop.elapsed, drop.lastFrame, drop.complete, drop.duration, drop.initialOpenness, now, dropStep);
@@ -974,9 +968,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       trashPacked[0] = trashRect.left; trashPacked[1] = trashRect.right; trashPacked[2] = trashRect.top; trashPacked[3] = trashRect.bottom;
       trashPacked[4] = trashRect.width; trashPacked[5] = trashRect.height;
     }
-    const stageBounds = frameLayout.stage;
-    scrollerClip[0] = scrollerBounds.left; scrollerClip[1] = scrollerBounds.top; scrollerClip[2] = scrollerBounds.right; scrollerClip[3] = scrollerBounds.bottom;
-    sceneView.trashFrame(trashPacked, scroll, stageBounds.left, stageBounds.top, scrollerClip, frameLayout.innerWidth, frameLayout.innerHeight, visualBottom, trashOut);
+    // In the frame's layout, read with its other geometry (viewport()): reading the visual viewport after
+    // the entries restyled their buttons would force a second layout of the page in every frame.
+    sceneView.trashPlaced(trashPacked, trashOut);
     const visible = trashOut[0] === 1;
     trashWritten = placeHit(trashNode, trashWritten, visible, trashOut[2], trashOut[3], trashOut[4], trashOut[5], 50, true);
     const footY = trash.position.y + trashBounds.min.y * trash.scale.y;
@@ -1149,7 +1143,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return entry.stateText = rust.scene_state_text(entry.bits, dragX, dragY, disabled, pointerEvents);
   }
 
-  const viewSizes = new Float64Array(4), viewPixels = new Float64Array(2), viewFrame = new Float64Array(8), binBox = new Float64Array(9);
+  const viewSizes = new Float64Array(6), viewFrame = new Float64Array(8), binBox = new Float64Array(9);
   // The bin's footprint and place, for the view's fit and the shadow's bounds (written element by
   // element: a temporary array and TypedArray#set cost several times more, twice per frame).
   function packBin() {
@@ -1158,8 +1152,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     binBox[6] = position.x; binBox[7] = position.y; binBox[8] = position.z;
   }
   function viewport() {
+    // The view's height, the pixel ratio and the framebuffer's size, in one call.
     sceneView.sizeViewport(scroller.clientHeight, window.innerHeight, window.devicePixelRatio, viewSizes);
-    const ratio = viewSizes[1];
+    const viewportHeight = viewSizes[0], ratio = viewSizes[1], pixelWidth = viewSizes[4], pixelHeight = viewSizes[5];
     // Move the whole stage, including its projected hit targets, together.
     // Use the resting frontal size so switching cameras never changes this
     // alignment. Its framebuffer dimensions and DPR remain untouched.
@@ -1171,15 +1166,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       stagePixelOffset = offset;
       stage.style.top = offset ? `${(parseFloat(originalTop) || 0) + offset}px` : originalTop;
     }
-    sceneView.framePixels(ratio, viewPixels);
-    const pixelWidth = viewPixels[0], pixelHeight = viewPixels[1];
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
       canvas.width = pixelWidth; canvas.height = pixelHeight; shelfSnapshotDirty = true;
     }
     if (canvasWritten.width !== sceneWidth) canvas.style.width = `${canvasWritten.width = sceneWidth}px`;
-    if (canvasWritten.height !== sceneView.viewportHeight) {
-      canvas.style.height = `${sceneView.viewportHeight}px`; canvas.style.marginBottom = `${-sceneView.viewportHeight}px`;
-      canvasWritten.height = sceneView.viewportHeight;
+    if (canvasWritten.height !== viewportHeight) {
+      canvas.style.height = `${viewportHeight}px`; canvas.style.marginBottom = `${-viewportHeight}px`;
+      canvasWritten.height = viewportHeight;
     }
     // Read every rectangle the rest of the frame needs right here, before the
     // semantic nodes are restyled: rereading them afterwards would force a
@@ -1196,8 +1189,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Read the actual sticky position: near the last shelf its bottom is
     // constrained by the stage, so scroller.scrollTop alone would double-shift
     // the drawing and leave it out of alignment with the real DOM hit targets.
-    const scroll = sceneView.scrollOf(frameLayout.canvas.top, frameLayout.stage.top);
-    camera.left = 0; camera.right = sceneWidth; camera.top = 0; camera.bottom = -sceneView.viewportHeight;
+    // The view keeps this layout for the frame: the bin's and the booklet's buttons are placed from it.
+    const placed = frameLayout.stage, clip = frameLayout.scroller;
+    const scroll = sceneView.frameLayout(frameLayout.canvas.top, placed.left, placed.top, clip.left, clip.top, clip.right, clip.bottom,
+      frameLayout.innerWidth, frameLayout.innerHeight, frameLayout.visualBottom);
+    camera.left = 0; camera.right = sceneWidth; camera.top = 0; camera.bottom = -viewportHeight;
     camera.position.y = -scroll; camera.updateProjectionMatrix();
     return { scroll, ratio };
   }
@@ -1237,8 +1233,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const catalogPlace = new Float64Array(4), catalogOut = new Float64Array(6), catalogBox = new Float64Array(6);
-  const catalogCover = new Float64Array(3), catalogStage = new Float64Array(2), catalogInner = new Float64Array(2);
-  function updateCatalog(scroll) {
+  const catalogCover = new Float64Array(3);
+  let catalogFace = '';
+  function updateCatalog() {
     if (!catalog || !catalogNode) {
       hideData('catalog3d'); hideData('catalogVisible');
       return;
@@ -1251,17 +1248,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // after that side becomes visible; the final frontal view has no booklet.
     catalog.visible = catalogPlace[3] === 1;
     catalog.updateMatrixWorld(true);
-    const stageBounds = frameLayout.stage, clip = frameLayout.scroller;
     const { min, max } = catalog.userData.bounds;
     catalogBox[0] = min.x; catalogBox[1] = min.y; catalogBox[2] = min.z; catalogBox[3] = max.x; catalogBox[4] = max.y; catalogBox[5] = max.z;
     // The printed cover inside the (clip and edge inclusive) hit box: the
     // catalogue page flies out of exactly this rectangle.
     const { width:coverWidth = 76, height:coverHeight = 108, thickness = 3.4 } = catalog.userData;
     catalogCover[0] = coverWidth; catalogCover[1] = coverHeight; catalogCover[2] = thickness;
-    catalogStage[0] = stageBounds.left; catalogStage[1] = stageBounds.top;
-    scrollerClip[0] = clip.left; scrollerClip[1] = clip.top; scrollerClip[2] = clip.right; scrollerClip[3] = clip.bottom;
-    catalogInner[0] = frameLayout.innerWidth; catalogInner[1] = frameLayout.innerHeight;
-    const face = sceneView.catalogFrame(catalogBox, catalog.matrixWorld.elements, catalogCover, scroll, catalogStage, scrollerClip, catalogInner, catalogOut);
+    // In the frame's layout; the face's text is handed over when it changed (rust-ui/src/scene_layout.rs).
+    const face = catalogFace = sceneView.catalogPlaced(catalogBox, catalog.matrixWorld.elements, catalogCover, catalogOut) ?? catalogFace;
     const visible = catalogOut[0] === 1, viewHidden = catalogOut[1] === 1;
     const targetWidth = catalogOut[2], targetHeight = catalogOut[3], left = catalogOut[4], top = catalogOut[5];
     // Isometric object envelopes include empty space behind the side wall.
@@ -2096,7 +2090,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
     if (!batchQuality) hideInspectionSnapshot();
-    if (!sceneView.moving && inspectionEntryUpdates.size) {
+    if (inspectionEntryUpdates.size && !sceneView.moving) {
       // Cover analysis and metadata can finish independently for many books.
       // Commit their latest records together before fitting the settled room,
       // rather than interrupting finger frames for each completed analysis.
@@ -2108,28 +2102,26 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfSnapshotDirty = shadowDirty = true;
       canvas.dataset.inspectionPendingEntries = '0';
     }
-    const furnitureMoving = sceneView.turning || sceneView.reordering;
-    let scrollPan = null;
-    if (sceneView.turning) {
-      // Driver compilation or a slow frame must not consume the entire camera
-      // move without painting its intermediate poses. Match the bounded clock
-      // already used by the insertion and trash animations.
-      scrollPan = sceneView.stepTurn(now);
-      scroller.scrollTop = scrollPan;
-    }
-    if (sceneView.reordering) {
-      const amount = sceneView.stepReorder(now);
+    // The turn between the views and a reorder's release advance in one call (rust-ui/src/scene_begin.rs):
+    // 1 the view turned, 2 a reorder eased, 4 and ended, 8 the diagonal view rests.
+    const begun = sceneView.beginFrame(now), furnitureMoving = Boolean(begun & 3);
+    // Driver compilation or a slow frame must not consume the entire camera
+    // move without painting its intermediate poses. Match the bounded clock
+    // already used by the insertion and trash animations.
+    if (begun & 1) scroller.scrollTop = sceneView.turnScroll;
+    if (begun & 2) {
+      const amount = sceneView.reorderLeft;
       entryFrame.refresh();
       for (const item of reorderItems) { const at = item.entry.row * ENTRY_STATE; entryFrame.state[at + 21] = item.x * amount; entryFrame.state[at + 22] = item.y * amount; }
-      if (!sceneView.reordering) reorderItems = [];
+      if (begun & 4) reorderItems = [];
     }
     const zoom = updateTransform();
     // Expanding/shrinking the stage can change the browser's maximum scroll
     // during a turn. Apply the same frame's pan after committing its height.
-    if (scrollPan !== null) scroller.scrollTop = scrollPan;
-    else if (sceneView.progress === 1) scroller.scrollTop = 0;
+    if (begun & 1) scroller.scrollTop = sceneView.turnScroll;
+    else if (begun & 8) scroller.scrollTop = 0;
     const { scroll, ratio } = viewport();
-    updateCatalog(scroll);
+    updateCatalog();
     // The booklet's visibility depends on the view, known only now.
     if (catalog && programsReady !== true && !catalogPrelinked) {
       catalogPrelinked = true;
@@ -2138,7 +2130,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const finishedInsertions = [];
     const { moving, shelfMoving, localMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
-    const trashMoving = updateTrash(scroll, now, finishedDrops);
+    const trashMoving = updateTrash(now, finishedDrops);
     // The opaque reader page masks layout preparation. Retain the dirty
     // room until its hidden return slot and the same 3D page are both ready.
     if (paintHeld) {
@@ -2150,7 +2142,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     tellHeld();
     const held = entryFrame.census(Boolean(trash?.visible)), busy = Boolean(held & 16), casters = entryFrame.counts[0];
     const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
-    const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight:sceneView.viewportHeight,
+    const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight:viewSizes[0],
       shadowDirty:contentDirty, transform:furniture.matrixWorld });
     const lampPower = lampLighting.activePower ?? (lampLighting.activeCount ? 1 : 0);
     const nextDaylight = rust.scene_daylight(lampPower, shelfType === 'baggebo');
@@ -2212,10 +2204,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     shadowBounds.min.set(shadowOut[0], shadowOut[1], shadowOut[2]); shadowBounds.max.set(shadowOut[3], shadowOut[4], shadowOut[5]);
     // Scrolling creates and releases culled models: those change the casters.
     const shadowMotion = furnitureMoving || shelfMoving || trashMoving;
-    const shadowRefresh = lighting.update({ width:sceneWidth, viewportHeight:sceneView.viewportHeight, scroll, depth, bounds:shadowBounds,
+    const shadowRefresh = lighting.update({ width:sceneWidth, viewportHeight:viewSizes[0], scroll, depth, bounds:shadowBounds,
       dirty:contentDirty, moving:shadowMotion, transform:furniture.matrixWorld,
-      forceRefit:sceneView.shadowRefit && !sceneView.moving });
-    if (!sceneView.moving) sceneView.shadowRefit = false;
+      forceRefit:sceneView.takeRefit() });
     shadowDirty = false; shadowCasters = casters;
     const overlayInsertion = Boolean(held & 4);
     // Its hidden slot and neighbors are already painted. Reuse that snapshot
@@ -2338,7 +2329,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       showData('snapshotRenderCount', String(++shelfSnapshotRenders));
       showData('sceneDrawCalls', String(renderer.info?.render.calls || 0));
       shelfSnapshotDirty = false;
-      paintedModalView = { progress:sceneView.progress, inspectionZoom:sceneView.zoom, panX:sceneView.panX, panY:sceneView.panY };
+      sceneView.keepPainted();
       // Record only a completed room transaction, after GPU/native/legacy
       // output succeeded. A flush can return while programs or paint are held.
       entryFrame.painted();
@@ -2429,9 +2420,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       !selected.node?.classList.contains('is-away') || !selected.model || selected.model.visible ||
       heldStill(1) || programsReady !== true || paintHeld || unpainted.length ||
       lighting.settling || sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.moving || sceneView.hasDrop ||
-      !paintedModalView || paintedModalView.progress !== sceneView.progress ||
-      paintedModalView.inspectionZoom !== sceneView.zoom || paintedModalView.panX !== sceneView.panX || paintedModalView.panY !== sceneView.panY ||
-      modalViewportChanged()) return false;
+      !sceneView.paintedSame() || modalViewportChanged()) return false;
     const now = performance.now();
     for (const entry of bookEntries) {
       if (entry.lampTint?.moving()) return false;
@@ -3051,7 +3040,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     dispose() {
       stage.style.top = originalTop;
       if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
-      disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null;
+      disposed = true; modalDeferredEntry = inactiveModalEntry = null;
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
