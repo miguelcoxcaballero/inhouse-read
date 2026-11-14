@@ -25,7 +25,12 @@ async function openAndPlay(page) {
     const doc = renderer.getContents()[0].doc
     const engine = window.__inhouseNeuralTest.engine
     const evidence = window.__chapterContinuity = {
-      expected:[...doc.body.querySelectorAll('h1,p')].map(element => element.textContent.trim() + (element.localName === 'h1' ? '.' : '')).join(' '),
+      // Every block is read as its own sentence (the paragraph policy of the speech map): a heading or a paragraph
+      // that does not end in a terminator, before any closing quote or bracket, is spoken with a full stop.
+      expected:[...doc.body.querySelectorAll('h1,p')].map(element => {
+        const text = element.textContent.trim(), core = text.replace(/["'”’»›)\]}」』]+$/, '')
+        return text + (/[.!?。！？…:;]$/.test(core) || /[.!?。！？…:;]$/.test(text) ? '' : '.')
+      }).join(' '),
       animated:renderer.hasAttribute('animated'), initialPages:renderer.pages,
       started:[], done:[], nativeTurns:[], relocations:[], stops:0, activeTurns:0
     }
@@ -63,6 +68,10 @@ async function completeFirstChapter(page, cancel = '') {
       if (!call) throw new Error('Natural playback stopped before the next chapter')
       if (call.text.startsWith('Beyond the window')) return { reachedNext:true, calls:engine.calls.length }
       engine.emit('start',call.id)
+      // A sentence that continues on the next page is one utterance with a mark where the page ends; the real engine
+      // announces each mark when its sample becomes audible, always before the utterance is done. Without them the
+      // view would stay on the page where the last sentence of the chapter starts and its ending would be read twice.
+      for (const offset of call.marks || []) window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ type:'boundary', id:call.id, offset } }))
       // Fast deterministic fragments expose a final follow still in flight;
       // the paginator itself retains its native animation and lock behavior.
       await sleep(2)
