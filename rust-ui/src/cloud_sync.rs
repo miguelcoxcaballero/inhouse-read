@@ -6,7 +6,7 @@
 //! cleanPlaces, cleanQuotes, driveBookLength, wordCountFromDrive, clearBookLength, newContentRevision}`.
 use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::prelude::*;
-use js_sys::{Array,Map,Promise,RegExp,Set};
+use js_sys::{Array,Map,Object,Promise,RegExp,Set};
 use crate::cloud_host::*;
 
 type Guard=Closure<dyn FnMut(JsValue)->Result<JsValue,JsValue>>;
@@ -230,7 +230,10 @@ impl Core{
    // A library manifest owns appearance and placement field by field. The
    // older per-book reading file has only a reading timestamp: importing its
    // appearance on a progress tie silently undoes a newly received shelf move.
+   // The author and the spine title are what the reader typed, neither a
+   // placement nor a finish: a record that has none of its own adopts them.
    if !get(&record,"shelfVisualId").is_string(){assign(&fields,&call(&self.host,"spineCustomization",&[&get(&remote,"appearance")])?)?;}
+   else{assign(&fields,&self.missing_identity(&record,&remote)?)?;}
    for (key,limit) in [("readingHistory",None),("bookmarks",Some(100.0))]{
     let list=get(&remote,key);
     if Array::is_array(&list){
@@ -258,6 +261,16 @@ impl Core{
    return Ok(JsValue::UNDEFINED);
   }
   if !local_has_progress&&!book_length.is_truthy(){return Ok(JsValue::UNDEFINED);}
+  // This device is about to replace the whole reading file. Names it never had
+  // (a book put back on the shelf, or one first stored by another device) are
+  // adopted first, so that an empty local value cannot erase them from Drive.
+  let identity=self.missing_identity(&record,&remote)?;
+  if Object::keys(identity.unchecked_ref::<Object>()).length()>0{
+   let (guard,options)=self.guard(&id,book_generation,generation,&record);
+   let saved=settle(call(&self.library,"patch",&[&id,&identity,&options])).await?;drop(guard);
+   if !saved.is_truthy(){if current(){self.schedule_progress(id.clone())?;}return Ok(JsValue::UNDEFINED);}
+   record=saved;self.changed(Some(&record))?;
+  }
   let history=call(&self.host,"cleanPlaces",&[&get(&record,"readingHistory")])?;
   let bookmarks=call(&self.host,"cleanPlaces",&[&get(&record,"bookmarks"),&JsValue::from_f64(100.0)])?;
   let quotes=call(&self.host,"cleanQuotes",&[&get(&record,"quotes")])?;
@@ -278,6 +291,20 @@ impl Core{
   let updated=settle(call(&self.library,"patch",&[&get(&record,"id"),&tail,&options])).await?;drop(guard);
   if !updated.is_truthy()&&current(){self.schedule_progress(id.clone())?;}
   Ok(JsValue::UNDEFINED)
+ }
+ /// The author and spine title stored in Drive's reading file that `record` has no value of its own for.
+ /// Placement and finishes belong to the library manifest and are never taken from that file here.
+ fn missing_identity(&self,record:&JsValue,remote:&JsValue)->Result<JsValue,JsValue>{
+  let missing=object(&[]);
+  if !remote.is_truthy(){return Ok(missing);}
+  let theirs=call(&self.host,"spineCustomization",&[&get(remote,"appearance")])?;
+  let ours=call(&self.host,"spineCustomization",&[record])?;
+  let written=|value:&JsValue|value.is_string()&&value.is_truthy();
+  for key in ["author","spineTitleOverride"]{
+   let value=get(&theirs,key);
+   if written(&value)&&!written(&get(&ours,key)){set(&missing,key,&value);}
+  }
+  Ok(missing)
  }
  /// The record still holds exactly the state that was just published.
  fn matches_snapshot(&self,latest:&JsValue,snapshot:&JsValue,local_updated_at:f64)->Result<bool,JsValue>{
