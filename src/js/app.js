@@ -162,8 +162,7 @@ const roomCoordinationHost = {
   captureRoom: account => libraryBackup.captureRoom(account),
   drainLive: account => libraryBackup.drainLive(account),
   markBookChanged: (account,id,fields) => libraryBackup.markBookChanged(account,id,fields),
-  backupCallback: () => withBookDataModule(module => module.app_backup_run(roomCoordinationHost)),
-  captureCallback: () => withBookDataModule(module => module.app_room_capture_run(roomCoordinationHost)),
+  later,
   backupFailure: error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`),
   warnRoom: error => console.warn('Colocación pendiente:', error.message),
   state:app
@@ -330,10 +329,6 @@ const readerOpeningHost = {
   alert: message => alert(message),
   readerPageFrames: () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   later,
-  filePickerFocusListener: flight => function onFocusBack() {
-    window.removeEventListener('focus', onFocusBack)
-    bookDataModule().app_schedule_picker_cancel(readerOpeningHost, flight)
-  },
   state:app
 }
 
@@ -419,10 +414,8 @@ const driveActionsHost = {
   armDrivePoll: (generation, delay) => setTimeout(() => bookDataModule().app_drive_poll_tick(driveActionsHost, generation), delay),
   cancelDrivePoll: timer => clearTimeout(timer),
   pollDrive: () => bookDataModule().app_drive_resume(driveActionsHost, { poll:true }),
-  uploadProgressFailure: error => bookDataModule().app_drive_upload_progress_failure(driveActionsHost,error),
+  later,
   authFailure: reportDriveConnectionError,
-  resumeReady: () => bookDataModule().app_drive_resume_ready(driveActionsHost),
-  resumeFailure: error => bookDataModule().app_drive_resume_failure(driveActionsHost,error),
   savedCheckMarkup:'<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>',
   state:app
 }

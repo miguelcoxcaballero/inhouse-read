@@ -68,7 +68,7 @@ pub fn app_length_metadata(host:JsValue,record:JsValue,metadata:JsValue)->Promis
  if !crate::length_metadata::length_is_ready(candidate)?{return Ok(JsValue::UNDEFINED)}
  let expected=revision.clone();
  let current=function(Closure::<dyn FnMut(JsValue)->R<bool>>::new(move|current:JsValue|{
-  Ok(truthy(&get(&current,"content"))&&read(&current,"contentRevision")?==expected)
+  Ok(crate::host::flag(&current,"content")&&read(&current,"contentRevision")?==expected)
  }));
  let patched=method(&read(&host,"library")?,"patch",&[&read(&record,"id")?,&fields,&object(&[("ifCurrent",current)])?])?;
  let saved=JsFuture::from(Promise::resolve(&patched)).await?;
@@ -94,7 +94,7 @@ pub fn app_progress_saved(host:JsValue,record:JsValue,book_id:JsValue,fields:JsV
   method(&method(&host,"readerPositionGuard",&[])?,"remember",&[&book_id,&position])?;
  }
  method(&host,"onLocalBookChange",&[&book_id,&fields])?;
- if truthy(&get(&record,"driveFileId"))&&truthy(&method(&host,"hasDriveSession",&[])?){
+ if crate::host::flag(&record,"driveFileId")&&truthy(&method(&host,"hasDriveSession",&[])?){
   method(&read(&host,"cloudSync")?,"scheduleProgress",&[&book_id])?;
  }
  method(&host,"scheduleLibraryBackup",&[])?;
@@ -111,7 +111,7 @@ pub fn app_length_change(host:JsValue,record:JsValue)->R{
  // Batch short books: rebuilding the shelf once per completed chapter or library record would spend far
  // more time drawing than counting text.
  crate::app_shell::app_schedule_length_refresh(&host)?;
- if truthy(&get(&record,"driveFileId"))&&truthy(&method(&host,"hasDriveSession",&[])?){
+ if crate::host::flag(&record,"driveFileId")&&truthy(&method(&host,"hasDriveSession",&[])?){
   method(&read(&host,"cloudSync")?,"scheduleProgress",&[&read(&record,"id")?])?;
   method(&host,"scheduleLibraryBackup",&[])?;
  }

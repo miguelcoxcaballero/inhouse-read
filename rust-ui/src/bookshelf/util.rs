@@ -75,7 +75,7 @@ pub fn map_get(map:&JsValue,key:&JsValue)->JsValue{method(map,"get",&[key]).unwr
 pub fn map_set(map:&JsValue,key:&JsValue,value:&JsValue){let _=method(map,"set",&[key,value]);}
 pub fn map_has(map:&JsValue,key:&JsValue)->bool{method(map,"has",&[key]).map(|v|truthy(&v)).unwrap_or(false)}
 pub fn map_delete(map:&JsValue,key:&JsValue)->bool{method(map,"delete",&[key]).map(|v|truthy(&v)).unwrap_or(false)}
-pub fn map_size(map:&JsValue)->f64{num(&get(map,"size"))}
+pub fn map_size(map:&JsValue)->f64{crate::host::number(map,"size")}
 pub fn new_map()->R<JsValue>{construct("Map",&[])}
 pub fn new_set()->R<JsValue>{construct("Set",&[])}
 pub fn array_of(value:&JsValue)->Vec<JsValue>{if Array::is_array(value){Array::from(value).iter().collect()}else{Vec::new()}}
@@ -83,8 +83,8 @@ pub fn array_of(value:&JsValue)->Vec<JsValue>{if Array::is_array(value){Array::f
 // ---------------------------------------------------------------- window / document
 pub fn window()->JsValue{get(&global(),"window")}
 pub fn document()->JsValue{get(&global(),"document")}
-pub fn inner_width()->f64{num(&get(&window(),"innerWidth"))}
-pub fn inner_height()->f64{num(&get(&window(),"innerHeight"))}
+pub fn inner_width()->f64{crate::host::number(&window(),"innerWidth")}
+pub fn inner_height()->f64{crate::host::number(&window(),"innerHeight")}
 pub fn device_pixel_ratio()->f64{let ratio=get(&window(),"devicePixelRatio");if truthy(&ratio){num(&ratio)}else{1.0}}
 pub fn visual_viewport()->JsValue{get(&window(),"visualViewport")}
 /// `matchMedia('(prefers-reduced-motion: reduce)').matches`.

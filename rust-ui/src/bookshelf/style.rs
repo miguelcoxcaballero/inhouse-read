@@ -91,11 +91,11 @@ pub fn apply_cover_appearance(ctx:&Ctx,item:&JsValue,appearance:&JsValue)->R<boo
    let next=spread(&[&get(item,"style"),&patch]);put(item,"style",&next);
   }
  }
- let size=num(&get(&book,"spineFontSize"));
+ let size=crate::host::number(&book,"spineFontSize");
  if size.is_finite(){
   let next=spread(&[&get(item,"style"),&obj(&[("spineFontSize",&f(max(8.0,min(48.0,size))))])]);put(item,"style",&next);
  }
- let author_size=num(&get(&book,"spineAuthorFontSize"));
+ let author_size=crate::host::number(&book,"spineAuthorFontSize");
  if author_size.is_finite(){
   let next=spread(&[&get(item,"style"),&obj(&[("spineAuthorFontSize",&f(max(6.0,min(36.0,author_size))))])]);put(item,"style",&next);
  }

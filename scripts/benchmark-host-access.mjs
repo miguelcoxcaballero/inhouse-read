@@ -52,3 +52,7 @@ const model=new THREE.Object3D(),bin={userData:{openness:.3}},resolveDrop=()=>{}
 compare('bin drop record',rust=>()=>rust.scene_trash_drop_record(THREE,resolveDrop,1000,false,850,model,bin));
 const texture=new THREE.Texture(),grain=new THREE.Texture(),wide=material=>material;
 compare('room materials',rust=>()=>rust.scene_room_materials(THREE,texture,grain,wide,new THREE.Group(),()=>{}),300);
+// A boolean read of a record on a path with other host calls around it (app_controller.rs app_progress_saved).
+const saved={state:{appDisposed:false},onLocalBookChange(){},scheduleLibraryBackup(){},hasDriveSession:()=>true,cloudSync:{scheduleProgress(){}}};
+const stored={driveFileId:'file',progressFraction:.4,locator:null},noFields=[];
+compare('progress saved',rust=>()=>rust.app_progress_saved(saved,stored,'book',noFields));

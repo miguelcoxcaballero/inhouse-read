@@ -301,7 +301,7 @@ pub fn build_stage(ctx:&Rc<Ctx>,width:f64)->R<JsValue>{
 }
 pub fn build_section(ctx:&Ctx,section:&JsValue,count:f64)->JsValue{
  let root=El::new("section").class(&format!("ihr-section ihr-section--{}",text(&get(section,"id")))).attr_value("aria-label",&or(get(section,"title"),ctx.text_of("shelfLabel"))).done();
- if truthy(&get(section,"title")){
+ if crate::host::flag(section,"title"){
   append(&root,&El::new("div").class("ihr-section__header").child(&El::new("h2").class("ihr-section__title").text_value(&get(section,"title")).done())
    .child(&El::new("span").class("ihr-section__count").text(&ns(count)).attr("aria-label",&format!("{} libros",ns(count))).done()).done());
  }root

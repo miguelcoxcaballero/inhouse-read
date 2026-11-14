@@ -43,7 +43,7 @@ pub fn plant_surface_pump(state:&JsValue,host:&JsValue,deadline:&JsValue)->R<()>
   }
   if num(&read(&job,"row")?)<height{continue;}
   queue.shift();let base=read(&job,"base")?;let key=read(&job,"key")?;
-  if truthy(&get(&job,"failed"))&&surfaces.get(&key)==base{surfaces.delete(&key);}
+  if crate::host::flag(&job,"failed")&&surfaces.get(&key)==base{surfaces.delete(&key);}
   // Exactly one shared image upload; disposed clones have already left this list.
   set(&read(&read(&base,"data")?,"source")?,"needsUpdate",&JsValue::TRUE)?;
   set(&read(&read(&base,"map")?,"source")?,"needsUpdate",&JsValue::TRUE)?;
@@ -140,7 +140,7 @@ pub fn plant_bake_record(state:&JsValue)->R<JsValue>{
  for item in js_sys::try_iter(map(state,"shelfBakes").as_ref())?.unwrap(){
   let item=item?;let key=get_at(&item,0);let entry=get_at(&item,1);let keys=items(&read(&entry,"surfaces")?)?;
   let model=Array::new();model.push(&key);model.push(&read(&entry,"bake")?);model.push(&keys);models.push(&model);
-  for key in keys.iter(){let base=surfaces.get(&key);if truthy(&base)&&!truthy(&get(&base,"clones"))&&!painted.has(&key){
+  for key in keys.iter(){let base=surfaces.get(&key);if truthy(&base)&&!crate::host::flag(&base,"clones")&&!painted.has(&key){
    let image=read(&read(&base,"map")?,"image")?;let data=read(&read(&base,"data")?,"image")?;
    painted.set(&key,&obj(&[("width",read(&image,"width")?),("height",read(&image,"height")?),("pigment",read(&image,"data")?),("data",read(&data,"data")?)])?);
   }}

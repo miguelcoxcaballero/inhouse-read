@@ -40,7 +40,6 @@ function fixture(native,options={},module=rustShelf){
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
  const host={...env,state,
   later:(name,take,...head)=>{if(name==='app_opening_is_active')flight=head[0];return(...tail)=>module[name](...head,...tail.slice(0,take))},
-  filePickerFocusListener:f=>function onFocusBack(){env.window.removeEventListener('focus',onFocusBack);module.app_schedule_picker_cancel(host,f)},
   readerPageFrames:()=>new Promise(resolve=>env.requestAnimationFrame(()=>env.requestAnimationFrame(resolve)))
  };
  env.animateReaderPageFromBook=native?settings=>module.app_animate_reader_page(host,settings):scope(env,reference.animateReaderPageFromBook);host.animateReaderPageFromBook=env.animateReaderPageFromBook;

@@ -82,6 +82,13 @@ pub fn app_cancel_opening_picker(host:JsValue,flight:JsValue)->R<()>{
   app_close_reader_opening(host,flight,object(&[("instant",JsValue::TRUE)])?)?;
  }Ok(())
 }
+/// The window got its focus back after the file picker: the listener (page-owned, found in `holder`)
+/// withdraws itself and the cancellation is scheduled.
+#[wasm_bindgen]
+pub fn app_picker_focus_back(host:JsValue,flight:JsValue,holder:JsValue)->R<JsValue>{
+ method(&read(&host,"window")?,"removeEventListener",&[&"focus".into(),&read(&holder,"listener")?])?;
+ app_schedule_picker_cancel(host,flight)
+}
 #[wasm_bindgen]
 pub fn app_schedule_picker_cancel(host:JsValue,flight:JsValue)->R<JsValue>{
  let callback=later(&host,"app_cancel_opening_picker",0,&[&host,&flight])?;method(&host,"setTimeout",&[&callback,&400.0.into()])
@@ -146,7 +153,7 @@ pub fn app_open_book_record(host:JsValue,book:JsValue,ctx:JsValue)->Promise{
    if !active(&ctx)?{return Ok(JsValue::UNDEFINED);}
    let state=state(&host)?;set(&state,"pendingLocalReopenId",&id)?;set(&state,"pendingReaderTransition",&transition)?;
    method(&read(&read(&host,"els")?,"filePicker")?,"click",&[])?;
-   let listener=method(&host,"filePickerFocusListener",&[&flight])?;
+   let holder=object(&[])?;let listener=later(&host,"app_picker_focus_back",0,&[&host,&flight,&holder])?;set(&holder,"listener",&listener)?;
    method(&read(&host,"window")?,"addEventListener",&[&"focus".into(),&listener,&object(&[("once",JsValue::TRUE)])?])?;
    return Ok(JsValue::UNDEFINED);
   }

@@ -94,7 +94,7 @@ impl Ctx{
  pub fn legacy(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(&self.legacy,name)?,name,args)}
  pub fn st(&self,key:&str)->JsValue{get(&self.state,key)}
  pub fn st_set(&self,key:&str,value:&JsValue){put(&self.state,key,value);}
- pub fn st_true(&self,key:&str)->bool{truthy(&get(&self.state,key))}
+ pub fn st_true(&self,key:&str)->bool{crate::host::flag(&self.state,key)}
  pub fn st_str(&self,key:&str)->String{text(&get(&self.state,key))}
  /// `state.shelfScene` (null when the scene is not in use).
  pub fn scene(&self)->JsValue{get(&self.state,"shelfScene")}

@@ -82,14 +82,14 @@ fn flush_bounded(state:&JsValue)->R{
 }
 async fn add_inner(state:JsValue,text:JsValue)->R<JsValue>{
  let text=string_value(&or(text,s("")));let size=length(&text);putf(&state,"characters",gn(&state,"characters")+size as f64);
- if !active(&state)?||gn(&state,"characters")>num(&get(&state,"maxCharacters"))||gb(&state,"cancelled"){putb(&state,"cancelled",true);return Ok(JsValue::FALSE);}
+ if !active(&state)?||gn(&state,"characters")>crate::host::number(&state,"maxCharacters")||gb(&state,"cancelled"){putb(&state,"cancelled",true);return Ok(JsValue::FALSE);}
  for from in (0..size).step_by(16384){
   let mut chunk=slice(&text,from,Some(from+16384))?;let pattern=get(&state,"continuingToken");
   if truthy(&pattern){let n=consumed(&chunk,&pattern)?;chunk=slice(&chunk,n,None)?;if length(&chunk)>0{put(&state,"continuingToken",&null());}}
   put(&state,"buffer",&join_strings(&[get(&state,"buffer"),chunk]));
   if length(&get(&state,"buffer"))>=16384{
    flush_bounded(&state)?;yield_task(&state).await?;if !active(&state)?{putb(&state,"cancelled",true);return Ok(JsValue::FALSE);}
-  }else if truthy(&get(&state,"continuingToken")){
+  }else if crate::host::flag(&state,"continuingToken"){
    yield_task(&state).await?;if !active(&state)?{putb(&state,"cancelled",true);return Ok(JsValue::FALSE);}
   }
  }Ok(JsValue::TRUE)
@@ -143,7 +143,7 @@ async fn scan_book(book:&JsValue,sections:&JsValue,state:&JsValue,env:&JsValue)-
   let section=section?;
   if !active(state)?||!read(&section,"createDocument")?.is_function(){return Ok(Scan::Cancelled);}
   let doc=settle(method(&section,"createDocument",&[])?).await?;
-  if !active(state)?||!truthy(&get(&doc,"documentElement")){return Ok(Scan::Cancelled);}
+  if !active(state)?||!crate::host::flag(&doc,"documentElement"){return Ok(Scan::Cancelled);}
   let mut root=read(&doc,"body")?;if !truthy(&root){root=method(&doc,"querySelector",&[&s("body")])?;}if !truthy(&root){root=read(&doc,"documentElement")?;}
   let filter=obj(&[("acceptNode",&read(env,"acceptNode")?)]);
   let walker=method(&doc,"createTreeWalker",&[&root,&f(5.0),&filter])?;
@@ -169,7 +169,7 @@ pub fn length_measure_book(book:JsValue,options:JsValue,env:JsValue)->JsValue{ru
  let max_chars=default_option(&options,"maxCharacters",f(16_000_000.0))?;let max_sections=default_option(&options,"maxSections",f(2048.0))?;
  let config=obj(&[("isActive",&is_active),("yieldTask",&task),("maxCharacters",&max_chars)]);
  let sections=get(&book,"sections");
- if !truthy(&get(&sections,"length"))||gn(&sections,"length")>num(&max_sections)||!active(&config)?{return Ok(null());}
+ if !crate::host::flag(&sections,"length")||gn(&sections,"length")>num(&max_sections)||!active(&config)?{return Ok(null());}
  let metadata=get(&book,"metadata");let mut language=get(&metadata,"language");
  if Array::is_array(&language){language=get_at(&get(&metadata,"language"),0);}else{language=get(&metadata,"language");}
  let state=counter(&language,&config,&env)?;

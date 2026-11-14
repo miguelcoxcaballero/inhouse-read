@@ -121,7 +121,7 @@ impl Flyout{
   run(async move{flyout.close_task(options).await?;Ok(undef())})
  }
  async fn close_task(self:Rc<Self>,options:JsValue)->R{
-  let silent=truthy(&get(&options,"silent"));let mut instant=truthy(&get(&options,"instant"));
+  let silent=crate::host::flag(&options,"silent");let mut instant=crate::host::flag(&options,"instant");
   if !self.is_session(){return Ok(());}
   self.scene_opt("setModalBackgroundDeferred",&[&null(),&obj(&[("resumeHidden",&JsValue::TRUE)])])?;
   if self.cancelled(){
@@ -336,7 +336,7 @@ pub async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
   append_all(&book_node,&[&pages,&leaf]);
  }
  // Title and author, and how far the reader got: the cover itself says the rest.
- let progress_raw=num(&get(&book,"progressFraction"));let progress_raw=if progress_raw.is_nan()||progress_raw==0.0{0.0}else{progress_raw};
+ let progress_raw=crate::host::number(&book,"progressFraction");let progress_raw=if progress_raw.is_nan()||progress_raw==0.0{0.0}else{progress_raw};
  let progress=round(min(1.0,max(0.0,progress_raw))*100.0);
  let title=ctx.env("displayBookTitle",&[&book])?;
  let author=ctx.env("normalizeBookAuthor",&[&get(&book,"author")])?;
@@ -425,7 +425,7 @@ impl Flyout{
  fn build_actions(self:&Rc<Self>,pick:PickNodes,style_value:&JsValue)->R{
   let ctx=&self.ctx;let book=&self.book;
   let cloud=ctx.option_call("getBookCloudState",&[book])?;
-  let cloud=if truthy(&cloud){cloud}else{obj(&[("connected",&JsValue::FALSE),("saved",&b(truthy(&get(book,"driveFileId"))))])};
+  let cloud=if truthy(&cloud){cloud}else{obj(&[("connected",&JsValue::FALSE),("saved",&b(crate::host::flag(book,"driveFileId")))])};
   let needs_download=truthy(&ctx.env("needsDriveDownload",&[book])?);
   let has_action=truthy(&ctx.option("onBookAction"));
   let cloud_action=if needs_download{
@@ -433,8 +433,8 @@ impl Flyout{
    if !has_action{button=button.flag("disabled");}
    let button=button.child(&icon(&DOWNLOAD)?).done();
    self.wire_cloud_button(&button,"offline")?;button
-  }else if truthy(&get(&cloud,"saved")){cloud_saved_mark()?}
-  else if truthy(&get(&cloud,"connected"))&&truthy(&get(book,"content")){
+  }else if crate::host::flag(&cloud,"saved"){cloud_saved_mark()?}
+  else if crate::host::flag(&cloud,"connected")&&crate::host::flag(book,"content"){
    let mut button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__cloud-action").attr("title","Subir a Google Drive").attr("aria-label","Subir a Google Drive");
    if !has_action{button=button.flag("disabled");}
    let button=button.child(&icon(&DRIVE)?).done();
@@ -446,7 +446,7 @@ impl Flyout{
    let update=self.callbacks.make(Stale::Undefined,move|record,_|{
     let Some(flyout)=slot.get()else{return Ok(undef())};
     let action=flyout.cloud_action.borrow().clone();
-    if !truthy(&get(&record,"driveFileId"))||!truthy(&action)||!is_connected(&action)||!cls_has(&action,"ihr-flyout__cloud-action"){return Ok(undef());}
+    if !crate::host::flag(&record,"driveFileId")||!truthy(&action)||!is_connected(&action)||!cls_has(&action,"ihr-flyout__cloud-action"){return Ok(undef());}
     put(&flyout.book,"driveFileId",&get(&record,"driveFileId"));
     put(&flyout.book,"cloudAccountId",&get(&record,"cloudAccountId"));
     replace_with(&action,&cloud_saved_mark()?);
@@ -460,7 +460,7 @@ impl Flyout{
   let edit_button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button").flag("disabled")
    .attr("aria-expanded","false").attr("aria-label","Editar").attr("title","Editar").child(&icon(&BRUSH)?).done();
   // "Compartir": the book file itself, to the system share sheet.
-  let can_share=truthy(&get(book,"content"))||truthy(&get(book,"driveFileId"));
+  let can_share=crate::host::flag(book,"content")||crate::host::flag(book,"driveFileId");
   let share_button=if can_share{
    let mut button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__share-action")
     .attr("title","Compartir").attr("aria-label","Compartir el libro");

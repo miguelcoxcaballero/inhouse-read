@@ -135,8 +135,10 @@ pub fn read(value:&JsValue,name:&str)->Result<JsValue,JsValue>{
  Reflect::get(&boxed(value),&JsValue::from_str(name))
 }
 /// `!!value?.name` in one visit, with nothing to release (a failing getter reads as false, like `get`).
+#[inline(never)]
 pub fn flag(value:&JsValue,name:&str)->bool{match key(name){Some(key)=>ihr_flag(value,key),None=>truthy(&get(value,name))}}
 /// `Number(value?.name)` in one visit, with nothing to release.
+#[inline(never)]
 pub fn number(value:&JsValue,name:&str)->f64{match key(name){Some(key)=>ihr_number(value,key),None=>num(&get(value,name))}}
 pub fn get_at(value:&JsValue,index:u32)->JsValue{ihr_at(value,index)}
 pub fn set(value:&JsValue,name:&str,next:&JsValue)->Result<(),JsValue>{

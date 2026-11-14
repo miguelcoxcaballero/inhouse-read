@@ -99,7 +99,7 @@ impl Editor{
 
   let cached=map_get(&ctx.st("coverAppearances"),&appearance_id(&book));
   let cached_appearance=if truthy(&cached)&&get(&cached,"key")==get(&item,"coverKey"){get(&cached,"appearance")}else{null()};
-  let cover_color=if truthy(&get(&cached_appearance,"color")){get(&cached_appearance,"color")}else{get(&get(&item,"baseStyle"),"color")};
+  let cover_color=if crate::host::flag(&cached_appearance,"color"){get(&cached_appearance,"color")}else{get(&get(&item,"baseStyle"),"color")};
   let suggested=array_of(&ctx.env("bookColorOptions",&[&cover_color])?);
   let selected=or(get(&book,"spineColorOverride"),get(&style0,"color"));
 
@@ -281,7 +281,7 @@ pub(super) fn appearance_id(book:&JsValue)->JsValue{
 }
 /// The filled part of a range track follows its value (CSS reads `--ihr-range-fill`).
 pub(super) fn sync_range(input:&JsValue){
- let value=num(&get(input,"value"));let low=num(&get(input,"min"));let high=num(&get(input,"max"));
+ let value=crate::host::number(input,"value");let low=crate::host::number(input,"min");let high=crate::host::number(input,"max");
  style_set(input,"--ihr-range-fill",&format!("{}%",ns((value-low)/(high-low)*100.0)));
 }
 
