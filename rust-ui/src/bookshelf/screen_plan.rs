@@ -46,14 +46,31 @@ pub fn freely_placed_shelves(ctx:&Ctx,shelves:&JsValue)->R<JsValue>{
  let cfg=objects::placement_config(ctx)?;
  let padding=gn(&cfg,"padding");let inner_width=gn(&cfg,"shelfWidth")-padding*2.0;
  let objects=Array::new();let initial_plants=Array::new();
+ // The rows above were packed before the reader's own plants and lamps were known: a slot can run straight through
+ // one. A physical scene keeps every explicit centre as it is, so such a book would start inside the pot or the
+ // lamp. It is handed to the automatic pass instead, which gives it the first free space of its board, or of the
+ // next board with room. Decoration never moves and books whose slot is free keep it.
+ let mut decoration:Vec<(f64,f64,f64)>=Vec::new();
+ if get(&cfg,"physicalPlacement")==JsValue::TRUE{
+  let mut placed=Vec::new();
+  if ctx.st_true("plantsInitialized"){let scale=objects::plant_scale(ctx)?;for plant in array_of(&ctx.st("plants")){placed.push(objects::plant_shelf_object(ctx,&plant,scale)?);}}
+  for lamp in array_of(&ctx.st("lamps")){let lamp=objects::lamp_shelf_object(ctx,&lamp)?;if get(&lamp,"mount")!=s("undershelf"){placed.push(lamp);}}
+  for object in placed{
+   let (shelf,x,width)=(gn(&object,"shelf"),gn(&object,"x"),gn(&object,"width"));
+   if !shelf.is_finite()||!x.is_finite()||!width.is_finite()||width<=0.0{continue;}
+   let width=width.min(inner_width);
+   let centre=(padding+x.clamp(0.0,1.0)*inner_width).clamp(padding+width/2.0,padding+inner_width-width/2.0);
+   decoration.push((shelf.floor(),centre-width/2.0,centre+width/2.0));
+  }
+ }
  for shelf in array_of(shelves){
-  let mut cursor=padding;
+  let mut cursor=padding;let row=gn(&shelf,"index");
   for item in array_of(&get(&shelf,"items")){
    let book=get(&item,"book");let is_book=get(&item,"kind")==s("book");
    let key=if is_book{join_strings(&[s("book:"),string_value(&get(&book,"id"))])}
     else{join_strings(&[s("plant:"),string_value(&get(&item,"seed"))])};
    let width=gn(&item,"width");let x=(cursor+width/2.0-padding)/inner_width;
-   let new_book=is_book&&!gb(&book,"shelfPosition")&&has_placed_book(ctx);
+   let new_book=is_book&&!gb(&book,"shelfPosition")&&(has_placed_book(ctx)||decoration.iter().any(|(shelf,left,right)|*shelf==row&&cursor<*right&&cursor+width>*left));
    let object=spread(&[&item,&obj(&[("key",&key),("shelf",&get(&shelf,"index")),("x",&if new_book{undef()}else{f(x)}),("tilt",&f(0.0))])]);
    if is_book{objects.push(&object);}else{initial_plants.push(&object);}
    cursor+=width+gn(&cfg,"gap");
