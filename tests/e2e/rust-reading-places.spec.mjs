@@ -1,17 +1,11 @@
 import {test,expect} from '@playwright/test'
+import {observeRustExports} from './helpers/rust-export-probe.mjs'
 test('compiled mobile reader toggles bookmarks and preserves jump history through Rust',async({page},info)=>{
  test.setTimeout(60000);await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'})
- await page.addInitScript(()=>{
-  window.placesProof={available:false,calls:{}}
-  const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reading_marked)return result
-   window.placesProof.available=true;const exports={...actual}
-   // Toggle/history now run inside the Rust command, without re-entering the
-   // exported JS wrapper. Observe that command boundary and keep every UI check.
-   for(const name of ['reading_marked','reader_bookmark','reader_jump'])exports[name]=(...args)=>{window.placesProof.calls[name]=(window.placesProof.calls[name]||0)+1;return actual[name](...args)}
-   const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
-  }
-  for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
- })
+ // The bookmark comparison (reading_marked) is no longer an export the page calls: it runs inside the Rust method that
+ // paints the bookmark button, reached through the reader's dispatcher. Observe that method by name, and the two
+ // commands that are still exports.
+ await observeRustExports(page,{store:'placesProof',marker:'reader_bookmark',exports:['reader_bookmark','reader_jump'],methods:{experience_method:['updateBookmarkButton']}})
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
  await page.goto(process.env.IHR_TEST_URL||'./');await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
@@ -23,6 +17,9 @@ test('compiled mobile reader toggles bookmarks and preserves jump history throug
  await expect(page.locator('.reader-return')).toContainText('Página 1 de 4');await page.locator('.reader-return').click()
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
  const proof=await page.evaluate(()=>window.placesProof);expect(proof.available).toBe(true)
- for(const name of ['reading_marked','reader_bookmark','reader_jump'])expect(proof.calls[name]).toBeGreaterThan(0)
+ expect(proof.instances).toBe(1)
+ for(const name of ['experience_method:updateBookmarkButton','reader_bookmark','reader_jump'])expect(proof.calls[name],name).toBeGreaterThan(0)
+ // One comparison per painted state at least: marked, unmarked, marked again.
+ expect(proof.calls['experience_method:updateBookmarkButton']).toBeGreaterThanOrEqual(3)
  expect(errors).toEqual([]);await info.attach('compiled-reading-places',{body:JSON.stringify(proof),contentType:'application/json'})
 })
