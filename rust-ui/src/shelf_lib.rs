@@ -47,6 +47,7 @@ mod three_curve;
 mod three_math;
 mod lamp_model;
 mod lamp_light;
+mod lamp_room;
 mod lamp_material;
 mod catalog_camera;
 mod decor_adapters;
