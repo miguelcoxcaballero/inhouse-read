@@ -2,11 +2,12 @@ import {instrumentPaintedRoom} from './painted-room-instrumentation.mjs';
 // Observe the actual transforms consumed by rendering, not the saved checkpoint.
 // Test-only response instrumentation leaves the deployed bundle untouched.
 export async function paintedRoomProbe(page){
- await page.addInitScript(()=>{globalThis.__paintedRoom={};globalThis.__roomPaintCaptureCount=0;globalThis.__captureRoomPaint=(e,ppm,width,rows)=>{
+ await page.addInitScript(()=>{globalThis.__paintedRoom={};globalThis.__roomPaintCaptureCount=0;globalThis.__captureRoomPaint=(e,ppm,width,rows,shared)=>{
   globalThis.__roomPaintCaptureCount++;
-  const row=rows[e.shelf||0];if(!row||!e.localMotionPose)return;
+  // Releases that keep the pose in the entry arena hand over the shared key; older ones kept it on the entry.
+  const row=rows[e.shelf||0],local=e.localMotionPose,key=shared??local?.[0];if(!row||typeof key!=='string'||!key)return;
   const p=e.pose.position,q=e.pose.quaternion;
-  __paintedRoom[e.localMotionPose[0]]={local:e.localMotionPose.slice(),paint:[e.shelf||0,(p.x+width/2-(row.left||0))/ppm,(p.y+(row.bottom||0))/ppm,p.z/ppm,q.x,q.y,q.z,q.w,e.pose.scale.x]};
+  __paintedRoom[key]={...(local?{local:local.slice()}:{}),paint:[e.shelf||0,(p.x+width/2-(row.left||0))/ppm,(p.y+(row.bottom||0))/ppm,p.z/ppm,q.x,q.y,q.z,q.w,e.pose.scale.x]};
  }});
  await page.route(/\/assets\/main-[^/]+\.js$/,async route=>{
   const response=await route.fetch();let body=await response.text();

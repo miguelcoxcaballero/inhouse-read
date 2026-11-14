@@ -8,7 +8,7 @@ const root=resolve(process.cwd());
 const fixtureRoot=process.env.IHR_COLD_FIXTURE_ROOT;
 if (!fixtureRoot || !isAbsolute(fixtureRoot)) throw new Error('IHR_COLD_FIXTURE_ROOT must be the fresh absolute directory owned by this test.');
 const outDir=join(fixtureRoot,'dist');
-const signature="export async function analyzeCoverAppearance(url, title = '', { matchFont = true } = {}) {";
+const signature="export async function analyzeCoverAppearance(url, title = '', { matchFont = true, image:decodedImage } = {}) {";
 const lengthImport="import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'";
 let previewServer=null, stopping=false, startBuild;
 const buildRequested=new Promise(resolve => { startBuild=resolve; });
