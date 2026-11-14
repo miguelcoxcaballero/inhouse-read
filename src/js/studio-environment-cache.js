@@ -48,6 +48,11 @@ const stored = persistKey && withStore('readonly', store => store.get(RECORD)).t
   atlas ||= { data:record.data, width:record.width, height:record.height, settings:record.settings };
   return true;
 }).catch(() => false);
+/** The first shelf gives the stored read the short deadline it gives the saved bakes. The renderer takes the atlas
+ * synchronously when it is created: without this the read, started with the page, lost to a warm start by a task
+ * or two about four times in ten, and the room this device already held was baked again. */
+export const studioEnvironmentSettled = (ms = 0) => !stored || atlas ? Promise.resolve() :
+  Promise.race([stored, new Promise(resolve => setTimeout(resolve, ms))]).then(() => {});
 function persist({ data, width, height, settings }) {
   if (!stored) return;
   const write = () => stored.then(current => current ||

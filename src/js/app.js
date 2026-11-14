@@ -36,6 +36,7 @@ import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
 import { getRustShelf, needRustShelf, requireRustShelf, whenRustShelf } from './rust-shelf.js'
 import { shelfBakesSettled } from './shelf-bake-cache.js'
+import { studioEnvironmentSettled } from './studio-environment-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone } from './gestures.js'
 import { markTiming } from './perf-marks.js'
@@ -257,8 +258,9 @@ async function performShelfRefresh({ immediate = false } = {}) {
   // must not hold the shelf back for long: they are generated instead.
   // Layout, lighting and the pointer controllers of the live shelf are Rust-only: the render waits
   // for their modules, fetched with the page head and already compiled by now in practice,
-  // alongside the baked reads.
-  await Promise.all([shelfBakesSettled(120), requireRustShelf(), requireRustCore()])
+  // alongside the baked reads. The studio room this device stored is read the same way: the renderer
+  // takes it when it is created, so a read still in flight then would bake the room again.
+  await Promise.all([shelfBakesSettled(120), studioEnvironmentSettled(120), requireRustShelf(), requireRustCore()])
   // Sorting the start-up read, giving way to a newer deploy or a native import, the rebuild and its room
   // retry: rust-ui/src/app_controller.rs.
   return needRustShelf().app_refresh_loaded(shelfRefreshHost, storedBooks, Boolean(firstRecords), accountId, immediate)
