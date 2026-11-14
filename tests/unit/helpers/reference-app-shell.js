@@ -184,11 +184,14 @@ export function openDriveModal() {
 
 export async function loadDriveFiles() {
   els.driveStatus.textContent = 'Conectando con Drive…'
-  els.driveList.innerHTML = ''
+  els.driveList.innerHTML = '<span class="drive-item-placeholder ihr-skeleton" aria-hidden="true"></span>'.repeat(4)
+  els.driveList.setAttribute('aria-busy', 'true')
   try {
     if (!hasDriveSession()) await requestDriveAccess()
     await loadDriveAccountProfile()
     const files = await listAllDriveBooks()
+    els.driveList.innerHTML = ''
+    els.driveList.setAttribute('aria-busy', 'false')
     els.driveStatus.textContent = files.length ? '' : 'Sin libros en Drive.'
     for (const f of files) {
       const item = document.createElement('button')
@@ -218,6 +221,8 @@ export async function loadDriveFiles() {
       console.warn('No se pudieron sincronizar los libros pendientes:', error)
     })
   } catch (err) {
+    els.driveList.innerHTML = ''
+    els.driveList.setAttribute('aria-busy', 'false')
     if (err?.code === 'ANDROID_SHELL_OUTDATED' && await offerAvailableAndroidUpdate()) {
       els.driveModal.hidden = true
     } else {

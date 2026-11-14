@@ -453,7 +453,7 @@ fn panel_markup()->String{
   </div>
   <button type="button" class="streak-widget-cta" data-streak-widget hidden>
     <span class="streak-widget-art" aria-hidden="true"><span class="streak-widget-art-flame">{}</span><span class="streak-widget-art-lines"><i></i><i></i></span><span class="streak-widget-art-dots"><i></i><i></i><i></i><i></i><i class="is-today"></i></span></span>
-    <span class="streak-widget-copy"><strong data-streak-widget-title>Añade la racha a tu pantalla de inicio</strong><small data-streak-widget-text>Un widget con tu llama y los días de esta semana.</small></span>
+    <span class="streak-widget-copy"><strong data-streak-widget-title>Añade la racha a tu pantalla de inicio</strong><small data-streak-widget-text></small></span>
   </button>
   <div class="streak-calendar">
     <div class="streak-calendar-head">
@@ -1138,7 +1138,7 @@ fn open_panel(me:&Me,from:&JsValue)->R{
  // Asked once on opening (they are synchronous calls to the system).
  me.widget_offer.set(me.widget_call("canPin",JsValue::FALSE)==JsValue::TRUE&&me.widget_call("isPlaced",JsValue::FALSE)==JsValue::FALSE);
  put(&method(&panel,"querySelector",&[&s("[data-streak-widget-title]")])?,"textContent",&s("Añade la racha a tu pantalla de inicio"));
- put(&method(&panel,"querySelector",&[&s("[data-streak-widget-text]")])?,"textContent",&s("Un widget con tu llama y los días de esta semana."));
+ put(&method(&panel,"querySelector",&[&s("[data-streak-widget-text]")])?,"textContent",&s(""));
  render_panel(me)?;
  put(&panel,"hidden",&JsValue::FALSE);
  let shown=panel.clone();

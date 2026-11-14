@@ -127,30 +127,22 @@
 .ihr-library-heading__tools { display:flex; align-items:center; gap:14px; }
 .ihr-library-heading p { margin:0; color:var(--text-secondary); font-size:.8rem; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .ihr-library-heading p:empty { display:none; }
+/* The shelf while a library's covers are prepared and no launch picture stands in for it: one neutral
+   block where the furniture will be drawn (skeleton styles, base.css). "Cargando…" stays in the
+   markup for assistive technology, with the status role and label of its container. */
 .ihr-library-loading {
-  min-height: min(48vh, 360px);
+  position: relative;
+  height: 100%;
+  min-height: min(60vh, 520px);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: 12px;
+  padding: 0 0 12px;
   color: var(--text-secondary, #68645d);
   font: 500 .9rem var(--f-body, 'DM Sans', sans-serif);
 }
-
-.ihr-library-loading__spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(47, 107, 79, .22);
-  border-top-color: var(--accent-read, #2f6b4f);
-  border-radius: 50%;
-  animation: ihr-library-spin 800ms linear infinite;
-}
-
-@keyframes ihr-library-spin { to { transform: rotate(360deg); } }
-
-@media (prefers-reduced-motion: reduce) {
-  .ihr-library-loading__spinner { animation: none; }
-}
+.ihr-library-loading__spinner { flex: 1; max-width: 860px; --ihr-skeleton-radius: 4px; }
+.ihr-library-loading > span:not(.ihr-library-loading__spinner) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ------------------------------------------------------------------ *
  * Balda
@@ -1143,10 +1135,11 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-btn__label--short { display:none; }
 .ihr-bookshelf:focus-visible { outline:2px solid var(--ihr-accent-legible); outline-offset:-2px; }
 
-.ihr-library-loading--books { min-height:0; padding:12px 0; align-items:stretch; flex-direction:column; gap:8px; }
+.ihr-library-loading--books { height:auto; min-height:0; padding:12px 0; align-items:stretch; justify-content:flex-start; flex-direction:column; gap:8px; }
 .ihr-library-loading__book { display:flex; align-items:center; gap:10px; }
 .ihr-library-loading__book > span:not(.ihr-library-loading__spinner) { flex:1; min-width:0; }
-.ihr-library-loading__book .ihr-library-loading__spinner { flex:0 0 20px; }
+/* A book whose text is still being counted: a spine-sized placeholder beside its title. */
+.ihr-library-loading__book .ihr-library-loading__spinner { flex:0 0 12px; height:28px; --ihr-skeleton-radius:2px; }
 .ihr-library-loading__book .ihr-btn { padding:6px 10px; }
 .ihr-flyout__meta.is-editing .ihr-flyout__actions { display:none; }
 .ihr-flyout.is-editing-spine .ihr-flyout__shadow { opacity:0; }
@@ -1664,12 +1657,9 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-relief__state { display:flex; align-items:center; gap:10px; min-height:22px; margin-bottom:8px; }
 .ihr-relief__status { flex:1; min-width:0; margin:0; color:var(--text-secondary); font-size:.78rem; line-height:1.35; }
 .ihr-relief__status:empty { display:none; }
-.ihr-relief__status.is-busy::before {
-  content:''; display:inline-block; width:11px; height:11px; margin:0 8px -1px 0; box-sizing:border-box;
-  border:1.5px solid var(--ihr-ed-track); border-top-color:var(--ihr-ed-fill); border-radius:50%;
-  animation:ihr-relief-spin .8s linear infinite;
-}
-@keyframes ihr-relief-spin { to { transform:rotate(360deg); } }
+/* While the cover is analysed the cards below are placeholders (base.css); "Analizando…" stays for assistive technology only. */
+.ihr-relief__status.is-busy { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.ihr-relief__state:has(.ihr-relief__status.is-busy):has(.ihr-relief__retry[hidden]) { min-height:0; margin:0; }
 .ihr-relief__retry { flex:none; }
 .ihr-relief__state:has(.ihr-relief__status:empty):has(.ihr-relief__retry[hidden]) { display:none; }
 .ihr-relief__group { display:block; }
@@ -1703,14 +1693,8 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-relief-card__swatch { display:none; }
 .ihr-relief-card__description { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .ihr-relief-card.is-skeleton { cursor:default; }
-.ihr-relief-card.is-skeleton .ihr-relief-card__label,
-.ihr-relief-card.is-skeleton .ihr-relief-card__description {
-  display:block; height:11px; border-radius:6px; background:var(--ihr-ed-track);
-}
-.ihr-relief-card.is-skeleton .ihr-relief-card__label { width:90%; }
-.ihr-relief-card.is-skeleton .ihr-relief-card__description { width:92%; height:9px; margin-top:4px; }
-.ihr-relief-card.is-skeleton { animation:ihr-relief-pulse 1.3s ease-in-out infinite; }
-@keyframes ihr-relief-pulse { 50% { opacity:.55; } }
+.ihr-relief-card.is-skeleton .ihr-relief-card__label { display:block; width:90%; height:11px; }
+.ihr-relief-card.is-skeleton .ihr-relief-card__preview { box-shadow:none; --ihr-skeleton-radius:4px; }
 .ihr-relief-none {
   position:relative; display:flex; align-items:center; gap:8px; min-height:36px; margin-top:6px; padding:0;
   border:0; background:transparent; font-family:inherit; border-radius:12px; color:var(--text-secondary); font-size:.84rem; font-weight:500; cursor:pointer;
@@ -1751,7 +1735,6 @@ body.is-closing-reader .screen { pointer-events:none; }
   .ihr-spine-editor__cover { padding-bottom:12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ihr-relief-card.is-skeleton, .ihr-relief__status.is-busy::before { animation:none; }
   .ihr-spine-editor__tab, .ihr-relief-card, .ihr-relief-none { transition:none; }
 }
 
