@@ -7,7 +7,7 @@ import { baggeboLayout } from '../../src/js/shelf-model-layout.js';
 import {
   PLANT_MAX_HEIGHT_MM, PLANT_SIZES, POT_DIAMETER_MM, POT_SIZES, SHELF_CLEARANCE_MM, plantDimensions,
   plantSceneSize, plantSizeLabel, shelfScale, standardPlantClass, BOOK_REFERENCE_MM
-} from '../../src/js/plant-dimensions.js';
+} from './helpers/plant-dimensions-doorways.js';
 
 describe('standard IKEA plant and pot sizes', () => {
   it('keeps botanical height constant above the soil when the selected pot changes', () => {

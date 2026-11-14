@@ -25,7 +25,7 @@ import { compilePrograms, prelinkPrograms } from '../../../src/js/gpu-programs.j
 import { prepareInsertionPrograms } from '../../../src/js/insertion-program-preparation.js';
 import { idleSlice } from '../../../src/js/idle-startup.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from '../../../src/js/shelf-types.js';
-import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from '../../../src/js/plant-dimensions.js';
+import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from './plant-dimensions-doorways.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNativeRendererPresentation, currentNativeRendererPresentation, registerCanvasSnapshot, withRendererPresentation } from '../../../src/js/native-renderer-presentation.js';
 import { createNativeFramebufferCache } from '../../../src/js/native-room-cache.js';

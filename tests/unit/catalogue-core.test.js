@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import * as app from '../../src/js/catalogue-core.js';
 import * as decor from '../../src/js/decor-catalogue.js';
 import * as shelfTypes from '../../src/js/shelf-types.js';
-import * as dimensions from '../../src/js/plant-dimensions.js';
+import * as dimensions from './helpers/plant-dimensions-doorways.js';
 import * as plantCatalog from '../../src/js/plant-catalog-data.js';
 import * as plantRecords from '../../src/js/plant-records.js';
 import * as lampCatalog from '../../src/js/lamp-catalog-data.js';

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import {expect,it} from 'vitest';
-import * as actual from '../../src/js/plant-dimensions.js';
+import * as actual from './helpers/plant-dimensions-doorways.js';
 import * as original from './helpers/reference-plant-dimensions-policy.js';
 import {placeRooftopPlants} from '../../src/js/plant-rooftop-layout.js';
 import {placeRooftopPlants as originalRooftop} from './helpers/reference-plant-rooftop-layout.js';

@@ -21,9 +21,6 @@ export function ensureAreaLights() {
     RectAreaLightUniformsLib.init(); areaLights = RectAreaLightUniformsLib; return areaLights;
   }).catch(error => { areaLightsLoading = null; throw error; });
 }
-export function savedLampsNeedAreaLights() {
-  try { return /"lampId"\s*:\s*"tarnaby"/.test(localStorage.getItem('inhouse-read-shelf-lamps') || ''); } catch { return false; }
-}
 // The shelf lights filament lamps with a point light (see lampKind): only the
 // catalogue's studio needs the area-light tables, and loads them itself.
 

@@ -18,12 +18,6 @@ export const SHELF_CLEARANCE_MM = Object.freeze(tables.shelfClearance);
 /** Plants above this interior limit are fitted uniformly inside their bay. */
 export const PLANT_MAX_HEIGHT_MM = tables.constants.plantMaxHeightMm;
 
-/** Largest IKEA size class of a species that fits under PLANT_MAX_HEIGHT_MM
- * (the smallest class, flagged `fits:false`, if none does). */
-export function standardPlantClass(plantId) {
-  return needRustShelf().plant_standard_class(tables, plantId);
-}
-
 /** Real dimensions (mm) of one plant standing in one pot. `width` is its slot
  * on the board: the canopy, or the pot with its saucer if that is wider. */
 export function plantDimensions(plantId, potId) {
@@ -65,39 +59,7 @@ export function bookSpineOptions(shelfWidth) {
  * narrower than this many pixels, even if the drawn spine is. */
 export function minimumBookCellWidth(viewportWidth = 0) { return needRustShelf().plant_minimum_tap_width(viewportWidth); }
 
-/** Narrowest tappable width, in pixels, of any book. */
-export function minimumBookTapWidth(viewportWidth = 0) { return minimumBookCellWidth(viewportWidth); }
-
-/**
- * The tappable rectangle of a spine: `rect` (the projected, drawn spine) widened
- * symmetrically around its centre to at least `minWidth`, independent of how
- * thin the drawn book is. Height and vertical position are the spine's own.
- * Pass `out` to refresh a retained rectangle in place.
- */
-export function padTapRect(rect, minWidth, out = {}) {
-  return needRustShelf().plant_pad_tap(rect, minWidth, out, false);
-}
-
 /** Smallest side, in CSS pixels, of a lamp switch's tappable square: a
  * finger-sized target (a MITTLED puck is ~44 x 7 px, mostly behind a board). */
 export const MINIMUM_LAMP_TAP_SIZE = tables.constants.minimumLampTapSize;
 
-/** Like `padTapRect`, in both directions, to at least `minSize` square. */
-export function padTapSquare(rect, minSize, out = {}) {
-  return needRustShelf().plant_pad_tap(rect, minSize, out, true);
-}
-
-/**
- * Nearest-centre picking among padded tap rectangles: of the `targets`
- * containing (x, y), the one whose centre is nearest the point. Where two
- * padded rectangles overlap a tap goes to the book it is closest to. Null when
- * no rectangle contains the point.
- */
-export function nearestTapTarget(targets, x, y) {
-  return needRustShelf().plant_nearest_tap(targets, x, y);
-}
-
-/** Plant size in scene pixels for a scale from `shelfScale`. */
-export function plantSceneSize(plantId, potId, scale) {
-  return needRustShelf().plant_scene_dimensions(tables, plantId, potId, scale);
-}
