@@ -2,6 +2,7 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import * as production from '../../src/js/spine-surface.js';
 import * as original from './helpers/reference-spine-surface.js';
+import {shelfField,shelfStream} from './helpers/shelf-stream.js';
 
 // The Rust spine (rust-ui/src/spine_surface.rs) is compared with the frozen JavaScript original through
 // a recording canvas: every property write, method call, argument (numbers bit for bit), measured width,
@@ -133,12 +134,13 @@ it('draws the three printer devices, the field and the layout reads in the origi
   }
   for(let i=0;i<300;i++){
     const options=[undefined,{},{operation:'lighter',spread:24,channel:'g',cells:[7,24]},{spread:5,cells:[4,30]},{spread:NaN},{channel:'r',cells:[3,2]}][i%6];
-    const field=module=>{
+    // The field is painted on the book's stream: native in production, the original's seededRandom in the reference.
+    const field=(paint,stream)=>{
       const log=environment({partial:i%5===0});const c=document.createElement('canvas').getContext('2d');log.length=0;
-      let seed=i;const stream=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-      module.paintField(c,90+i,1024,stream,options);return log;
+      const random=stream(Math.imul(i,2654435761)>>>0);
+      paint(c,90+i,1024,random,options);return {log,next:random()};
     };
-    expect(field(production)).toEqual(field(original));
+    expect(field(shelfField,shelfStream)).toEqual(field(original.paintField,original.seededRandom));
   }
 });
 

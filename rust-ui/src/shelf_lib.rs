@@ -53,6 +53,9 @@ mod decor_adapters;
 mod plant_parts;
 mod plant_model;
 mod baggebo_model;
+// A cloth's dye field and slubs: the core's plan, run on a book's native stream (spine_surface.rs).
+#[path="../../rust-core/src/book_cloth.rs"]
+mod book_cloth;
 mod spine_surface;
 mod cover_editor;
 mod book_reflection;
@@ -84,6 +87,10 @@ mod book_mesh;
 #[path="../../rust-core/src/book_view.rs"]
 mod book_view;
 mod book_view_plan;
+// The rasters every book shares (cloth and paper tooth, ribbon cut, weave): the core's kernels, run natively.
+#[path="../../rust-core/src/book_surface.rs"]
+mod book_surface;
+mod book_tiles;
 mod cloud_host;
 mod bookshelf;
 mod book_paint;

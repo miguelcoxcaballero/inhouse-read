@@ -1,23 +1,31 @@
 // @vitest-environment node
+// A cloth is planned by the shelf module on the book's native stream (rust-ui/src/spine_surface.rs, paint_cloth,
+// over rust-core/src/book_cloth.rs compiled into the module) and replayed on its canvas by replayCloth. Compared
+// with the frozen JavaScript painter (helpers/reference-book-cloth.js): every paint command, every byte of the
+// dye field and every value the stream gives afterwards.
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {beforeAll,afterEach,expect,it,vi} from 'vitest';
-const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core??(await globalThis.__inhouseRustReady).exports}));
-import {paintCloth,seededRandom} from '../../src/js/spine-surface.js';
-import {rustBookClothPlan} from '../../src/js/book-surface-wasm.js';
+import {afterEach,expect,it,vi} from 'vitest';
+import {rustShelf} from './helpers/rust-shelf-ready.js';
+import {replayCloth} from '../../src/js/spine-surface.js';
+import {shelfCloth as paintCloth,shelfStream as seededRandom} from './helpers/shelf-stream.js';
 import {paintCloth as reference,seededRandom as referenceRandom} from './helpers/reference-book-cloth.js';
-let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.book_cloth_plan).toBe('function');state.core=core;});
-afterEach(()=>{state.core=core;vi.unstubAllGlobals();});
+afterEach(()=>{vi.unstubAllGlobals();});
 function record(painter,random,width,options={},pixels=true){
  const calls=[];
  vi.stubGlobal('document',{createElement:()=>{const field={width:0,height:0,pixels:null};const f={putImageData:image=>{field.pixels=image.data.slice();}};if(pixels)f.createImageData=(w,h)=>({data:new Uint8ClampedArray(w*h*4)});field.getContext=()=>f;return field;}});
  const c=new Proxy({save:()=>calls.push(['save']),restore:()=>calls.push(['restore']),fillRect:(...args)=>calls.push(['rect',...args]),drawImage:(field,...args)=>calls.push(['image',field.width,field.height,field.pixels,...args])},{set(target,key,value){calls.push([key,value]);target[key]=value;return true;}});
  painter(c,width,random,options);return {calls,tail:Array.from({length:100},()=>random())};
 }
-for(const width of [0,80,136,257.3592701820759,512,8192])for(const metal of [false,true])it(`keeps every paint command, field byte and next PRNG value at width ${width}, metal ${metal}`,()=>{
- const call=vi.fn(core.book_cloth_plan);state.core={...core,book_cloth_plan:call};const a=record(paintCloth,seededRandom(17),width,{metal}),b=record(reference,referenceRandom(17),width,{metal});assert.deepEqual(a,b);expect(call).toHaveBeenCalledOnce();
+for(const width of [0,-0,80,136,257.3592701820759,512,8192])for(const metal of [false,true])it(`keeps every paint command, field byte and next PRNG value at width ${Object.is(width,-0)?'-0':width}, metal ${metal}`,()=>{
+ const replay=vi.fn(replayCloth);
+ const a=record((c,w,random,options)=>paintCloth(c,w,random,options,replay),seededRandom(17),width,{metal}),b=record(reference,referenceRandom(17),width,{metal});
+ assert.deepEqual(a,b);
+ // One plan, replayed once: the field's bytes and six numbers per slub, as views of the module's memory.
+ expect(replay).toHaveBeenCalledOnce();
+ const [, , fieldWidth, bytes, commands]=replay.mock.calls[0];
+ expect(fieldWidth).toBe(Math.max(4,Math.round(width/34)));
+ expect(bytes).toBeInstanceOf(Uint8Array);expect(bytes.length).toBe(fieldWidth*30*4);
+ expect(commands).toBeInstanceOf(Float64Array);expect(commands.length).toBe((metal?40:136)*6);
 });
 it('retains random state across mixed calls, zero state and repeated cloth passes',()=>{
  for(const seed of [0,1,-1,0x92d4860b,0xffffffff]){
@@ -25,21 +33,41 @@ it('retains random state across mixed calls, zero state and repeated cloth passe
   for(const metal of [false,true,false])assert.deepEqual(record(paintCloth,a,257.35,{metal}),record(reference,b,257.35,{metal}));
  }
 });
-it('leaves thumbnail calls and arbitrary random callbacks on the unchanged path',()=>{
- const call=vi.fn(core.book_cloth_plan);state.core={...core,book_cloth_plan:call};
- assert.deepEqual(record(paintCloth,seededRandom(15),180,{threads:false}),record(reference,referenceRandom(15),180,{threads:false}));
- assert.deepEqual(record(paintCloth,()=>.42,180),record(reference,()=>.42,180));expect(call).not.toHaveBeenCalled();
-});
-it('matches contexts without ImageData and the unsupported-dimension fallback',()=>{
- assert.deepEqual(record(paintCloth,seededRandom(9),180,{},false),record(reference,referenceRandom(9),180,{},false));
- assert.deepEqual(record(paintCloth,seededRandom(9),-80),record(reference,referenceRandom(9),-80));
-});
-it('does not consume random state on native allocation, rejection or trap failures',()=>{
- for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,book_cloth_plan:()=>0},{...core,book_cloth_plan:()=>{throw Error('trap');}}]){
-  state.core=engine;assert.deepEqual(record(paintCloth,seededRandom(17),180),record(reference,referenceRandom(17),180));
+it('paints many widths, seeds and finishes like the original',()=>{
+ let seed=7;const next=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+ for(let n=0;n<300;n++){
+  const width=n%9===0?Math.round(next()*8192):80+next()*900,metal=n%3===0,start=Math.floor(next()*4294967296);
+  assert.deepEqual(record(paintCloth,seededRandom(start),width,{metal}),record(reference,referenceRandom(start),width,{metal}),`${n} ${width} ${metal} ${start}`);
  }
 });
-it('owns outputs after freeing scratch and growing memory; invalid input never allocates',()=>{
- const free=vi.fn(core.free_f64),out=rustBookClothPlan({...core,free_f64:free},17,180,false);expect(free).toHaveBeenCalledOnce();const expected={...out,pixels:out.pixels.slice(),commands:out.commands.slice()};core.memory.grow(1);rustBookClothPlan(core,99,512,true);assert.deepEqual(out,expected);
- const alloc=vi.fn(core.alloc_f64),engine={...core,alloc_f64:alloc};for(const width of [NaN,Infinity,-1,8193,'180'])expect(rustBookClothPlan(engine,17,width,false)).toBeNull();expect(alloc).not.toHaveBeenCalled();
+it('matches contexts without ImageData',()=>{
+ assert.deepEqual(record(paintCloth,seededRandom(9),180,{},false),record(reference,referenceRandom(9),180,{},false));
+ assert.deepEqual(record(paintCloth,seededRandom(9),180,{metal:true},false),record(reference,referenceRandom(9),180,{metal:true},false));
+});
+it('draws a width no plan takes straight from the stream, in the original order',()=>{
+ for(const width of [-80,8192.5,9000,NaN])for(const metal of [false,true]){
+  const replay=vi.fn(replayCloth);
+  assert.deepEqual(record((c,w,random,options)=>paintCloth(c,w,random,options,replay),seededRandom(9),width,{metal}),record(reference,referenceRandom(9),width,{metal}),`${width} ${metal}`);
+  expect(replay).not.toHaveBeenCalled();
+ }
+});
+it('lets a failing canvas out and reports a replay that is not a function',()=>{
+ const failure=Error('Canvas lost');
+ vi.stubGlobal('document',{createElement:()=>({getContext:()=>({createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData(){}})})});
+ const c={save(){},restore(){},drawImage(){throw failure},fillRect(){}};
+ expect(()=>rustShelf.spine_cloth_seeded(replayCloth,c,180,17,false)).toThrow(failure);
+ expect(()=>rustShelf.spine_cloth_seeded(undefined,c,180,17,false)).toThrow(TypeError);
+ // The module is whole afterwards: the same cloth again.
+ const fine={save(){},restore(){},drawImage(){},fillRect(){}};
+ expect(rustShelf.spine_cloth_seeded(replayCloth,fine,180,17,false)).toBe(rustShelf.spine_cloth_seeded(replayCloth,fine,180,17,false));
+});
+it('hands the replay views that are read before it returns, across growth of the module memory',()=>{
+ vi.stubGlobal('document',{createElement:()=>({getContext:()=>({createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData(){}})})});
+ const fine={save(){},restore(){},drawImage(){},fillRect(){}};
+ const seen=[];
+ const keep=(c,width,fieldWidth,pixels,commands)=>{seen.push({fieldWidth,pixels:pixels.slice(),commands:commands.slice()});};
+ const state=rustShelf.spine_cloth_seeded(keep,fine,180,17,false);
+ rustShelf.book_mesh_memory().grow(1);
+ expect(rustShelf.spine_cloth_seeded(keep,fine,180,17,false)).toBe(state);
+ assert.deepEqual(seen[1],seen[0]);
 });

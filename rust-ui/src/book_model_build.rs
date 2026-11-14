@@ -32,16 +32,16 @@ pub(crate) fn with_key<T>(name:&'static str,f:impl FnOnce(&JsValue)->T)->T{
 fn k(name:&'static str)->&'static str{wasm_bindgen::intern(name)}
 // Three objects and the model's state are objects: read and written directly, one crossing each (Reflect.get
 // refuses null, undefined and primitives: `get` answers undefined for them, `read` fails as before).
-fn get(v:&JsValue,name:&'static str)->JsValue{with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
+pub(crate) fn get(v:&JsValue,name:&'static str)->JsValue{with_key(name,|key|Reflect::get(v,key)).unwrap_or(JsValue::UNDEFINED)}
 fn read(v:&JsValue,name:&'static str)->R<JsValue>{
  match with_key(name,|key|Reflect::get(v,key)){
   Ok(value)=>Ok(value),
   Err(error)=>if absent(v){crate::host::read(v,name)}else{Err(error)},
  }
 }
-fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{with_key(name,|key|Reflect::set(v,key,x))?;Ok(())}
+pub(crate) fn put(v:&JsValue,name:&'static str,x:&JsValue)->R<()>{with_key(name,|key|Reflect::set(v,key,x))?;Ok(())}
 // Numbers go straight to the engine, without a boxed JS number for each.
-fn putn(v:&JsValue,name:&'static str,x:f64)->R<()>{with_key(name,|key|set_number(v,key,x))?;Ok(())}
+pub(crate) fn putn(v:&JsValue,name:&'static str,x:f64)->R<()>{with_key(name,|key|set_number(v,key,x))?;Ok(())}
 #[wasm_bindgen]
 extern "C"{
  #[wasm_bindgen(js_namespace=Reflect,js_name=set,catch)] fn set_number(target:&JsValue,key:&JsValue,value:f64)->Result<bool,JsValue>;
@@ -145,8 +145,8 @@ fn shared_built(host:&JsValue,key:&'static str,build:impl FnOnce(&JsValue)->R<Js
 #[wasm_bindgen]
 pub fn book_model_tile_normals(host:&JsValue,kind:&str)->R<JsValue>{
  let three=read(host,"three")?;
- let data=call(host,"surfacePixels",&[&JsValue::from_str(kind)])?;
- if !truthy(&data){return Err(js_sys::Error::new("El módulo numérico no pudo generar la textura del libro.").into());}
+ let Some(pixels)=crate::book_tiles::book_tile_normal_bytes(kind)else{return Err(js_sys::Error::new("El módulo numérico no pudo generar la textura del libro.").into());};
+ let data:JsValue=js_sys::Uint8Array::from(&pixels[..]).into();
  let texture=make(&three,"DataTexture",&[&data,&n(128.0),&n(128.0)])?;
  let repeat=read(&three,"RepeatWrapping")?;put(&texture,"wrapT",&repeat)?;put(&texture,"wrapS",&repeat)?;
  put(&texture,"magFilter",&read(&three,"LinearFilter")?)?;put(&texture,"minFilter",&read(&three,"LinearMipmapLinearFilter")?)?;
@@ -158,8 +158,8 @@ pub fn book_model_tile_normals(host:&JsValue,kind:&str)->R<JsValue>{
 #[wasm_bindgen]
 pub fn book_model_ribbon_notch(host:&JsValue)->R<JsValue>{
  let three=read(host,"three")?;
- let data=call(host,"notchPixels",&[&n(16.0),&n(64.0)])?;
- if !truthy(&data){return Err(js_sys::Error::new("El módulo numérico no pudo generar la muesca de la cinta.").into());}
+ let Some(pixels)=crate::book_tiles::notch(16,64)else{return Err(js_sys::Error::new("El módulo numérico no pudo generar la muesca de la cinta.").into());};
+ let data:JsValue=js_sys::Uint8Array::from(&pixels[..]).into();
  let texture=make(&three,"DataTexture",&[&data,&n(16.0),&n(64.0)])?;
  let linear=read(&three,"LinearFilter")?;put(&texture,"minFilter",&linear)?;put(&texture,"magFilter",&linear)?;
  put(&texture,"needsUpdate",&JsValue::TRUE)?;
@@ -205,11 +205,11 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
  let c=call(&canvas,"getContext",&[&word("2d")])?;
  let painter=c.unchecked_ref::<Board2d>();
  painter.scale(num(&get(&canvas,"width"))/design_width,num(&get(&canvas,"height"))/1024.0)?;
- let random=cover_seed(host,book,style,"case")?;
+ let mut stream=cover_seed(book,style,"case");
  let thumb=level.as_string().is_some_and(|level|level=="overview");
  put(&c,"fillStyle",&bread(style,"color")?)?;painter.fill_rect(0.0,0.0,design_width,1024.0)?;
  // A cloth case: dyed mottling, then the weave itself. A 256 px thumbnail shows neither.
- if !thumb{call(host,"paintCloth",&[&c,&n(design_width),&random])?;call(host,"paintWeave",&[&c,&n(design_width)])?;}
+ if !thumb{crate::spine_surface::paint_cloth(&read(host,"cloth")?,&c,design_width,&mut stream,false)?;call(host,"paintWeave",&[&c,&n(design_width)])?;}
  let pick=|key:&'static str|->R<JsValue>{bread(style,key)};
  let face=pick("fontCanvasFamily")?;let face=if truthy(&face){face}else{let f=pick("fontFamily")?;if truthy(&f){f}else{word("Playfair Display")}};
  let fallback=pick("fontFallback")?;let fallback=if truthy(&fallback){fallback}else{word("Georgia, serif")};
@@ -227,17 +227,17 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
  let author=call(host,"author",&[&bread(book,"author")?])?;let author=if truthy(&author){author}else{word("")};
  // `String(title)` and `String(author)` (each already a string from the host's title and author).
  let text=|value:JsValue|->JsString{if value.is_string(){value.unchecked_into()}else{JsString::from(string(&value))}};
- crate::book_paint::book_cover_case(c.unchecked_ref::<Canvas2d>(),design_width,&text(title),&text(author),
-  &bread(style,"ink")?,&bread(style,"fontWeight")?,&family,thumb,device,read(host,"drawDevice")?.unchecked_ref(),random.unchecked_ref())?;
+ crate::book_paint::cover_case(c.unchecked_ref::<Canvas2d>(),design_width,&text(title),&text(author),
+  &bread(style,"ink")?,&bread(style,"fontWeight")?,&family,thumb,device,read(host,"drawDevice")?.unchecked_ref(),&mut ||stream.next())?;
  let map=make(three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(three,"SRGBColorSpace")?)?;
  Ok(map)
 }
 /// The stream a board's wear draws from, per book, colour and salt.
-fn cover_seed(host:&JsValue,book:&JsValue,style:&JsValue,salt:&str)->R<JsValue>{
+fn cover_seed(book:&JsValue,style:&JsValue,salt:&str)->crate::spine_surface::Stream{
  let id=or(opt(book,"shelfVisualId"),||or(opt(book,"id"),||word("")));
  let title=or(opt(book,"title"),||word(""));
  let seed=template_seed(&[Part::Value(&id),Part::Text("|"),Part::Value(&title),Part::Text("|"),Part::Value(&opt(style,"color")),Part::Text("|"),Part::Text(salt)]);
- call(host,"random",&[&n(seed)])
+ crate::spine_surface::Stream::new(seed as u32)
 }
 
 /// The warm reading-room rig for shelf, editor and opening/closing books.
@@ -542,7 +542,7 @@ pub fn book_model_cover_settle(s:&JsValue,revision:f64,loaded:bool)->R<()>{
 /// The idle detailed model and its flyout share one bounded raster with the decoded image.
 #[wasm_bindgen]
 pub fn book_model_cover_raster(s:&JsValue,image:&JsValue,dimensions:&JsValue,book:&JsValue,style:&JsValue)->R<JsValue>{
- let (host,three)=(state(s,"host"),state(s,"three"));
+ let three=state(s,"three");
  let canvas=crate::host::method(&read(&crate::host::global(),"document")?,"createElement",&[&word("canvas")])?;
  put(&canvas,"height",&read(dimensions,"height")?)?;put(&canvas,"width",&read(dimensions,"width")?)?;
  let c=call(&canvas,"getContext",&[&word("2d")])?;
@@ -554,9 +554,9 @@ pub fn book_model_cover_raster(s:&JsValue,image:&JsValue,dimensions:&JsValue,boo
  let unit=num(&get(&canvas,"height"))/1024.0;
  crate::host::method_opt(&c,k("setTransform"),&[&n(unit),&n(0.0),&n(0.0),&n(unit),&n(0.0),&n(0.0)])?;
  let design_width=num(&get(&canvas,"width"))/unit;
- let random=cover_seed(&host,book,style,"print")?;
+ let mut stream=cover_seed(book,style,"print");
  let wear=!state(s,"level").as_string().is_some_and(|level|level=="overview");
- crate::book_paint::book_finish_board(c.unchecked_ref::<Canvas2d>(),design_width,random.unchecked_ref(),wear);
+ crate::book_paint::finish_board(c.unchecked_ref::<Canvas2d>(),design_width,&mut ||stream.next(),wear);
  let map=make(&three,"CanvasTexture",&[&canvas])?;put(&map,"colorSpace",&read(&three,"SRGBColorSpace")?)?;
  object(&[("map",map),("bounds",object(&[("x",n(fit[0])),("y",n(fit[1])),("width",n(fit[2])),("height",n(fit[3]))])?)])
 }

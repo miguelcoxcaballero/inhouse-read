@@ -1,7 +1,9 @@
 //! Stable ribbon dye/material choices and shared paper colors. Three remains
-//! the color-space conversion host; Rust owns selection, blending and identity.
+//! the color-space conversion host; Rust owns selection and identity. The per-frame blend of two papers is
+//! three's own conversions and three interpolations: it runs in place (book-model.js, mixPaperTone), where the
+//! boundary does not cost more than the arithmetic.
 use wasm_bindgen::{prelude::*,JsCast};
-use js_sys::{Float64Array,Function,Object,WeakMap};
+use js_sys::{Object,WeakMap};
 use crate::host::*;
 type R<T> = Result<T,JsValue>;
 fn object(fields:&[(&str,JsValue)])->R<JsValue>{let value:JsValue=Object::new().into();for(k,v)in fields{set(&value,k,v)?;}Ok(value)}
@@ -55,23 +57,4 @@ pub fn book_paper_color(key:JsValue,source:JsValue,tone_key:JsValue,host:JsValue
  let color=if truthy(&rgb){method(&host,"color",&[&(num(&get_at(&rgb,0))/255.0).into(),
   &(num(&get_at(&rgb,1))/255.0).into(),&(num(&get_at(&rgb,2))/255.0).into()])?}else{JsValue::NULL};
  PAPER_COLORS.with(|cache|cache.set(&key,&color));Ok(color)
-}
-#[wasm_bindgen]
-pub fn book_paper_mix(target:JsValue,stock:JsValue,theme:JsValue,mix:JsValue,host:JsValue)->R<JsValue>{
- let k=jmax(0.0,jmin(1.0,num(&mix)));
- if !truthy(&stock)&&!truthy(&theme){return Ok(JsValue::NULL);}
- if !truthy(&stock){return method(&target,"copy",&[&theme]);}
- if !truthy(&theme){return method(&target,"copy",&[&stock]);}
- if !(k>0.0){return method(&target,"copy",&[&stock]);}
- if !(k<1.0){return method(&target,"copy",&[&theme]);}
- // Read Three's color-space conversions in one bulk binding; the shared host
- // scratch is copied before interpolation or a reentrant target setter.
- let colors:Float64Array=method(&host,"read",&[&stock,&theme])?.dyn_into()?;
- let colors=colors.to_vec();
- if colors.len()!=6{return Err(js_sys::TypeError::new("Expected two RGB colors").into());}
- let r=colors[0]+(colors[3]-colors[0])*k;
- let g=colors[1]+(colors[4]-colors[1])*k;
- let b=colors[2]+(colors[5]-colors[2])*k;
- let write:Function=read(&host,"write")?.dyn_into()?;
- write.call4(&host,&target,&r.into(),&g.into(),&b.into())
 }
