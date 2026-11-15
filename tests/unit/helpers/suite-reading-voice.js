@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
-import {nativeAudio,resetAudio,unlockAudio,stopNativeAudio,pauseNativeAudio} from '../../../src/js/readers/neural-voice/audio.js'
+import {nativeAudio,resetAudio,unlockAudio,stopNativeAudio,pauseNativeAudio} from './live-audio.js'
 import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
 
 import {loadNeural} from '../../../src/js/readers/neural-runtime.js'

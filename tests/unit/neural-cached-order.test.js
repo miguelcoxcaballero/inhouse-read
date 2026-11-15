@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {NeuralEngine} from '../../src/js/readers/neural-voice/engine.js'
-import {nativeAudio, resetAudio, unlockAudio} from '../../src/js/readers/neural-voice/audio.js'
+import {nativeAudio, resetAudio, unlockAudio} from './helpers/live-audio.js'
 import {fakeAudioContext, fakeClients, flush} from './neural-fakes.js'
 
 const voiceId='piper:es_MX-claude-high'

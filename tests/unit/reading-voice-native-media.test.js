@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
 import { loadNeural } from '../../src/js/readers/neural-runtime.js'
 import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
-import { nativeAudio, pauseNativeAudio, resetAudio, stopNativeAudio, unlockAudio } from '../../src/js/readers/neural-voice/audio.js'
+import { nativeAudio, pauseNativeAudio, resetAudio, stopNativeAudio, unlockAudio } from './helpers/live-audio.js'
 import { FAKE_CATALOG, createFakeNeuralEngine } from '../helpers/fake-neural-engine.js'
 let saved, current
 beforeAll(async()=>{await loadNeural();saved=[...neuralVoices];neuralVoices.splice(0,neuralVoices.length,...FAKE_CATALOG)})

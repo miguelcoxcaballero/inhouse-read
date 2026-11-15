@@ -7,7 +7,7 @@ import { FoliateReader } from '../../../src/js/readers/foliate-reader.js'
 import { NeuralEngine } from '../../../src/js/readers/neural-voice/engine.js'
 import { NeuralVoiceEngine, neuralVoices, setNeuralEngine } from '../../../src/js/readers/neural-voice/index.js'
 import { loadNeural } from '../../../src/js/readers/neural-runtime.js'
-import { resetAudio, stopNativeAudio, unlockAudio } from '../../../src/js/readers/neural-voice/audio.js'
+import { resetAudio, stopNativeAudio, unlockAudio } from './live-audio.js'
 import { fakeAudioContext, fakeClients, flush } from '../neural-fakes.js'
 import { FAKE_CATALOG, createFakeNeuralEngine } from '../../helpers/fake-neural-engine.js'
 

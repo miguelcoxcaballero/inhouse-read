@@ -5,7 +5,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import './helpers/rust-ui-ready.js'
 import * as frozen from './helpers/reference-neural-audio.js'
-import * as live from '../../src/js/readers/neural-voice/audio.js'
+import * as live from './helpers/live-audio.js'
 
 afterEach(() => { vi.useRealTimers(); live.resetAudio(); frozen.resetAudio() })
 const random = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 }

@@ -23,7 +23,7 @@ import { storeError } from '../../../src/js/readers/neural-voice/store.js'
 import { NeuralPackageStore } from '../../../src/js/readers/neural-voice/package-store.js'
 import { SynthClient } from '../../../src/js/readers/neural-voice/client.js'
 import { NativeSynthClient } from '../../../src/js/readers/neural-voice/native-client.js'
-import { audioContext, nativeAudio, nativePcmBridge, unlockAudio } from '../../../src/js/readers/neural-voice/audio.js'
+import { audioContext, nativeAudio, nativePcmBridge, unlockAudio } from './live-audio.js'
 import { readerUI as ui } from '../../../src/js/readers/rust-ui-required.js'
 
 // What was an `async` method: the promise of the Rust flow itself (neural_engine_flows.rs), a rejected one when the module is missing.

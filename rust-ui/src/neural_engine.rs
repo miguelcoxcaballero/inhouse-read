@@ -45,7 +45,7 @@ fn every_ended(run:&JsValue)->R<bool>{
 #[wasm_bindgen]
 pub fn neural_supported(env:JsValue,native_bridge:JsValue)->R<bool>{
  if !read(&env,"Worker")?.is_function()||read(&env,"WebAssembly")?.js_typeof()!=st("object"){return Ok(false);}
- let audio=t(&read(&env,"AudioContext")?)||t(&read(&env,"webkitAudioContext")?)||t(&crate::host::call(&native_bridge,"nativePcmBridge",&[&env])?);
+ let audio=t(&read(&env,"AudioContext")?)||t(&read(&env,"webkitAudioContext")?)||t(&crate::neural_audio::door(&native_bridge,"nativePcmBridge",&[&env])?);
  Ok(audio&&t(&read(&env,"caches")?))
 }
 
@@ -851,6 +851,6 @@ pub fn neural_release(e:JsValue)->R<()>{
 #[wasm_bindgen]
 pub fn neural_unlock(e:JsValue,options:JsValue,native_bridge:JsValue)->R<()>{
  let playback=if options.is_undefined(){true}else{let value=read(&options,"playback")?;value.is_undefined()||t(&value)};
- if playback||!t(&crate::host::call(&native_bridge,"nativePcmBridge",&[&read(&e,"env")?])?){method(&read(&e,"audio")?,"unlock",&[])?;}
+ if playback||!t(&crate::neural_audio::door(&native_bridge,"nativePcmBridge",&[&read(&e,"env")?])?){method(&read(&e,"audio")?,"unlock",&[])?;}
  Ok(())
 }

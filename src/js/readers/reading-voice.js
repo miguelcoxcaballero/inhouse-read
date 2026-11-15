@@ -1,6 +1,5 @@
 import {readerUI,rustMethods} from './rust-ui-required.js'
 import * as runtime from './neural-runtime.js'
-import * as audio from './neural-voice/audio.js'
 import * as catalog from './voice-catalog.js'
 import * as speech from './speech-text.js'
 
@@ -9,7 +8,7 @@ import * as speech from './speech-text.js'
 // catalogue and text modules Rust calls back (read when a method needs them) and the doorways reached while a
 // word is presented; the timers, the page join and the deferred failure are rust-ui voice_shell.rs. The frozen
 // originals are tests/unit/helpers/reference-voice-*.js and reference-reading-voice-kit.js.
-const kit={runtime,audio,catalog,speech,get clearTimeout(){return clearTimeout},get now(){return Date.now},add:(a,b)=>a+b,ignore:value=>Promise.resolve(value).catch(()=>{})}
+const kit={runtime,catalog,speech,get clearTimeout(){return clearTimeout},get now(){return Date.now},add:(a,b)=>a+b,ignore:value=>Promise.resolve(value).catch(()=>{})}
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
   constructor(reader,onState=()=>{}) {
@@ -17,7 +16,7 @@ export class ReadingVoice {
     window.InhouseReadAudioDiagnostics=session=>this.getDiagnosticState(session)
     try{localStorage.removeItem('inhouse-read-neural-slow')}catch{/* obsolete preference */}
     for(const type of ['inhouse-tts','inhouse-speech-layout','inhouse-speech-hold','inhouse-audio-control'])
-      window.addEventListener(type,event=>readerUI().voice_event(this,type,event.detail,audio.nativePcmBridge))
+      window.addEventListener(type,event=>{const ui=readerUI();ui.voice_event(this,type,event.detail,ui.audio_bridge)})
   }
   get supported() { return Boolean(runtime.neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }

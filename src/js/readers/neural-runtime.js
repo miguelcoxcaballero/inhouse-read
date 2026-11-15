@@ -4,7 +4,6 @@
 import { normalizeLang } from './voice-catalog.js'
 import { readerUI } from './rust-ui-required.js'
 import { neuralVoices } from './neural-voice/catalog.js'
-import { unlockAudio } from './neural-voice/audio.js'
 
 let engineModule = null, loading = null
 
@@ -44,5 +43,5 @@ export function neuralVoiceList(engine = neuralEngine(), only = false) {
 
 /** Creates/resumes the engine's AudioContext. Call synchronously inside a user gesture; never throws. */
 export function unlockNeural() {
-  try { const engine = neuralEngine(); if (engine) engine.unlock(); else unlockAudio() } catch { /* a later tap can unlock audio again */ }
+  try { const engine = neuralEngine(); if (engine) engine.unlock(); else readerUI().audio_unlock() } catch { /* a later tap can unlock audio again */ }
 }
