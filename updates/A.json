@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.1.25",
-    "versionCode": 38,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.25/inhouse-read-release-v1.1.25.apk",
-    "apkSha256": "b7705e72b92dce041e09c3a241b33b636c349ef0fde23d36ff04c102a49b7abb",
-    "apkSizeBytes": 78579298,
-    "changelog": "Share books to other apps.",
-    "releasedAt": "2026-10-30T02:24:11+00:00"
+    "version": "1.1.26",
+    "versionCode": 39,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.26/inhouse-read-release-v1.1.26.apk",
+    "apkSha256": "9d5fb4cb177a6c7ef98e70f66d7e5f4efffe86ae314ef63a4c23efd382a9c03d",
+    "apkSizeBytes": 78579614,
+    "changelog": "Shared Google login across apps.",
+    "releasedAt": "2026-11-15T13:55:25+00:00"
   },
   "releases": [
+    {
+      "version": "1.1.26",
+      "versionCode": 39,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.26/inhouse-read-release-v1.1.26.apk",
+      "apkSha256": "9d5fb4cb177a6c7ef98e70f66d7e5f4efffe86ae314ef63a4c23efd382a9c03d",
+      "apkSizeBytes": 78579614,
+      "changelog": "Shared Google login across apps.",
+      "releasedAt": "2026-11-15T13:55:25+00:00"
+    },
     {
       "version": "1.1.25",
       "versionCode": 38,
