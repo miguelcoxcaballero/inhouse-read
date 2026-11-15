@@ -359,6 +359,36 @@ describe('moving things on the shelf against the frozen original', () => {
     }
   }, 120_000)
 
+  // A window that loses focus ends a drag with the button still held. The release, and the click it makes on the
+  // book once the book is back under the pointer, come whenever the hand lets go: that click is the drag's. The frozen
+  // original has no such listener (it was written before the shelf listened for it), so this runs production alone.
+  it('does not open a book on the late release of a drag the window interrupted', async () => {
+    const interrupted = async index => {
+      await drag(spine(index), [[30, 120], [80, 120]], { release: false })
+      window.dispatchEvent(new Event('blur')); await flush(300)
+      state.log.push(`interrupted ${spine(index).className}`)
+    }
+    const script = () => [
+      ['a drag is interrupted', () => interrupted(0)],
+      ['the late release and its click', async () => { pointer(spine(0), 'pointerup', { clientX: 80 }); click(spine(0), { pointerType: 'mouse', clientX: 80 }); await flush(600) }],
+      ['the next press and its click', async () => { pointer(spine(0), 'pointerdown'); pointer(spine(0), 'pointerup'); click(spine(0), { pointerType: 'mouse' }); await flush(600) }],
+      ['close', async () => { key(document.body, 'Escape'); await flush(1000) }],
+      ['another drag is interrupted', () => interrupted(1)],
+      ['a keyboard click is not the drag\'s', async () => { click(spine(1), { detail: 0, pointerType: undefined }); await flush(600) }]
+    ]
+    for (const scene of [false, true]) {
+      const text = (await session(production, script, { config: { scene } })).join('\n')
+      const part = name => text.slice(text.indexOf(`## ${name}`)).split('\n## ')[0]
+      for (const name of ['a drag is interrupted', 'another drag is interrupted']) {
+        expect(part(name)).toMatch(/^held .* is-dragging /m)
+        expect(part(name)).toMatch(/^interrupted (?!.*is-(dragging|lifted))/m)
+      }
+      expect(part('the late release and its click')).not.toContain('onPrepareBook')
+      expect(part('the next press and its click')).toContain('onPrepareBook')
+      expect(part('a keyboard click is not the drag\'s')).toContain('onPrepareBook')
+    }
+  }, 120_000)
+
   it('switches a lamp by click, by touch tap and from the keyboard, and reports a failed save', async () => {
     const script = () => [
       ['add a lamp', async () => { await addLamp() }],

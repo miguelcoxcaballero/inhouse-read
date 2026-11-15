@@ -23,7 +23,14 @@ async function open(page, format, preferences = {}) {
   await page.goto(process.env.IHR_TEST_URL || './')
   await page.locator('#file-picker').setInputFiles(fixture(format))
   const textPdf = format === 'pdf' && preferences.pdfMode === 'text'
-  await expect(page.locator(format === 'epub' ? 'foliate-view' : textPdf ? '.pdf-reflow-page' : '.pdf-page-canvas')).toBeVisible()
+  // Between the chosen file and the reader the page draws its room in WebGL, and without a GPU that is the browser's
+  // own time rather than the app's: in a profile of this wait at 1280x800 with deviceScaleFactor 2 (a 2560x1600 px
+  // canvas, the desktop cases here) 10.2 s of 11.7 s are outside JavaScript and WASM, and the reader shows 4.7 s
+  // after the file against 1.8 s at factor 1. CI runners differ by 1.9x between runs (this file took 157 s on
+  // 1.8.1's and 297 s on 1.8.2's, whose only change to the app is in the Drive client): the default 8 s held on the
+  // first and not on the second, where the reader showed 10.8 s after the file. The budget is the one the other
+  // specs give this same first reader.
+  await expect(page.locator(format === 'epub' ? 'foliate-view' : textPdf ? '.pdf-reflow-page' : '.pdf-page-canvas')).toBeVisible({timeout:45_000})
   await expect(page.locator('#reader-top-title')).not.toContainText('Abriendo libro')
   if (format === 'epub') await expect.poll(() => page.evaluate(() => Boolean(document.querySelector('foliate-view').renderer?.getContents?.()[0]?.doc?.body?.textContent?.trim()))).toBe(true)
 }

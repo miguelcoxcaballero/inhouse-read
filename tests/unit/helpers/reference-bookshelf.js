@@ -1,4 +1,5 @@
-// Contract amendments: 1.7.282 reserves the reader origin; 1.7.284 records raw pointer timing.
+// Contract amendments: 1.7.282 reserves the reader origin; 1.7.284 records raw pointer timing; after 1.8.2 the
+// mark of an interrupted drag stays until its click (or the next press), and a keyboard click never honours it.
 // The frozen orchestration and every transcript comparison remain otherwise intact.
 import { notifyCloudSettingsChanged } from '../../../src/js/cloud-settings.js';
 import { needsDriveDownload } from '../../../src/js/book-storage-policy.js';
@@ -1035,7 +1036,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function startSpineDrag(event, node) {
     if ((event.button !== undefined && event.button !== 0) || state.dragSession || state.busy || state.session || state.returnMotion) return;
     clearCompatibilityTapRefresh();
-    state.suppressLampClickKey = null;
+    state.suppressLampClickKey = null; state.suppressOpenBookId = null;
     let backgroundOnly = false;
     const pressed = node;
     if (state.shelfScene) {
@@ -1195,7 +1196,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.arranging = false;
     root.classList.remove('is-arranging');
     state.suppressOpenBookId = String(node.dataset.bookId || '');
-    setTimeout(() => { state.suppressOpenBookId = null; }, 0);
+    // An interruption (blur, hidden page) ends the drag with the button still held: its release and click come
+    // whenever the hand lets go, so the mark stays until that click or the next press.
+    if (!cancelled) setTimeout(() => { state.suppressOpenBookId = null; }, 0);
     if (discard) { void removeBookInTrash(node, { motion:discardMotion, rect:discardRect, duration:discardDuration }); return; }
     if (drag.moved && !cancelled && !opts.sections && drag.destination) persistObjectPlacement(node, drag.destination, oldRects);
     else if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
@@ -1517,7 +1520,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // others still deliver one. The validated pointerup handles both once.
       // A detail-zero activation belongs to the keyboard or assistive tech.
       if (pointerClick(event) && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
-      if (state.arranging || state.suppressOpenBookId) { state.suppressOpenBookId = null; return; }
+      const afterDrag = pointerClick(event) && Boolean(state.suppressOpenBookId);
+      if (state.arranging || afterDrag || !pointerClick(event)) state.suppressOpenBookId = null;
+      if (state.arranging || afterDrag) return;
       const hit = pointerClick(event) ? state.shelfScene?.getBookAtPoint(event.clientX, event.clientY) : null;
       if (pointerClick(event) && state.shelfScene && !hit) return;
       openBook(hit || node, hit ? state.itemsById.get(hit.dataset.bookId) || item : item);

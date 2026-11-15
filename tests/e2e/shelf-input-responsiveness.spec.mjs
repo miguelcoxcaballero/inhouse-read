@@ -39,12 +39,20 @@ test('a synced desktop room accepts local drag, interrupted capture and opening'
   const p=await visibleMiddleBookPoint(b);expect(p).toBeTruthy();
   await b.mouse.move(p.x,p.y);await b.mouse.down();await b.mouse.move(p.x+25,p.y,{steps:3});
   await expect(b.locator('.ihr-spine')).toHaveClass(/is-dragging/,{timeout:1500});
-  await b.evaluate(()=>window.dispatchEvent(new Event('blur')));await b.mouse.up();
+  // The window loses focus with the button still held: the drag ends there and the book goes back to its place.
+  await b.evaluate(()=>window.dispatchEvent(new Event('blur')));
   await expect(b.locator('.ihr-spine')).not.toHaveClass(/is-dragging|is-lifted/);
   await quietShelf(b.locator('.ihr-bookshelf-scene'));
-  // On a slow software renderer the released book can still be between two frames right after the shelf goes quiet
-  // (CI 1.8.1: null here on both attempts, everything before passing); the point is asked for until there is one.
-  let next=null;await expect.poll(async()=>next=await visibleMiddleBookPoint(b),{timeout:15000}).toBeTruthy();await b.mouse.click(next.x,next.y);
+  // The hand lets go later, over the book: that release makes a click on the book. It belongs to the drag that was
+  // interrupted and must not open the book. Until 1.8.2 it did whenever the release came once the book was back under
+  // the pointer, which is what the slow CI runners produced (the flyout was already open when the next tap was sought,
+  // so there was no book to tap: 1.8.1 on both attempts, 1.8.2 on the first); released at once it missed the book.
+  const held=await visibleMiddleBookPoint(b);expect(held).toBeTruthy();
+  await b.evaluate(()=>{window.__releaseClick=null;addEventListener('click',event=>{window.__releaseClick=Boolean(event.target.closest?.('.ihr-spine'))},{capture:true,once:true})});
+  await b.mouse.move(held.x,held.y);await b.mouse.up();
+  await expect.poll(()=>b.evaluate(()=>window.__releaseClick)).toBe(true);
+  await quietShelf(b.locator('.ihr-bookshelf-scene'));await expect(b.locator('.ihr-flyout')).toHaveCount(0);
+  const next=await visibleMiddleBookPoint(b);expect(next).toBeTruthy();await b.mouse.click(next.x,next.y);
   await expect(b.locator('.ihr-flyout')).toBeVisible({timeout:10000});expect(errors).toEqual([]);
  }finally{for(const c of contexts)await c.close()}
 });
