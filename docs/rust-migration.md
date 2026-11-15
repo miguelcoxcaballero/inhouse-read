@@ -1,3 +1,14 @@
+# Entrega 1.7.338 (tanda integ-bar-15): lámparas en la arena, estilo de cubierta y cáscaras de lectores
+
+Ramas: ready/scene-frame-29 (0a5772ff), ready/book-model-20 (69abb47d), ready/decor-shell-20 (bloques 16–20), ready/readers-voice-23 (840a947d).
+Barra estimada en local (bytes al estilo de GitHub): 76,53 % Rust; quedan unos 825 KB de JavaScript (1.7.337: 75,91 %, 847 KB).
+
+- Escena: fundido y tinte de las lámparas dentro de la arena (rust-ui/src/scene_lamp.rs), paso de registro 91→117 y bits `busy`.
+- Libro: cover_style.rs sustituye a cover-color-wasm.js (borrado).
+- Decoración y cáscara: progress_queue en el módulo de estantería, RustProfileView para la vista de cuenta, backup_state.rs (almacén IndexedDB) y nativos de la tabla de la estantería.
+- Lectores y voz: client_shells.rs, store_shells.rs, snapshot_promises.rs, cover_encode.rs y reader_chrome_create.
+- Coste declarado: el wasm de rust-ui crece 41,5 KB por 5,8 KB de JavaScript retirado en lectores y voz. El menú de cuenta, si se toca antes de que llegue su módulo, se abre al llegar.
+
 # Entrega 1.7.337: se recupera el código de la 1.7.335
 
 El árbol es el de b3fc598f (1.7.335) salvo la versión y estas notas. La 1.7.336 volvió a la 1.7.334 porque en el CI de la 1.7.335 fallaban live-room-stability:27 y los dos contratos de regreso nativo; pero el CI de la 1.7.336 (run 43663482632, mismo código que la 1.7.334, donde pasaban) falla esas mismas tres pruebas. La tanda 2/6 tardó 26 min en la 1.7.334, 39,6 en la 1.7.335 y 35,2 en la 1.7.336, con la misma imagen y el mismo Chrome: los ejecutores iban entre 1,3 y 1,4 veces más lentos y esas pruebas tienen límites de reloj. No hay prueba de que la 1.7.335 las rompiera. Barra estimada: 75,91 % Rust, 847 KB de JavaScript.

@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.7.338 — Más código en Rust
+
+Pasan a Rust la luz y el tinte de las lámparas de la estantería, el estilo de
+las cubiertas, la vista de cuenta, la cola de progreso, la copia de seguridad
+local y varias piezas de los lectores y la voz. No cambia el aspecto
+(estimación local: 76,5 % Rust).
+
 ## 1.7.337 — Vuelve el contenido de la 1.7.335
 
 La vuelta atrás de la 1.7.336 no hacía falta: las pruebas que fallaban con la

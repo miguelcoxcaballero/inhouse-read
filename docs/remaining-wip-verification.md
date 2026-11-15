@@ -1,3 +1,9 @@
+# 1.7.338 — tanda integ-bar-15
+
+- Unitarias: 4 tandas, 0 fallos. Capturas: 26 estados contra la 1.7.337, 15 idénticos bit a bit, diferencia máxima 1/255.
+- Navegador en local (442 pruebas en dos ejecuciones, la primera cortada en 399): fallan lamp-switches:136, shelf-close-placement:90, shelf-placement:174 y native-aligned-shelf-return-contract:10, que ya fallaban con la 1.7.337 (el último solo en local). cover-editor:206 (942 ms con límite de 900), live-room-sync:11 y lamp-switches:80 fallaron una vez y pasaron al repetirlas: inestables, sin causa hallada.
+- Sin verificar: teléfono real, WebView de Android, lector de pantalla. Varias pruebas de navegador reescritas por los agentes (cover-color-rust-integration, rust-reader-chrome y las de decor-shell) pasan aquí pero comprueban lo que el propio agente decidió.
+
 # 1.7.337 — se recupera el código de la 1.7.335
 
 - Sin verificación nueva del código: es el de la 1.7.335 (ver su entrada).
