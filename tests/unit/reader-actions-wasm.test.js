@@ -1,13 +1,13 @@
 import {afterEach,beforeAll,beforeEach,describe,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {ReaderActions} from '../../src/js/readers/reader-actions.js'
+import * as state from '../../src/js/readers/reading-state.js'
 import {legacyReaderActions} from './helpers/reference-reader-actions.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let core
 beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});runtime.ui=ui})
-// 'legacy' runs the frozen original implementation directly; 'Rust' runs the production class.
+// 'legacy' runs the frozen original implementation directly; 'Rust' runs the part rust-ui builds (experience_parts.rs).
 let engine='Rust'
 const original=host=>Object.fromEntries(Object.keys(legacyReaderActions).map(name=>[name,(...args)=>legacyReaderActions[name].call(host,...args)]))
 afterEach(()=>vi.restoreAllMocks())
@@ -21,7 +21,7 @@ function setup(){
   reader:{goToTarget:async target=>events.push(['target',target]),goToLocator:async(...args)=>events.push(['locator',...args]),getSelection:()=>null,addQuoteAnnotation:quote=>events.push(['annotation',quote.text,quote.locator]),search:async()=>[],clearSearch:()=>events.push(['clear'])},
   lists:{clearSearch:message=>events.push(['searchStatus',message]),renderSearch:(results,activate)=>{events.push(['results',results]);host.activate=activate}},
   relocate:()=>events.push(['relocate']),renderPlaces:()=>events.push(['render']),showPlaceTab:tab=>events.push(['tab',tab]),jump:place=>events.push(['jump',place])}
- const actions=engine==='legacy'?original(host):new ReaderActions(host);host.savePlaces=()=>actions.savePlaces();return{host,actions,events,status}
+ const actions=engine==='legacy'?original(host):ui.reader_part(host,'actions',{state},ui);host.savePlaces=()=>actions.savePlaces();return{host,actions,events,status}
 }
 describe.each(['legacy','Rust'])('%s reader actions',name=>{
  beforeEach(()=>{engine=name;vi.spyOn(Date,'now').mockReturnValue(1234)})

@@ -22,7 +22,7 @@ pub async fn reader_save_places(host:JsValue,fields:Function)->Result<(),JsValue
  if result.is_err(){error(&host,"No se pudieron guardar los marcadores.")?;}Ok(())
 }
 #[wasm_bindgen]
-pub async fn reader_jump(host:JsValue,place:JsValue,target:JsValue,current:Function,create:Function)->Result<(),JsValue>{
+pub async fn reader_jump(host:JsValue,create:Function,place:JsValue,target:JsValue,current:Function)->Result<(),JsValue>{
  call(&get(&host,"voice")?,"browse")?;error(&host,"")?;
  let origin=create.call0(&JsValue::UNDEFINED)?;
  set(&host,"history",&reading_history(array(get(&host,"history")?),origin))?;
@@ -70,7 +70,7 @@ pub async fn reader_quote(host:JsValue,create:Function,clean:Function)->Result<(
  wait(call(&host,"savePlaces")).await?;call(&host,"renderPlaces")?;one(&host,"showPlaceTab",&"quotes".into())?;Ok(())
 }
 #[wasm_bindgen]
-pub async fn reader_search(host:JsValue,query:JsValue,activate:Function)->Result<(),JsValue>{
+pub async fn reader_search(host:JsValue,activate:Function,query:JsValue)->Result<(),JsValue>{
  one(&get(&host,"lists")?,"clearSearch",&"Buscando…".into())?;
  let result=async{
   let results=wait(one(&get(&host,"reader")?,"search",&query)).await?;

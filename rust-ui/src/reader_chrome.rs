@@ -62,19 +62,25 @@ pub fn reader_voice_state(host:JsValue,state:JsValue,message:JsValue,doc:web_sys
  // Pause must not immediately restart the synthesis that it just cancelled.
  let picker=get(&host,"neuralPicker")?;if !absent(&picker){call(&picker,"render")?;}Ok(())
 }
+/// With `reveal` (the chrome's own resize, a listener): one frame is asked for it when the panel is open, and nothing is answered.
 #[wasm_bindgen]
-pub fn reader_resize_panel(host:JsValue,window:JsValue)->Result<bool,JsValue>{
- if !get(&get(&host,"panel")?,"open")?.is_truthy(){return Ok(false);}
- let viewport=get(&window,"visualViewport")?;
+pub fn reader_resize_panel(host:&JsValue,window:&JsValue,reveal:&JsValue)->Result<JsValue,JsValue>{
+ let fitted=resize_panel(host,window)?;if reveal.is_undefined(){return Ok(fitted.into());}
+ if fitted{crate::host::request_frame(reveal)?;}Ok(JsValue::UNDEFINED)
+}
+fn resize_panel(host:&JsValue,window:&JsValue)->Result<bool,JsValue>{
+ // The panel and its style are read once: the same objects every time within one call.
+ let panel=crate::host::read(host,"panel")?;if !crate::host::read(&panel,"open")?.is_truthy(){return Ok(false);}
+ let viewport=get(window,"visualViewport")?;
  let visible=if absent(&viewport){JsValue::UNDEFINED}else{get(&viewport,"height")?};
- let visible=number(&if visible.is_truthy(){visible}else{get(&window,"innerHeight")?})?;
+ let visible=number(&if visible.is_truthy(){visible}else{get(window,"innerHeight")?})?;
  let offset=if absent(&viewport){JsValue::UNDEFINED}else{get(&viewport,"offsetTop")?};
  let offset=if offset.is_truthy(){number(&offset)?}else{0.0};
- let keyboard=js_sys::Math::max(0.0,number(&get(&window,"innerHeight")?)?-visible-offset);
- let anchor=if !JsValue::from_f64(keyboard).is_truthy()&&number(&get(&window,"innerWidth")?)?>=760.0{node(&host,"toolbar")?.get_bounding_client_rect().height()+12.0}else{0.0};
- let max=js_sys::Math::max(0.0,js_sys::Math::min(visible-anchor-16.0,number(&get(&window,"innerHeight")?)?*0.82));
- let style=get(&get(&host,"panel")?,"style")?;set(&style,"maxHeight",&format!("{}px",crate::js_string(&max.into())).into())?;
- let style=get(&get(&host,"panel")?,"style")?;set(&style,"bottom",&format!("{}px",crate::js_string(&(keyboard+anchor).into())).into())?;
+ let keyboard=js_sys::Math::max(0.0,number(&get(window,"innerHeight")?)?-visible-offset);
+ let anchor=if !JsValue::from_f64(keyboard).is_truthy()&&number(&get(window,"innerWidth")?)?>=760.0{node(host,"toolbar")?.get_bounding_client_rect().height()+12.0}else{0.0};
+ let max=js_sys::Math::max(0.0,js_sys::Math::min(visible-anchor-16.0,number(&get(window,"innerHeight")?)?*0.82));
+ let style=get(&panel,"style")?;set(&style,"maxHeight",&format!("{}px",crate::js_string(&max.into())).into())?;
+ set(&style,"bottom",&format!("{}px",crate::js_string(&(keyboard+anchor).into())).into())?;
  Ok(true)
 }
 #[wasm_bindgen]

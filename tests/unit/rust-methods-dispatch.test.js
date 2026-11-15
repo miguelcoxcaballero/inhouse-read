@@ -1,5 +1,5 @@
 // The reader classes whose members are answered by Rust dispatchers (rustMethods in
-// readers/rust-ui-required.js): every member that reaches its dispatcher must be one the
+// readers/rust-ui-required.js), and the parts of the experience rust-ui builds: every member that reaches its dispatcher must be one the
 // dispatcher knows, keep the class-member shape (non-enumerable, async ones rejecting), and a
 // missing module must still fail clearly.
 import {readFileSync} from 'node:fs'
@@ -14,16 +14,11 @@ import {NeuralVoicePicker} from '../../src/js/readers/neural-picker.js'
 import {ReaderController} from '../../src/js/readers/reader-controller.js'
 import {PdfReader} from '../../src/js/readers/pdf-reader.js'
 import {ReaderExperience} from '../../src/js/readers/reader-experience.js'
-import {ReaderLifecycle} from '../../src/js/readers/reader-lifecycle.js'
-import {PreferenceFlow} from '../../src/js/readers/preference-flow.js'
-import {VoiceFlow} from '../../src/js/readers/voice-flow.js'
-import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
 import {FoliateReader} from '../../src/js/readers/foliate-reader.js'
 import {FoliateSpeechCursor} from '../../src/js/readers/foliate-speech-cursor.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 afterEach(()=>{fixture.ui=null})
 const classes=[[ReadingVoice,'voice_method',40],[NeuralVoicePicker,'picker_method',20],[ReaderController,'controller_method',27],[PdfReader,'pdf_method',17],[ReaderExperience,'experience_method',38],
- [ReaderLifecycle,'flow_method',5],[PreferenceFlow,'flow_method',2],[VoiceFlow,'flow_method',4],[ReaderChrome,'flow_method',1],
  [FoliateReader,'foliate_method',4],[FoliateSpeechCursor,'foliate_method',3]]
 it('dispatches only members its Rust dispatcher knows',async()=>{
  // Timers a member might start on the fixture host never run.
@@ -47,6 +42,21 @@ it('dispatches only members its Rust dispatcher knows',async()=>{
   for(const [name,message] of seen)expect(message??'',`${Class.name}.${name}`).not.toMatch(/has no (method|member)/)
   expect(()=>ui[dispatch]({host:{}},'missing',[],{part:'x'},ui)).toThrow(/has no (method|member) missing/)
  }
+ // The parts of the experience are objects rust-ui builds (experience_parts.rs): every method that reaches
+ // flow_method is one it knows, and a name or a part it does not know is refused.
+ for(const [which,count] of [['lifecycle',5],['preferences',2],['voices',4],['chrome',1]]){
+  const seen=new Map(),spy=vi.fn((part,name,...rest)=>{
+   let message=null
+   try{const value=ui.flow_method({host:null},name,...rest);if(value&&typeof value.then==='function')value.catch(()=>{})}catch(error){message=String(error?.message)}
+   seen.set(name,message)
+  })
+  const part=ui.reader_part({},which,{preferences:{},state:{}},{...ui,flow_method:spy})
+  for(const name of Object.keys(part))if(typeof part[name]==='function'&&!['reveal','create','resize'].includes(name))part[name]()
+  expect(seen.size,which).toBe(count)
+  for(const [name,message] of seen)expect(message??'',`${which}.${name}`).not.toMatch(/has no (method|member)/)
+  expect(()=>ui.flow_method({host:{}},'missing',which,{},ui)).toThrow(/has no method missing/)
+ }
+ expect(()=>ui.reader_part({},'missing',{},ui)).toThrow('The reader has no part missing')
  vi.clearAllTimers();vi.useRealTimers()
 })
 it('keeps class-member shape and fails clearly without the module',async()=>{
