@@ -1,7 +1,7 @@
 //! The spine of a book as two rasters (colour, and packed height / roughness / metalness): how its
 //! binding is set out, the lettering fitted to it and every canvas operation that paints them, in the
 //! order of the original, over the book's own pseudo-random stream (`Stream`, native from the seed to
-//! the last rubbed fibre). Canvas contexts, the scratch pool, the replay of a cloth's plan and the finish
+//! the last rubbed fibre), with the pool of scratch rasters. The replay of a cloth's plan and the finish
 //! tables stay host-side and are called through `host`; three's textures are made here from the two
 //! canvases with the host's namespace.
 //!
@@ -61,12 +61,15 @@ extern "C"{
  #[wasm_bindgen(method,catch,js_name=addColorStop)]fn add_color_stop(this:&Gradient,at:f64,color:&str)->R<()>;
  type Metrics;
  #[wasm_bindgen(method,catch,getter)]fn width(this:&Metrics)->R<f64>;
- /// The spine's host (spine-surface.js): its pool of scratch rasters.
- type SpineHost;
- #[wasm_bindgen(method,catch)]fn scratch(this:&SpineHost,kind:&str,width:f64,height:f64,attributes:&JsValue)->R<JsValue>;
  /// A canvas, or whatever stands in for one.
  type Raster;
  #[wasm_bindgen(method,catch,js_name=getContext)]fn get_context(this:&Raster,kind:&str)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=getContext)]fn get_context_with(this:&Raster,kind:&str,attributes:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,getter,js_name=width)]fn raster_width(this:&Raster)->R<f64>;
+ #[wasm_bindgen(method,catch,getter,js_name=height)]fn raster_height(this:&Raster)->R<f64>;
+ #[wasm_bindgen(method,catch)]fn reset(this:&Ctx)->R<()>;
+ /// The bare name, as the page's own code calls it.
+ #[wasm_bindgen(catch,js_name=queueMicrotask)]fn queue_microtask(task:&JsValue)->R<()>;
  #[wasm_bindgen(method,catch,setter,js_name=width)]fn set_width(this:&Raster,value:f64)->R<()>;
  #[wasm_bindgen(method,catch,setter,js_name=height)]fn set_height(this:&Raster,value:f64)->R<()>;
  /// `document.createElement(tag)`, with `document` looked up when it is called, as the bare name was.
@@ -144,6 +147,47 @@ fn undefined_or(value:&JsValue,fallback:f64)->f64{if value.is_undefined(){fallba
 fn canvas(width:f64,height:f64)->R<JsValue>{
  let node=create_element(s("canvas"))?;
  let raster:&Raster=node.unchecked_ref();raster.set_width(width)?;raster.set_height(height)?;Ok(node)
+}
+// The glyph mask, the ink layer and the relief sample never leave `spine_surface`, which runs to its end
+// synchronously: one raster of each kind is reused instead of allocating, zeroing and later collecting up
+// to three more full-size canvases per spine (a row of new books entering the scroll margin builds many in
+// one task). `reset()` restores the default state and a transparent bitmap, exactly what a new canvas starts
+// with. The CPU-read flag cannot change after the first getContext, so the relief rasters have kinds of
+// their own. They are let go when the task ends: nothing is held while the shelf is idle.
+const MASK:usize=0;const RELIEF_MASK:usize=1;const INK:usize=2;const RELIEF_SAMPLE:usize=3;
+/// A scratch canvas, its context and whether there is one, shared with the pool for as long as a spine paints on it.
+type Scratch=std::rc::Rc<(JsValue,JsValue,bool)>;
+#[derive(Default)]
+struct Pool{held:bool,rasters:[Option<Scratch>;4],release:Option<JsValue>}
+thread_local!{static POOL:std::cell::RefCell<Pool>=Default::default();}
+/// The canvas and context of a kind at this size; `cpu` asks a new one for `willReadFrequently`. A raster of
+/// the pool is one this function made, so its size reads back as the numbers it was given.
+fn scratch(kind:usize,width:f64,height:f64,cpu:bool)->R<Scratch>{
+ let (schedule,held)=POOL.with(|pool|{
+  let mut pool=pool.borrow_mut();
+  let schedule=if pool.held{None}else{
+   pool.held=true;
+   Some(pool.release.get_or_insert_with(||Closure::<dyn Fn()>::new(||POOL.with(|pool|{
+    let mut pool=pool.borrow_mut();pool.held=false;pool.rasters=Default::default();
+   })).into_js_value()).clone())
+  };
+  (schedule,pool.rasters[kind].clone())
+ });
+ if let Some(release)=schedule{queue_microtask(&release)?;}
+ if let Some(held)=held{
+  let raster:&Raster=held.0.unchecked_ref();
+  if raster.raster_width()?==width&&raster.raster_height()?==height&&held.2&&rd(&held.1,"reset")?.is_function(){
+   ctx(&held.1).reset()?;
+   return Ok(held);
+  }
+ }
+ let node=canvas(width,height)?;
+ let attributes=if cpu{object(&[("willReadFrequently",JsValue::TRUE)])?}else{JsValue::UNDEFINED};
+ let context=node.unchecked_ref::<Raster>().get_context_with(s("2d"),&attributes)?;
+ let present=!absent(&context);
+ let made=Scratch::new((node,context,present));
+ POOL.with(|pool|pool.borrow_mut().rasters[kind]=Some(made.clone()));
+ Ok(made)
 }
 /// `canvas.getContext('2d')`.
 fn context_2d(canvas:&JsValue)->R<JsValue>{canvas.unchecked_ref::<Raster>().get_context(s("2d"))}
@@ -357,8 +401,7 @@ fn flag(options:&JsValue,key:&'static str,fallback:&JsValue)->R<JsValue>{
  Ok(if value.is_undefined(){fallback.clone()}else{value})
 }
 
-/// Colour and packed rasters of one spine, plus the numbers its material needs. `host` supplies the
-/// scratch pool (`scratch`), `author`, `spineFinish`, `surface` (the finish row of a surface name),
+/// Colour and packed rasters of one spine, plus the numbers its material needs. `host` supplies `author`, `spineFinish`, `surface` (the finish row of a surface name),
 /// `cloth` (the replay of a cloth plan on a canvas) and the weave's tiles. The book's stream is native.
 /// The answer is the spine's textures and material description (`material`): one call per spine.
 #[wasm_bindgen]
@@ -378,10 +421,7 @@ fn rasters(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsVa
  let engraved=truthy(&engraving)&&rd(book,"spineEngraved")?.as_bool()==Some(true);
  // Relief is sampled on the CPU: keep that raster off the GPU so reading it back does not stall on a
  // full GPU flush (seconds on software renderers).
- let attributes=if engraved{object(&[("willReadFrequently",JsValue::TRUE)])?}else{JsValue::UNDEFINED};
- let pool:&SpineHost=host.unchecked_ref();
- let scratch=pool.scratch(s(if engraved{"relief-mask"}else{"mask"}),width,height,&attributes)?;
- let (mask,c)=(member(&scratch,"canvas")?,member(&scratch,"context")?);
+ let held=scratch(if engraved{RELIEF_MASK}else{MASK},width,height,engraved)?;let (mask,c)=(&held.0,&held.1);
  let mc=ctx(&c);
  to_design(&c)?;mc.set_fill_text(s("#fff"))?;mc.set_align_text(s("center"))?;mc.set_baseline_text(s("middle"))?;
  let layout=layout_of(book)?;let (top,bottom)=layout.span;
@@ -491,8 +531,7 @@ fn rasters(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsVa
  if woven{weave(host,&color_context,design_width,false)?;}
  paint_relief(&color_context,design_width,&mut stream,&layout,!thumb)?;
  transform(&color_context,1.0,1.0)?;
- let scratch=pool.scratch(s("ink"),width,height,&JsValue::UNDEFINED)?;
- let (ink,ink_context)=(member(&scratch,"canvas")?,member(&scratch,"context")?);let ic=ctx(&ink_context);
+ let held_ink=scratch(INK,width,height,false)?;let (ink,ink_context)=(&held_ink.0,&held_ink.1);let ic=ctx(ink_context);
  // Tint the glyph mask (optionally only the strip a shifted copy leaves uncovered, i.e. one wall of
  // each stroke) and lay it on the cloth.
  let stamp=|fill:&JsValue,offset:f64|->R<()>{
@@ -548,8 +587,7 @@ fn rasters(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsVa
  let bump=if detailed{2.6}else if engraved{0.035}else{0.0};
  let mut relief=JsValue::NULL;
  if engraved{
-  let scratch=pool.scratch(s("relief-sample"),256.0,1024.0,&object(&[("willReadFrequently",JsValue::TRUE)])?)?;
-  let sample_context=member(&scratch,"context")?;let sc=ctx(&sample_context);
+  let sample=scratch(RELIEF_SAMPLE,256.0,1024.0,true)?;let sc=ctx(&sample.1);
   sc.set_filter_text(s("blur(1.2px)"))?;sc.draw_image_scaled(&mask,0.0,0.0,256.0,1024.0)?;
   relief=rd(&sc.get_image_data(0.0,0.0,256.0,1024.0)?,"data")?;
  }

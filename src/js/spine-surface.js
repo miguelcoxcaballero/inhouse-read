@@ -5,8 +5,8 @@ import { needRustShelf } from './rust-shelf.js'
 
 // The binding layout, the lettering fit and every canvas operation of a spine run in Rust
 // (rust-ui/src/spine_surface.rs, the `shelf` module the first shelf render awaits), over the book's
-// own pseudo-random stream. What stays here is the part that touches three.js, the pooled scratch
-// canvases and the replay of a cloth's plan on its canvas.
+// own pseudo-random stream, with its pooled scratch canvases. What stays here is the part that touches
+// three.js and the replay of a cloth's plan on its canvas.
 
 /** Every publisher sets its spines a little differently: raised bands between
  * heavy and fine rules, fine double rules, a blind-stamped panel, or a plain
@@ -45,33 +45,8 @@ export const WEAVE = 4.4 / 8
  * multiplied into a packed height/roughness/metal channel raster. */
 export function paintWeave(c, designWidth, options) { needRustShelf().spine_paint_weave(host, c, designWidth, options) }
 
-// The glyph mask, the ink layer and the relief sample never leave spineSurface,
-// which runs to the end synchronously: reuse one raster of each kind instead of
-// allocating, zeroing and later collecting up to three more full-size canvases
-// per spine (a row of new books entering the scroll margin builds many in one
-// task). reset() restores the default state and a transparent bitmap, exactly
-// what a new canvas starts with. The CPU-read flag cannot change after the
-// first getContext, so the relief rasters have kinds of their own. They are
-// let go when the task ends: nothing is held while the shelf is idle.
-const scratchRasters = {}
-let scratchHeld = false
-function scratchRaster(kind, width, height, attributes) {
-  if (!scratchHeld) { scratchHeld = true; queueMicrotask(releaseScratch) }
-  const held = scratchRasters[kind]
-  if (held?.canvas.width === width && held.canvas.height === height && typeof held.context?.reset === 'function') {
-    held.context.reset()
-    return held
-  }
-  const canvas = Object.assign(document.createElement('canvas'), { width, height })
-  return scratchRasters[kind] = { canvas, context:canvas.getContext('2d', attributes) }
-}
-function releaseScratch() {
-  scratchHeld = false
-  for (const kind of Object.keys(scratchRasters)) delete scratchRasters[kind]
-}
-
 const host = {
-  scratch: scratchRaster, author: normalizeBookAuthor, spineFinish, cloth: replayCloth,
+  author: normalizeBookAuthor, spineFinish, cloth: replayCloth,
   surface: value => SURFACE_FINISHES[surfaceFinish(value, 'matte')],
   three: THREE, tiles: null,
   // The spine's relief as the binding samples it: the mesh reads `pixels` (256 x 1024 RGBA) in one pass.
