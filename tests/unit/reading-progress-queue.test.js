@@ -4,13 +4,10 @@ import { Blob as NativeBlob } from 'node:buffer'
 import { LibraryStore } from '../../src/js/library-store.js'
 import { createReadingProgressQueue } from '../../src/js/reading-progress-queue.js'
 
-import {readFileSync} from 'node:fs'
-import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-const runtime=vi.hoisted(()=>({ui:null})),handles=[]
-vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-beforeAll(()=>{ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
-const nativeRuntime={RustReadingProgressQueue:class extends ui.RustReadingProgressQueue{constructor(...args){super(...args);handles.push(this)}}}
-afterEach(()=>{for(const handle of handles.splice(0))handle.free()})
+import { createLegacyReadingProgressQueue } from './helpers/reference-reading-progress-queue.js'
+import { rustShelf } from './helpers/rust-shelf-ready.js'
+// 'legacy' is the frozen JavaScript queue; 'Rust' is the app's (rust-ui/src/progress_queue.rs, made
+// from the module that is in). Both must pass the same expectations.
 const location = value => ({ kind:'pdf-page', value, textOffset:value * 10 })
 const deferred = () => {
   let resolve, reject
@@ -20,15 +17,16 @@ const deferred = () => {
 const tick = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
-  beforeEach(()=>{runtime.ui=engine==='Rust'?nativeRuntime:null})
+  const create = (...args) => (engine === 'Rust' ? createReadingProgressQueue : createLegacyReadingProgressQueue)(...args)
   it('commits the latest synchronous position without a debounce timer', async () => {
     const library = { updateProgress:vi.fn(async (id, fraction, locator) => ({ id, fraction, locator })) }
-    const queue = createReadingProgressQueue(library), promises = []
+    const made = vi.spyOn(rustShelf.RustReadingProgressQueue, 'forLibrary')
+    const queue = create(library), promises = []
     for (let page = 1; page <= 100; page++) promises.push(queue.updateProgress('book', page / 100, location(page)))
     expect(library.updateProgress).not.toHaveBeenCalled()
     expect(new Set(promises).size).toBe(1)
     expect(queue.get('book')).toBe(promises.at(-1))
-    expect(handles.length).toBe(engine==='Rust'?1:0)
+    expect(made).toHaveBeenCalledTimes(engine === 'Rust' ? 1 : 0)
     expect(await promises.at(-1)).toEqual({ id:'book', fraction:1, locator:location(100) })
     expect(library.updateProgress).toHaveBeenCalledExactlyOnceWith('book', 1, location(100))
     expect(queue.get('book')).toBeUndefined()
@@ -37,7 +35,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
   it('keeps the in-flight commit and writes only the latest of 100 pending positions', async () => {
     const first = deferred(), library = { updateProgress:vi.fn().mockImplementationOnce(() => first.promise)
       .mockImplementation(async (id, fraction, locator) => ({ id, fraction, locator })) }
-    const saved = vi.fn(), queue = createReadingProgressQueue(library, { onSaved:saved })
+    const saved = vi.fn(), queue = create(library, { onSaved:saved })
     const initial = queue.updateProgress('book', .01, location(1))
     await tick()
     const pending = []
@@ -61,7 +59,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
       updateProgress:vi.fn(async (id, fraction, locator) => { calls.push(['position', locator.value]); if (locator.value === 1) await first.promise; return { id } }),
       patch:vi.fn(async (id, fields) => { calls.push(['settings', fields]); return { id } })
     }
-    const queue = createReadingProgressQueue(library)
+    const queue = create(library)
     queue.updateProgress('book', .1, location(1)); await tick()
     queue.updateProgress('book', .2, location(2))
     queue.updateProgress('book', .3, location(3))
@@ -79,7 +77,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
 
   it('allows different books to commit independently', async () => {
     const blocked = deferred(), library = { updateProgress:vi.fn(async id => id === 'a' ? blocked.promise : { id }) }
-    const queue = createReadingProgressQueue(library)
+    const queue = create(library)
     const a = queue.updateProgress('a', .3, location(3))
     expect(await queue.updateProgress('b', .4, location(4))).toEqual({ id:'b' })
     expect(queue.get('a')).toBe(a); expect(queue.get('b')).toBeUndefined()
@@ -89,7 +87,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
   it('reports a failed commit but continues to save the latest pending position', async () => {
     const first = deferred(), failure = new Error('Disk unavailable')
     const library = { updateProgress:vi.fn().mockImplementationOnce(() => first.promise).mockResolvedValue({ id:'book' }) }
-    const saved = vi.fn(), queue = createReadingProgressQueue(library, { onSaved:saved })
+    const saved = vi.fn(), queue = create(library, { onSaved:saved })
     const failed = queue.updateProgress('book', .1, location(1))
     const rejection = expect(failed).rejects.toBe(failure)
     await tick()
@@ -103,7 +101,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
   it('waits for post-commit handling, and can queue a position from that handler', async () => {
     const notification = deferred(), library = { updateProgress:vi.fn(async id => ({ id })) }
     let queue, once = true
-    queue = createReadingProgressQueue(library, { onSaved:async () => {
+    queue = create(library, { onSaved:async () => {
       if (once) { once = false; queue.updateProgress('book', .7, location(7)); await notification.promise }
     } })
     queue.updateProgress('book', .1, location(1)); await tick()
@@ -119,7 +117,7 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
     const bytes = new NativeBlob(['original book bytes'], { type:'application/pdf' })
     const cover = new NativeBlob(['original image'], { type:'image/jpeg' })
     const book = await library.addOrTouch({ sourceType:'local', name:'Book.pdf', size:bytes.size, content:bytes, cover, title:'Book', format:'PDF' })
-    const progress = vi.spyOn(library, 'updateProgress'), queue = createReadingProgressQueue(library)
+    const progress = vi.spyOn(library, 'updateProgress'), queue = create(library)
     for (let page = 1; page <= 100; page++) queue.updateProgress(book.id, page / 100, location(page))
     await queue.get(book.id)
     expect(progress).toHaveBeenCalledTimes(1)

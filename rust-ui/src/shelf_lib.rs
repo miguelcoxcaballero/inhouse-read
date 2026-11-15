@@ -1,4 +1,5 @@
 mod room_motion;
+mod progress_queue;
 // The live shelf's pointer controllers. Everything here runs from the first frame on, so
 // the module is fetched and compiled with the page head and awaited before the shelf is drawn.
 mod shelf_zoom;
