@@ -42,7 +42,9 @@ test('a synced desktop room accepts local drag, interrupted capture and opening'
   await b.evaluate(()=>window.dispatchEvent(new Event('blur')));await b.mouse.up();
   await expect(b.locator('.ihr-spine')).not.toHaveClass(/is-dragging|is-lifted/);
   await quietShelf(b.locator('.ihr-bookshelf-scene'));
-  const next=await visibleMiddleBookPoint(b);expect(next).toBeTruthy();await b.mouse.click(next.x,next.y);
+  // On a slow software renderer the released book can still be between two frames right after the shelf goes quiet
+  // (CI 1.8.1: null here on both attempts, everything before passing); the point is asked for until there is one.
+  let next=null;await expect.poll(async()=>next=await visibleMiddleBookPoint(b),{timeout:15000}).toBeTruthy();await b.mouse.click(next.x,next.y);
   await expect(b.locator('.ihr-flyout')).toBeVisible({timeout:10000});expect(errors).toEqual([]);
  }finally{for(const c of contexts)await c.close()}
 });

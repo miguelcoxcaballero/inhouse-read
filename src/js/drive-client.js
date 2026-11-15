@@ -72,10 +72,11 @@ const oauth = globalThis.InhouseGoogleOAuth.create({
 const oauthHost = {
   ...oauth,
   requestDriveAccess: (options = {}) => {
-    if (/InhouseReadApp\//.test(navigator.userAgent) && !globalThis.InhouseNative?.openAuthUrl) {
+    // A session that is still valid keeps working in an older shell; only a new sign-in needs the bridge.
+    const token = restoreToken();
+    if (!token && /InhouseReadApp\//.test(navigator.userAgent) && !globalThis.InhouseNative?.openAuthUrl) {
       const error = new Error('Update the Android app to connect Google'); error.code = 'ANDROID_SHELL_OUTDATED'; return Promise.reject(error);
     }
-    const token = restoreToken();
     return token ? Promise.resolve(token) : oauth.request(options.interactive !== false).then(data => data.access_token);
   },
   handleCallback: payload => {

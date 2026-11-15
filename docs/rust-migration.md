@@ -1,3 +1,7 @@
+# Entrega 1.8.2: sesión válida antes que «actualiza la app»
+
+Sin bloques de migración. src/js/drive-client.js (requestDriveAccess): desde la 1.8.0 una carcasa Android sin InhouseNative.openAuthUrl recibía ANDROID_SHELL_OUTDATED aunque tuviera una sesión guardada y vigente, así que la copia automática a Drive no arrancaba. Ahora se mira primero la sesión, como hasta la 1.7.339; solo un inicio de sesión nuevo pide actualizar. vendor/ no se toca.
+
 # Entrega 1.8.1 (tanda integ-bar-17): rectángulos de la escena, pasadas del relieve, páginas preparadas y figuras de PDF
 
 Ramas sobre la 1.8.0: ready/scene-frame-34 (cd14ae2c), ready/book-model-26 (4206e431, incluye la 24 y la 25), ready/decor-shell-25 (506ea54f), ready/readers-voice-26 (880299ab), ready/ci-reds-4 (c082b728).

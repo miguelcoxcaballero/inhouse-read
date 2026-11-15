@@ -1,3 +1,10 @@
+# 1.8.2 — arreglo tras el CI de la 1.8.1
+
+- CI de la 1.8.1 (run 43742204288): rojo por critical-regressions:28 (rojo también en la 1.8.0, verde en la 1.7.339) y shelf-input-responsiveness:22 (ya pasa la línea del segundo cliente; fallaba después, el punto del libro era null tras soltarlo). Pasan en el CI lamp-switches:136, shelf-close-placement:90, shelf-placement y smoke:80.
+- En local: critical-regressions 6 de 6 (la :28 fallaba 3 de 3 con la 1.8.1 y 2 de 2 con la 1.8.0, pasaba con la 1.7.338); shelf-input-responsiveness 2 de 2 con el punto pedido hasta que existe (esa prueba ya pasaba en local, el arreglo solo lo puede confirmar el CI); unitarias de Drive verdes. No se repitió el resto.
+- Hueco conocido: la verificación local por tandas no incluía critical-regressions ni otros specs fuera de sus patrones; se añaden a partir de la próxima tanda.
+- Sin verificar: una APK Android antigua real.
+
 # 1.8.1 — tanda integ-bar-17
 
 - Unitarias: 0 fallos. Capturas: 26 estados contra la 1.7.339, 13 idénticos bit a bit, diferencia máxima 1/255.

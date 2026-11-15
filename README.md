@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.8.2 — La copia a Drive vuelve a funcionar en apps Android antiguas
+
+Una sesión de Google todavía válida se rechazaba desde la 1.8.0 en las APK
+sin el puente de acceso nuevo; ahora se usa y la copia automática arranca.
+
+
 ## 1.8.1 — Más Rust y mensajes de Google legibles
 
 Pasan a Rust los rectángulos y el empaquetado de la escena, las pasadas del
