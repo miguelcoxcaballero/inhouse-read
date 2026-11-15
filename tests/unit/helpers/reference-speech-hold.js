@@ -1,3 +1,5 @@
+// FROZEN copy of src/js/readers/speech-hold.js as it was before the hold gesture moved to rust-ui
+// (reader_doors.rs `speech_hold`). Tests only: the differential of speech-hold-wasm.test.js and the frozen readers.
 // The same hold gesture in the EPUB iframe and PDF text layer. Short taps
 // always retain their page/chrome action, including while narration plays.
 export function speechHold(doc) {

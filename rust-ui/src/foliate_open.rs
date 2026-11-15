@@ -101,7 +101,7 @@ pub fn foliate_load_event(s: &JsValue, gestures: &JsValue, tap_zone: &JsValue, k
     let element = read(&doc, "documentElement")?;
     let options: JsValue = Object::new().into();
     Object::assign(options.unchecked_ref(), gestures.unchecked_ref());
-    let hold = call(&door(kit, "hold")?, "speechHold", &[&doc])?;
+    let hold = crate::reader_doors::invoke(kit, "hold", &[&doc])?;
     Object::assign(options.unchecked_ref(), hold.unchecked_ref());
     set(&options, "tapZone", tap_zone)?;
     let detach = call(&door(kit, "attach")?, "attachSwipeNavigation", &[&element, &options])?;
@@ -315,7 +315,7 @@ pub fn cursor_wrap(host: &JsValue, source: &JsValue, map: &JsValue, index: &JsVa
     let highlight = read(source, "highlight")?;
     let follow = read(source, "follow")?;
     let clear = read(source, "clear")?;
-    let state = crate::foliate_cursor::cursor_state(host, source, map, index, door(kit, "mapText")?.unchecked_ref())?;
+    let state = crate::foliate_cursor::cursor_state(host, source, map, index, &crate::reader_doors::map_text(kit)?)?;
     set(source, "adopt", &bound(ui, "cursor_adopt", &[host, &state])?)?;
     set(source, "highlight", &bound(ui, "cursor_highlight", &[host, &state, &highlight])?)?;
     set(source, "follow", &bound(ui, "cursor_follow", &[host, &state, map, &follow])?)?;
@@ -374,7 +374,7 @@ pub fn cursor_activate(host: &JsValue, state: &JsValue, flag: &JsValue, valid: &
 #[wasm_bindgen]
 pub fn cursor_source_breaks(host: &JsValue, state: &JsValue, source: &JsValue, flag: &JsValue, map: &JsValue, kit: &JsValue) -> R<JsValue> {
     Ok(crate::foliate_cursor::cursor_measure(host.clone(), state.clone(), source.clone(), activated(flag), map.clone(),
-        door(kit, "mapText")?.unchecked_into(), door(kit, "pageBreaks")?.unchecked_into()).into())
+        crate::reader_doors::map_text(kit)?, door(kit, "pageBreaks")?.unchecked_into()).into())
 }
 
 /// `source.highlight(start, end)` of a detached chapter: only remembered, shown on return.

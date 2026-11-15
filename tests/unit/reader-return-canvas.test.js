@@ -1,7 +1,7 @@
 import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readerReturnCanvas } from '../../src/js/reader-return-canvas.js';
-import { compositePageSnapshots, snapshotCanvas, snapshotDOMPage } from '../../src/js/readers/page-snapshot.js';
+import { compositePageSnapshots, snapshotCanvas, snapshotDOMPage } from './helpers/live-page-snapshot.js';
 
 let contexts;
 const dimensions = { left:0, top:0, width:19, height:31, right:19, bottom:31 };

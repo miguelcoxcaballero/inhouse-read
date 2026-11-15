@@ -18,10 +18,7 @@ import { Overlayer } from 'foliate-js/overlayer.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } from './reading-preferences.js'
 import { READING_THEMES } from './reading-preferences.js'
-import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
-import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
-import { speechHold } from './speech-hold.js'
 import { FoliateSpeechCursor } from './foliate-speech-cursor.js'
 import { measureBookLength } from '../book-length.js'
 import { readerUI, rustMethods } from './rust-ui-required.js'
@@ -39,11 +36,11 @@ export function announceSpeechLayout() {
 // vez por un resaltado ámbar de rotulador, suave en los cinco temas de lectura.
 Overlayer.outline = (rects, options) => readerUI().foliate_outline(rects, options)
 
-const snapshotKit = { settlePageLayout, renderedPageFilter, snapshotDOMPage, compositePageSnapshots, themes:READING_THEMES }
 // What foliate_open.rs mounts a book with and foliate_members.rs answers the reader's members with. canSwipe (every
-// pointer move), theme (every spoken sentence) and the snap guard (any number of arguments) stay arrows.
-const kit = { attach:attachSwipeNavigation, hold:speechHold, SpeechCursor:FoliateSpeechCursor, pageBreaks:speechPageBreaks, readingCSS,
-  announce:announceSpeechLayout, get Overlayer() { return Overlayer }, mapText:mapSpeechText, measure:measureBookLength, normalize:normalizeReadingPreferences,
+// pointer move), theme (every spoken sentence) and the snap guard (any number of arguments) stay arrows. The hold
+// gesture, the text map and the page snapshot are rust-ui's own (reader_doors.rs), reached through `ui`.
+const kit = { attach:attachSwipeNavigation, ui:readerUI, SpeechCursor:FoliateSpeechCursor, pageBreaks:speechPageBreaks, readingCSS,
+  announce:announceSpeechLayout, get Overlayer() { return Overlayer }, measure:measureBookLength, normalize:normalizeReadingPreferences,
   canSwipe:s => () => s.preferences.flow !== 'scrolled', theme:s => () => s.preferences.theme,
   guardSnap:(ui, s, snap) => (...args) => ui.foliate_snap_skipped(s) ? undefined : snap(...args) }
 
@@ -69,4 +66,4 @@ export class FoliateReader {
 rustMethods(FoliateReader,'foliate_reader_method',`!open !next !prev !goToFraction !goToCfi !goToTarget !returnToSpeech stopSpeech
  getNextSpeechSource !getSpeechText !getSpeechSource clearSearch addQuoteAnnotation removeQuoteAnnotation !applyPreferences !getCoverBlob getLengthMetadata`,kit)
 // The page snapshot, search, selection and closing: rust-ui foliate_method (controller_methods.rs) over `this.s`.
-rustMethods(FoliateReader,'foliate_method','getPageSnapshot search getSelection close',{snapshot:snapshotKit})
+rustMethods(FoliateReader,'foliate_method','getPageSnapshot search getSelection close',{snapshot:{themes:READING_THEMES}})

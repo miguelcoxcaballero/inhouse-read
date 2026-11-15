@@ -89,6 +89,7 @@ mod reader_lists;
 mod foliate_cursor;
 mod eager;
 mod page_snapshot;
+mod reader_doors;
 mod page_box;
 mod promises;
 mod foliate_reader;

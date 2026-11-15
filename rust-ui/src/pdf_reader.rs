@@ -34,7 +34,8 @@ pub(crate) fn always_true() -> JsValue {
     YES.with(JsValue::clone)
 }
 pub(crate) fn dep(s: &JsValue, name: &str) -> JsValue { get(&get(s, "kit"), name) }
-pub(crate) fn invoke(s: &JsValue, name: &str, args: &[&JsValue]) -> Result<JsValue, JsValue> { call(&dep(s, name), name, args) }
+/// A helper of the kit; the snapshot and the text map are answered by this module when the kit names none (reader_doors.rs).
+pub(crate) fn invoke(s: &JsValue, name: &str, args: &[&JsValue]) -> Result<JsValue, JsValue> { crate::reader_doors::invoke(&get(s, "kit"), name, args) }
 pub(crate) fn prefs(s: &JsValue) -> JsValue { get(s, "preferences") }
 pub(crate) fn text_mode(s: &JsValue) -> bool { get(&prefs(s), "pdfMode") == "text" }
 pub(crate) fn pixel_ratio() -> f64 { let ratio = num(&get(&window(), "devicePixelRatio")); if nonzero(ratio) { ratio } else { 1.0 } }

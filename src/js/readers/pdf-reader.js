@@ -20,22 +20,19 @@ import { measurePDFBookLength } from '../pdf-book-length.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { pdfImagePaths } from './pdf-images-wasm.js'
-import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js'
 import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
-import { mapTextLayer, mapTextNodes } from './speech-map.js'
-import { speechHold } from './speech-hold.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { readerUI, rustMethods } from './rust-ui-required.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-// What the Rust reader calls: PDF.js and the page pipelines, passed in rather than imported there.
+// What the Rust reader calls: PDF.js and the page pipelines, passed in rather than imported there. The snapshot of a
+// page, the text map and the hold gesture are its own (rust-ui reader_doors.rs), reached through `ui`.
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
-  pdfImagePaths, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
-  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, extractPDFText, mapPDFTextLayer
+  pdfImagePaths, prepareSnapshotPaperTones, sharePaperTone, registerPageRaster, encodePdfCover, extractPDFText, mapPDFTextLayer, ui:readerUI
 }
 
 export class PdfReader {
@@ -61,7 +58,7 @@ export class PdfReader {
         }
       },
       gestures:() => attachSwipeNavigation(container, {
-        ...speechHold(container.ownerDocument),
+        ...ui.speech_hold(ui, container.ownerDocument),
         onNext: () => { onUserNavigation?.(); return this.next() },
         onPrev: () => { onUserNavigation?.(); return this.prev() },
         onManualPan: () => onUserNavigation?.(),

@@ -4,7 +4,7 @@ import * as CFI from 'foliate-js/epubcfi.js'
 import { Overlayer } from 'foliate-js/overlayer.js'
 import { FoliateSpeechCursor } from '../../src/js/readers/foliate-speech-cursor.js'
 import { ReferenceSpeechCursor } from './helpers/reference-foliate-speech-cursor.js'
-import { mapSpeechText } from '../../src/js/readers/speech-map.js'
+import { mapSpeechText } from './helpers/live-speech-map.js'
 
 // The Rust cursor is compared with the frozen JavaScript original on identical
 // scripted sessions: every observable effect (relocations, navigations,

@@ -102,7 +102,7 @@ pub fn foliate_reader_method(host: JsValue, name: &str, args: Array, kit: JsValu
         "getSpeechSource" => eager(async move {
             let visible = option(&a0, "visible")?;
             let visible = if visible.is_undefined() { false } else { flag(&visible) };
-            let map_text: Function = read(&kit, "mapText")?.unchecked_into();
+            let map_text = crate::reader_doors::map_text(&kit)?;
             let page_breaks: Function = read(&kit, "pageBreaks")?.unchecked_into();
             let prepared = speech_prepare(s.clone(), visible, map_text, page_breaks).await?;
             if read(&prepared, "done")?.is_truthy() { return read(&prepared, "value"); }
@@ -178,7 +178,7 @@ pub fn cursor_member(host: JsValue, name: &str, args: Array, kit: JsValue, ui: J
         "next" => eager(async move {
             let is_active = option(&a0, "isActive")?;
             let is_active: JsValue = if is_active.is_undefined() { always().into() } else { is_active };
-            let found = next_chapter(host.clone(), is_active.clone().unchecked_into(), read(&kit, "mapText")?.unchecked_into()).await?;
+            let found = next_chapter(host.clone(), is_active.clone().unchecked_into(), crate::reader_doors::map_text(&kit)?).await?;
             if opt(&found, "state")?.is_truthy() { cursor_source(&host, &found, &is_active, &kit, &ui) } else { Ok(found) }
         }).into(),
         "currentSource" => {

@@ -3,7 +3,7 @@
 // iframe. Foliate's own detached documents and CFI parser provide the same
 // source text and exact saved position; rendering is only needed on return.
 import { SectionProgress } from 'foliate-js/progress.js'
-import { mapSpeechText } from '../../../src/js/readers/speech-map.js'
+import { mapSpeechText } from './live-speech-map.js'
 import { speechPageBreaks } from '../../../src/js/readers/speech-page-breaks.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './live-speech-highlight.js'
 import { Overlayer } from 'foliate-js/overlayer.js'

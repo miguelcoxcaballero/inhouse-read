@@ -5,7 +5,7 @@ const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {normalizeSpeech,planSpeech} from '/inhouse-read/tests/unit/helpers/live-speech-text.js';
 import * as reference from '/inhouse-read/tests/unit/helpers/reference-speech-text.js';
-import {mapSpeechText} from '/inhouse-read/src/js/readers/speech-map.js';
+import {mapSpeechText} from '/inhouse-read/tests/unit/helpers/live-speech-map.js';
 const core=await loadRustCore();if(!core?.speech_normalize)throw Error('Compiled speech kernel required');
 import {loadRustUI} from '/inhouse-read/src/js/rust-ui.js';const speechUI=await loadRustUI();if(!speechUI)throw Error('Compiled reader UI required');
 window.checkSpeech=()=>{

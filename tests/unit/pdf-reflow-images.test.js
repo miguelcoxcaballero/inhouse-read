@@ -7,7 +7,7 @@ beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.w
 
 import { extractPDFText } from '../../src/js/readers/pdf-text.js'
 import { clearPDFReflow, pdfImageRects, populatePDFReflow } from './helpers/live-pdf-reflow.js'
-import { mapTextNodes } from '../../src/js/readers/speech-map.js'
+import { mapTextNodes } from './helpers/live-speech-map.js'
 import { planSpeech } from '../../src/js/readers/speech-text.js'
 
 const viewport={width:600,height:800,transform:[1,0,0,-1,0,800]}
