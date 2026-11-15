@@ -19,8 +19,10 @@ it('bench', () => {
   const frozenList = () => neuralVoices.map(e=>frozen.normalizeNeuralVoice(e, installed)).filter(Boolean)
   const host = { options:{multilingual:false}, languageOverride:'', reader:{language:'es'}, missing:new Set(), voice:'' }
   const list = (a, b) => neuralVoiceList(engine, b)
+  const usable = frozenList().filter(v=>v.installed), wanted = {voiceId:'',language:'es-MX',multilingual:true,deviceLang:'es-ES'}
   const sides = {
     frozenList, liveList:list, liveInstalled:()=>list(undefined,true),
+    frozenResolve:() => frozen.resolveVoice(usable, wanted), liveResolve:() => catalog.resolveVoice(usable, wanted),
     frozenFor:() => { const voices=frozenList().filter(v=>v.installed&&!host.missing.has(v.id)); return frozen.resolveVoice(voices,{voiceId:'',language:'es',multilingual:false,deviceLang:'es-ES'}) },
     liveFor:() => rustUI.voice_for(host,'Hola mundo',list,catalog.isNeuralId,catalog.declaredLanguage,catalog.langBase,catalog.resolveVoice,()=>'es-ES')
   }

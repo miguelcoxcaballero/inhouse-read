@@ -4,7 +4,8 @@
 //! locale collation and Intl display names are the browser's and come in as callbacks.
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function,Object,Reflect,Set};
-use crate::reader_actions::{get as property,set};
+use crate::reader_actions::set;
+use crate::host::read;
 
 #[wasm_bindgen]
 extern "C"{
@@ -40,11 +41,6 @@ pub fn catalog_language_name(base:&str,region:&str,host:&Function)->Result<Strin
 }
 
 fn truthy(value:&JsValue)->bool{value.is_truthy()}
-/// `value[key]` as JavaScript reads it: a primitive has no such property, null and undefined throw.
-fn get(value:&JsValue,key:&str)->Result<JsValue,JsValue>{
- if value.is_null()||value.is_undefined(){return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{key}')",if value.is_null(){"null"}else{"undefined"})).into())}
- if value.is_object()||value.is_function(){property(value,key)}else{Ok(JsValue::UNDEFINED)}
-}
 /// `value || fallback`, the JavaScript way.
 fn or(value:JsValue,fallback:impl FnOnce()->Result<JsValue,JsValue>)->Result<JsValue,JsValue>{if truthy(&value){Ok(value)}else{fallback()}}
 fn tag(normalize:&Function,value:&JsValue)->Result<String,JsValue>{Ok(normalize.call1(&JsValue::UNDEFINED,value)?.as_string().unwrap_or_default())}
@@ -96,7 +92,6 @@ fn amount(value:JsValue)->Result<f64,JsValue>{
 type Tags=Vec<(String,Option<Tag>)>;
 /// The record of `entry`, an object; null when it is not one of ours. `have` is asked for only once the entry is ours.
 fn record(entry:&JsValue,have:&mut dyn FnMut()->Result<Set,JsValue>,normalize:&Function,tags:Option<&mut Tags>)->Result<JsValue,JsValue>{
- use crate::host::read;
  let id=read(entry,"id")?;
  if !is_neural_id(&id){return Ok(JsValue::NULL)}
  // A shared multilingual model names the accent it speaks in `dialect`.
@@ -150,7 +145,7 @@ fn installed_voices(list:&Array)->Result<Vec<JsValue>,JsValue>{
  for index in 0..list.length(){
   if !Reflect::has(list,&index.into())?{continue}
   let voice=list.get(index);
-  if truthy(&get(&voice,"installed")?){found.push(voice)}
+  if truthy(&read(&voice,"installed")?){found.push(voice)}
  }
  Ok(found)
 }
@@ -165,30 +160,31 @@ fn answer(voice:&JsValue,id:&JsValue,language:&JsValue)->Result<JsValue,JsValue>
 /// when nothing matches. Undefined when the list holds a voice that is not a neural record (the catalogue never does).
 #[wasm_bindgen]
 pub fn catalog_resolve_voice(voices:JsValue,options:JsValue,normalize:Function,compare:Function)->Result<JsValue,JsValue>{
- let option=|key:&str,fallback:JsValue|->Result<JsValue,JsValue>{if options.is_undefined(){return Ok(fallback)}let value=get(&options,key)?;Ok(if value.is_undefined(){fallback}else{value})};
+ let option=|key:&str,fallback:JsValue|->Result<JsValue,JsValue>{if options.is_undefined(){return Ok(fallback)}let value=read(&options,key)?;Ok(if value.is_undefined(){fallback}else{value})};
  let voice_id=option("voiceId","".into())?;let language=option("language","".into())?;
  let multilingual=option("multilingual",JsValue::FALSE)?;let device=option("deviceLang","".into())?;
  let list:Array=if Array::is_array(&voices){voices.unchecked_into()}else{Array::new()};
  let usable=installed_voices(&list)?;
  let base_of_language=|value:&JsValue|->Result<String,JsValue>{Ok(base_of(&tag(&normalize,value)?).to_string())};
  let mut chosen=JsValue::UNDEFINED;
- if truthy(&voice_id){for voice in &usable{if get(voice,"id")?==voice_id{chosen=voice.clone();break}}}
- if truthy(&chosen)&&(!truthy(&multilingual)||get(&chosen,"base")?==JsValue::from_str(&base_of_language(&language)?)){
-  return answer(&chosen,&get(&chosen,"id")?,&get(&chosen,"lang")?);
+ if truthy(&voice_id){for voice in &usable{if read(voice,"id")?==voice_id{chosen=voice.clone();break}}}
+ if truthy(&chosen)&&(!truthy(&multilingual)||read(&chosen,"base")?==JsValue::from_str(&base_of_language(&language)?)){
+  return answer(&chosen,&read(&chosen,"id")?,&read(&chosen,"lang")?);
  }
  // An id we cannot see in the list (old bridge, list not loaded yet) is still passed through when there is nothing to choose from.
  if truthy(&voice_id)&&!truthy(&chosen)&&list.length()==0&&!truthy(&multilingual){return answer(&JsValue::NULL,&voice_id,&language)}
  let wanted=tag(&normalize,&language)?;let (base,region)=(base_of(&wanted),region_of(&wanted));
  let device_tag=tag(&normalize,&device)?;
  let device_region=if base_of(&device_tag)==base{region_of(&device_tag)}else{""};
+ let (base_text,region_text,device_text,high)=(JsValue::from_str(base),JsValue::from_str(region),JsValue::from_str(device_region),JsValue::from_str("high"));
  let mut best:Option<(JsValue,f64,JsValue)>=None;
  for voice in &usable{
-  if get(voice,"base")?!=JsValue::from_str(base){continue}
-  if !truthy(&get(voice,"neural")?){return Ok(JsValue::UNDEFINED)}
-  let own=get(voice,"region")?;
-  let bonus=if !region.is_empty()&&own==JsValue::from_str(region){150.0}else if region.is_empty()&&!device_region.is_empty()&&own==JsValue::from_str(device_region){25.0}else{0.0};
-  let score=NEURAL_SCORE+(if get(voice,"tier")?==JsValue::from_str("high"){10.0}else{0.0})+(if truthy(&get(voice,"recommended")?){5.0}else{0.0})+bonus;
-  let id=get(voice,"id")?;
+  if read(voice,"base")?!=base_text{continue}
+  if !truthy(&read(voice,"neural")?){return Ok(JsValue::UNDEFINED)}
+  let own=read(voice,"region")?;
+  let bonus=if !region.is_empty()&&own==region_text{150.0}else if region.is_empty()&&!device_region.is_empty()&&own==device_text{25.0}else{0.0};
+  let score=NEURAL_SCORE+(if read(voice,"tier")?==high{10.0}else{0.0})+(if truthy(&read(voice,"recommended")?){5.0}else{0.0})+bonus;
+  let id=read(voice,"id")?;
   let better=match &best{
    None=>true,
    Some((_,top,top_id))=>{
@@ -200,7 +196,7 @@ pub fn catalog_resolve_voice(voices:JsValue,options:JsValue,normalize:Function,c
   if better{best=Some((voice.clone(),score,id))}
  }
  match best{
-  Some((voice,_,_))=>answer(&voice,&get(&voice,"id")?,&get(&voice,"lang")?),
+  Some((voice,_,_))=>answer(&voice,&read(&voice,"id")?,&read(&voice,"lang")?),
   None=>answer(&JsValue::NULL,&"".into(),&language),
  }
 }
