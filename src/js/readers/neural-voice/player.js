@@ -2,21 +2,19 @@
 // ends, on the audio clock, not on a JS timer) plus exact 'start'/'done' notifications per unit (a unit is one spoken
 // fragment made of one or more chunks). The 'start' of a unit fires when its first sample is AUDIBLE: the audio clock time
 // plus the output latency of the device. All time comes from context.currentTime, so the class is testable with a fake context.
-// The scheduling is rust-ui (neural_player.rs); this class keeps the injected context and timers and the closures the
+// The scheduling and what the constructor builds are rust-ui (neural_player.rs); this class keeps the closures the
 // browser calls back.
 import { readerUI as ui } from '../rust-ui-required.js'
+
+// What a player is given when its maker gives none: the notifications and the timers.
+const defaults = { noop() {}, setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: id => clearTimeout(id) }
 
 export class GaplessPlayer {
   /**
    * @param {{context:()=>BaseAudioContext|null, onStart?:(unit:number)=>void, onEnd?:(unit:number)=>void,
    *          setTimer?:typeof setTimeout, clearTimer?:typeof clearTimeout}} options
    */
-  constructor({ context, onStart = () => {}, onEnd = () => {}, onMark = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) }) {
-    Object.assign(this, { getContext: context, onStart, onEnd, onMark, setTimer, clearTimer })
-    this.units = new Map()   // unit -> { sources:[{source,start,end}], start, end, complete, started, ended, timers:Set }
-    this.nextTime = 0        // audio-clock end of everything scheduled
-    this.scheduled = false   // something was scheduled since the last stopAll()
-  }
+  constructor(options) { ui().gapless_construct(this, options, defaults) }
 
   get now() { return ui().gapless_now(this) }
   /** Time between a sample being rendered and being heard (speaker/Bluetooth pipeline). */

@@ -84,6 +84,8 @@ mod store_methods;
 mod synth_client;
 mod native_synth_client;
 mod client_prepare;
+mod client_shells;
+mod store_shells;
 mod native_ort;
 mod reader_lists;
 mod foliate_cursor;

@@ -8,8 +8,8 @@
 // single byte arrives (CORS, proxies), makes it start again cleanly instead. Sizes are checked against Content-Length and,
 // when it can be reached, against the catalogue (voices.json) of the voice repository. A connection that goes silent without
 // closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
-// The download, the listing and the reads are rust-ui (voice_store.rs, answered by store_methods.rs); this class keeps the
-// injected browser services.
+// The download, the listing and the reads are rust-ui (voice_store.rs, answered by store_methods.rs), and so are what the
+// constructor builds and the pause between two attempts (store_shells.rs).
 import { DEFAULT_VOICE_BASE, neuralVoiceBase, piperVoices } from './catalog.js'
 import { readerUI as ui, rustMethods } from '../rust-ui-required.js'
 
@@ -21,22 +21,16 @@ export const voiceUrls = (piperId, base = neuralVoiceBase()) => ui().catalog_voi
 /** Error with a `code` the UI maps to Spanish copy: 'offline' | 'http' | 'storage' | 'aborted'. */
 export const storeError = (code, message, cause) => ui().store_error(code, message, cause)
 
-const defaultSleep = (ms, signal) => new Promise((resolve, reject) => {
-  if (signal?.aborted) { reject(storeError('aborted', 'aborted')); return }
-  const cleanup = () => signal?.removeEventListener('abort', onAbort)
-  const onAbort = () => { clearTimeout(timer); cleanup(); reject(storeError('aborted', 'aborted')) }
-  const timer = setTimeout(() => { cleanup(); resolve() }, ms)
-  signal?.addEventListener('abort', onAbort, { once: true })
-})
+// The defaults of a store that need this page: the voice repository and the folder of the phonemizer's dictionaries.
+const defaults = { base: () => neuralVoiceBase(),
+  dictionaryBase: () => new URL(`${import.meta.env?.BASE_URL || '/'}neural-voice/phon/`, globalThis.location?.href || 'http://localhost/').href }
 
 export class VoiceStore {
   /**
    * Everything the browser provides is injectable so the logic can be tested without a network or a real cache.
    * @param {{caches?:CacheStorage, fetch?:typeof fetch, base?:()=>string, storage?:StorageManager, sleep?:(ms:number,signal?:AbortSignal)=>Promise<void>, maxRetries?:number, online?:()=>boolean, stallMs?:number}} deps
    */
-  constructor({ caches = globalThis.caches, fetch = globalThis.fetch?.bind(globalThis), base = () => neuralVoiceBase(), dictionaryBase = () => new URL(`${import.meta.env?.BASE_URL || '/'}neural-voice/phon/`, globalThis.location?.href || 'http://localhost/').href, storage = globalThis.navigator?.storage, sleep = defaultSleep, maxRetries = 4, online = () => globalThis.navigator?.onLine !== false, stallMs = 20_000 } = {}) {
-    Object.assign(this, { caches, fetchFn: fetch, baseFn: base, dictionaryBase, storage, sleep, maxRetries, online, stallMs })
-  }
+  constructor(deps) { ui().voice_store_construct(this, deps, defaults) }
 
   get supported() { return !!this.caches && typeof this.fetchFn === 'function' }
   urls(piperId) { return voiceUrls(piperId, this.baseFn()) }

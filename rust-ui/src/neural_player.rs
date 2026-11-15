@@ -19,6 +19,22 @@ const EPSILON:f64=0.004;   // tolerance when comparing audio-clock times
 const MIN_POLL:f64=0.025;
 
 // ---------------------------------------------------------------- Web Audio
+/// `new GaplessPlayer({context, onStart = () => {}, onEnd = () => {}, onMark = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms),
+/// clearTimer = id => clearTimeout(id)})`: `kit.noop`, `kit.setTimer` and `kit.clearTimer` are those defaults, functions of
+/// the page because a mark of every spoken word passes through them. The frozen original is
+/// tests/unit/helpers/reference-store-shells.js.
+#[wasm_bindgen]
+pub fn gapless_construct(p:JsValue,options:JsValue,kit:JsValue)->R<()>{
+ if absent(&options){return Err(js_sys::TypeError::new("Cannot destructure the options of GaplessPlayer: none were given.").into());}
+ set(&p,"getContext",&read(&options,"context")?)?;
+ for (name,fallback) in [("onStart","noop"),("onEnd","noop"),("onMark","noop"),("setTimer","setTimer"),("clearTimer","clearTimer")]{
+  let given=read(&options,name)?;
+  set(&p,name,&if given.is_undefined(){read(&kit,fallback)?}else{given})?;
+ }
+ set(&p,"units",&js_sys::Map::new())?; // unit -> { sources:[{source,start,end}], start, end, complete, started, ended, timers:Set }
+ set(&p,"nextTime",&n(0.0))?;           // audio-clock end of everything scheduled
+ set(&p,"scheduled",&JsValue::FALSE)    // something was scheduled since the last stopAll()
+}
 fn gapless_context(p:&JsValue)->R{method(p,"getContext",&[])}
 #[wasm_bindgen]
 pub fn gapless_now(p:JsValue)->R<f64>{let time=get(&gapless_context(&p)?,"currentTime");Ok(if absent(&time){0.0}else{num(&time)})}
