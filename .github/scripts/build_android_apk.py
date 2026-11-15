@@ -26,11 +26,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android" / "inhouse-read-logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.25.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.26.apk"
 APP_NAME = "Inhouse Read"
 PACKAGE_ID = "com.inhousesoftware.read"
-ANDROID_VERSION_NAME = "1.1.25"
-ANDROID_VERSION_CODE = 38
+ANDROID_VERSION_NAME = "1.1.26"
+ANDROID_VERSION_CODE = 39
 
 
 class Value:
@@ -104,6 +104,8 @@ def main() -> None:
     run(["python3", str(REPO_ROOT / "vendor/inhouse-services-updater/verify.py"), str(REPO_ROOT)], REPO_ROOT)
     import runpy
     runpy.run_path(str(REPO_ROOT / "vendor/inhouse-services-updater/register_android.py"))["register"](project_dir, REPO_ROOT, trust_read=True)
+    run(["python3", str(REPO_ROOT / "vendor/inhouse-services-updater/auth/verify.py"), str(REPO_ROOT)], REPO_ROOT)
+    runpy.run_path(str(REPO_ROOT / "vendor/inhouse-services-updater/auth/register_android.py"))["register"](project_dir, REPO_ROOT, "read")
 
     gradlew = project_dir / "android" / "gradlew"
     gradlew.chmod(gradlew.stat().st_mode | 0o111)

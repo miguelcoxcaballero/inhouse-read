@@ -122,7 +122,7 @@ pub fn app_drive_sync(host:JsValue,options:JsValue)->Promise{start(async move{
  let silent=truthy(&read(&options,"silent")?);let poll=truthy(&read(&options,"poll")?);
  if !truthy(&method(&host,"hasDriveSession",&[])?) {
   if silent{
-   if !truthy(&method(&host,"isAndroidShell",&[])?)||!truthy(&method(&host,"getRememberedDriveProfile",&[])?) {return Ok(JsValue::UNDEFINED);}
+   if !truthy(&method(&host,"isAndroidShell",&[])?) {return Ok(JsValue::UNDEFINED);}
    if settle(method(&host,"requestDriveAccess",&[&object(&[("interactive",JsValue::FALSE)])])).await.is_err(){return Ok(JsValue::UNDEFINED);}
   }else{settle(method(&host,"requestDriveAccess",&[])).await?;}
  }

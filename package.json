@@ -8,7 +8,7 @@
     "build:rust": "node scripts/build-rust-core.mjs && node scripts/build-rust-ui.mjs",
     "predev": "npm run build:rust",
     "dev": "vite",
-    "prebuild": "python vendor/inhouse-services-updater/verify.py . && npm run build:rust",
+    "prebuild": "python vendor/inhouse-services-updater/verify.py . && python vendor/inhouse-services-updater/auth/verify.py . && npm run build:rust",
     "build": "vite build && node scripts/restore-legacy-pdf-chunk.mjs && node scripts/generate-offline-shell.mjs",
     "preview": "vite preview",
     "pretest:unit": "npm run build:rust",

@@ -1,14 +1,13 @@
+import '../../vendor/inhouse-services-updater/auth/google-oauth.js'
 import { spineCustomization } from './book-colors.js'
 import { cleanQuotes } from './readers/reading-state.js'
 import { normalizeDriveBookLength } from './book-length-drive.js'
 import { driveFetch } from './drive-fetch.js'
 import { cloudModule } from './cloud-native.js'
 
-// Google Drive access lives in rust-ui/src/drive_client.rs (the web sign-in, the
-// Android authorization-code/PKCE flow, the per-request account guard, folders,
-// manifests, reading state and uploads, with crypto, Google Identity Services and the
-// Android bridge). What stays here is the stored sign-in (read by the shelf before any
-// module could load), localStorage and fetch, handed over as callbacks.
+// Drive operations and account-generation guards live in Rust. OAuth lives only in
+// the canonical services module imported above; this host supplies app identity,
+// storage migration and the UI's early session cache.
 const TOKEN_KEY = 'ihr_drive_session_v2'
 const LEGACY_TOKEN_KEY = 'ihn_drive_tokens'
 const PROFILE_KEY = 'ihr_drive_profile_v2'
@@ -51,13 +50,45 @@ export function getRememberedDriveProfile() {
 }
 
 function clearToken() {
+  oauth.invalidate();
   currentToken = ''
   expiresAt = 0
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(LEGACY_TOKEN_KEY)
 }
 
+// Only identity, storage and UI wiring live here. OAuth is shared with Notes and Paellas.
+const oauth = globalThis.InhouseGoogleOAuth.create({
+  clientId: '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com',
+  scope: 'https://www.googleapis.com/auth/drive.file',
+  get androidClientId() { return globalThis.InhouseNative?.openAuthUrl ? ANDROID_OAUTH_CLIENT_ID : undefined },
+  redirectUri: 'com.inhousesoftware.read:/oauth2redirect',
+  get openAuthUrl() { return globalThis.InhouseNative?.openAuthUrl ? url => globalThis.InhouseNative.openAuthUrl(url) : undefined },
+  sessionKey: 'inhouse-read-oauth-v1', refreshKey: REFRESH_TOKEN_KEY,
+  transactionKey: PKCE_TRANSACTION_KEY, verifierKey: PKCE_VERIFIER_KEY,
+  hint: () => getRememberedDriveProfile()?.emailAddress,
+  onToken(data) { host.session.save(data.access_token, data.expiresAt) }
+});
+const oauthHost = {
+  ...oauth,
+  requestDriveAccess: (options = {}) => {
+    if (/InhouseReadApp\//.test(navigator.userAgent) && !globalThis.InhouseNative?.openAuthUrl) {
+      const error = new Error('Update the Android app to connect Google'); error.code = 'ANDROID_SHELL_OUTDATED'; return Promise.reject(error);
+    }
+    const token = restoreToken();
+    return token ? Promise.resolve(token) : oauth.request(options.interactive !== false).then(data => data.access_token);
+  },
+  handleCallback: payload => {
+    const waiting = oauth.hasPendingRequest();
+    return oauth.handleCallback(payload).then(data => {
+    if (data && !waiting) globalThis.dispatchEvent(new CustomEvent('inhouse-drive-auth', { detail: { connected: true } }));
+    return data;
+  }).catch(() => globalThis.dispatchEvent(new CustomEvent('inhouse-drive-auth', { detail: { error: 'Google sign-in failed' } })))
+  }
+};
+
 const host = {
+  oauth: oauthHost,
   session: {
     token: () => currentToken,
     restore: restoreToken,
@@ -90,32 +121,18 @@ const later = name => (...args) => native ? native[name](...args) : ready().then
 
 // MainActivity relays the custom-scheme callback; the persisted transaction survives a recreated WebView,
 // so a callback that arrives before the module is in memory is handled as soon as it is.
-globalThis.handleInhouseNativeOAuth = payload => {
-  if (native) return native.handleNativeOAuth(payload)
-  ready().then(client => client.handleNativeOAuth(payload))
-  return true
-}
+globalThis.handleInhouseNativeOAuth = payload => { oauthHost.handleCallback(payload); return true }
 
-export function requestDriveAccess(options) {
-  if (native) return native.requestDriveAccess(options)
-  const token = restoreToken()
-  return token ? Promise.resolve(token) : ready().then(client => client.requestDriveAccess(options))
-}
-
-// Signing out and cancelling act at once. Before the module is in memory nothing of it is running, so
-// only the stored state needs to go; a request still waiting for the module is cancelled behind it.
+export function requestDriveAccess(options) { return oauthHost.requestDriveAccess(options) }
 export function cancelDriveConnection(message) {
-  if (native) return native.cancelDriveConnection(message)
-  localStorage.removeItem(PKCE_TRANSACTION_KEY)
-  localStorage.removeItem(PKCE_VERIFIER_KEY)
-  loading?.then(client => client.cancelDriveConnection(message))
+  oauth.cancel();
+  if (native) native.cancelDriveConnection(message);
+  else loading?.then(client => client.cancelDriveConnection(message));
 }
-
 export function signOutDrive() {
-  if (native) return native.signOutDrive()
-  clearToken()
-  for (const key of [REFRESH_TOKEN_KEY, PKCE_VERIFIER_KEY, PKCE_TRANSACTION_KEY, PROFILE_KEY]) localStorage.removeItem(key)
-  loading?.then(client => client.signOutDrive())
+  oauth.signOut(); clearToken(); localStorage.removeItem(PROFILE_KEY);
+  if (native) native.signOutDrive();
+  else loading?.then(client => client.signOutDrive());
 }
 
 export const getOrCreateReadFolder = later('getOrCreateReadFolder')

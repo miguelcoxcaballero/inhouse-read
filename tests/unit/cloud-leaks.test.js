@@ -211,6 +211,7 @@ describe('the Rust cloud ports leave nothing behind', () => {
     const store = new Map()
     const host = () => ({
       session: { token: () => 'token', restore: () => 'token', save() {}, clear() {} },
+      oauth: { requestDriveAccess: async () => 'token', cancel() {}, signOut() {} },
       storage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key) },
       androidClientId: 'client', fetch: async () => new Response(JSON.stringify({ user: { permissionId: 'p', displayName: 'N', emailAddress: 'e@example.test' } }), { status: 200 }),
       randomBytes: length => new Uint8Array(length), sha256: async () => new ArrayBuffer(32), randomUUID: () => 'uuid',
