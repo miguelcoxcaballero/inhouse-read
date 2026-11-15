@@ -100,6 +100,7 @@ mod pdf_sources;
 mod reader_controller;
 mod pdf_reflow;
 mod pdf_theme;
+mod pdf_pictures;
 mod reader_markup;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};

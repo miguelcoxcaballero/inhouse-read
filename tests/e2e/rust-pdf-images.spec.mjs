@@ -5,7 +5,6 @@ import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs'
 const html=`<!doctype html><main id="result"></main><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
-import {rustPDFImageRects} from '/inhouse-read/src/js/readers/pdf-images-wasm.js';
 import {pdfImageRects,populatePDFReflow,clearPDFReflow} from '/inhouse-read/tests/unit/helpers/live-pdf-reflow.js';
 import {extractPDFText} from '/inhouse-read/src/js/readers/pdf-text.js';
 import {pdfImageRects as reference} from '/inhouse-read/tests/unit/helpers/reference-pdf-images.js';
@@ -13,9 +12,11 @@ import {manyImagesPDF} from '/inhouse-read/tests/e2e/fixtures/pdf-many-images.mj
 import {getDocument,GlobalWorkerOptions} from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.mjs';
 import workerURL from '/inhouse-read/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 GlobalWorkerOptions.workerSrc=workerURL;
-const core=await loadRustCore();if(!core?.pdf_image_rects)throw Error('Actual compiled image bounds required');
-// The reader awaits its Rust module before creating any component; so does this page.
-await requireRustUI();
+const core=await loadRustCore();if(!core)throw Error('Rust core required for the PDF text');
+// The reader awaits its Rust module before creating any component; so does this page. The bounds are that module's
+// (rust-ui pdf_pictures.rs): the same export the reader's Rust calls.
+const ui=await requireRustUI();if(typeof ui?.pdf_image_rects!=='function')throw Error('Actual compiled image bounds required');
+const rustPDFImageRects=(coordinates,width,height)=>ui.pdf_image_rects(coordinates,width,height);
 window.checkImageBounds=()=>{
  const results=[];
  for(const count of [8,32,128,512,2000]){

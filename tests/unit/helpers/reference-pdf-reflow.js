@@ -1,6 +1,7 @@
 // Frozen original of src/js/readers/pdf-reflow.js before its DOM building moved to Rust (tests only).
-import {pdfPlaceFigures} from '../../../src/js/readers/pdf-figures-wasm.js';
-export {pdfFigureOffset} from '../../../src/js/readers/pdf-figures-wasm.js';
+// The pictures' kernels it called are frozen too: reference-pdf-figures.js and reference-pdf-images.js.
+import {placeFigures as pdfPlaceFigures} from './reference-pdf-figures.js';
+export {pdfFigureOffset} from './reference-pdf-figures.js';
 // Render illustrations from PDF.js's original composite pixels: transforms,
 // transparency, clipping and colour profiles remain the renderer's job.
 // Text stays in its exact source-offset stream even when a picture splits it.
@@ -9,7 +10,7 @@ export function clearPDFReflow(root) {
   root.replaceChildren()
 }
 
-export {pdfImageRects} from '../../../src/js/readers/pdf-images-wasm.js';
+export {pdfImageRects} from './reference-pdf-images.js';
 
 
 function* reflowNodes(doc, layout, source, rects, viewport) {

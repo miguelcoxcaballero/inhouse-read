@@ -466,12 +466,12 @@ async fn draw_text(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid, 
             if !live(s, valid)? { return Ok(false); }
             let coordinates = get(page, "imageCoordinates");
             let coordinates = if truthy(&coordinates) { coordinates } else { Array::new().into() };
-            let mut rects = invoke(s, "pdfImageRects", &[&coordinates, &get(&source, "width"), &get(&source, "height")])?;
+            let mut rects = crate::pdf_pictures::pdf_image_rects(&coordinates, &get(&source, "width"), &get(&source, "height"))?;
             if blank(state)? || crate::pdf_theme::pdf_untracked_images(&operators, &ops)? || !truthy(&get(&rects, "length")) {
                 rects = Array::of1(&plain(&[("x0", 0.into()), ("y0", 0.into()), ("x1", get(&source, "width")), ("y1", get(&source, "height"))])?).into();
             }
             let isolated = validity(s, valid);
-            let prepared = crate::pdf_reflow::reflow_prepare(reflow.clone(), get(state, "textLayout"), source.clone(), rects, viewport.clone(), isolated.as_ref().clone(), dep(s, "pdfPlaceFigures"));
+            let prepared = crate::pdf_reflow::reflow_prepare(reflow.clone(), get(state, "textLayout"), source.clone(), rects, viewport.clone(), isolated.as_ref().clone());
             Ok(truthy(&settled(prepared.into()).await?))
         }.await;
         let outcome = match attempt {
@@ -483,7 +483,7 @@ async fn draw_text(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid, 
         if !outcome? { return Ok(false); }
     } else {
         let isolated = validity(s, valid);
-        let prepared = crate::pdf_reflow::reflow_prepare(reflow.clone(), get(state, "textLayout"), JsValue::UNDEFINED, Array::new().into(), JsValue::UNDEFINED, isolated.as_ref().clone(), dep(s, "pdfPlaceFigures"));
+        let prepared = crate::pdf_reflow::reflow_prepare(reflow.clone(), get(state, "textLayout"), JsValue::UNDEFINED, Array::new().into(), JsValue::UNDEFINED, isolated.as_ref().clone());
         if !truthy(&settled(prepared.into()).await?) { return Ok(false); }
     }
     set(state, "zoomed", &JsValue::FALSE)?;

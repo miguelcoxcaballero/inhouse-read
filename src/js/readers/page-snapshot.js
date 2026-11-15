@@ -15,9 +15,6 @@ export const settlePageLayout = (doc = document, options) => readerUI().snapshot
 
 export const renderedPageFilter = (element, { themeFilter } = {}) => readerUI().snapshot_filter(element, themeFilter)
 
-/** Rasterize existing inline SVG without requesting any network resources. */
-export const rasterizeInlineSVG = (svg, options) => readerUI().snapshot_svg(svg, options)
-
 /** Composite visible fixed-layout spread frames into the same reader viewport. */
 export const compositePageSnapshots = (snapshots, options) => readerUI().snapshot_composite(snapshots, options)
 

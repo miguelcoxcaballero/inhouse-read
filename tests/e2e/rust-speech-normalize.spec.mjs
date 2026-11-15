@@ -3,7 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {normalizeSpeech,planSpeech} from '/inhouse-read/src/js/readers/speech-text.js';
+import {normalizeSpeech,planSpeech} from '/inhouse-read/tests/unit/helpers/live-speech-text.js';
 import * as reference from '/inhouse-read/tests/unit/helpers/reference-speech-text.js';
 import {mapSpeechText} from '/inhouse-read/src/js/readers/speech-map.js';
 const core=await loadRustCore();if(!core?.speech_normalize)throw Error('Compiled speech kernel required');

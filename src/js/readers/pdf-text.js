@@ -107,7 +107,7 @@ export function extractPDFText(content, viewport) {
     const out = new Float64Array(core.memory.buffer, answer, n * OUT_ENTRY + count * OUT_LINE)
     const paths = decoder.decode(new Uint8Array(core.memory.buffer, answer + out.length * 8, pathBytes))
     const lines = [], outItems = [], spans = [], paragraphs = [], parts = []
-    let e = 0, l = n * OUT_ENTRY, position = 0, paragraphStart = 0
+    let e = 0, l = n * OUT_ENTRY, position = 0, paragraphStart = 0, dominant
     for (let i = 0; i < count; i++, l += OUT_LINE) {
       const pieces = out[l], entries = new Array(pieces), sourceIndices = []
       if (out[l + 13]) {
@@ -118,6 +118,7 @@ export function extractPDFText(content, viewport) {
         const item = items[out[e]], rawIndex = raw[out[e]], prefix = out[e + 7], text = item.str, stop = text.length - out[e + 8]
         entries[piece] = { item, rawIndex, x0:out[e + 1], x1:out[e + 2], y:out[e + 3], height:out[e + 4], top:out[e + 5], bottom:out[e + 6] }
         sourceIndices.push(rawIndex)
+        if (!dominant || text.length > dominant.str.length) dominant = item
         if (prefix) parts.push(prefix === 2 ? '\n\n' : ' ')
         if (stop) {
           parts.push(text.slice(0, stop))
@@ -138,7 +139,9 @@ export function extractPDFText(content, viewport) {
     const text = parts.join('')
     for (const paragraph of paragraphs) paragraph.text = text.slice(paragraph.start, paragraph.end)
     for (const line of lines) line.text = text.slice(line.start, line.end)
-    return { geometric:true, text, items:outItems, spans, lines, paragraphs }
+    // `pictures` (not enumerable): what placing this page's illustrations reads, kept as the kernel wrote it (rust-ui pdf_pictures.rs).
+    return Object.defineProperty({ geometric:true, text, items:outItems, spans, lines, paragraphs }, 'pictures',
+      { value:{ lines:out.slice(n * OUT_ENTRY), paths, dominant } })
   } finally { if (arena !== kept) core.free_f64(pointer, arena.cells) }
 }
 

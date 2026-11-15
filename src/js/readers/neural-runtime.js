@@ -41,11 +41,6 @@ export function neuralVoiceList(engine = neuralEngine()) {
   } catch { return [] }
 }
 
-/** True when at least one neural voice is downloaded: only then does the page need an unlocked AudioContext. */
-export function neuralReady(engine = neuralEngine()) {
-  try { return Boolean(engine && (engine.installed?.size || engine.downloads?.size)) } catch { return false }
-}
-
 /** Creates/resumes the engine's AudioContext. Call synchronously inside a user gesture; never throws. */
 export function unlockNeural() {
   try { const engine = neuralEngine(); if (engine) engine.unlock(); else unlockAudio() } catch { /* a later tap can unlock audio again */ }

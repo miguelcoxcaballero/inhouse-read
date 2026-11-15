@@ -2,7 +2,7 @@
 import {it,expect,beforeAll,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {normalizeSpeech} from '../../src/js/readers/speech-text.js'
+import {normalizeSpeech} from './helpers/live-speech-text.js'
 import {planSpeech} from './helpers/paragraph-speech-oracle.js'
 import {makeCases,invoke,properties} from '../helpers/speech-plan-cases.js'
 // The untouched frozen planner receives the intentional paragraph policy through
