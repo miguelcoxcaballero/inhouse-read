@@ -178,7 +178,7 @@ fn activate_drag(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
 pub fn start_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  if other_button(event)||ctx.st_true("dragSession")||ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("returnMotion"){return Ok(());}
  super::screen_lifecycle::clear_compatibility_tap_refresh(&ctx);
- ctx.st_set("suppressLampClickKey",&null());
+ ctx.st_set("suppressLampClickKey",&null());ctx.st_set("suppressOpenBookId",&null());
  let mut background_only=false;
  let pressed=node.clone();
  let mut node=node.clone();
@@ -367,7 +367,11 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
  ctx.st_set("arranging",&JsValue::FALSE);
  cls_remove(&ctx.root,&["is-arranging"]);
  ctx.st_set("suppressOpenBookId",&string_value(&or(data_get(node,"bookId"),s(""))));
- ctx.set_timeout(0.0,|ctx|{ctx.st_set("suppressOpenBookId",&null());Ok(())});
+ // A release is followed at once by its click, so its mark lasts one turn. An interruption (the window lost
+ // focus, the page was hidden) ends the drag with the button still held: the release, and the click it makes on
+ // the book when the pointer is over it by then, come whenever the hand lets go. That click belongs to the drag
+ // and must not open the book, so the mark stays until it arrives or the next press begins.
+ if !cancelled{ctx.set_timeout(0.0,|ctx|{ctx.st_set("suppressOpenBookId",&null());Ok(())});}
  if discard{
   let (task_ctx,task_node)=(ctx.clone(),node.clone());
   spawn(async move{trash::remove_in_trash(task_ctx,task_node,discard_motion,discard_rect,discard_duration).await});

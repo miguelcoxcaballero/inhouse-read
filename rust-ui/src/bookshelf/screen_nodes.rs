@@ -391,7 +391,10 @@ fn handle_input(ctx:&Rc<Ctx>,binding:&JsValue,event:JsValue)->R{
   "build_spine-click-1"=>{
   let pointer=trash::pointer_click(&event);
   if pointer&&press.swallows_click(){return Ok(());}
-  if ctx.st_true("arranging")||ctx.st_true("suppressOpenBookId"){ctx.st_set("suppressOpenBookId",&null());return Ok(());}
+  // The mark of a finished drag swallows the pointer's click that ends it; a key press is never part of a drag.
+  let after_drag=pointer&&ctx.st_true("suppressOpenBookId");
+  if ctx.st_true("arranging")||after_drag||!pointer{ctx.st_set("suppressOpenBookId",&null());}
+  if ctx.st_true("arranging")||after_drag{return Ok(());}
   let hit=if pointer{ctx.scene_call("getBookAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?}else{null()};
   if pointer&&!absent(&ctx.scene())&&!truthy(&hit){return Ok(());}
   let selected=if truthy(&hit){or(map_get(&ctx.st("itemsById"),&data_get(&hit,"bookId")),item.clone())}else{item.clone()};
