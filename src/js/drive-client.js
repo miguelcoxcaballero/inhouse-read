@@ -131,6 +131,7 @@ export function cancelDriveConnection(message) {
 }
 export function signOutDrive() {
   oauth.signOut(); clearToken(); localStorage.removeItem(PROFILE_KEY);
+  localStorage.removeItem(PKCE_VERIFIER_KEY);
   if (native) native.signOutDrive();
   else loading?.then(client => client.signOutDrive());
 }

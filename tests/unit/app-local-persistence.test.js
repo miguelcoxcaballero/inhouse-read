@@ -56,7 +56,10 @@ vi.mock('../../src/js/drive-client.js', () => ({ isDriveConfigured:() => true,
   hasDriveSession:() => state.connected,
   getDriveProfile:vi.fn(async () => ({ id:'account', name:'Reader', email:'reader@example.com' })),
   getRememberedDriveProfile:() => state.connected ? { id:'account' } : null,
-  requestDriveAccess:vi.fn(async () => { state.connected = true }),
+  requestDriveAccess:vi.fn(async (options = {}) => {
+    if (options.interactive === false && !state.connected) throw new Error('No shared Google session')
+    state.connected = true
+  }),
   getDriveLiveContext:vi.fn(async () => null),
   readDriveLiveMailbox:vi.fn(async () => []), writeDriveLiveMailbox:vi.fn(async () => {}),
   readDriveLibraryRevision:vi.fn(async () => ''),
@@ -108,6 +111,10 @@ beforeEach(async () => {
   await import('../../src/js/app.js')
   await vi.waitFor(() => expect(state.options).toBeTruthy())
   await vi.waitFor(() => expect(state.experience).toBeTruthy())
+  const drive = await import('../../src/js/drive-client.js')
+  expect(drive.requestDriveAccess).toHaveBeenCalledWith({ interactive:false })
+  expect(state.connected).toBe(false)
+  drive.requestDriveAccess.mockClear() // Observe only actions after the silent startup restore.
 })
 afterEach(async () => {
   window.dispatchEvent(new Event('pagehide'))

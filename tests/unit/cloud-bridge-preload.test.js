@@ -61,11 +61,13 @@ describe('before the module is in memory', () => {
     expect(drive.hasDriveSession()).toBe(true)
     drive.signOutDrive()
     expect(drive.hasDriveSession()).toBe(false)
-    expect(localStorage.length).toBe(0)
+    expect(Object.keys(localStorage)).toEqual(['inhouse-read-oauth-v1:signed-out'])
+    expect(localStorage.getItem('inhouse-read-oauth-v1:signed-out')).toBe('1')
     drive.cancelDriveConnection()
   })
 
-  it('answers the Android callback at once and handles it when the module arrives', async () => {
+  it('handles the Android callback without waiting for the Rust module', async () => {
+    vi.stubGlobal('InhouseNative', { openAuthUrl: vi.fn() })
     const drive = await import('../../src/js/drive-client.js')
     localStorage.setItem('ihr_drive_pkce_verifier_v1', 'saved-verifier')
     localStorage.setItem('ihr_drive_pkce_transaction_v1', JSON.stringify({ state: 'saved-state', createdAt: Date.now() }))
@@ -73,9 +75,9 @@ describe('before the module is in memory', () => {
     globalThis.addEventListener('inhouse-drive-auth', event => events.push(event.detail))
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ access_token: 'token', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file' }))))
     expect(globalThis.handleInhouseNativeOAuth('state=saved-state&code=c')).toBe(true)
-    expect(fetch).not.toHaveBeenCalled()
-    runtime.ui = ui; runtime.release()
     await vi.waitFor(() => expect(events).toEqual([{ connected: true }]))
+    expect(runtime.ui).toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(1)
     expect(drive.hasDriveSession()).toBe(true)
   })
 
