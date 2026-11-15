@@ -1,6 +1,9 @@
 //! Playback of synthesised chunks: a gapless Web Audio queue whose clock is the audio clock, and the Android AudioTrack
 //! sink, whose clock is the rendered-frame receipt. A unit is one spoken fragment of one or more chunks; the player
-//! reports its audible 'start' and 'end' and the page marks inside it. The state stays on the JavaScript player object
+//! reports its audible 'start' and 'end' and the page marks inside it. In the Web Audio queue every chunk is scheduled
+//! to start exactly when the previous one ends, on the audio clock and not on a timer, and the 'start' of a unit fires
+//! when its first sample is audible: the audio clock time plus the output latency of the device. All time comes from
+//! `context.currentTime`, so the player is testable with a fake context. The state stays on the JavaScript player object
 //! (units, wires, clock), the closures the browser calls back belong to the host.
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Object,Number,Float32Array};

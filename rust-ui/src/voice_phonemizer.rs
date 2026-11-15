@@ -3,6 +3,13 @@
 //! each fresh filesystem, the output read back from what the program printed. The lifetime rules are the voice core's
 //! (rust-core/src/phonemizer_runtime.rs); the host keeps the Emscripten factory and its print hooks, the dictionary
 //! fetch and its AbortController, and the promise chain that serialises the callers.
+//!
+//! Why the module is replaced: one Emscripten module has a fixed 17 MB heap that every callMain() erodes (it is a
+//! command-line program run again and again, and it never gives everything back). After about 75-155 calls (fewer for
+//! longer texts) it fails for good and, called on, takes the whole renderer down. So the module is replaced by a fresh
+//! one every `limit` calls (REBUILD_EVERY of phonemizer.js, 40: well under the 74-call minimum measured with
+//! 180-character fragments; building one takes about 100 ms) and when a call throws, in which case that text is tried
+//! once more on the fresh module.
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;

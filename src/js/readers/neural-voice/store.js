@@ -1,15 +1,7 @@
-// Downloaded voices live in Cache Storage ('inhouse-neural-voices-v1'), keyed by the very URL they were fetched from:
-// the model (.onnx, ~63 MB) and its config (.onnx.json). The model is written LAST, so "model present" means "voice
-// complete"; an interrupted download leaves nothing usable behind (and nothing half-written: Cache.put is atomic).
-//
-// The download is streamed with progress and is abortable. On flaky mobile data it survives dropped connections: the
-// bytes received so far are kept in memory and the transfer continues with a Range request (If-Range with the ETag, so a
-// file replaced upstream is never glued together); a server that ignores Range, or a Range request that fails before a
-// single byte arrives (CORS, proxies), makes it start again cleanly instead. Sizes are checked against Content-Length and,
-// when it can be reached, against the catalogue (voices.json) of the voice repository. A connection that goes silent without
-// closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
-// The download, the listing and the reads are rust-ui (voice_store.rs, answered by store_methods.rs), and so are what the
-// constructor builds and the pause between two attempts (store_shells.rs).
+// Downloaded Piper voices live in Cache Storage, keyed by the URL they were fetched from. The download (streamed,
+// abortable, resumed with a Range request), the listing and the reads are rust-ui (voice_store.rs, which documents
+// them, answered by store_methods.rs), and so are what the constructor builds and the pause between two attempts
+// (store_shells.rs).
 import { DEFAULT_VOICE_BASE, neuralVoiceBase, piperVoices } from './catalog.js'
 import { readerUI as ui, rustMethods } from '../rust-ui-required.js'
 

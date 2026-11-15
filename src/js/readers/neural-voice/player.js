@@ -1,9 +1,6 @@
-// Web Audio playback of synthesised chunks: a gapless queue (every chunk is scheduled to start exactly when the previous one
-// ends, on the audio clock, not on a JS timer) plus exact 'start'/'done' notifications per unit (a unit is one spoken
-// fragment made of one or more chunks). The 'start' of a unit fires when its first sample is AUDIBLE: the audio clock time
-// plus the output latency of the device. All time comes from context.currentTime, so the class is testable with a fake context.
-// The scheduling and what the constructor builds are rust-ui (neural_player.rs); this class keeps the closures the
-// browser calls back.
+// Web Audio playback of synthesised chunks, a gapless queue on the audio clock: the scheduling, what the constructor
+// builds and what each member answers are rust-ui (neural_player.rs, which documents them); this class keeps the
+// closures the browser calls back.
 import { readerUI as ui } from '../rust-ui-required.js'
 
 // What a player is given when its maker gives none: the notifications and the timers.
@@ -17,22 +14,12 @@ export class GaplessPlayer {
   constructor(options) { ui().gapless_construct(this, options, defaults) }
 
   get now() { return ui().gapless_now(this) }
-  /** Time between a sample being rendered and being heard (speaker/Bluetooth pipeline). */
   get latency() { return ui().gapless_latency(this) }
-  /** Seconds of audio scheduled but not yet played. */
   buffered() { return ui().gapless_buffered(this) }
-  /** Everything scheduled has been rendered (the queue ran dry): whatever arrives next starts a new silence-broken stretch. */
   drained() { return ui().gapless_drained(this) }
-  /** The unit being heard now, or null. */
   playing() { return ui().player_playing(this) }
-  /**
-   * Queues a chunk of unit `unit` right after what is already scheduled. `last` marks the unit's final chunk (its
-   * 'done' is armed then). Returns the audio-clock time the chunk starts at.
-   */
   schedule(unit, pcm, sampleRate, options) { return ui().gapless_schedule(this, unit, pcm, sampleRate, options) }
-  /** Silences everything at once and forgets it: no 'start'/'done' will fire for what was queued. */
   stopAll() { ui().gapless_stop_all(this) }
-  /** Drops the units after `unit` (the reader changed what comes next) and makes the queue end where `unit` ends. */
   truncateAfter(unit) { ui().player_truncate_after(this, unit) }
   _wake(u, time, task, slot, ms) { return slot.handle = this.setTimer(() => ui().gapless_arm(this, u, time, task, slot), ms) }
   _released(source) { return () => { try { source.disconnect() } catch { /* already */ } } }
