@@ -16,7 +16,7 @@ async function load(relative){
     .replace(/from '(\.[^']+)'/g,(_,path)=>`from '${new URL(path,url).href}'`);
   return import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 }
-const original=await load('../tests/unit/helpers/reference-relief-palette.js'),production=await load('../src/js/cover-relief.js');
+const original=await load('../tests/unit/helpers/reference-relief-palette.js'),production=await load('../tests/unit/helpers/relief-passes.js');
 const measurements=[];
 for(const input of reliefPaletteCases)measurements.push(await observeReliefPalette({input,original,production,core,hash,stats}));
 const report={runtime:process.version,artifact:{bytes:bytes.length,sha256:await hash(bytes)},sources,measurements};
