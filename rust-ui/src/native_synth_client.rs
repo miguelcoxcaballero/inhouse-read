@@ -2,7 +2,8 @@
 //! native ONNX executor with native completion events. Here: the preparation of a voice (the release of the previous one,
 //! the model read and the cold phonemizer started side by side, the generation checks that keep a late result out of the
 //! next voice), the serial chain of synth jobs and the synthesis of one fragment. The state stays on the JavaScript client;
-//! the ONNX Runtime tensors and runs, the phonemizer closure and the promise reactions are the host's (native-client.js).
+//! the constructor is client_shells.rs; the ONNX Runtime tensors and runs, the handle of a job and the phonemizer closure
+//! are the host's (native-client.js; client_shells.rs has what they measured here).
 use std::{cell::RefCell,rc::Rc};
 use wasm_bindgen::{prelude::*,JsCast};
 use wasm_bindgen_futures::JsFuture;

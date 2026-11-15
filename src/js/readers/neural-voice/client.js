@@ -1,25 +1,16 @@
 import {VoiceClientPlan} from './client-plan.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 // Page-side handle of the synthesis worker (see worker.js for the protocol). The routing of its answers, the calls, the
-// jobs, the preparation and the teardown are rust-ui (synth_client.rs); this class keeps the injected services and the
-// closures the worker calls back (prepare's promise bookkeeping is rust-ui client_prepare.rs).
+// jobs, the preparation, the teardown and what the constructor builds are rust-ui (synth_client.rs, client_shells.rs,
+// client_prepare.rs); this class keeps the handlers of the worker it starts, which every message of the worker passes
+// through, and the handle of a job. `none` is what reads an asset the caller has no reader for.
+const kit = { VoiceClientPlan, none: async () => null }
 
 export class SynthClient {
   /**
    * @param {{createWorker:()=>Worker, ortBase:string, phonBase:string, readModel:(piperId:string)=>Promise<ArrayBuffer>, readConfig:(piperId:string)=>Promise<object>}} deps
    */
-  constructor({ createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel = async () => null, readRuntimeAssets = async () => null, onStage = null }) {
-    Object.assign(this, { createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel, readRuntimeAssets, onStage })
-    this.worker = null
-    this.plan = new VoiceClientPlan(() => ui().synth_client_error('init-failed', 'worker was released'))
-    this.calls = new Map()  // id -> {resolve, reject} for init/load/free
-    this.jobs = new Map()   // id -> handlers of a running synth
-    this.loaded = null      // piperId whose session the worker holds
-    this.ready = null       // promise of init
-    this.loading = null     // {piperId, promise}
-    this.preparationChain = Promise.resolve()
-    this.preparations = new Set()
-  }
+  constructor(deps) { ui().synth_client_construct(this, deps, kit) }
 
   get alive() { return !!this.worker }
 

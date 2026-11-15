@@ -1,6 +1,9 @@
 //! Playback of synthesised chunks: a gapless Web Audio queue whose clock is the audio clock, and the Android AudioTrack
 //! sink, whose clock is the rendered-frame receipt. A unit is one spoken fragment of one or more chunks; the player
-//! reports its audible 'start' and 'end' and the page marks inside it. The state stays on the JavaScript player object
+//! reports its audible 'start' and 'end' and the page marks inside it. In the Web Audio queue every chunk is scheduled
+//! to start exactly when the previous one ends, on the audio clock and not on a timer, and the 'start' of a unit fires
+//! when its first sample is audible: the audio clock time plus the output latency of the device. All time comes from
+//! `context.currentTime`, so the player is testable with a fake context. The state stays on the JavaScript player object
 //! (units, wires, clock), the closures the browser calls back belong to the host.
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Object,Number,Float32Array};
@@ -19,6 +22,22 @@ const EPSILON:f64=0.004;   // tolerance when comparing audio-clock times
 const MIN_POLL:f64=0.025;
 
 // ---------------------------------------------------------------- Web Audio
+/// `new GaplessPlayer({context, onStart = () => {}, onEnd = () => {}, onMark = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms),
+/// clearTimer = id => clearTimeout(id)})`: `kit.noop`, `kit.setTimer` and `kit.clearTimer` are those defaults, functions of
+/// the page because a mark of every spoken word passes through them. The frozen original is
+/// tests/unit/helpers/reference-store-shells.js.
+#[wasm_bindgen]
+pub fn gapless_construct(p:JsValue,options:JsValue,kit:JsValue)->R<()>{
+ if absent(&options){return Err(js_sys::TypeError::new("Cannot destructure the options of GaplessPlayer: none were given.").into());}
+ set(&p,"getContext",&read(&options,"context")?)?;
+ for (name,fallback) in [("onStart","noop"),("onEnd","noop"),("onMark","noop"),("setTimer","setTimer"),("clearTimer","clearTimer")]{
+  let given=read(&options,name)?;
+  set(&p,name,&if given.is_undefined(){read(&kit,fallback)?}else{given})?;
+ }
+ set(&p,"units",&js_sys::Map::new())?; // unit -> { sources:[{source,start,end}], start, end, complete, started, ended, timers:Set }
+ set(&p,"nextTime",&n(0.0))?;           // audio-clock end of everything scheduled
+ set(&p,"scheduled",&JsValue::FALSE)    // something was scheduled since the last stopAll()
+}
 fn gapless_context(p:&JsValue)->R{method(p,"getContext",&[])}
 #[wasm_bindgen]
 pub fn gapless_now(p:JsValue)->R<f64>{let time=get(&gapless_context(&p)?,"currentTime");Ok(if absent(&time){0.0}else{num(&time)})}

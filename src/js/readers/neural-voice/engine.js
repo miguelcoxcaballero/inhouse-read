@@ -11,7 +11,7 @@ import { storeError } from './store.js'
 import { NeuralPackageStore } from './package-store.js'
 import { SynthClient } from './client.js'
 import { NativeSynthClient } from './native-client.js'
-import { audioContext, nativeAudio, nativePcmBridge, unlockAudio } from './audio.js'
+import { audioContext, nativePcmBridge, unlockAudio } from './audio.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 
 // What was an `async` method: the promise of the Rust flow itself (neural_engine_flows.rs), a rejected one when the module is missing.
@@ -31,23 +31,11 @@ export class FragmentCache {
   clear() { ui().neural_cache_clear(this) }
 }
 
-function defaultCreateClient(store) {
-  const base = new URL(`${import.meta.env?.BASE_URL || '/'}neural-voice/`, globalThis.location?.href || 'http://localhost/').href
-  if (globalThis.InhouseInference?.getProtocol?.() === 1) return new NativeSynthClient({store,phonBase:`${base}phon/`})
-  return new SynthClient({
-    createWorker: () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }),
-    ortBase: `${base}ort/`,
-    phonBase: `${base}phon/`,
-    readModel: id => store.readModel(id),
-    readConfig: id => store.readConfig(id),
-    readPhonemizerModel: id => store.readPhonemizerModel?.(id) || null,
-    readRuntimeAssets: id => store.readRuntimeAssets?.(id) || null,
-    onStage: typeof nativePcmBridge()?.reportSynthesisStage === 'function' ? (domain, stage, request, part) => {
-      const audio = nativeAudio()
-      if (audio) audio.bridge.reportSynthesisStage(audio.session, domain, stage, request, part)
-    } : null
-  })
-}
+// The client of an engine that was given none: which one, and what it is handed, is rust-ui client_shells.rs. The page's
+// neural-voice folder and the worker's URL are written here, where the bundler sees them.
+const clients = { NativeSynthClient, SynthClient, base: () => new URL(`${import.meta.env?.BASE_URL || '/'}neural-voice/`, globalThis.location?.href || 'http://localhost/').href,
+  createWorker: () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }) }
+const defaultCreateClient = store => ui().neural_default_client(store, clients)
 const kit = { neuralVoices, modelsOf, NeuralPackageStore, defaultCreateClient, audioContext, unlockAudio, nativePcmBridge, NativePcmPlayer, GaplessPlayer, FragmentCache, LIMITS }
 
 export class NeuralEngine extends EventTarget {

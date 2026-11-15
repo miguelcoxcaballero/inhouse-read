@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs'
 import {readerPanelMarkup,readerIcon} from './helpers/reference-reader-interface.js'
 import {LegacyReaderChrome} from './helpers/reference-reader-chrome.js'
 import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
+import {referenceChromeCreate} from './helpers/reference-reader-chrome-create.js'
+import {RATE_STEPS} from '../../src/js/readers/reading-preferences.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
@@ -105,4 +107,24 @@ it('marks the status line when it only repeats the play button, and never when i
  // Loading: the sentence stays for assistive technology and the disabled play button is the busy mark the placeholder styles follow.
  host.voiceState('loading','Preparando la voz natural…');expect(status.textContent).toBe('Preparando la voz natural…');expect(status.hasAttribute('data-state-only')).toBe(false)
  expect(host.panel.querySelector('[data-play]').disabled).toBe(true);expect(host.panel.querySelector('[data-play]').getAttribute('aria-label')).toBe('Preparando…')
+})
+
+it('creates the panel, the mini player and the return button of the frozen create()',()=>{
+ const results=[]
+ for(const native of [false,true]){
+  document.body.innerHTML='<section id="reader-screen"><header id="reader-toolbar"><button id="reader-settings"></button><button id="reader-location"></button><button id="reader-audio"></button></header></section>'
+  const events=[],host={returnToReading(...args){events.push(['returnToReading',args.length,this===host]);return 'reading'}},chrome=new ReaderChrome(host);runtime.ui=ui
+  const made=native?chrome.create():referenceChromeCreate.call(chrome,ui,RATE_STEPS)
+  const row={made,keys:Object.keys(host),html:document.body.innerHTML,mini:host.miniPlayer.innerHTML,steps:host.panel.querySelectorAll('[data-rate]').length}
+  host.voice={browsing:false,returnToAudio(...args){events.push(['returnToAudio',args.length,this===host.voice]);return 'audio'}}
+  host.returnButton.click();host.voice.browsing=1;host.returnButton.click()
+  // A reader without a voice yet, or whose return fails: the click reports the error and the button stays.
+  const errors=[],report=event=>{errors.push(event.error?.constructor.name);event.preventDefault()};window.addEventListener('error',report)
+  host.voice.returnToAudio=()=>{throw new RangeError('no audio')};host.returnButton.click();host.voice=undefined;host.returnButton.click()
+  window.removeEventListener('error',report)
+  results.push({...row,events,errors})
+ }
+ assert.deepEqual(results[1],results[0])
+ assert.equal(results[0].steps,RATE_STEPS.length);assert.deepEqual(results[0].events,[['returnToReading',0,true],['returnToAudio',0,true]]);assert.deepEqual(results[0].errors,['RangeError','TypeError'])
+ assert.match(results[0].mini,/data-audio-remaining[^>]*>—h —min</)
 })

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// The encoder is rust-ui cover_encode.rs: the module is loaded as the reader loads it.
+import './helpers/rust-ui-ready.js';
 import { encodePdfCover } from '../../src/js/readers/cover-encode.js';
 
 let bitmap, canvas, worker, blob, behavior;

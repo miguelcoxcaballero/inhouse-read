@@ -1,17 +1,10 @@
 // Text -> Piper phoneme ids, with the piper_phonemize WebAssembly build (the piper-phonemize C++ program compiled with
 // Emscripten; it embeds espeak-ng). The glue (piper_phonemize.mjs), the wasm and the trimmed espeak-ng data live in
-// public/neural-voice/phon/ (see the README there). This is a small wrapper over that Emscripten module: it runs inside the
-// synthesis worker and nothing here touches the DOM.
-//
-// One Emscripten module has a fixed 17 MB heap that every callMain() erodes (it is a command-line program run again and
-// again, and it never gives everything back): after ~75-155 calls (fewer for longer texts) it fails for good and, called
-// on, takes the whole renderer down. So the module is replaced by a fresh one every REBUILD_EVERY calls (well under the
-// 74-call minimum measured with 180-character fragments; building one takes ~100 ms) and when a call throws, in which case
-// that text is tried once more on the fresh module.
-
-// The rebuilds, the retry, the dictionaries and the reading of the output are the voice module (rust-ui/src/
-// voice_phonemizer.rs over rust-core/src/phonemizer_runtime.rs); this file keeps the Emscripten factory and its print hooks,
-// the dictionary download and its AbortController, and the chain that runs one text at a time.
+// public/neural-voice/phon/ (see the README there). It runs inside the synthesis worker and touches no DOM.
+// The rebuilds of the module (and why its heap needs them), the retry, the dictionaries and the reading of the output
+// are the voice module (rust-ui/src/voice_phonemizer.rs over rust-core/src/phonemizer_runtime.rs); this file keeps the
+// Emscripten factory and its print hooks, the dictionary download and its AbortController, and the chain that runs one
+// text at a time.
 import { loadPhonemizerFactory } from './phonemizer-assets.js'
 import { loadedRustVoiceUI, requireRustVoiceUI } from '../../rust-voice-ui.js'
 

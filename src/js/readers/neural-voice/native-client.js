@@ -1,23 +1,19 @@
 // The browser client remains a Worker. Android's ONNX executor uses the same
 // Piper/Nakdimon/Supertonic models and PCM processing with native completion
 // events. Only the small text/phoneme operations run in the page.
-// The preparation, the job chain and the synthesis of a fragment are rust-ui (native_synth_client.rs); this class keeps
-// the injected services, the ONNX Runtime tensors and runs, and the closures the promises call back.
+// The preparation, the job chain, the synthesis of a fragment and what the constructor builds are rust-ui
+// (native_synth_client.rs, client_shells.rs); this class keeps the modules Rust is handed and what every fragment
+// passes through: the handle of a job, the phonemizer closure and the ONNX Runtime tensors of a run.
 import {createNativeOrt} from './native-ort.js'
 import {createPhonemizer} from './phonemizer.js'
 import {supertonicNoise} from './supertonic-plan.js'
 import {loadedRustVoiceUI as voice} from '../../rust-voice-ui.js'
 import {VoiceClientPlan} from './client-plan.js'
 import {readerUI as ui} from '../rust-ui-required.js'
-const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
 // `voice`: the voice module, whose kernels the Rust client calls by name; the rest is what its runtimes need from the page.
-const kit={voice,noise:supertonicNoise,always:()=>true,noop(){},immediate:()=>Promise.resolve()}
+const kit={voice,noise:supertonicNoise,always:()=>true,noop(){},immediate:()=>Promise.resolve(),createNativeOrt,createPhonemizer,VoiceClientPlan}
 export class NativeSynthClient {
-  constructor({store,phonBase,env=globalThis,createOrt=createNativeOrt,createPhon=createPhonemizer}={}) {
-    Object.assign(this,{store,phonBase,env,createOrt,createPhon})
-    this.plan=new VoiceClientPlan(()=>failure('Voice released'),{},true);this.jobs=new Map();this.loading=null;this.loaded=null;this.config=null;this.ort=null
-    this.chain=Promise.resolve();this.preparationChain=Promise.resolve()
-  }
+  constructor(deps) { ui().native_client_construct(this,deps,kit) }
   get alive(){return !!this.ort}
   // One preparation at a time, the same promise for the voice being prepared: rust-ui client_prepare.rs.
   prepare(key) { const module=ui(); return module.native_client_begin(this,key,kit,module) }
@@ -36,7 +32,8 @@ export class NativeSynthClient {
     this.chain=this.chain.then(()=>ui().native_client_job(this,request,handlers,active,id,kit)).catch(()=>{})
     return {id,cancel:()=>{this.plan.cancel(id);this.jobs.delete(id)}}
   }
-  // The text -> phoneme ids of the loaded voice: Nakdimon + Hebrew rules, or espeak.
+  // The text -> phoneme ids of the loaded voice: Nakdimon + Hebrew rules, or espeak. The voice module calls it for
+  // every marked word of a fragment, so it stays a function of the page.
   _phonemizer(kind,hebrew,phon,config){return async value=>voice().voice_host_limit_ids(kind===1?await hebrew.phonemize(value):await phon.phonemize(value,config.espeak.voice),config.num_symbols)}
   // One Piper run on the native executor: the original feeds, a copy of the audio and of the phoneme durations.
   async _run(ort,session,part,config,rate,speaker,durationOutput) {

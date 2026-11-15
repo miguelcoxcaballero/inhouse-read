@@ -2,7 +2,7 @@
 //! for one, the synth jobs, the teardown, and the preparation of a voice (start the worker, read the model out of Cache
 //! Storage while it starts, load it). It knows nothing about audio or about reading: it turns messages into promises and
 //! callbacks. The state stays on the JavaScript client (worker, calls, jobs, loaded, ready, loading, config) and its
-//! VoiceClientPlan ledger; the closures the worker and the promises call back are the host's (client.js).
+//! VoiceClientPlan ledger; the constructor is client_shells.rs, the handlers of the worker and a job's handle the host's (client.js).
 use wasm_bindgen::{prelude::*,JsCast};
 use wasm_bindgen_futures::JsFuture;
 use crate::eager::eager;
