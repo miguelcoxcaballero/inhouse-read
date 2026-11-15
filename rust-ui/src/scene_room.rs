@@ -282,11 +282,17 @@ pub fn scene_insertion_record(slot:&JsValue,reduced:bool,duration:&JsValue,resol
 /// (`bounds`, its footprint), rather than a cylinder centred on the cabinet's rear plane (rust-ui/src/scene_plan.rs),
 /// upright, unscaled and shown.
 #[wasm_bindgen]
-pub fn scene_position_trash(scene:&crate::scene_view::RustScene,trash:&JsValue,bounds:&JsValue,wall:&JsValue,floor_y:f64,gap:f64)->R{
+pub fn scene_position_trash(scene:&mut crate::scene_view::RustScene,trash:&JsValue,bounds:&JsValue,wall:&JsValue,floor_y:f64,gap:f64)->R{
+ // A room without a bin: the view forgets the one it held.
+ if absent(trash){scene.bin=None;return Ok(());}
  let mut stand=[0.0;3];
- let min=read(bounds,"min")?;
- scene.trash_stand(num(&read(&read(trash,"userData")?,"radius")?),num(&read(&min,"z")?),num(&read(&min,"y")?),
-  num(&read(&read(wall,"position")?,"z")?),floor_y,gap,&mut stand);
+ let (min,max,data)=(read(bounds,"min")?,read(bounds,"max")?,read(trash,"userData")?);
+ let radius=num(&read(&data,"radius")?);
+ let (min_z,min_y)=(num(&read(&min,"z")?),num(&read(&min,"y")?));
+ scene.trash_stand(radius,min_z,min_y,num(&read(&read(wall,"position")?,"z")?),floor_y,gap,&mut stand);
+ // The view keeps the bin for its fit, the shadow's bounds and the bin's diagnostics (scene_bin.rs).
+ scene.bin=Some([num(&read(&min,"x")?),min_y,min_z,num(&read(&max,"x")?),num(&read(&max,"y")?),num(&read(&max,"z")?),
+  stand[0],stand[1],stand[2],floor_y,radius,num(&read(&data,"height")?),0.0]);
  let zero=n(0.0);
  method(&read(trash,"position")?,"set",&[&n(stand[0]),&n(stand[1]),&n(stand[2])])?;
  method(&read(trash,"rotation")?,"set",&[&zero,&zero,&zero])?;

@@ -125,11 +125,7 @@ impl RustScene{
  #[wasm_bindgen(js_name=shadowBounds)]
  pub fn shadow_bounds(&self,trash:&[f64],transform:&[f64],out:&mut [f64]){
   let mut b=self.full;
-  if trash.len()>=9{
-   let mut bin=Box3{min:[trash[0],trash[1],trash[2]],max:[trash[3],trash[4],trash[5]]};
-   for axis in 0..3{bin.min[axis]+=trash[6+axis];bin.max[axis]+=trash[6+axis];}
-   b.union(&bin);
-  }
+  if let Some(bin)=self.bin_box(trash){b.union(&bin);}
   if transform.len()>=16{let mut e=[0.0;16];e.copy_from_slice(&transform[..16]);b.apply(&Mat4(e));}
   put(out,&[b.min[0],b.min[1],b.min[2],b.max[0],b.max[1],b.max[2]]);
  }

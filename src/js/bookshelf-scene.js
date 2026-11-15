@@ -6,7 +6,7 @@ import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
 import * as THREE from 'three';
 import {plantGeometrySpec,lampGeometrySpec} from './decor-geometry-spec.js';
 import {projectPlantFoliage} from './foliage-projection.js';
-import { configureShelfRendererSize } from './shelf-renderer-size.js';
+import { configureNativeRendererSize } from './native-renderer-size.js';
 import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
@@ -22,8 +22,7 @@ import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
-import { compilePrograms, prelinkPrograms } from './gpu-programs.js';
-import { prepareInsertionPrograms } from './insertion-program-preparation.js';
+import { compilePrograms, prelinkPrograms, prepareInsertionProgramState } from './gpu-programs.js';
 import { idleSlice } from './idle-startup.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
 import { MINIMUM_LAMP_TAP_SIZE } from './plant-dimensions.js';
@@ -403,15 +402,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     rust.scene_room_occlusion(THREE, occlusion, baggebo, baggebo ? NO_NUMBERS : roomPlan(), unitCount, unitWidth, height, depth, floorY,
       rows, floorLit ? DARK_FLOOR_LIGHT : null, trash, createShelfOcclusion, mergeGeometries);
   }
-  // The bin's footprint and place, for the view's fit and the shadow's bounds: taken when it is placed.
-  const binBox = new Float64Array(9);
   function positionTrash() {
-    // The bin stands on the floor clear of the wall with its lid's whole sweep (rust-ui/src/scene_room.rs).
-    if (trash) {
-      rust.scene_position_trash(sceneView, trash, trashBounds, roomWall, floorY, TRASH_GAP);
-      const { min, max } = trashBounds, { position } = trash;
-      binBox.set([min.x, min.y, min.z, max.x, max.y, max.z, position.x, position.y, position.z]);
-    }
+    // The bin stands on the floor clear of the wall with its lid's whole sweep, and the view keeps it for its fit, the
+    // shadow's bounds and the bin's diagnostics; a room without a bin forgets it (rust-ui/src/scene_room.rs, scene_bin.rs).
+    rust.scene_position_trash(sceneView, trash, trashBounds, roomWall, floorY, TRASH_GAP);
     rebuildOcclusion();
   }
   // Lights and environment are final once the lamps' light pool exists. The
@@ -609,7 +603,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const binNow = new Float64Array(27), binHeld = new Float64Array(27);
   const binNowBits = new Uint32Array(binNow.buffer), binHeldBits = new Uint32Array(binHeld.buffer);
   let trashDrops = 0, binStale = true;
-  const trashBox = new THREE.Box3(), footPoint = new THREE.Vector3(), floorPoint = new THREE.Vector3();
+  const trashBox = new THREE.Box3();
   const trashOriginalStates = new Map();
   function rememberTrashNode(node) {
     sceneView.binShows(node?.dataset);
@@ -882,7 +876,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
-  const trashRect0 = {}, trashNumbers = new Float64Array(17);
+  const trashRect0 = {};
   let viewTexts = null;
   // What the bin's box on screen was last taken from: its lid's opening, the room's world matrix
   // and its own place, turn and size (`binHeld`).
@@ -964,15 +958,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneView.trashPlaced(trashPacked, trashOut);
     const visible = trashOut[0] === 1;
     trashWritten = placeHit(trashNode, trashWritten, visible, trashOut[2], trashOut[3], trashOut[4], trashOut[5], 50, true);
-    const footY = trash.position.y + trashBounds.min.y * trash.scale.y;
-    const footWorld = furniture.localToWorld(footPoint.set(trash.position.x, footY, trash.position.z));
-    const floorContact = furniture.localToWorld(floorPoint.set(trash.position.x, floorY, trash.position.z));
-    const { position, rotation } = trash, n = trashNumbers;
-    n[0] = position.x; n[1] = position.y; n[2] = position.z; n[3] = trash.scale.x; n[4] = rotation.x; n[5] = rotation.y; n[6] = rotation.z;
-    n[7] = footY; n[8] = floorY; n[9] = footWorld.x; n[10] = footWorld.y; n[11] = footWorld.z;
-    n[12] = floorContact.x; n[13] = floorContact.y; n[14] = floorContact.z; n[15] = trash.userData.radius; n[16] = trash.userData.height;
-    // Formatted and written to the node and the canvas only when a number or a state they show moved.
-    sceneView.trashShown(n, visible, trashOut[1] === 1);
+    // Its diagnostics, from the bin and the room the view holds: formatted and written to the node and the canvas only
+    // when a number or a state they show moved (rust-ui/src/scene_bin.rs).
+    sceneView.binShown(visible, trashOut[1] === 1);
     return moving;
   }
 
@@ -1196,7 +1184,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const entry of bookEntries) if (entry.rooftop) rooftop = Math.max(rooftop, -entry.y + entry.height / 2);
     // The diagnostics are formatted and written only when a number they show moved; the four the
     // finger-following image also writes are handed over then, and held otherwise.
-    const texts = viewTexts = sceneView.transformShown(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
+    const texts = viewTexts = sceneView.transformShown(NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
     // The fitted room: turned, scaled and placed as the Rust view decided.
     furniture.rotation.set(viewFrame[1], viewFrame[0], 0); furniture.scale.setScalar(viewFrame[2]);
     furniture.position.set(viewFrame[3], viewFrame[4], 0);
@@ -1857,7 +1845,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     const paint = () => {
     const outputWidth=native?vw:frame.width, outputHeight=native?vh:frame.height;
-    configureShelfRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize);
+    configureNativeRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize, true, true, 'bounded');
     const previousViewport = native && renderer.getViewport(previousInsertionViewport);
     if (native) renderer.setViewport(0,0,frame.width,frame.height);
     const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
@@ -2106,13 +2094,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // before the return needs their first real draw.
       nativeFrameCache?.prepareUniforms?.({ idle:idleSlice, current:() => !disposed })
         .catch(error => console.warn('No se pudo preparar la composición de la sala:', error));
-      prepareInsertionPrograms(renderer, scene, camera, [dropGuide, ...depthWriters], {
-        idle:idleSlice, current:() => !disposed, onLinked:() => {
-          // Compilation changes the real program cache without painting. Report
-          // it now so the next resize/gesture does not appear to create programs
-          // that were already prepared in the background. No extra render.
-          showData('scenePrograms', String(renderer.info?.programs?.length || 0));
-        }
+      prepareInsertionProgramState(renderer, scene, camera, [dropGuide, ...depthWriters], idleSlice, () => !disposed, () => {
+        // Compilation changes the real program cache without painting. Report
+        // it now so the next resize/gesture does not appear to create programs
+        // that were already prepared in the background. No extra render.
+        showData('scenePrograms', String(renderer.info?.programs?.length || 0));
       }).catch(error => console.warn('No se pudo preparar la inserción 3D:', error));
     }
     const veneerWait = veneerWaits && shelfType !== 'baggebo' ? veneerDeadline - performance.now() : 0;
@@ -2127,7 +2113,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (batchQuality) hideInspectionSnapshot();
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
-    sceneView.shadowBounds(trash ? binBox : NO_NUMBERS, furniture.matrixWorld.elements, shadowOut);
+    sceneView.shadowBounds(NO_NUMBERS, furniture.matrixWorld.elements, shadowOut);
     shadowBounds.min.set(shadowOut[0], shadowOut[1], shadowOut[2]); shadowBounds.max.set(shadowOut[3], shadowOut[4], shadowOut[5]);
     // Scrolling creates and releases culled models: those change the casters.
     const shadowMotion = furnitureMoving || shelfMoving || trashMoving;
@@ -2160,7 +2146,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Release it only when this transaction really paints the legacy room.
       if(!nativeCaptureAligned && !nativeCapturePhysical)releaseCompletedLegacyInsertions();
       withRendererPresentation(renderer,nativeRoomLease,()=>{
-      configureShelfRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize);
+      // DPR and size change together, without full intermediate buffers.
+      configureNativeRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize, true, true, 'bounded');
       // Fractional legacy captures keep Three's original viewport rounding.
       // Reassert the retained framebuffer only when it has exact pixel bounds.
       if(nativeCaptureAligned)renderer.setViewport(0,0,renderWidth,renderHeight);
@@ -2854,7 +2841,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           for (const entry of bookEntries) cancelTrashDrop(entry);
           sceneView.trashReset();
           trash.removeFromParent(); trash.userData.dispose(); trash = null; trashBounds = null;
-          rebuildOcclusion();
+          positionTrash();
         }
       }
       const nextCatalogNode = next.catalogNode || null;

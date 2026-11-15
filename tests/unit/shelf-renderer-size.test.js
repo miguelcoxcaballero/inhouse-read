@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { configureShelfRendererSize } from '../../src/js/shelf-renderer-size.js';
+import { configureShelfRendererSize } from './helpers/shelf-renderer-size.js';
 import { configureNativeRendererSize } from '../../src/js/native-renderer-size.js';
 
 afterEach(() => vi.restoreAllMocks());
