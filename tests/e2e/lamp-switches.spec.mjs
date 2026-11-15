@@ -126,7 +126,9 @@ test('un toque controla cada luz, ilumina superficies y conserva el estado al re
   await expect(scene).toHaveAttribute('data-active-lamp-lights', '1');
   expect(await powerStates(page)).toEqual([true, false, false]);
   await page.reload();
-  await expect(scene).toHaveAttribute('data-shelf-type', 'walnut');
+  // The first frame of a reloaded room has the budget this case gives its earlier reload: with the default 8 s the
+  // canvas was once not there yet (one of three runs here, other work on the machine).
+  await expect(scene).toHaveAttribute('data-shelf-type', 'walnut', { timeout:30_000 });
   await expect(scene).toHaveAttribute('data-active-lamp-lights', '1');
   expect(await powerStates(page)).toEqual([true, false, false]);
   await assertResting(scene);
@@ -187,10 +189,16 @@ test('la bombilla se toca directamente y los gestos de mantener, cancelar y pell
   const cover = await page.locator('.ihr-spine[data-shelf-index="1"]').last()
     .locator('[data-shelf-cover-hit]').boundingBox();
   expect(cover).not.toBeNull();
-  // Zoom can move the narrow spine beyond the left edge while its cover is
-  // still visible. Touch that exposed cover as the user would.
-  await page.touchscreen.tap(Math.max(8, Math.min(382, cover.x + cover.width * .8)),
-    Math.max(130, Math.min(820, cover.y + cover.height * .5)));
+  // This unsupported book lies down when the shelf first settles (its angle is -1.57), so its cover's rectangle is
+  // 199 px wide and 50 px high and its far end runs under the lamp's base, which is the lamp's to touch: the point at
+  // four fifths of the cover used here before, right for a standing book, is on that base. Touch the cover as the user
+  // would, where the lamp's target leaves it exposed, and require that to be a usable width.
+  const lampTarget = await hit.boundingBox();
+  expect(lampTarget).not.toBeNull();
+  const underLamp = lampTarget.y < cover.y + cover.height * .5 && lampTarget.y + lampTarget.height > cover.y + cover.height * .5;
+  const exposedLeft = Math.max(8, cover.x), exposedRight = Math.min(382, cover.x + cover.width, underLamp ? lampTarget.x : Infinity);
+  expect(exposedRight - exposedLeft).toBeGreaterThan(44);
+  await page.touchscreen.tap((exposedLeft + exposedRight) / 2, Math.max(130, Math.min(820, cover.y + cover.height * .5)));
   await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible({ timeout:30_000 });
   await page.getByRole('button', { name:'Cerrar', exact:true }).click();
   await expect(page.locator('.ihr-flyout')).toHaveCount(0, { timeout:30_000 });
