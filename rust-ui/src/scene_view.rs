@@ -151,6 +151,10 @@ pub struct RustScene{
  pub(crate) text_key:Vec<u64>,pub(crate) trash_text_key:Vec<u64>,
  // The canvas' and the bin's diagnostics as last written (`scene_shown.rs`).
  pub(crate) shown:crate::scene_shown::Shown,
+ // The frame's layout as the host read it, and what the booklet's face was last formatted from (`scene_layout.rs`).
+ pub(crate) layout:[f64;10],pub(crate) face_key:Option<[u64;4]>,
+ // What a frame's first step asks of the host (`scene_begin.rs`), and the view the room was last painted in.
+ pub(crate) begun:[f64;2],pub(crate) painted:Option<[f64;4]>,
 }
 
 fn full_bounds(width:f64,height:f64,depth:f64,baggebo:bool)->Box3{
@@ -167,7 +171,7 @@ impl RustScene{
    progress:if isometric{1.0}else{0.0},isometric,frontal_scroll:if isometric{0.0}else{scroll_top},transition:None,reorder_started:None,
    fit_height:1.0,edge_to_edge:false,viewport_height:1.0,zoom:1.0,pan_x:0.0,pan_y:0.0,moving:false,shadow_refit:false,drop:None,
    entry_now:0.0,entry_reduced:false,entry_zoom:1.0,entry_q:[0.0,0.0,0.0,1.0],entry_ratio:1.0,entry_window:0.0,entry_scroll:0.0,entry_lamp_tap:44.0,
-   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new(),shown:Default::default()}
+   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new(),shown:Default::default(),layout:[f64::NAN;10],face_key:None,begun:[f64::NAN;2],painted:None}
  }
  /// A new semantic layout: the sizes and the furniture's bounds change, the view does not.
  pub fn configure(&mut self,width:f64,height:f64,scene_width:f64,depth:f64,baggebo:bool){
@@ -342,7 +346,9 @@ impl RustScene{
   let cap=if self.zoom>1.001&&self.isometric{2.5}else if self.width<600.0{1.5}else{2.0};
   let ratio=jmin(or(device_ratio,1.0),cap);
   let base=jmin(or(device_ratio,1.0),if self.width<600.0{1.5}else{2.0});
-  let values=[self.viewport_height,ratio,base,jmin(or(client_height,inner_height),inner_height).ceil()];
+  // The framebuffer in device pixels follows (`framePixels` at this ratio), for a host that asks for six.
+  let values=[self.viewport_height,ratio,base,jmin(or(client_height,inner_height),inner_height).ceil(),
+   (self.scene_width*ratio).ceil(),(self.viewport_height*ratio).ceil()];
   for (slot,value) in out.iter_mut().zip(values){*slot=value;}
  }
  /// The framebuffer in device pixels: `[width, height]`.

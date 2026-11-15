@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
 import './helpers/rust-ui-ready.js'
-import * as native from '../../src/js/local-folder-store.js'
+import * as native from './helpers/local-folder-store-doorways.js'
 import * as original from './helpers/reference-local-folder-store.js'
 
 // The Rust folder store (names in rust-core/src/file_name.rs, the rest in rust-ui/src/folder_store.rs)

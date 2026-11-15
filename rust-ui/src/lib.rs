@@ -25,7 +25,13 @@ mod library_store;
 mod book_title;
 
 #[cfg(feature = "shelf")]
+mod title_memo;
+
+#[cfg(feature = "shelf")]
 mod app_refresh;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod app_report;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
 mod app_actions;
@@ -159,6 +165,9 @@ mod controller_methods;
 
 #[cfg(feature = "ui")]
 mod experience_methods;
+
+#[cfg(feature = "ui")]
+mod experience_shell;
 
 #[cfg(feature = "ui")]
 mod flow_methods;

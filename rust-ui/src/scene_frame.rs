@@ -159,8 +159,17 @@ impl RustScene{
  #[wasm_bindgen(js_name=catalogFrame)]
  #[allow(clippy::too_many_arguments)]
  pub fn catalog_frame(&self,bounds_box:&[f64],matrix:&[f64],cover:&[f64],scroll:f64,stage:&[f64],scroller:&[f64],inner:&[f64],out:&mut [f64])->String{
-  let (Some(b),Some(m))=(boxed(bounds_box),mat(matrix))else{for v in out.iter_mut(){*v=f64::NAN}return String::new()};
-  if cover.len()<3||stage.len()<2||scroller.len()<4||inner.len()<2{for v in out.iter_mut(){*v=f64::NAN}return String::new();}
+  self.catalog_numbers(bounds_box,matrix,cover,scroll,stage,scroller,inner,out).map_or_else(String::new,catalog_face)
+ }
+}
+/// The booklet's face as its button's data keeps it.
+pub(crate) fn catalog_face(face:[f64;4])->String{face.iter().map(|value|number_string(half(*value))).collect::<Vec<_>>().join(" ")}
+impl RustScene{
+ /// `catalogFrame`'s numbers: `out` as there, and the face's four before they are formatted (none for unusable input).
+ #[allow(clippy::too_many_arguments)]
+ pub(crate) fn catalog_numbers(&self,bounds_box:&[f64],matrix:&[f64],cover:&[f64],scroll:f64,stage:&[f64],scroller:&[f64],inner:&[f64],out:&mut [f64])->Option<[f64;4]>{
+  let (Some(b),Some(m))=(boxed(bounds_box),mat(matrix))else{for v in out.iter_mut(){*v=f64::NAN}return None};
+  if cover.len()<3||stage.len()<2||scroller.len()<4||inner.len()<2{for v in out.iter_mut(){*v=f64::NAN}return None;}
   let bounds=corners_of(&b,&m);
   let hidden=!self.isometric||self.progress<0.86;
   let (screen_top,screen_bottom)=(stage[1]+bounds[2],stage[1]+bounds[3]);
@@ -179,9 +188,11 @@ impl RustScene{
   // exactly this rectangle.
   let face_box=Box3{min:[-cover[0]/2.0,-cover[1]/2.0,cover[2]/2.0],max:[cover[0]/2.0,cover[1]/2.0,cover[2]/2.0]};
   let face=corners_of(&face_box,&m);
-  [face[0]-left,face[2]-top,face[4],face[5]].iter().map(|value|number_string(half(*value))).collect::<Vec<_>>().join(" ")
+  Some([face[0]-left,face[2]-top,face[4],face[5]])
  }
-
+}
+#[wasm_bindgen]
+impl RustScene{
  /// The frame a returning book is painted in on the full-screen overlay, from the book's world box,
  /// the overlay camera's inverse world matrix and projection, and the window. `out = [found, x, y, width, height]`.
  #[wasm_bindgen(js_name=insertionFrame)]

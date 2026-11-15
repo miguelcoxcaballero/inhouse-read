@@ -7,15 +7,10 @@ import * as speech from './speech-text.js'
 export { speechChunks } from './speech-text.js'
 // The audiobook's session: what is spoken next, prepared ahead, presented, joined across pages, navigated, paused
 // and stopped is rust-ui (voice_*.rs; its methods are answered by voice_methods.rs). The kit holds the engine, audio,
-// catalogue, text and timer doorways Rust calls back (the modules are read when a method needs them); the frozen
-// originals are tests/unit/helpers/reference-voice-*.js.
-const kit={runtime,audio,catalog,speech,get clearTimeout(){return clearTimeout},get now(){return Date.now},get document(){return document},
- clearTimer:id=>clearTimeout(id),add:(a,b)=>a+b,sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),ignore:value=>Promise.resolve(value).catch(()=>{}),
- deviceLanguage:()=>navigator.language,always:()=>true,
- joinReady:(ui,owner,promise,generation,index)=>{void promise.then(()=>ui.voice_join_ready(owner,generation,index))},
- waitStarted:(ui,owner,id)=>setTimeout(()=>ui.voice_wait_started(owner,id),900),
- synthFailed:(owner,id)=>queueMicrotask(()=>owner.engineFailed({id,reason:'synth-failed'})),
- sleepTimer:(ui,owner,ms)=>setTimeout(()=>ui.voice_sleep_expired(owner),ms)}
+// catalogue and text modules Rust calls back (read when a method needs them) and the doorways reached while a
+// word is presented; the timers, the page join and the deferred failure are rust-ui voice_shell.rs. The frozen
+// originals are tests/unit/helpers/reference-voice-*.js and reference-reading-voice-kit.js.
+const kit={runtime,audio,catalog,speech,get clearTimeout(){return clearTimeout},get now(){return Date.now},add:(a,b)=>a+b,ignore:value=>Promise.resolve(value).catch(()=>{})}
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
   constructor(reader,onState=()=>{}) {

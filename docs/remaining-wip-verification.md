@@ -1,3 +1,9 @@
+# 1.7.337 — se recupera el código de la 1.7.335
+
+- Sin verificación nueva del código: es el de la 1.7.335 (ver su entrada).
+- En local, live-room-stability:27 y los dos contratos de regreso nativo fallan con cualquier versión (también con el código de la 1.7.334) mientras la máquina está cargada: aquí no sirven de prueba.
+- Pendiente: esas tres pruebas dependen de límites de reloj (8 s) o de 30 s para ver los lomos del segundo cliente; con ejecutores lentos fallan sin cambio de código. No se sabe por qué el segundo cliente no llega a mostrar ningún lomo en 30 s.
+
 # 1.7.336 — vuelta atrás al código de la 1.7.334
 
 - Sin verificación nueva: el código es el de la 1.7.334, cuyo CI (run 43637874285) tenía en rojo smoke:540, lamp-switches:136, shelf-close-placement:90, shelf-placement:174 y live-room-sync:11, y en verde live-room-stability:27 y los contratos de regreso nativo.

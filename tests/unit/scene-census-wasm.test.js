@@ -20,12 +20,12 @@ function entry(){
  return {kind,model,insertion,trashDrop:chance(.05)?{complete:chance(.5)}:null,
   qualityReplacement:chance(.15),replacementReady:chance(.5),plantQuality:chance(.1)?{ready:chance(.5)}:null,
   bits,flags:{away:Boolean(bits&1),pressed:Boolean(bits&8)},row:-1,
-  lift:pick([0,0,0,-0,.22,1,NaN]),landing:pick([0,0,0,1]),preview:pick([0,0,0,1])};
+  lift:pick([0,0,0,-0,.22,1,NaN]),from:pick([0,0,0,0,-0,.22,-.22,.220001,.2200011,1,NaN]),target:pick([0,0,0,0,.22,1]),landing:pick([0,0,0,1]),preview:pick([0,0,0,1])};
 }
 function write(frame,entries){
  frame.refresh();
  entries.forEach((e,index)=>{const at=index*S,state=frame.state;
-  state[at]=e.kind==='plant'?1:e.kind==='lamp'?2:0;state[at+2]=e.bits;state[at+5]=e.lift;state[at+9]=e.landing;state[at+20]=e.preview;});
+  state[at]=e.kind==='plant'?1:e.kind==='lamp'?2:0;state[at+2]=e.bits;state[at+5]=e.lift;state[at+6]=e.from;state[at+7]=e.target;state[at+9]=e.landing;state[at+20]=e.preview;});
 }
 const flags=(entries,frame)=>({
  loading:entries.some(e=>Boolean(e.qualityReplacement&&!e.replacementReady||e.plantQuality&&!e.plantQuality.ready)),
@@ -52,6 +52,14 @@ it('answers what the frozen per-entry scans answered, over random rooms and layo
    write(frame,entries);
    const trash=chance(.5),held=(frame.hold(entries),frame.census(trash)),expected=flags(entries,frame);
    expect({loading:Boolean(held&2),overlay:Boolean(held&4),native:Boolean(held&8),busy:Boolean(held&16),touched:Boolean(held&32)}).toEqual(expected);
+   // Outside a frame, the scene's former scans of its entries (hasOngoingMotion, canDeferModalPaint,
+   // beginInspectionGesture and adoptMetadataRecords of bookshelf-scene.js 1.7.334), frozen here.
+   const cells=e=>[5,6,7].map(column=>frame.state[e.row*S+column]),easing=e=>frame.state[e.row*S+9]!==0||frame.state[e.row*S+20]!==0;
+   const still=(entries.some(e=>e.insertion||e.trashDrop||easing(e))?1:0)|
+    (entries.some(e=>e.insertion&&!e.insertion.complete||e.trashDrop&&!e.trashDrop.complete)?2:0)|
+    (entries.every(e=>cells(e).every(value=>Math.abs(value)<=.220001))?0:4)|
+    (entries.some(e=>cells(e)[0]||cells(e)[1]||cells(e)[2])?8:0);
+   for(const asked of [1,2,13,15])expect(frame.still(asked)).toBe(still&asked);
    expect(frame.counts[0]).toBe(referenceCasters(entries,trash));
    const counts=new Float64Array(8),text=referenceCounts(rust.scene_counts,entries,counts);
    expect(Array.from(frame.counts.subarray(1))).toEqual(Array.from(counts));
@@ -76,6 +84,19 @@ it('answers what the frozen per-entry scans answered, over random rooms and layo
    for(const e of entries)expect(frame.state[e.row*S+88]!==0).toBe(painted.has(e));
   }
   expect(rebuilt).toBeGreaterThan(100);expect(writes).toBeGreaterThan(300);
+ }finally{frame.free();}
+});
+
+it('takes every lift at once as the scene took them entry by entry',()=>{
+ const frame=createSceneEntryFrame(rust),entries=Array.from({length:23},entry);
+ try{
+  frame.bind(entries,false);write(frame,entries);
+  const wanted=frame.state.slice();
+  // settleLift of bookshelf-scene.js, for every entry.
+  for(let at=0;at<wanted.length;at+=S){wanted[at+5]=0;wanted[at+6]=0;wanted[at+7]=0;wanted[at+8]=1234.5;}
+  frame.settleLifts(1234.5);frame.refresh();
+  expect(Array.from(new BigUint64Array(frame.state.slice().buffer))).toEqual(Array.from(new BigUint64Array(wanted.buffer)));
+  expect(frame.still(12)).toBe(0);
  }finally{frame.free();}
 });
 

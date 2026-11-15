@@ -1,14 +1,15 @@
 //! The methods of the audiobook session (reading-voice.js `ReadingVoice`), answered here: each name
 //! hands the session (`host`) and the doorways it needs to its implementation in voice_*.rs, with
-//! the defaults the JavaScript methods had. `kit` holds the engine, audio, catalogue, text and
-//! timer doorways (read when the method is called, as the methods read them); `ui` is this module's
-//! exports, which the callbacks that come back later (an active check, a join, a timer) capture
-//! when the method is called, as the original arrow functions did. The frozen originals are
+//! the defaults the JavaScript methods had. `kit` holds the engine, audio, catalogue and text
+//! modules (read when the method is called, as the methods read them); `ui` is this module's
+//! exports, where the timers, the join and the deferred failure are (voice_shell.rs) and which the
+//! callbacks that come back later capture when the method is called, as the original arrow functions did. The frozen originals are
 //! tests/unit/helpers/reference-voice-*.js; their former wrapper modules are described in
 //! docs/remaining-wip-verification.md.
 use js_sys::{Array, Function};
 use wasm_bindgen::{prelude::*, JsCast};
-use crate::host::{absent, num, read};
+use crate::host::{absent, global, num, read};
+use crate::reader_experience_policy::bound;
 use crate::voice_advance::voice_advance;
 use crate::voice_ahead::{voice_adopt_plan, voice_clear_ahead, voice_page_valid, voice_prepare_ahead, voice_revalidate_next};
 use crate::voice_dispatch::{voice_engine_failed, voice_removed, voice_set_sleep, voice_speak_current, voice_speak_neural};
@@ -29,8 +30,6 @@ pub(crate) fn kit_value(kit: &JsValue, path: &str) -> Result<JsValue, JsValue> {
     Ok(value)
 }
 pub(crate) fn door(kit: &JsValue, path: &str) -> Result<Function, JsValue> { Ok(kit_value(kit, path)?.unchecked_into()) }
-/// A kit callback that takes the module first (`(ui, ...) => ...`), bound to it now.
-pub(crate) fn captured(kit: &JsValue, name: &str, ui: &JsValue) -> Result<Function, JsValue> { Ok(door(kit, name)?.bind1(&JsValue::NULL, ui)) }
 /// `(owner, value) => () => ui[name](owner, value)` without a new closure: `bind` bound to `ui[name]`,
 /// so `factory(owner, value)` is `ui[name].bind(null, owner, value)`.
 fn active_factory(ui: &JsValue, name: &str) -> Result<Function, JsValue> {
@@ -65,13 +64,13 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
     let d = |name: &str| door(&kit, name);
     let done = |result: Result<(), JsValue>| result.map(|_| JsValue::UNDEFINED);
     match name {
-        "getDiagnosticState" => voice_diagnostic(host, a(0), d("audio.nativeAudio")?, d("runtime.neuralEngine")?, kit_value(&kit, "document")?),
+        "getDiagnosticState" => voice_diagnostic(host, a(0), d("audio.nativeAudio")?, d("runtime.neuralEngine")?, read(&global(), "document")?),
         "restartFromVisiblePage" => voice_restart_visible(host),
         "play" => voice_play(host, d("runtime.loadNeural")?, d("runtime.neuralEngine")?, d("runtime.unlockNeural")?, d("audio.nativeAudio")?).map(Into::into),
-        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, d("catalog.isNeuralId")?, d("now")?, captured(&kit, "joinReady", &ui)?)),
-        "voiceFor" => voice_for(host, a(0), d("runtime.neuralVoiceList")?, d("catalog.isNeuralId")?, d("catalog.declaredLanguage")?, d("catalog.langBase")?, d("catalog.resolveVoice")?, d("deviceLanguage")?),
+        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, d("catalog.isNeuralId")?, d("now")?, bound(&ui, "voice_join_wait", &[&ui])?)),
+        "voiceFor" => voice_for(host, a(0), d("runtime.neuralVoiceList")?, d("catalog.isNeuralId")?, d("catalog.declaredLanguage")?, d("catalog.langBase")?, d("catalog.resolveVoice")?, door(&ui, "voice_device_language")?),
         "speakNeural" => voice_speak_neural(host, a(0), a(1), a(2), d("runtime.neuralEngine")?, d("audio.nativeAudio")?, d("clearTimeout")?,
-            captured(&kit, "waitStarted", &ui)?, d("synthFailed")?).map(Into::into),
+            bound(&ui, "voice_wait_timer", &[&ui])?, bound(&ui, "voice_synth_failed", &[&ui])?).map(Into::into),
         "upcomingFor" => voice_upcoming(host, a(0)),
         "audioItem" => voice_audio_item(a(0)),
         "needsPageJoin" => voice_needs_join(host, a(0), a(1)),
@@ -81,7 +80,7 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "engineFailed" => done(voice_engine_failed(host, a(0), d("clearTimeout")?, d("runtime.neuralEngine")?, d("ignore")?)),
         "retryNeural" => done(voice_retry(host)),
         "voiceRemoved" => done(voice_removed(host, a(0))),
-        "advance" => voice_advance(host, active_factory(&ui, "voice_advance_active")?, d("sleep")?).map(Into::into),
+        "advance" => voice_advance(host, active_factory(&ui, "voice_advance_active")?, door(&ui, "voice_sleep")?).map(Into::into),
         // jumpToPoint({doc, x, y} = {}) and seekToPoint({doc, x, y}).
         "jumpToPoint" => { let value = a(0); let (doc, x, y) = if value.is_undefined() { Default::default() } else { point(&value)? }; voice_jump_point(host, doc, x, y).map(Into::into) }
         "seekToPoint" => { let (doc, x, y) = point(&a(0))?; voice_seek_point(host, doc, x, y).map(Into::into) }
@@ -91,7 +90,7 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "refreshPageBreaks" => voice_refresh_breaks(host, d("runtime.neuralEngine")?).map(Into::into),
         "prepare" => voice_prepare(host, a(0), int32_flag(&a(1)), d("speech.planSpeech")?, d("speech.firstCompleteSentenceOffset")?).map(Into::into),
         "prepareOpening" => voice_prepare_opening(host).map(Into::into),
-        "preparePlayback" => { let active = or(a(0), || Ok(d("always")?.into()))?; voice_prepare_playback(host, active.unchecked_into(), d("runtime.neuralEngine")?).map(Into::into) }
+        "preparePlayback" => { let active = or(a(0), || Ok(door(&ui, "voice_always")?.into()))?; voice_prepare_playback(host, active.unchecked_into(), d("runtime.neuralEngine")?).map(Into::into) }
         "prepareNext" => voice_prepare_next(host, a(0), active_factory(&ui, "voice_next_active")?).map(Into::into),
         "pagePlanValid" => Ok(voice_page_valid(a(0)).into()),
         "revalidateNext" => voice_revalidate_next(host, a(0), a(1)).map(Into::into),
@@ -107,12 +106,12 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "unpaint" => done(voice_unpaint(host, d("clearTimeout")?)),
         "restart" => done(voice_restart(host)),
         // cancelUtterance(reason = 'stop')
-        "cancelUtterance" => { let reason = or(a(0), || Ok(JsValue::from_str("stop")))?; done(voice_cancel(host, reason, d("clearTimer")?, d("audio.nativeAudio")?, d("runtime.neuralEngine")?)) }
+        "cancelUtterance" => { let reason = or(a(0), || Ok(JsValue::from_str("stop")))?; done(voice_cancel(host, reason, door(&ui, "voice_clear_timer")?, d("audio.nativeAudio")?, d("runtime.neuralEngine")?)) }
         "prepareText" => voice_prepare_text(host, a(0)),
         "pause" => done(voice_pause(host)),
-        "stop" => done(voice_stop(host, d("clearTimer")?)),
+        "stop" => done(voice_stop(host, door(&ui, "voice_clear_timer")?)),
         "fail" => done(voice_fail(host, a(0))),
-        "setSleep" => done(voice_set_sleep(host, a(0), d("clearTimeout")?, captured(&kit, "sleepTimer", &ui)?)),
+        "setSleep" => done(voice_set_sleep(host, a(0), d("clearTimeout")?, bound(&ui, "voice_sleep_timer", &[&ui])?)),
         _ => Err(js_sys::TypeError::new(&format!("ReadingVoice has no method {name}")).into()),
     }
 }

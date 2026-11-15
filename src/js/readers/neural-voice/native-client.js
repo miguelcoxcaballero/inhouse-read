@@ -19,16 +19,8 @@ export class NativeSynthClient {
     this.chain=Promise.resolve();this.preparationChain=Promise.resolve()
   }
   get alive(){return !!this.ort}
-  prepare(key) {
-    if(this.plan.model(8,key))return Promise.resolve(this.config)
-    if(this.plan.preparing(key))return this.loading.promise
-    const generation=this.plan.capture()
-    const promise=this.preparationChain.then(()=>ui().native_client_prepare(this,key,generation,kit))
-    this.preparationChain=promise.catch(()=>{})
-    this.loading={key,promise};this.plan.beginPreparation(key)
-    promise.finally(()=>{if(this.loading?.promise===promise){this.loading=null;this.plan.finishPreparation()}}).catch(()=>{})
-    return promise
-  }
+  // One preparation at a time, the same promise for the voice being prepared: rust-ui client_prepare.rs.
+  prepare(key) { const module=ui(); return module.native_client_begin(this,key,kit,module) }
   synth(request,handlers) {
     // Preserve the synchronous handle/error contract even before the optional
     // voice core exists. An invalid call must not download a model or WASM.

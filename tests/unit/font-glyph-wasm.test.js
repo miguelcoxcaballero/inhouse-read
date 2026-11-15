@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi,afterEach} from 'vitest';
-import {rustGlyphMask} from '../../src/js/font-glyph-wasm.js';
+import {rustGlyphMask} from './helpers/reference-font-glyph-wasm.js';
 import {glyphMask as reference} from './helpers/reference-cover-appearance.js';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,requireRustCore:async()=>state.core,loadedRustCore:()=>{if(!state.core)throw Error("Core unavailable");return state.core;}}));
@@ -29,11 +29,12 @@ it('rejects malformed dimensions without allocating or touching input',()=>{
  for(const [w,h,stride] of [[0,66,80],[80,0,80],[-1,66,80],[Infinity,66,80],[80.2,66,80],[80,66,0],[80,66,65536],[2048,2048,2048],[81,66,80]])expect(rustGlyphMask(engine,a,w,h,stride)).toBeUndefined();expect(alloc).not.toHaveBeenCalled();
 });
 
-it('routes the real analyzer through Rust and reports unavailable core instead of running a JavaScript twin',async()=>{
+it('production crops in the shelf module: the same glyph as the original, without a call to the kernel of the core',async()=>{
  const call=vi.fn(core.font_glyph_mask);state.core={...core,font_glyph_mask:call};
- vi.stubGlobal('Image',class{decode(){return Promise.reject(Error('bad image'));}});vi.stubGlobal('document',{});
- const {analyzeCoverAppearance,glyphMask}=await import('../../src/js/cover-appearance.js');
- await analyzeCoverAppearance('invalid-test-image');const raw=raster(192,176);
- await vi.waitFor(()=>{assert.deepEqual(glyphMask(raw,192,176),reference(raw,192,176));expect(call).toHaveBeenCalled();});
- state.core=null;expect(()=>glyphMask(raw,192,176)).toThrow("Core unavailable");
+ const {glyphMask}=await import('../../src/js/cover-appearance.js');const raw=raster(192,176);
+ assert.deepEqual(glyphMask(raw,192,176),reference(raw,192,176));assert.deepEqual(glyphMask(raw,192,176,384),reference(raw,192,176,384));
+ expect(call).not.toHaveBeenCalled();
+ // The planes no longer depend on the numeric core being in.
+ state.core=null;assert.deepEqual(glyphMask(raw,192,176),reference(raw,192,176));
+ expect(()=>glyphMask(raw,0,176)).toThrow('Invalid glyph raster');
 });

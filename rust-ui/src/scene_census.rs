@@ -14,6 +14,8 @@ use super::{RustSceneEntryFrame,STATE,HOSTED,PAINTED_AWAY};
 /// Column 85's bits (512, a completed drop, is read by the pose call only).
 const MODEL:u32=1;const VISIBLE:u32=2;const PENDING:u32=4;const OVERVIEW:u32=8;const INSERTION:u32=16;
 const DROP:u32=32;const OVERLAY:u32=64;const NATIVE:u32=128;const LOADING:u32=256;
+/// A drop into the bin that has ended, and a return that has.
+const DROPPED:u32=512;const RETURNED:u32=1024;
 
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
@@ -41,6 +43,27 @@ impl RustSceneEntryFrame{
   summary
  }
  pub fn census_ptr(&self)->usize{self.census.as_ptr() as usize}
+ /// What the entries hold, asked outside a frame (after the host told what it holds). Of the
+ /// bits `asked`: 1 an entry returns, flies to the bin, lands or previews; 2 a return or a flight
+ /// has not ended; 4 a lift is beyond a press' own (0.22); 8 an entry is lifted at all.
+ pub fn still(&self,asked:u32)->u32{
+  let mut summary=0;
+  for row in self.state.chunks_exact(STATE){
+   let held=row[HOSTED] as u32;
+   if held&(INSERTION|RETURNED)==INSERTION||held&(DROP|DROPPED)==DROP{summary|=2;}
+   if asked&1!=0&&(held&(INSERTION|DROP)!=0||row[9]!=0.0||row[20]!=0.0){summary|=1;}
+   if asked&12!=0{for lift in &row[5..8]{
+    if !(lift.abs()<=0.220001){summary|=4;}
+    if *lift!=0.0&&!lift.is_nan(){summary|=8;}
+   }}
+  }
+  summary&asked
+ }
+ /// A gesture on the room takes every press' lift at once.
+ #[wasm_bindgen(js_name=settleLifts)]
+ pub fn settle_lifts(&mut self,started:f64){
+  for row in self.state.chunks_exact_mut(STATE){row[5]=0.0;row[6]=0.0;row[7]=0.0;row[8]=started;}
+ }
  /// The room was painted: the books it was painted without (away, their model hidden, neither
  /// returning nor flying to the bin) are remembered until the next painted room.
  pub fn painted(&mut self){

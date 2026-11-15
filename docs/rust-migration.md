@@ -1,3 +1,7 @@
+# Entrega 1.7.337: se recupera el código de la 1.7.335
+
+El árbol es el de b3fc598f (1.7.335) salvo la versión y estas notas. La 1.7.336 volvió a la 1.7.334 porque en el CI de la 1.7.335 fallaban live-room-stability:27 y los dos contratos de regreso nativo; pero el CI de la 1.7.336 (run 43663482632, mismo código que la 1.7.334, donde pasaban) falla esas mismas tres pruebas. La tanda 2/6 tardó 26 min en la 1.7.334, 39,6 en la 1.7.335 y 35,2 en la 1.7.336, con la misma imagen y el mismo Chrome: los ejecutores iban entre 1,3 y 1,4 veces más lentos y esas pruebas tienen límites de reloj. No hay prueba de que la 1.7.335 las rompiera. Barra estimada: 75,91 % Rust, 847 KB de JavaScript.
+
 # Entrega 1.7.336: vuelta atrás al código de la 1.7.334
 
 El árbol es el de 8e11c6d3 (1.7.334) salvo la versión y estas notas. Se retira todo lo de la 1.7.335 (ready/shelf-physics-1, scene-frame-25..27, book-model-19, decor-shell-13..15, readers-voice-17..19) porque en CI y en local fallan live-room-stability:27 (el segundo cliente no muestra ningún lomo) y los dos contratos de regreso nativo a la estantería (el lector se queda en is-closing-reader). No estaban en la lista de pruebas de navegador que se pasó antes de publicar. Barra estimada: la de la 1.7.334 (75,44 % Rust). Las ramas siguen en origin para volver a integrarlas una vez hallada la causa.

@@ -50,7 +50,6 @@ extern "C"{
  /// `fontMask(title, before, after, plan, width, rows, wraps, surface)`: the mask, or `null` without one that fits.
  #[wasm_bindgen(method,catch)]fn mask(this:&Duck,title:&JsValue,before:&JsValue,after:&JsValue,plan:&JsValue,width:f64,rows:&JsValue,wraps:&JsValue,surface:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn canvas(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn prepare(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64,edges:bool)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn scorer(this:&Duck,core:&JsValue,context:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn open(this:&Duck,context:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn slices(this:&Duck,task:&JsValue)->R<JsValue>;
@@ -95,9 +94,6 @@ extern "C"{
  #[wasm_bindgen(method,catch,js_name=getImageData)]fn get_image_data(this:&Duck,x:f64,y:f64,width:f64,height:f64)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn data(this:&Duck)->R<JsValue>;
  // The core's bridges' objects: prepared planes, the wrap cache, the scorers.
- #[wasm_bindgen(method,getter,catch)]fn gray(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,getter,catch)]fn near(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,getter,catch)]fn busy(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn dispose(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=scoreMany)]fn score_many(this:&Duck,masks:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn close(this:&Duck)->R<JsValue>;
@@ -282,7 +278,7 @@ pub fn cover_aspect_read(url:JsValue)->Promise{
 
 /// One analysis between its awaits.
 struct Analysis{host:Host,done:Rc<Deferred>,title:JsValue,match_font:bool,image:JsValue,core_ready:JsValue,
- aspect:RefCell<JsValue>,pixels:RefCell<JsValue>,width:Cell<f64>,height:Cell<f64>,core:RefCell<JsValue>,color:RefCell<JsValue>,prepared:RefCell<JsValue>}
+ aspect:RefCell<JsValue>,pixels:RefCell<JsValue>,width:Cell<f64>,height:Cell<f64>,core:RefCell<JsValue>,color:RefCell<JsValue>,busy:Cell<bool>}
 
 /// `analyzeCoverAppearance(url, title, options)`: `null` for a missing or unsafe image, the aspect ratio
 /// alone when the pixels cannot be read, otherwise the binding colour and, with `matchFont`, the lettering.
@@ -306,7 +302,7 @@ pub fn cover_appearance_analyze(host:JsValue,url:JsValue,title:JsValue,options:J
   let given=truthy(&decoded);
   let image=if given{duck(&decoded).set_decoding(intern("async"))?;decoded}else{new_image(&url)?};
   Ok(Some((Rc::new(Analysis{host,done:done.clone(),title,match_font,image,core_ready,aspect:RefCell::new(undefined()),pixels:RefCell::new(undefined()),
-   width:Cell::new(0.0),height:Cell::new(0.0),core:RefCell::new(undefined()),color:RefCell::new(undefined()),prepared:RefCell::new(undefined())}),given)))
+   width:Cell::new(0.0),height:Cell::new(0.0),core:RefCell::new(undefined()),color:RefCell::new(undefined()),busy:Cell::new(false)}),given)))
  })();
  match started{
   Ok(Some((analysis,given)))=>analysis.attempt(|analysis|analysis.decode(given)),
@@ -399,10 +395,11 @@ impl Analysis{
  fn search(self:&Rc<Self>)->R{
   let (width,height,title)=(self.width.get(),self.height.get(),self.title.clone());
   let include_edges=truthy(&title)&&trimmed_length(&title)>=3&&width>=48.0&&(height*0.82).floor()>=48.0;
-  let prepared=self.host.prepare(&self.core.borrow(),&self.pixels.borrow(),width,height,include_edges)?;
-  if !truthy(&prepared){return Err(error("Invalid cover preparation"))}
-  let (gray,near)=(duck(&prepared).gray()?,duck(&prepared).near()?);
-  *self.prepared.borrow_mut()=prepared;
+  // The grey and near-edge planes, once the numeric core the scorers run in has arrived.
+  let prepared=if truthy(&self.core.borrow()){crate::font_planes::cover_planes(&self.pixels.borrow(),&number(width),&number(height),include_edges)}else{None};
+  let Some((gray,near,busy))=prepared else{return Err(error("Invalid cover preparation"))};
+  let (gray,near):(JsValue,JsValue)=(gray.into(),near.map_or(JsValue::NULL,Into::into));
+  self.busy.set(busy);
   // One cover at a time, so a whole shelf of new books does not pile up long tasks.
   let host=self.host.clone();
   let search=js_owned(Closure::<dyn FnMut(JsValue)->JsValue>::once(move|_:JsValue|match_title_font(host,gray,width,height,title,near).into()));
@@ -410,7 +407,7 @@ impl Analysis{
   self.host.set_turn(&duck(&turn).otherwise(&self.host.noop())?)?;
   self.then(&turn,|analysis,found|{
    let index=match found.as_f64(){Some(index) if index>=0.0&&index<6.0&&index.fract()==0.0=>index as usize,
-    _=>if truthy(&duck(&analysis.prepared.borrow()).busy()?){3}else{0}};
+    _=>if analysis.busy.get(){3}else{0}};
    let (family,weight,fallback,_)=FONTS[index];
    let record=analysis.record()?;
    let fields=duck(&record);

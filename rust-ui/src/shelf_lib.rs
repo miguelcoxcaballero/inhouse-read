@@ -19,6 +19,8 @@ mod local_drop;
 mod scene_view;
 mod scene_frame;
 mod scene_shown;
+mod scene_layout;
+mod scene_begin;
 mod scene_entries;
 mod book_gravity;
 mod cozy_audio;
@@ -225,6 +227,12 @@ mod speech_normalize;
 #[path="../../rust-core/src/font.rs"]
 mod font;
 mod font_policy;
+// The search's pixel planes: the core's glyph crop and cover preparation, called natively as well.
+#[path="../../rust-core/src/font_glyph.rs"]
+mod font_glyph;
+#[path="../../rust-core/src/font_prepare.rs"]
+mod font_prepare;
+mod font_planes;
 mod cover_appearance;
 mod launch_frames;
 mod app_controller;

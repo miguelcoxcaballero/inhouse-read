@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.337 — Vuelve el contenido de la 1.7.335
+
+La vuelta atrás de la 1.7.336 no hacía falta: las pruebas que fallaban con la
+1.7.335 fallan igual con el código de la 1.7.334 cuando los servidores de
+pruebas van lentos. Esta versión recupera la 1.7.335: la regla de macetas y
+lámparas, el toque que ya no se pierde tras un deslizamiento y más código en
+Rust (estimación local: 75,9 % Rust).
+
 ## 1.7.336 — Vuelta atrás a la 1.7.334
 
 La 1.7.335 rompía dos cosas que no había probado antes de publicarla: una sala

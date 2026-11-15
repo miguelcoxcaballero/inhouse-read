@@ -18,8 +18,8 @@ fn or(value: JsValue, fallback: impl FnOnce() -> R<JsValue>) -> R<JsValue> {
 fn optional(value: &JsValue, key: &str) -> R<JsValue> {
     if absent(value) { Ok(JsValue::UNDEFINED) } else { read(value, key) }
 }
-fn ignore(host: &JsValue, task: &JsValue) -> R<JsValue> {
-    method(task, "catch", &[&read(host, "ignorePreparationError")?])
+fn ignore(_host: &JsValue, task: &JsValue) -> R<JsValue> {
+    method(task, "catch", &[&crate::app_report::ignore()])
 }
 fn current(host: &JsValue, id: &JsValue, generation: &JsValue) -> R<bool> {
     let state = read(host, "state")?;
@@ -208,7 +208,7 @@ pub fn app_prepare_page_stage(host: JsValue, id: JsValue, generation: JsValue, g
     c::start(async move {
         match page_stage(&host, &id, &generation, &gate).await {
             Ok(value) => Ok(value),
-            Err(error) => { method(&host, "warnPagePreparation", &[&error])?; Ok(JsValue::FALSE) }
+            Err(error) => { crate::app_report::warn("No se pudo preparar la página guardada de antemano:", &error)?; Ok(JsValue::FALSE) }
         }
     })
 }

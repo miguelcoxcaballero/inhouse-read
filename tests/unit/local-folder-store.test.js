@@ -3,7 +3,7 @@ import './helpers/rust-ui-ready.js'
 import {
   isFolderApiSupported, sanitizeFileName, resolveNonCollidingName, saveFileIntoFolder,
   readFileFromFolder, ensureFolderPermission
-} from '../../src/js/local-folder-store.js'
+} from './helpers/local-folder-store-doorways.js'
 
 /** Directorio falso mínimo, suficiente para probar la lógica sin un navegador real. */
 class FakeDirHandle {
