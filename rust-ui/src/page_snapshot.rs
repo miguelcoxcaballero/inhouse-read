@@ -3,11 +3,13 @@
 //! painted at the browser's measured glyph positions, so pagination, headings,
 //! chosen fonts and images remain tied to the live reader. The DOM, the canvases and
 //! the measured rectangles keep their JavaScript identity; every decision is made here
-//! and every canvas call is made in the order the page produced it.
+//! and every canvas call is made in the order the page produced it. The waits (a deadline
+//! around a decode, a Blob read, an image load) are snapshot_promises.rs.
 use wasm_bindgen::{prelude::*, JsCast};
-use js_sys::{Array, Function, JsString, Map, Object, Promise, RegExp, Reflect};
+use js_sys::{Array, JsString, Map, Object, Promise, RegExp, Reflect};
 use web_sys::Range;
 use crate::eager::{eager, settled};
+use crate::snapshot_promises::{before_deadline, blob_data_url, load_image, local_blob};
 use crate::host::{absent, clock, construct, get, get_at, global, jmax, jmin, method, method_opt, num, number_string, read, request_frame, set, truthy};
 
 const MAX_EDGE: f64 = 1600.0;
@@ -156,7 +158,7 @@ fn unsafe_paint_url(value: &JsValue) -> Result<bool, JsValue> {
 
 /// Rasterize existing inline SVG without requesting any network resources.
 #[wasm_bindgen]
-pub fn snapshot_svg(svg: JsValue, options: JsValue, wait: Function, blob_of: Function, data_of: Function, load_image: Function) -> Promise {
+pub fn snapshot_svg(svg: JsValue, options: JsValue) -> Promise {
     eager(async move {
         let deadline = get(&options, "deadline");
         let deadline = if deadline.is_undefined() { JsValue::from_f64(clock()? + DECODE_BUDGET) } else { deadline };
@@ -193,9 +195,9 @@ pub fn snapshot_svg(svg: JsValue, options: JsValue, wait: Function, blob_of: Fun
                     // The ebook already loaded this local Blob. Reading it performs no
                     // network request; inline data lets SVG-as-image retain illustrations.
                     let attempt = async {
-                        let blob = settled(wait.call2(&JsValue::UNDEFINED, &blob_of.call1(&JsValue::UNDEFINED, &href.as_str().into())?, &deadline)?).await?;
+                        let blob = settled(before_deadline(&local_blob(&href.as_str().into())?, &deadline)?).await?;
                         if num(&get(&blob, "size")) <= 8.0 * 1024.0 * 1024.0 {
-                            embedded = settled(wait.call2(&JsValue::UNDEFINED, &data_of.call1(&JsValue::UNDEFINED, &blob)?, &deadline)?).await?;
+                            embedded = settled(before_deadline(&blob_data_url(&blob)?, &deadline)?).await?;
                         }
                         Ok::<(), JsValue>(())
                     }.await;
@@ -232,7 +234,7 @@ pub fn snapshot_svg(svg: JsValue, options: JsValue, wait: Function, blob_of: Fun
         let image = construct("Image", &[])?;
         let mut loaded = false;
         let outcome = async {
-            settled(wait.call2(&JsValue::UNDEFINED, &load_image.call2(&JsValue::UNDEFINED, &image, &url)?, &deadline)?).await?;
+            settled(before_deadline(&load_image(&image, &url)?, &deadline)?).await?;
             loaded = true;
             Ok::<(), JsValue>(())
         }.await;
@@ -628,7 +630,7 @@ fn collapse(texts: &[Vec<u16>]) -> Vec<u16> {
 /// Foliate column/CFI jump. No HTML serialization or remote image requests. This
 /// is safe to use as a GPU canvas texture even with external ebook images.
 #[wasm_bindgen]
-pub fn snapshot_dom_page(root: JsValue, options: JsValue, wait: Function, blob_of: Function, data_of: Function, load_image: Function) -> Promise {
+pub fn snapshot_dom_page(root: JsValue, options: JsValue) -> Promise {
     eager(async move {
         let option = |name: &str, default: JsValue| { let value = get(&options, name); if value.is_undefined() { default } else { value } };
         let viewport = get(&options, "viewport");
@@ -685,13 +687,13 @@ pub fn snapshot_dom_page(root: JsValue, options: JsValue, wait: Function, blob_o
                 }
                 let decoded = async {
                     let decoding = method_opt(&image, "decode", &[])?.unwrap_or(JsValue::UNDEFINED);
-                    settled(wait.call2(&JsValue::UNDEFINED, &decoding, &deadline)?).await
+                    settled(before_deadline(&decoding, &deadline)?).await
                 }.await;
                 if decoded.is_err() { continue; }
             }
             let drawn = async {
                 let source = if get(&image, "localName") == "svg" {
-                    settled(snapshot_svg(image.clone(), object(&[("deadline", deadline.clone())])?, wait.clone(), blob_of.clone(), data_of.clone(), load_image.clone()).into()).await?
+                    settled(snapshot_svg(image.clone(), object(&[("deadline", deadline.clone())])?).into()).await?
                 } else { image.clone() };
                 for c in &all {
                     method(c, "drawImage", &[&source, &(rect.left - offset_x).into(), &(rect.top - offset_y).into(), &rect.width.into(), &rect.height.into()])?;

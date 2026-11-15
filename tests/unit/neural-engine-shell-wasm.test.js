@@ -9,7 +9,7 @@ import './helpers/rust-ui-ready.js'
 import { readerUI } from '../../src/js/readers/rust-ui-required.js'
 import { NeuralEngine as Frozen, LIMITS as FROZEN_LIMITS, FragmentCache as FrozenCache } from './helpers/reference-neural-engine-shell.js'
 import { NeuralEngine as Live, LIMITS, FragmentCache } from '../../src/js/readers/neural-voice/engine.js'
-import { audioContext, resetAudio } from '../../src/js/readers/neural-voice/audio.js'
+import { audioContext, resetAudio, unlockAudio } from '../../src/js/readers/neural-voice/audio.js'
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 import { fakeAudioContext } from './neural-fakes.js'
 
@@ -186,4 +186,42 @@ it('hands the browser functions that do what the arrows of the frozen engine did
   expect(logs[1]).toEqual(logs[0])
   expect(logs[0].length).toBeGreaterThan(120)
   for (const needle of ['fire pump', 'fire idle', 'onChunk', 'event CustomEvent', 'abort 0 true', 'statechange', 'set entry.counts']) expect(logs[0].some(line => line.includes(needle)), needle).toBe(true)
+})
+
+it('makes the same default client: the worker client, what it reads through the store and where stage receipts go', async () => {
+  const logs = [[], []]
+  for (const [which, Class] of [Frozen, Live].entries()) {
+    const log = logs[which]
+    for (const scene of ['web', 'native audio bridge', 'bridge without receipts', 'inference protocol 2', 'inference without getProtocol']) {
+      resetAudio(); delete globalThis.InhouseInference; delete globalThis.InhousePcm
+      const reports = []
+      if (scene === 'native audio bridge') globalThis.InhousePcm = { getProtocol:() => 1, begin:() => 9, stop() {}, pause() {}, reportSynthesisStage(...args) { reports.push(args) } }
+      if (scene === 'bridge without receipts') globalThis.InhousePcm = { getProtocol:() => 1, begin:() => 9, stop() {}, pause() {}, reportSynthesisStage:'yes' }
+      if (scene === 'inference protocol 2') globalThis.InhouseInference = { getProtocol:() => 2 }
+      if (scene === 'inference without getProtocol') globalThis.InhouseInference = {}
+      const store = { readModel(...args) { log.push(`readModel ${args.length} ${args[0]} ${this === store}`); return 'model' }, readConfig(...args) { log.push(`readConfig ${args.length} ${args[0]}`); return 'config' } }
+      const engine = new Class({ store, audio:{ context:() => null, unlock:() => null }, env:new EventTarget() })
+      const client = engine.createClient()
+      log.push(scene, client.constructor.name, JSON.stringify(Object.keys(client)), client.ortBase, client.phonBase, typeof client.createWorker, brief(client.onStage))
+      for (const name of ['readModel', 'readConfig', 'readPhonemizerModel', 'readRuntimeAssets']) attempt(log, name, () => client[name]('voice', 'ignored'))
+      store.readPhonemizerModel = (...args) => { log.push(`readPhonemizerModel ${args.length} ${args[0]}`); return 0 }
+      store.readRuntimeAssets = (...args) => { log.push(`readRuntimeAssets ${args.length}`); return { pack:true } }
+      store.readModel = () => 'replaced'
+      for (const name of ['readModel', 'readPhonemizerModel', 'readRuntimeAssets']) attempt(log, `later ${name}`, () => JSON.stringify(client[name]('voice')))
+      store.readRuntimeAssets = 5
+      attempt(log, 'not a function', () => client.readRuntimeAssets('voice'))
+      if (client.onStage) {
+        attempt(log, 'receipt without a session', () => client.onStage(1, 2, 3, 4))
+        unlockAudio()
+        attempt(log, 'receipt', () => client.onStage(1, 2, 3, 4, 'ignored'))
+        log.push(JSON.stringify(reports))
+      }
+      client.dispose()
+    }
+    delete globalThis.InhousePcm; resetAudio()
+  }
+  // The engine words a missing method with the expression that named it, and a native session is named after the clock.
+  const settled = lines => lines.map(line => line.replace(/TypeError:.*is not a function/, 'TypeError: not a function').replace(/"\d+-\d+"/, '"session"'))
+  expect(settled(logs[1])).toEqual(settled(logs[0]))
+  for (const needle of ['SynthClient', 'readModel 1 voice true', 'receipt -> undefined', '[["session",1,2,3,4]]', 'threw TypeError']) expect(settled(logs[0]).some(line => line.includes(needle)), needle).toBe(true)
 })
