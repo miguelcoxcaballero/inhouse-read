@@ -86,6 +86,34 @@ async function assertNoOverlap(page) {
   expect(overlaps).toEqual([])
 }
 
+// A physical shelf resolves a drop against the actual solids (rust-ui/src/book_gravity.rs drop_position): a tapered pot
+// reserves no air under its rim and a released book may lean or lie down, so the nominal upright slots above no longer
+// describe it. Saved room rows are [key, kind, base, size, bay, x, y, angle, solid] in metres. Books are exact boxes
+// turned by their angle; of a pot only its core is known here (the inner half of its width, the lower two fifths of the
+// plant: every catalogue pot contains it). No book may be inside another book or inside a pot's core, beyond the
+// solver's contact slop.
+async function assertSolidsApart(page) {
+  const poses = await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-shelf-physics-v1') || 'null')?.[2])
+  expect(Array.isArray(poses)).toBe(true)
+  const box = pose => {
+    const [width, height] = pose[3], book = pose[1] === 0, angle = book ? pose[7] : 0
+    const halfWidth = book ? width / 2 : width / 4, halfHeight = book ? height / 2 : height / 5
+    const centreY = book ? pose[6] : pose[6] - height / 2 + halfHeight
+    return { key:pose[0], book, bay:pose[2][2], x:pose[5], y:centreY, halfWidth, halfHeight, cos:Math.cos(angle), sin:Math.sin(angle) }
+  }
+  const boxes = poses.filter(pose => pose[1] === 0 || pose[1] === 1).map(box)
+  expect(boxes.filter(item => item.book)).toHaveLength(4)
+  expect(boxes.filter(item => !item.book)).toHaveLength(3)
+  // Separating axes of two turned rectangles: the largest gap along any of their four edge normals.
+  const gap = (a, b) => Math.max(...[[a.cos,a.sin],[-a.sin,a.cos],[b.cos,b.sin],[-b.sin,b.cos]].map(([x, y]) => {
+    const reach = item => item.halfWidth * Math.abs(x * item.cos + y * item.sin) + item.halfHeight * Math.abs(-x * item.sin + y * item.cos)
+    return Math.abs((a.x - b.x) * x + (a.y - b.y) * y) - reach(a) - reach(b)
+  }))
+  const inside = boxes.flatMap((a, index) => boxes.slice(index + 1)
+    .filter(b => a.bay === b.bay && (a.book || b.book) && gap(a, b) < -.001).map(b => [a.key, b.key]))
+  expect(inside).toEqual([])
+}
+
 async function assertFullCabinetWidth(page) {
   await expect.poll(() => page.evaluate(() => {
     const scroller = document.querySelector('.ihr-bookshelf__scroll')
@@ -171,7 +199,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
   expect(errors).toEqual([])
 })
 
-test('libros y plantas se colocan libremente, se apartan al colisionar y conservan los huecos tras recargar', async ({ page }) => {
+test('libros y plantas se colocan libremente, se posan junto al objeto sobre el que se sueltan y conservan los huecos tras recargar', async ({ page }) => {
   // Four real 12-step drags, collision checks and three reloads. CI spent
   // 17 and 29 seconds drawing the first two drags and exhausted 90 seconds
   // during the third, with every completed placement assertion passing.
@@ -196,15 +224,34 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   await expect(object(page, 'book:placement:0')).toHaveAttribute('data-shelf-index', '1')
   expect(Number(await object(page, 'book:placement:0').getAttribute('data-shelf-x'))).toBeCloseTo(saved.x, 3)
 
+  // Since 1.7.280 a drop is resolved against the solid objects of the board and no neighbour is moved
+  // (rust-ui/src/book_gravity.rs drop_position; rust-ui/src/bookshelf/objects.rs local_drag_destination): an object
+  // dropped on another one lands at the nearest free place beside it, and the other keeps its place.
+  const usable = sceneBounds.width - 32
+  const nominal = (page, key, name) => object(page, key).evaluate((node, name) => parseFloat(node.style.getPropertyValue(name)), name)
+  const touching = (await nominal(page, 'plant:placement-a', '--ihr-plant-w') + await nominal(page, 'book:placement:0', '--ihr-spine-w')) / 2
   const bookBounds = await object(page, 'book:placement:0').boundingBox()
-  await dragTo(page, 'plant:placement-a', { x:bookBounds.x + bookBounds.width / 2, y:bookBounds.y + bookBounds.height - 25 }, 1)
-  await expect.poll(async () => (await positionFor(page, 'placement:0')).x).not.toBeCloseTo(saved.x, 2)
-  await assertNoOverlap(page)
-  const plantBounds = await object(page, 'plant:placement-a').boundingBox()
+  const plantDropX = await dragTo(page, 'plant:placement-a', { x:bookBounds.x + bookBounds.width / 2, y:bookBounds.y + bookBounds.height - 25 }, 1)
+  await expect(object(page, 'plant:placement-a')).toHaveAttribute('data-shelf-index', '1')
   const plantX = Number(await object(page, 'plant:placement-a').getAttribute('data-shelf-x'))
-  await dragTo(page, 'book:placement:0', { x:plantBounds.x + plantBounds.width / 2, y:plantBounds.y + plantBounds.height - 18 }, 1)
-  expect(Number(await object(page, 'plant:placement-a').getAttribute('data-shelf-x'))).not.toBeCloseTo(plantX, 2)
+  expect(plantX).toBeCloseTo(plantDropX, 3)
+  // Beside the book, not on it and not anywhere else on the board: within four pixels of touching it.
+  expect(Math.abs(plantX - saved.x) * usable).toBeGreaterThan(touching - .1)
+  expect(Math.abs(plantX - saved.x) * usable).toBeLessThan(touching + 4)
+  expect(await positionFor(page, 'placement:0')).toEqual(saved)
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).find(plant => plant.key === 'plant:placement-a'), PLANTS_KEY))
+    .toMatchObject({ shelf:1, x:plantX })
   await assertNoOverlap(page)
+  await assertSolidsApart(page)
+  const plantBounds = await object(page, 'plant:placement-a').boundingBox()
+  const bookDropX = await dragTo(page, 'book:placement:0', { x:plantBounds.x + plantBounds.width / 2, y:plantBounds.y + plantBounds.height - 18 }, 1)
+  // The book is put down beside the pot, which stays where it is. Its place is found at the height of its foot, where
+  // this pot is narrower than its rim, so only the solids are compared from here on, not the nominal slots.
+  expect(Number(await object(page, 'plant:placement-a').getAttribute('data-shelf-x'))).toBe(plantX)
+  await expect.poll(async () => (await positionFor(page, 'placement:0')).x).toBeCloseTo(bookDropX, 3)
+  expect(Math.abs(bookDropX - saved.x)).toBeGreaterThan(.005)
+  expect(Math.abs(bookDropX - plantX) * usable).toBeLessThan(touching + 4)
+  await assertSolidsApart(page)
 
   await switchShelfView(page, 'isometric')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
@@ -212,12 +259,20 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   const thirdRowPlant = await object(page, 'plant:placement-c').boundingBox()
   await dragTo(page, 'book:placement:1', { x:thirdRowPlant.x + thirdRowPlant.width / 2, y:thirdRowPlant.y + thirdRowPlant.height - 22 }, 2)
   await expect.poll(() => positionFor(page, 'placement:1')).toMatchObject({ shelf:2 })
-  await assertNoOverlap(page)
-  await object(page, 'book:placement:1').focus()
+  await assertSolidsApart(page)
+  // A keyboard step to another board is resolved like a drop: it needs a free place for the solid as it is. The middle
+  // board now holds two pots and a leaning book, and the book that has just been leant on the lowest pot may or may not
+  // find a place there (it did in two of four runs), so the step is taken by the succulent, which has the left of the
+  // first board free above it.
+  const succulentX = Number(await object(page, 'plant:placement-b').getAttribute('data-shelf-x'))
+  await object(page, 'plant:placement-b').focus()
   await page.keyboard.press('Shift+ArrowUp')
-  await expect.poll(() => positionFor(page, 'placement:1')).toMatchObject({ shelf:1 })
+  await expect(object(page, 'plant:placement-b')).toHaveAttribute('data-shelf-index', '0')
+  expect(Number(await object(page, 'plant:placement-b').getAttribute('data-shelf-x'))).toBeCloseTo(succulentX, 4)
+  await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).find(plant => plant.key === 'plant:placement-b').shelf, PLANTS_KEY)).toBe(0)
+  expect(await positionFor(page, 'placement:1')).toMatchObject({ shelf:2 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false', { timeout:REST_TIMEOUT })
-  await assertNoOverlap(page)
+  await assertSolidsApart(page)
   const finalPlants = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)
   const finalPositions = await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))
   await switchShelfView(page, 'spine')
@@ -228,12 +283,13 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   expect(await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))).toEqual(finalPositions)
   await page.reload()
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)).toEqual(finalPlants)
-  await expect(object(page, 'book:placement:1')).toHaveAttribute('data-shelf-index', '1')
+  await expect(object(page, 'book:placement:1')).toHaveAttribute('data-shelf-index', '2')
+  await expect(object(page, 'plant:placement-b')).toHaveAttribute('data-shelf-index', '0')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await assertFullCabinetWidth(page)
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
   expect(await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))).toEqual(finalPositions)
-  await assertNoOverlap(page)
+  await assertSolidsApart(page)
   expect(errors).toEqual([])
   await page.screenshot({ path:'test-results/free-book-and-plant-placement.png' })
 })
