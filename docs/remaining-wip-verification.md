@@ -1,3 +1,10 @@
+# 1.7.339 — tanda integ-bar-16
+
+- Unitarias: 4 tandas, 0 fallos. Capturas: 26 estados contra la 1.7.338, 15 idénticos bit a bit, diferencia máxima 1/255.
+- Navegador en local, máquina sin otros trabajos (442 pruebas): fallan lamp-switches:136, shelf-close-placement:90, shelf-placement:174 y los dos contratos de regreso nativo, como con las versiones anteriores. live-room-sync:99 falló una vez y pasó al repetir. live-room-sync:11 falla a ratos: 3 de 8 repeticiones con la 1.7.338 y 2 de 4 con esta versión, en la misma sesión; no se distingue una de otra y la causa sigue sin hallar.
+- tests/e2e/rust-shelf-refresh.spec.mjs, que el agente editó sin ejecutar, pasa.
+- Sin verificar: teléfono real, WebView de Android, lector de pantalla; las velocidades son de Node/WASM.
+
 # 1.7.338 — tanda integ-bar-15
 
 - Unitarias: 4 tandas, 0 fallos. Capturas: 26 estados contra la 1.7.337, 15 idénticos bit a bit, diferencia máxima 1/255.

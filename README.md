@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.7.339 — Un poco más de código en Rust
+
+Pasan a Rust las filas de la escena, la reserva de lienzos del lomo, la cola
+de refresco de la estantería, la transición de temperatura de las lámparas y
+cinco módulos del lector. No cambia el aspecto (estimación local: 76,8 % Rust).
+
 ## 1.7.338 — Más código en Rust
 
 Pasan a Rust la luz y el tinte de las lámparas de la estantería, el estilo de

@@ -1,3 +1,14 @@
+# Entrega 1.7.339 (tanda integ-bar-16): filas de la escena, reserva del lomo, cola de refresco, kelvin y partes del lector
+
+Ramas: ready/scene-frame-30 (169d3193), ready/book-model-22 (7af66f79, incluye la 21), ready/decor-shell-23 (20dc097b, incluye la 22), ready/readers-voice-24 (cd087c30).
+Barra estimada en local (bytes al estilo de GitHub): 76,75 % Rust; quedan unos 816 KB de JavaScript (1.7.338: 76,53 %, 825 KB). Tanda pequeña: unos 9,5 KB de JavaScript propio menos.
+
+- Escena: filas de la arena, desplazamientos de un reordenamiento y época de la sala en rust-ui/src/scene_rows.rs (-1.176 B de JS; wasm +2.976, enlaces +556). Fotograma igual dentro del ruido (~2 %); reenlazar un diseño 9,0 → 3,8 µs con 40 entradas (Node/WASM).
+- Libro: reserva de rásteres del lomo y llamadas de vuelta que solo rebotaban (-2.044 B de JS; el wasm de la estantería baja 977 B).
+- Decoración: la cola de refresco es del módulo de estantería desde la primera petición (-1.682 B de JS; +1.098 B netos de wasm) y la transición de temperatura de las lámparas (-1.036 B; fotograma del estudio en reposo ~86 → ~7 ns en Node).
+- Lectores: cinco módulos borrados (preference-flow, reader-actions, reader-chrome, reader-lifecycle, voice-flow), -3.562 B de JS; wasm de ui +8.197 B, enlaces +4.112 B.
+- Los agentes descartaron con medida varios puertos que costaban más código generado del que quitaban (stateFor, placeHit, destino del arrastre, receta numérica de createBookModel).
+
 # Entrega 1.7.338 (tanda integ-bar-15): lámparas en la arena, estilo de cubierta y cáscaras de lectores
 
 Ramas: ready/scene-frame-29 (0a5772ff), ready/book-model-20 (69abb47d), ready/decor-shell-20 (bloques 16–20), ready/readers-voice-23 (840a947d).
