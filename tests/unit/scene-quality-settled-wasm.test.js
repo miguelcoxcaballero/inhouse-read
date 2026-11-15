@@ -3,7 +3,7 @@ import {expect,it} from 'vitest'
 import {rustShelf as rust} from './helpers/rust-shelf-ready.js'
 import {settledQualityWork} from './helpers/reference-scene-quality-settled.js'
 import {createSceneEntryFrame,ENTRY_STATE as S,ENTRY_OUTPUT as O} from '../../src/js/scene-entry-frame.js'
-import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js'
+import {createSceneMotionFrame} from './helpers/scene-motion-frame.js'
 
 // Every settled entry passed through settledQualityWork in every frame (frozen); the scene called
 // scene_update_quality only when it answers true. Over random entry states: both paths leave

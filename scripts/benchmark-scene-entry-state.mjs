@@ -15,7 +15,7 @@ import * as THREE from 'three';
 const dir=resolve(process.argv[2]||'src/wasm/shelf');
 const rust=await import(pathToFileURL(dir+'/inhouse_read_shelf.js').href);
 rust.initSync({module:readFileSync(dir+'/inhouse_read_shelf_bg.wasm')});
-const {createSceneMotionFrame}=await import('../src/js/scene-motion-frame.js');
+const {createSceneMotionFrame}=await import('../tests/unit/helpers/scene-motion-frame.js');
 const {createSceneEntryFrame,ENTRY_STATE:S,ENTRY_OUTPUT}=await import('../src/js/scene-entry-frame.js');
 const {createGravityFrame}=await import('../tests/unit/helpers/gravity-frame.js');
 const {createGravityFrame:referenceGravityFrame}=await import('../tests/unit/helpers/reference-gravity-frame.js');

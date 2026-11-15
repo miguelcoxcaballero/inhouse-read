@@ -3,7 +3,7 @@ import {expect,it,vi} from 'vitest';
 import {rustShelf as rust} from './helpers/rust-shelf-ready.js';
 import {createLampReference} from './helpers/reference-scene-lamp.js';
 import {createSceneEntryFrame,ENTRY_STATE as S} from '../../src/js/scene-entry-frame.js';
-import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
+import {createSceneMotionFrame} from './helpers/scene-motion-frame.js';
 
 // Every lamp's switch fade and tint live in the entry arena and ease inside the pose call
 // (rust-ui/src/scene_lamp.rs). Against the frozen per-lamp JavaScript (helpers/reference-scene-lamp.js),

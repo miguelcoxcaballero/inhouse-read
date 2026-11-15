@@ -3,7 +3,7 @@ import {expect,it} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
 import {createSceneEntryFrame,ENTRY_STATE} from '../../src/js/scene-entry-frame.js';
-import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
+import {createSceneMotionFrame} from './helpers/scene-motion-frame.js';
 import {createGravityFrame} from './helpers/gravity-frame.js';
 import {createSceneProjectionFrame} from './helpers/scene-projection-frame.js';
 import {referenceInverseTurn,referenceFrameRegistrations} from './helpers/reference-scene-bind.js';

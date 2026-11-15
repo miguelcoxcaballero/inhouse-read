@@ -27,6 +27,12 @@ impl RustScene{
   let rect=if rect.is_empty(){&self.bin_rect[..]}else{rect};
   self.trash_frame(rect,layout[9],layout[0],layout[1],&layout[2..6],layout[6],layout[7],layout[8],out);
  }
+ // How far the stage moves so that the retained room's origin falls on a physical pixel: the
+ // core's search (rust-core/src/shelf_pixel.rs) for the stage's resting `top`, this view's width,
+ // and the height and base ratio `sizeViewport` gave. The host formerly asked the core module
+ // through an adapter (shelf-pixel-origin.js) in every frame.
+ #[wasm_bindgen(js_name=pixelOffset)]
+ pub fn pixel_offset(&self,top:f64,height:f64,ratio:f64)->f64{crate::shelf_pixel::shelf_pixel_offset(top,self.scene_width,height,ratio)}
  /// `catalogFrame` in the frame's layout. The face's text is built and handed over only when one
  /// of its four numbers is not the one it was last built from (`undefined` otherwise: the host
  /// keeps the text it holds).

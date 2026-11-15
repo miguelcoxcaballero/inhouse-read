@@ -21,7 +21,7 @@ import {referencePositionTrash,referenceRoom} from '../tests/unit/helpers/refere
 const load=async dir=>{const rust=await import(pathToFileURL(resolve(dir)+'/inhouse_read_shelf.js').href);rust.initSync({module:readFileSync(resolve(dir)+'/inhouse_read_shelf_bg.wasm')});return rust;};
 const old=await load(process.argv[2]),rust=await load(process.argv[4]||'src/wasm/shelf');
 const before=await import(pathToFileURL(resolve(process.argv[3])).href),after=await import('../src/js/scene-entry-frame.js');
-const {createSceneMotionFrame}=await import('../src/js/scene-motion-frame.js');
+const {createSceneMotionFrame}=await import('../tests/unit/helpers/scene-motion-frame.js');
 const {createSceneProjectionFrame}=await import('../tests/unit/helpers/scene-projection-frame.js');
 const median=a=>a.toSorted((x,y)=>x-y)[Math.floor(a.length/2)];
 const rounds=(label,unit,times,previous,current)=>{

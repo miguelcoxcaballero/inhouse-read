@@ -2,7 +2,7 @@
 import {afterAll,beforeAll,expect,it,vi} from 'vitest';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
 import {createSceneEntryFrame,ENTRY_STATE,ENTRY_OUTPUT} from '../../src/js/scene-entry-frame.js';
-import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
+import {createSceneMotionFrame} from './helpers/scene-motion-frame.js';
 import {referenceBind,referenceReorderStep,referenceReorderKeep,createReferenceRoomEpoch,referenceStamped} from './helpers/reference-scene-rows.js';
 
 // The arena's rows across layouts, a reorder's offsets and the room's epoch moved from the host

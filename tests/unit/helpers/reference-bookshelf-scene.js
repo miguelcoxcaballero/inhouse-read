@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import {projectPlantFoliage} from '../../../src/js/foliage-projection.js';
 import { configureShelfRendererSize } from './shelf-renderer-size.js';
-import { shelfPixelOffset } from '../../../src/js/shelf-pixel-origin.js';
+import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from '../../../src/js/canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from '../../../src/js/book-model.js';
 import { bookmarkFor } from '../../../src/js/bookshelf-layout.js';

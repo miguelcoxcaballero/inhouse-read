@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shelfPixelOffset } from '../../src/js/shelf-pixel-origin.js';
+import { shelfPixelOffset } from './helpers/shelf-pixel-origin.js';
 
 describe('shelf origin and physical pixels', () => {
   it('aligns the hidden-heading mobile origin without resizing its framebuffer', () => {

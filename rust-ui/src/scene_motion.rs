@@ -22,6 +22,16 @@ impl RustSceneMotionFrame {
  /// the same number in every layout, so what the scene remembers per key survives a reorder.
  pub fn identify(&mut self,ids:&[u32]){self.ids.clear();self.ids.extend_from_slice(ids);}
  pub fn resize_rows(&mut self,count:usize){self.rows.resize(count*3,0.0);}
+ // The bays and the two numbers a layout fixes, told once per layout instead of written through
+ // views in every frame (scene-motion-frame.js `prepare`, 1.8.1): `packed` is the host's shelves,
+ // seven numbers each (bookshelf-scene.js `packRows`), of which a bay keeps `left || 0` and
+ // `bottom || 0`; then the cabinet's width and the pixels per metre.
+ pub fn bays(&mut self,packed:&[f64],width:f64,ppm:f64){
+  let or_zero=|value:f64|if value.is_nan()||value==0.0{0.0}else{value};
+  self.rows.clear();
+  for row in packed.chunks_exact(7){self.rows.extend_from_slice(&[1.0,or_zero(row[2]),or_zero(row[1])]);}
+  self.input[8]=width;self.input[9]=ppm;
+ }
  pub fn memory(&self)->JsValue{wasm_bindgen::memory()}
  pub fn input_ptr(&self)->usize{self.input.as_ptr() as usize}
  pub fn output_ptr(&self)->usize{self.output.as_ptr() as usize}

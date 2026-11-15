@@ -1,5 +1,4 @@
 import { createFoliageFrame } from './foliage-frame.js';
-import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
@@ -7,7 +6,6 @@ import * as THREE from 'three';
 import {plantGeometrySpec,lampGeometrySpec} from './decor-geometry-spec.js';
 import {projectPlantFoliage} from './foliage-projection.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
-import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
@@ -297,7 +295,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   const motionKey = entry => isDecor(entry) ? entry.key
     : entry.book?.driveFileId ? `book:drive:${entry.book.driveFileId}` : null;
-  const sceneMotionFrame = createSceneMotionFrame(rust, motionKey);
+  // The shared room's keys, shelves and bays are a layout's (rust-ui/src/scene_motion.rs): told again when a
+  // layout or a record's identity changed. Each key has one number for the scene's whole life (0: no key).
+  const motionNames = [null], motionNumbers = new Map();
+  const sceneMotionFrame = { native:new rust.RustSceneMotionFrame(), name:number => motionNames[number] };
+  let motionStale = true;
+  function tellMotion(pixelsPerMetre) {
+    motionStale = false;
+    const keys = bookEntries.map(motionKey), native = sceneMotionFrame.native;
+    native.register(keys, Float64Array.from(bookEntries, entry => entry.shelf || 0));
+    native.identify(Uint32Array.from(keys, key => {
+      if (typeof key !== 'string' || !key) return 0;
+      let number = motionNumbers.get(key);
+      if (number === undefined) { number = motionNames.length; motionNames.push(key); motionNumbers.set(key, number); }
+      return number;
+    }));
+    native.bays(packRows(rows), width, pixelsPerMetre);
+  }
   function clearRoomMotion(source = '') {
     roomMotion.clear(source); clearTimeout(motionExpiry); motionExpiry = null;
     if (roomMotion.active(performance.now())) motionExpiry = setTimeout(() => invalidate(true, false, 'remote-motion-expired'), 5050);
@@ -333,7 +347,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // (rust-ui/src/book_gravity_frame.rs, scene_projection.rs): both are a layout's, like the arena's rows.
   const gravityFrame = new rust.RustGravityFrame(), projectionFrame = new rust.RustSceneProjectionFrame();
   function bindEntries() {
-    entryFrame.bind(bookEntries, true); projectionFrame.reset_entries(bookEntries.length);
+    entryFrame.bind(bookEntries, true); projectionFrame.reset_entries(bookEntries.length); motionStale = true;
     if (settleBooks) gravityFrame.register(bookEntries.map(entry => entry.key));
   }
   let bookEntries = entries.map(freshEntry);
@@ -1017,7 +1031,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
     const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
     entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
-    if (identityChanged) { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); }
+    if (identityChanged) { motionStale = true; acknowledgeRoom(roomCheckpoint); }
     entry.stale = true;
     if (entry.model) {
       const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
@@ -1071,7 +1085,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // alignment. Its framebuffer dimensions and DPR remain untouched.
     const stageBounds = stage.getBoundingClientRect();
     const restingTop = stageBounds.top + scroller.scrollTop - stagePixelOffset;
-    const offset = nativeRoomLease ? shelfPixelOffset(restingTop, sceneWidth, viewSizes[3], viewSizes[2]) : 0;
+    const offset = nativeRoomLease ? sceneView.pixelOffset(restingTop, viewSizes[3], viewSizes[2]) : 0;
     const settledStageBounds = offset === stagePixelOffset ? stageBounds : null;
     if (offset !== stagePixelOffset) {
       stagePixelOffset = offset;
@@ -1195,7 +1209,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneView.beginEntries(now, reducedMotion.matches, zoom, NO_NUMBERS, frameLayout.ratio, frameLayout.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
     const usePhysics = settleBooks && (physicsReady || physicsStarted);
     const pixelsPerMetre = pixelsPerMetreNow();
-    sceneMotionFrame.prepare(bookEntries, rows, width, pixelsPerMetre);
+    if (motionStale) tellMotion(pixelsPerMetre);
     arranging = arrangingNow();
     if (usePhysics) physicsStarted = true;
     // What changed since the last frame enters the entry arena: a class or a drag variable (as the
@@ -2887,7 +2901,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.native.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = null;
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
