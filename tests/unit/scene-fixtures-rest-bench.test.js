@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { rustShelf as rust } from './helpers/rust-shelf-ready.js';
 import { createShelfTrash } from '../../src/js/shelf-trash.js';
 import { createShelfLamp } from '../../src/js/shelf-lamps.js';
-import { createTintTransition } from '../../src/js/lamp-kelvin.js';
+import { createTintTransition } from './helpers/reference-lamp-tint.js';
 
 const median = values => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)];
 const clockNs = () => Number(process.hrtime.bigint());

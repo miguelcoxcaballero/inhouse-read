@@ -13,6 +13,7 @@ mod shelf_models;
 mod shelf_catalog;
 mod catalog_studio;
 mod catalog_lamp;
+mod studio_tint;
 mod studio_environment;
 mod shelf_light_rig;
 mod bookshelf_return;

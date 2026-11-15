@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, createTintTransition, kelvinSwatch, kelvinToLinearRgb, lampTint, normalizeLampKelvin } from '../../src/js/lamp-kelvin.js';
+import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, LAMP_KELVIN_MS, kelvinSwatch, kelvinToLinearRgb, lampTint, normalizeLampKelvin } from '../../src/js/lamp-kelvin.js';
+import { rustShelf } from './helpers/rust-shelf-ready.js';
 import { createShelfLamp } from '../../src/js/shelf-lamps.js';
 import { normalizeShelfLamp } from '../../src/js/lamp-catalog-data.js';
 
@@ -34,18 +35,23 @@ describe('lamp colour temperature', () => {
   });
 
   it('eases a change over 300 ms and ends exactly on the target', () => {
-    const transition = createTintTransition(2700);
-    expect(transition.advance(0)).toBe(false);
-    expect(transition.set(4000, 1000, true)).toBe(true);
-    expect(transition.set(4000, 1000, true)).toBe(false);
-    expect(transition.advance(1150)).toBe(true);
-    const middle = transition.state.value[2];
+    // The studio's transition (rust-ui/src/studio_tint.rs); the shelf's lamps ease in the scene's arena.
+    const state = new Float64Array(18), table = [DEFAULT_LAMP_KELVIN, ...LAMP_KELVINS.flatMap(kelvin => [kelvin, ...lampTint(kelvin)])];
+    const set = (kelvin, now, animate) => rustShelf.studio_tint_set(state, table, LAMP_KELVIN_MS, kelvin, now, animate);
+    const advance = now => (rustShelf.studio_tint_step(state, now) & 1) === 1, value = () => [...state.subarray(7, 10)];
+    expect(set(2700, 0, false)).toBe(false);
+    expect(state[0]).toBe(2700); expect(value()).toEqual([1, 1, 1]);
+    expect(advance(0)).toBe(false);
+    expect(set(4000, 1000, true)).toBe(true);
+    expect(set(4000, 1000, true)).toBe(false);
+    expect(advance(1150)).toBe(true);
+    const middle = state[9];
     expect(middle).toBeGreaterThan(1); expect(middle).toBeLessThan(lampTint(4000)[2]);
-    expect(transition.advance(1300)).toBe(false);
-    expect(transition.state.value).toEqual(lampTint(4000));
-    transition.set(1800, 2000, false);
-    expect(transition.advance(2000)).toBe(false);
-    expect(transition.state.value).toEqual(lampTint(1800));
+    expect(advance(1300)).toBe(false);
+    expect(value()).toEqual(lampTint(4000));
+    set(1800, 2000, false);
+    expect(advance(2000)).toBe(false);
+    expect(value()).toEqual(lampTint(1800));
   });
 
   it('stores the temperature with the lamp and reads old records as the default', () => {

@@ -6,7 +6,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfLamp } from '../../../src/js/shelf-lamps.js';
 import { getCatalogLamp } from '../../../src/js/lamp-catalog-data.js';
 import { createShelfLampLighting, ensureAreaLights } from '../../../src/js/shelf-lamp-lighting.js';
-import { DEFAULT_LAMP_KELVIN, createTintTransition, tintColor } from '../../../src/js/lamp-kelvin.js';
+import { DEFAULT_LAMP_KELVIN } from '../../../src/js/lamp-kelvin.js';
+import { createTintTransition, tintColor } from './reference-lamp-tint.js';
 import { retainPrograms, whenProgramsReady } from '../../../src/js/gpu-programs.js';
 import { configureShaderDiagnostics } from '../../../src/js/shader-diagnostics.js';
 
