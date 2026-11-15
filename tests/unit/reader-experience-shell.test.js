@@ -25,6 +25,7 @@ beforeAll(() => rustUI.initSync({ module:readFileSync('src/wasm/ui/inhouse_read_
 const page = '<header class="app-header"></header><section id="reader-screen"><div id="reader-toolbar"></div>' +
   ['reader-location', 'reader-settings', 'reader-audio', 'reader-save-bookmark', 'reader-search-shortcut', 'reader-more-shortcut', 'reader-top-title', 'reader-top-byline']
     .map(id => `<button id="${id}">${id === 'reader-location' ? '<span class="reader-location-label"></span>' : ''}</button>`).join('') + '</section>'
+const parts = ['chrome', 'lifecycle', 'voiceFlow', 'preferenceFlow', 'actions']
 const flush = async () => { for (let n = 0; n < 12; n++) await Promise.resolve() }
 // Menu ids come from one counter of the module; everything else must be the same text.
 const markup = () => document.body.innerHTML.replace(/select-menu-\d+/g, 'select-menu-N')
@@ -51,7 +52,8 @@ async function run(Class, { weakRef = true, observers = true, viewport = true } 
   for (const spy of spies) spy.mockRestore()
   const result = { keys:Object.keys(experience), added:[...added], constructed:[...events], html:markup(),
     same:[experience.reader === reader, experience.persist === persist, experience.onLengthMetadata === onLengthMetadata, experience.voice.reader === reader],
-    types:Object.fromEntries(Object.keys(experience).map(key => [key, experience[key]?.constructor?.name ?? String(experience[key])])) }
+    // The five parts were instances of five classes and are objects rust-ui builds (reader-parts.test.js compares them).
+    types:Object.fromEntries(Object.keys(experience).map(key => [key, parts.includes(key) ? 'part' : experience[key]?.constructor?.name ?? String(experience[key])])) }
   // The callbacks the constructor handed out, invoked as the page invokes them.
   events.length = 0
   // An observer writes the height of what it watches where the layout reads it (the view's own method).
@@ -123,6 +125,7 @@ describe('the reading experience built by Rust', () => {
   it('answers jump and step from the dispatcher, not from the class body', () => {
     const source = readFileSync('src/js/readers/reader-experience.js', 'utf8')
     expect(source).not.toMatch(/addEventListener|ResizeObserver|WeakRef/)
+    expect(source).not.toMatch(/new Reader(Chrome|Lifecycle|Actions)|new (Voice|Preference)Flow|RustReaderNavigation/)
     expect(Object.getOwnPropertyNames(ReaderExperience.prototype)).toEqual(expect.arrayContaining(['jump', 'step', 'open']))
   })
 })

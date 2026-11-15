@@ -2,17 +2,13 @@
 // rust-ui (experience_shell.rs, experience_methods.rs). It is the reference of reader-experience-shell.test.js:
 // do not edit it to follow the production class.
 import {readerUI,rustMethods} from '../../../src/js/readers/rust-ui-required.js'
-import {ReaderChrome} from '../../../src/js/readers/reader-chrome.js'
-import {ReaderLifecycle} from '../../../src/js/readers/reader-lifecycle.js'
-import {VoiceFlow} from '../../../src/js/readers/voice-flow.js'
-import {PreferenceFlow} from '../../../src/js/readers/preference-flow.js'
+import {ReaderChrome,ReaderLifecycle,VoiceFlow,PreferenceFlow,ReaderActions} from './reference-reader-parts.js'
 import { normalizeReadingPreferences, rateLabel } from '../../../src/js/readers/reading-preferences.js'
 import * as runtime from '../../../src/js/readers/neural-runtime.js'
 import * as preferences from '../../../src/js/readers/reading-preferences.js'
 import * as state from '../../../src/js/readers/reading-state.js'
 import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
 import { NeuralVoicePicker } from '../../../src/js/readers/neural-picker.js'
-import { ReaderActions } from '../../../src/js/readers/reader-actions.js'
 import { displayBookTitle } from '../../../src/js/book-title.js'
 
 // Promise and callback adapters retain browser/engine identities. The reader

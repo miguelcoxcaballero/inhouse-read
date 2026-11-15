@@ -3,7 +3,8 @@ import {afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {readerPanelMarkup,readerIcon} from './helpers/reference-reader-interface.js'
 import {LegacyReaderChrome} from './helpers/reference-reader-chrome.js'
-import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
+// The chrome of an experience, as rust-ui builds it (experience_parts.rs `reader_part`).
+const kit={preferences:{get RATE_STEPS(){return RATE_STEPS}},state:{}},chromeOf=(host,module=ui)=>ui.reader_part(host,'chrome',kit,module)
 import {referenceChromeCreate} from './helpers/reference-reader-chrome-create.js'
 import {RATE_STEPS} from '../../src/js/readers/reading-preferences.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
@@ -75,15 +76,14 @@ for(let round=0;round<2;round++){const before=core.memory.buffer.byteLength;for(
 })
 
 it('delegates every voice state to the Rust function without recreating the open reader',()=>{
- const {host}=setup(false,1),chrome=new ReaderChrome(host),panel=host.panel
+ const {host}=setup(false,1),native={...ui,flow_method:vi.fn(ui.flow_method)},chrome=chromeOf(host,native),panel=host.panel
  // voiceState reaches reader_voice_state through the Rust dispatcher of the reader's parts.
- const native={flow_method:vi.fn(ui.flow_method)};runtime.ui=native
  chrome.voiceState('playing','First');chrome.voiceState('paused','Second')
- expect(native.flow_method.mock.calls.map(call=>call.slice(0,3))).toEqual([[chrome,'voiceState',['playing','First']],[chrome,'voiceState',['paused','Second']]]);expect(host.panel).toBe(panel)
+ expect(native.flow_method.mock.calls.map(call=>[...call.slice(0,3),...call.slice(5)])).toEqual([[chrome,'voiceState','chrome','playing','First'],[chrome,'voiceState','chrome','paused','Second']]);expect(host.panel).toBe(panel)
  expect(panel.querySelector('.reading-audio-status').textContent).toBe('Second')
 })
 it('schedules no focus scrolling for closed panels and ignores closure before a pending frame',()=>{
- const {host}=setup(true,1),chrome=new ReaderChrome(host);runtime.ui=ui
+ const {host}=setup(true,1),chrome=chromeOf(host)
  let callback;const raf=vi.spyOn(globalThis,'requestAnimationFrame').mockImplementation(fn=>{callback=fn;return 1})
  chrome.resize();expect(raf).not.toHaveBeenCalled()
  host.panel.open=true;chrome.resize();expect(raf).toHaveBeenCalledOnce()
@@ -93,10 +93,6 @@ it('pausing updates the controls without restarting voice preparation',()=>{
  const {host,events}=setup(true,1),error=Error('warm failed');host.neuralPicker.warmUp=()=>{throw error}
  expect(()=>host.voiceState('paused','Paused')).not.toThrow()
  expect(events).toEqual([['mini','paused','Paused'],['back'],['render']]);expect(host.panel.querySelector('[data-play]').getAttribute('aria-label')).toBe('Continuar')
-})
-it('fails with a clear error instead of working around a missing core',()=>{
- const {host}=setup(false,1),chrome=new ReaderChrome(host);runtime.ui=null
- expect(()=>chrome.voiceState('playing','x')).toThrow('Rust UI is not loaded')
 })
 it('marks the status line when it only repeats the play button, and never when it carries a message',()=>{
  const {host}=setup(true,1),status=host.panel.querySelector('.reading-audio-status')
@@ -113,7 +109,7 @@ it('creates the panel, the mini player and the return button of the frozen creat
  const results=[]
  for(const native of [false,true]){
   document.body.innerHTML='<section id="reader-screen"><header id="reader-toolbar"><button id="reader-settings"></button><button id="reader-location"></button><button id="reader-audio"></button></header></section>'
-  const events=[],host={returnToReading(...args){events.push(['returnToReading',args.length,this===host]);return 'reading'}},chrome=new ReaderChrome(host);runtime.ui=ui
+  const events=[],host={returnToReading(...args){events.push(['returnToReading',args.length,this===host]);return 'reading'}},chrome=chromeOf(host);runtime.ui=ui
   const made=native?chrome.create():referenceChromeCreate.call(chrome,ui,RATE_STEPS)
   const row={made,keys:Object.keys(host),html:document.body.innerHTML,mini:host.miniPlayer.innerHTML,steps:host.panel.querySelectorAll('[data-rate]').length}
   host.voice={browsing:false,returnToAudio(...args){events.push(['returnToAudio',args.length,this===host.voice]);return 'audio'}}

@@ -37,10 +37,15 @@ pub fn reader_experience_voice_chosen(host: &JsValue, value: &JsValue) -> R { me
 #[wasm_bindgen]
 pub fn reader_experience_self(host: JsValue) -> JsValue { host }
 
-/// The body of `new ReaderExperience(reader, { persist, onLengthMetadata })`, after the class fields.
+/// The body of `new ReaderExperience(reader, { persist, onLengthMetadata })`, with what were its class fields.
 /// `kit` is the table the experience's methods are answered with, plus the two classes it builds.
 #[wasm_bindgen]
 pub fn reader_experience_construct(host: JsValue, reader: JsValue, persist: JsValue, on_length_metadata: JsValue, kit: JsValue, ui: JsValue) -> R<()> {
+    // What were the class fields: the five parts and the navigation queue, before anything else.
+    for (field, which) in [("chrome", "chrome"), ("lifecycle", "lifecycle"), ("voiceFlow", "voices"), ("preferenceFlow", "preferences"), ("actions", "actions")] {
+        set(&host, field, &crate::experience_parts::reader_part(&host, which, &kit, &ui)?)?;
+    }
+    set(&host, "navigation", &made(&ui, "RustReaderNavigation", &[])?)?;
     set(&host, "reader", &reader)?;
     set(&host, "persist", &persist)?;
     set(&host, "onLengthMetadata", &on_length_metadata)?;
@@ -81,7 +86,7 @@ pub fn reader_experience_construct(host: JsValue, reader: JsValue, persist: JsVa
     set(&host, "neuralPicker", &Reflect::construct(read(&kit, "NeuralVoicePicker")?.unchecked_ref(), &Array::of1(&host))?)?;
     method(&host, "populateVoices", &[])?;
     // The panel follows the keyboard: the chrome's own resize, on every visual-viewport event.
-    let resize = own(&read(&host, "chrome")?, "resize")?;
+    let resize: Function = read(&read(&host, "chrome")?, "resize")?.unchecked_into();
     let viewport = read(&window, "visualViewport")?;
     if !absent(&viewport) { listen(&viewport, "resize", &resize)?; listen(&viewport, "scroll", &resize)?; }
     listen(&window, "resize", &resize)?;
