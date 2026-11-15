@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { bookColorOptions, spineColorStyle, spineCustomization, surfaceFinish, normalizeShelfPosition } from '../../src/js/book-colors.js'
-import { RELIEF_IDS } from '../../src/js/cover-relief.js'
+import { RELIEF_IDS } from './helpers/relief-facts.js'
 
 describe('book spine colors', () => {
   it('derives three distinct choices from the cover color', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { colorReliefProfile, coverReliefLayers, normalizeCoverRelief } from '../../src/js/cover-relief.js';
+import { coverReliefLayers, normalizeCoverRelief } from '../../src/js/cover-relief.js';
+import { colorReliefProfile } from './helpers/relief-facts.js';
 import { analyzePixels, buildMapsFromPixels, composeMaterialMap, composeReliefLayerPixels, drain, heightToNormals } from './helpers/relief-passes.js';
 import { spineCustomization } from '../../src/js/book-colors.js';
 
