@@ -85,8 +85,6 @@ mod book_view;
 #[cfg(feature = "app")]
 mod pdf_images;
 #[cfg(feature = "app")]
-mod pdf_figures;
-#[cfg(feature = "app")]
 mod pdf_stream;
 #[cfg(feature = "app")]
 mod pdf_page_text;

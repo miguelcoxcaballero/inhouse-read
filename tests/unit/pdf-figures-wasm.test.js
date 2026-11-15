@@ -1,13 +1,12 @@
 // @vitest-environment node
-import {readFileSync} from 'node:fs';
-import {beforeAll,afterEach,expect,it,vi} from 'vitest';
-const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
-import {rustPDFPlaceFigures,pdfPlaceFigures} from '../../src/js/readers/pdf-figures-wasm.js';
+// Where the pictures of a page go in its reading stream is rust-ui (pdf_pictures.rs: pdf_place_figures); the frozen
+// JavaScript original is tests/unit/helpers/reference-pdf-figures.js.
+import './helpers/rust-ui-ready.js';
+import {expect,it} from 'vitest';
+import {readerUI} from '../../src/js/readers/rust-ui-required.js';
 import {placeFigures as reference} from './helpers/reference-pdf-figures.js';
-let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.pdf_place_figures).toBe('function');state.core=core;});
-afterEach(()=>{state.core=core;});
+const pdfPlaceFigures=(rects,layout,source,viewport)=>readerUI().pdf_place_figures(rects,layout,source,viewport);
+const REFUSED='No se pudo calcular la página del PDF.';
 const source={width:600,height:800},viewport={width:600,height:800,transform:[1,0,0,-1,0,800]};
 function fixture(count=60,columns=2,angle=0){
  let text='';const lines=Array.from({length:count},(_,i)=>{
@@ -19,8 +18,9 @@ function fixture(count=60,columns=2,angle=0){
 }
 const rects=Array.from({length:32},(_,i)=>({x0:i%2*250+30,x1:i%2*250+150,y0:Math.floor(i/2)*33,y1:Math.floor(i/2)*33+16}));
 function compare(boxes,layout,src=source,view=viewport){
- const original=structuredClone({boxes,layout,src,view}),expected=reference(boxes,layout,src,view),actual=rustPDFPlaceFigures(boxes,layout,src,view);
- expect(actual).toEqual(expected);expect(pdfPlaceFigures(boxes,layout,src,view)).toEqual(expected);
+ const original=structuredClone({boxes,layout,src,view}),expected=reference(boxes,layout,src,view),actual=pdfPlaceFigures(boxes,layout,src,view);
+ expect(Array.isArray(actual)).toBe(true);expect(actual).toEqual(expected);
+ for(const figure of actual)expect(Object.keys(figure)).toEqual(['rect','offset']);
  for(let i=0;i<actual.length;i++)expect(actual[i].rect).toBe(expected[i].rect);
  expect({boxes,layout,src,view}).toEqual(original);return actual;
 }
@@ -49,38 +49,52 @@ it('matches two hundred randomized reading streams, viewports and source rectang
  }
 });
 it('supports two thousand illustrations without truncating the original text offsets',()=>{compare(Array.from({length:2000},(_,i)=>({...rects[i%32]})),fixture(400,4));});
-it('answers small pages and layouts without geometry in the kernel as well',()=>{
- const call=vi.fn(core.pdf_place_figures);state.core={...core,pdf_place_figures:call};
- expect(pdfPlaceFigures(rects.slice(0,7),fixture(),source,viewport)).toEqual(reference(rects.slice(0,7),fixture(),source,viewport));expect(call).toHaveBeenCalledTimes(1);
+it('answers small pages and layouts without geometry as well',()=>{
+ expect(pdfPlaceFigures(rects.slice(0,7),fixture(),source,viewport)).toEqual(reference(rects.slice(0,7),fixture(),source,viewport));
  for(const layout of [{...fixture(),geometric:false},{text:'Full text 🦊',lines:[],geometric:true}]){
   const expected=reference(rects,layout,source,viewport);
-  expect(rustPDFPlaceFigures(rects,layout,source,viewport)).toEqual(expected);expect(pdfPlaceFigures(rects,layout,source,viewport)).toEqual(expected);
+  expect(pdfPlaceFigures(rects,layout,source,viewport)).toEqual(expected);
   expect(pdfPlaceFigures(rects,layout,undefined,undefined)).toEqual(expected);
   expect(expected.every(({offset})=>offset===layout.text.length)).toBe(true);
  }
- expect(rustPDFPlaceFigures([],fixture(),source,viewport)).toEqual([]);
+ expect(pdfPlaceFigures([],fixture(),source,viewport)).toEqual([]);
+ // No picture: nothing is read from a layout beyond its size.
+ expect(pdfPlaceFigures([],{text:'x',geometric:true,lines:[{entries:null}]},undefined,undefined)).toEqual([]);
 });
-it('reports absent, old, allocation-failing and trapping cores as errors',()=>{
- for(const value of [null,{}, {...core,alloc_f64:()=>0},{...core,pdf_place_figures:()=>0},{...core,pdf_place_figures:()=>{throw Error('trap');}}]){
-  state.core=value;expect(()=>pdfPlaceFigures(rects,fixture(),source,viewport)).toThrow(value?'No se pudo calcular la página del PDF':'El módulo numérico no se pudo cargar');
+it('tells columns apart as a Map does, whatever value names them',()=>{
+ const shared={};
+ for(const names of [[undefined,null],[NaN,0],[0,-0,'0'],[shared,{}],['a',1,true]]){
+  const layout=fixture(90,1);layout.lines.forEach((line,i)=>{line.column=names[i%names.length];line.x0=i%names.length*200+10;line.x1=line.x0+150;});
+  compare(rects,layout);
  }
 });
-it('frees memory on invalid line values, native failures and malformed output permutations',()=>{
- for(const bad of [()=>0,(_p,_n,_c,_r,_i,_params,out)=>{new Float64Array(core.memory.buffer,out,4).set([0,0,0,0]);return 1;},()=>{throw Error('trap');}]){
-  const free=vi.fn(core.free_f64);state.core={...core,free_f64:free,pdf_place_figures:bad};expect(rustPDFPlaceFigures(rects,fixture(),source,viewport)).toBeUndefined();expect(free).toHaveBeenCalledOnce();
- }
- const free=vi.fn(core.free_f64);state.core={...core,free_f64:free};const layout=fixture();layout.lines[0].start=NaN;
- expect(rustPDFPlaceFigures(rects,layout,source,viewport)).toBeUndefined();expect(free).toHaveBeenCalledOnce();
+it('reads the page direction from the first of the longest text items, whichever line holds it',()=>{
+ const layout=fixture(40,2);
+ layout.lines[7].entries=[{item:{str:'a',transform:[1,0,0,1,0,0]}},{item:{str:'Z'.repeat(300),transform:[0,1,-1,0,0,0]}}];
+ layout.lines[31].entries.push({item:{str:'Q'.repeat(300),transform:[-1,0,0,-1,0,0]}});
+ layout.lines[3].entries=[];
+ compare(rects,layout);
 });
-it('returns host-owned objects when memory grows during and after the native call',()=>{
- const free=vi.fn(core.free_f64);state.core={...core,free_f64:free,pdf_place_figures(...args){core.memory.grow(1);return core.pdf_place_figures(...args);}};
- const layout=fixture(),actual=rustPDFPlaceFigures(rects,layout,source,viewport);core.memory.grow(1);
- expect(actual).toEqual(reference(rects,layout,source,viewport));expect(actual[0].rect).toBe(rects[0]);expect(free).toHaveBeenCalledOnce();
-});
-it('rejects invalid geometry and overflowing projection rather than returning a partial plan',()=>{
- for(const edit of [layout=>{layout.lines[0].height=0;},layout=>{layout.lines[0].start=-1;},layout=>{layout.lines[0].x0=layout.lines[0].x1+1;}]){
-  const layout=fixture();edit(layout);expect(rustPDFPlaceFigures(rects,layout,source,viewport)).toBeUndefined();
+it('reports a page it cannot answer as an error instead of a partial plan',()=>{
+ const refused=(boxes,layout,src=source,view=viewport)=>expect(()=>pdfPlaceFigures(boxes,layout,src,view)).toThrow(REFUSED);
+ for(const edit of [layout=>{layout.lines[0].height=0;},layout=>{layout.lines[0].start=-1;},layout=>{layout.lines[0].x0=layout.lines[0].x1+1;},
+  layout=>{layout.lines[0].start=NaN;},layout=>{layout.lines[0].start='0';},layout=>{layout.lines[3].y=undefined;},layout=>{layout.lines[0].start=layout.text.length+1;},
+  layout=>{layout.lines[2]=null;},layout=>{layout.lines[2].entries=undefined;},layout=>{layout.lines[2].entries={length:1,0:layout.lines[1].entries[0]};},
+  layout=>{layout.lines[2].entries=[null];},layout=>{layout.lines[2].entries=[{item:{str:7}}];},layout=>{layout.lines[2].entries=[{item:{str:new String('x')}}];},
+  layout=>{for(const line of layout.lines)line.entries=[];},layout=>{for(const line of layout.lines)line.entries[0].item.transform=undefined;},
+  layout=>{layout.text=undefined;},layout=>{layout.text=7;}]){
+  const layout=fixture();edit(layout);refused(rects,layout);
  }
- expect(rustPDFPlaceFigures(rects,fixture(),{width:0,height:1},viewport)).toBeUndefined();
- expect(rustPDFPlaceFigures([{x0:1e308,y0:1e308,x1:1e308,y1:1e308}],fixture(),{width:1,height:1},viewport)).toBeUndefined();
+ refused(rects,fixture(),{width:0,height:1});refused(rects,fixture(),null,null);refused(rects,fixture(),source,null);refused(rects,fixture(),null);refused(rects,fixture(),source,{width:600,height:-800});
+ refused([{x0:1e308,y0:1e308,x1:1e308,y1:1e308}],fixture(),{width:1,height:1});
+ refused([{x0:5,y0:0,x1:1,y1:1}],fixture());refused([{x0:'0',y0:0,x1:1,y1:1}],fixture());refused([null],fixture());
+ refused(rects,null);refused(rects,undefined);refused(rects,{...fixture(),lines:{length:32769}});refused({length:32769},fixture());
+ expect(()=>pdfPlaceFigures(null,fixture(),source,viewport)).toThrow(TypeError);
+});
+it('takes a viewport transform of its own and array-like rectangles',()=>{
+ for(const transform of [[0,1,1,0,0,0],[-1,0,0,1,600,0],[.5,.5,-.5,.5,0,0],['1','0','0','-1',0,800]]){
+  const view={width:600,height:800,transform},layout=fixture(80,3,.3),boxes={...rects,length:rects.length};
+  const expected=reference(rects,layout,source,view),actual=pdfPlaceFigures(boxes,layout,source,view);
+  expect(actual).toEqual(expected);for(let i=0;i<actual.length;i++)expect(actual[i].rect).toBe(expected[i].rect);
+ }
 });

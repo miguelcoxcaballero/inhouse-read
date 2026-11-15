@@ -19,14 +19,13 @@ import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { measurePDFBookLength } from '../pdf-book-length.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
-import { pdfImagePaths, pdfImageRects } from './pdf-images-wasm.js'
+import { pdfImagePaths } from './pdf-images-wasm.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js'
 import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
 import { speechHold } from './speech-hold.js'
-import { pdfPlaceFigures } from './pdf-figures-wasm.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { readerUI, rustMethods } from './rust-ui-required.js'
 
@@ -36,7 +35,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
   pdfImagePaths, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
-  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, pdfPlaceFigures, pdfImageRects, extractPDFText, mapPDFTextLayer
+  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, extractPDFText, mapPDFTextLayer
 }
 
 export class PdfReader {

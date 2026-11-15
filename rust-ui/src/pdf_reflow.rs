@@ -33,11 +33,11 @@ fn commit(root: &JsValue, fragment: &JsValue, text: &JsValue) -> Result<(), JsVa
 enum Stage { Start, Figure(u32, bool), Tail, Done }
 
 /// The nodes of the page in reading order, produced one at a time so that cropping can be sliced.
-struct Nodes { doc: JsValue, layout: JsValue, source: JsValue, rects: JsValue, viewport: JsValue, place: JsValue, figures: Array, offset: f64, stage: Stage }
+struct Nodes { doc: JsValue, layout: JsValue, source: JsValue, rects: JsValue, viewport: JsValue, figures: Array, offset: f64, stage: Stage }
 
 impl Nodes {
-    fn new(doc: &JsValue, layout: &JsValue, source: &JsValue, rects: &JsValue, viewport: &JsValue, place: &JsValue) -> Nodes {
-        Nodes { doc: doc.clone(), layout: layout.clone(), source: source.clone(), rects: rects.clone(), viewport: viewport.clone(), place: place.clone(), figures: Array::new(), offset: 0.0, stage: Stage::Start }
+    fn new(doc: &JsValue, layout: &JsValue, source: &JsValue, rects: &JsValue, viewport: &JsValue) -> Nodes {
+        Nodes { doc: doc.clone(), layout: layout.clone(), source: source.clone(), rects: rects.clone(), viewport: viewport.clone(), figures: Array::new(), offset: 0.0, stage: Stage::Start }
     }
     fn text_node(&self, from: f64, to: Option<f64>) -> Result<JsValue, JsValue> {
         let text = get(&self.layout, "text");
@@ -62,8 +62,7 @@ impl Nodes {
         loop {
             match self.stage {
                 Stage::Start => {
-                    let placed = call(&self.place, "pdfPlaceFigures", &[&self.rects, &self.layout, &self.source, &self.viewport])?;
-                    self.figures = Array::from(&placed);
+                    self.figures = crate::pdf_pictures::place(&self.rects, &self.layout, &self.source, &self.viewport)?;
                     self.stage = Stage::Figure(0, false);
                 }
                 Stage::Figure(index, emitted) => {
@@ -91,11 +90,11 @@ impl Nodes {
 
 /// Fill the root at once, from the original pixels of the page.
 #[wasm_bindgen]
-pub fn reflow_populate(root: &JsValue, layout: &JsValue, source: &JsValue, rects: &JsValue, viewport: &JsValue, place: &JsValue) -> Result<(), JsValue> {
+pub fn reflow_populate(root: &JsValue, layout: &JsValue, source: &JsValue, rects: &JsValue, viewport: &JsValue) -> Result<(), JsValue> {
     let doc = read(root, "ownerDocument")?;
     let fragment = method(&doc, "createDocumentFragment", &[])?;
     let build = || -> Result<(), JsValue> {
-        let mut nodes = Nodes::new(&doc, layout, source, rects, viewport, place);
+        let mut nodes = Nodes::new(&doc, layout, source, rects, viewport);
         while let Some(node) = nodes.next()? { method(&fragment, "append", &[&node])?; }
         commit(root, &fragment, &get(layout, "text"))
     };
@@ -129,14 +128,14 @@ fn next_task(doc: &JsValue) -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn reflow_prepare(root: JsValue, layout: JsValue, source: JsValue, rects: JsValue, viewport: JsValue, is_active: JsValue, place: JsValue) -> Promise {
+pub fn reflow_prepare(root: JsValue, layout: JsValue, source: JsValue, rects: JsValue, viewport: JsValue, is_active: JsValue) -> Promise {
     eager(async move {
         let doc = read(&root, "ownerDocument")?;
         let fragment = method(&doc, "createDocumentFragment", &[])?;
         let mut started = clock()?;
         let mut committed = false;
         let outcome: Result<bool, JsValue> = async {
-            let mut nodes = Nodes::new(&doc, &layout, &source, &rects, &viewport, &place);
+            let mut nodes = Nodes::new(&doc, &layout, &source, &rects, &viewport);
             while let Some(node) = nodes.next()? {
                 method(&fragment, "append", &[&node])?;
                 if clock()? - started < SLICE_MS { continue; }
