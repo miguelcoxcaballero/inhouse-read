@@ -156,50 +156,88 @@ fn layout(items: Vec<Item>, pin: Option<usize>, cfg: &Config) -> Layout {
     Layout { rows: solved }
 }
 
+// The answer of the last job. It is the module's own and stays valid until the next job starts;
+// the host copies it out before any of its own code runs.
+static mut ANSWER: Vec<f64> = Vec::new();
+const KEEP: usize = 65536;
+
 /// # Safety
-/// The host owns distinct live input/config/output ranges of `count*7`, 7 and
-/// `output_length` f64 respectively. IDs are implicit input indices; no strings
-/// or browser references cross this boundary. Group 0 is floor, 1 is ceiling.
+/// The host owns distinct live input/config ranges of `count*7` and 10 f64. IDs are implicit input
+/// indices; no strings or browser references cross this boundary. Group 0 is floor, 1 is ceiling.
 /// Input flags: 1 = explicit left, 2 = exact saved x, 4 = physical placement.
 /// The host supplies physical mode consistently within each mounting surface.
-/// Output: counts[items0,rows0,items1,rows1], ordered item tuples
-/// [inputIndex,row,width,left,center,x], then row tuples [used,occupied,free].
+/// Config: [shelfWidth, padding, gap, available, minShelves, groups, pin, hasTarget, targetShelf, targetX].
+/// With a target, the pinned record is first moved to it in place (its row, its left edge clamped inside
+/// the shelf, and whether the requested x survived the clamp), as the host did before this call.
+/// Returns null for a rejected job, else the answer: counts[items0,rows0,items1,rows1], ordered item
+/// tuples [inputIndex,row,width,left,center,x], then row tuples [used,occupied,free]. A surface never
+/// needs more rows than its requested empty rows or one row per object after its last requested row;
+/// an answer beyond that bound is rejected.
 #[no_mangle]
-pub unsafe extern "C" fn shelf_place(
-    input: *const f64, count: usize, config: *const f64, output: *mut f64, output_length: usize,
-) -> u32 {
-    if count > MAX_OBJECTS || output_length < 4 { return 0; }
-    let values = std::slice::from_raw_parts(config, 7);
+pub unsafe extern "C" fn shelf_place(input: *mut f64, count: usize, config: *const f64) -> *const f64 {
+    let rejected = std::ptr::null();
+    if count > MAX_OBJECTS { return rejected; }
+    let values = std::slice::from_raw_parts(config, 10);
     if values.iter().any(|value| !value.is_finite()) || values[0] <= 0.0
         || values[1] < 0.0 || values[2] < 0.0 || values[3] <= 0.0
         || values[4] < 0.0 || values[4] > 1000.0 || values[4].fract() != 0.0
         || (values[5] != 1.0 && values[5] != 2.0)
         || values[6] < -1.0 || values[6].fract() != 0.0
-        || values[6] >= count as f64 { return 0; }
+        || values[6] >= count as f64 { return rejected; }
     let cfg = Config { width:values[0], padding:values[1], gap:values[2], available:values[3], minimum:values[4] as usize };
     let groups = values[5] as usize;
     let pin = if values[6] < 0.0 { None } else { Some(values[6] as usize) };
-    let input = std::slice::from_raw_parts(input, count * INPUT_STRIDE);
+    let input = std::slice::from_raw_parts_mut(input, count * INPUT_STRIDE);
+    // The row a pinned record asked for before its target replaced it still counts toward its surface's bound.
+    let mut pinned_row = -1.0;
+    let mut target_row = [-1.0; 2];
+    if let Some(pin) = pin {
+        let row = &mut input[pin * INPUT_STRIDE..(pin + 1) * INPUT_STRIDE];
+        pinned_row = row[1];
+        if values[7] != 0.0 {
+            let width = row[0];
+            let requested = cfg.padding + values[9] * cfg.available;
+            let center = min(cfg.width - cfg.padding - width / 2.0, max(cfg.padding + width / 2.0, requested));
+            let exact = center == requested;
+            let physical = row[4] >= 4.0 && row[4] <= 7.0;
+            row[1] = values[8];
+            row[2] = center - width / 2.0;
+            row[3] = if exact { values[9] } else { 0.0 };
+            row[4] = (if exact { 3.0 } else { 1.0 }) + if physical { 4.0 } else { 0.0 };
+            if row[6] == 0.0 || row[6] == 1.0 { target_row[row[6] as usize] = values[8]; }
+        }
+    }
     let mut grouped = vec![Vec::new(); groups];
+    let mut last_row = [-1.0; 2];
     for (index, row) in input.chunks_exact(INPUT_STRIDE).enumerate() {
         if row.iter().any(|value| !value.is_finite()) || row[0] <= 0.0 || row[0] > cfg.available
             || row[1] < 0.0 || row[1] > 999.0 || row[1].fract() != 0.0
             || row[4] < 0.0 || row[4] > 7.0 || row[4].fract() != 0.0
             || row[5] < 0.0 || row[5].fract() != 0.0
-            || row[6] < 0.0 || row[6] >= groups as f64 || row[6].fract() != 0.0 { return 0; }
+            || row[6] < 0.0 || row[6] >= groups as f64 || row[6].fract() != 0.0 { return rejected; }
         let flags = row[4] as u8;
-        grouped[row[6] as usize].push(Item { index, width:row[0], shelf:row[1] as usize,
+        let group = row[6] as usize;
+        let asked = if Some(index) == pin { pinned_row } else { row[1] };
+        if !(asked >= 0.0) { return rejected; }
+        last_row[group] = max(last_row[group], asked);
+        grouped[group].push(Item { index, width:row[0], shelf:row[1] as usize,
             desired:if flags & 1 != 0 { Some(row[2]) } else { None },
             requested_x:if flags & 2 != 0 { Some(row[3]) } else { None },
             physical:flags & 4 != 0,
             order:row[5], left:0.0 });
     }
+    let mut bounds = [0.0; 2];
+    for (group, items) in grouped.iter().enumerate() {
+        bounds[group] = max(values[4], max(last_row[group], target_row[group]) + 1.0 + items.len() as f64);
+    }
     let layouts: Vec<Layout> = grouped.into_iter().map(|items| layout(items, pin, &cfg)).collect();
+    if layouts.iter().zip(&bounds).any(|(value, bound)| value.rows.len() as f64 > *bound) { return rejected; }
     let total_rows: usize = layouts.iter().map(|value| value.rows.len()).sum();
     let length = 4 + count * OUTPUT_STRIDE + total_rows * 3;
-    if output_length < length { return 0; }
-    let output = std::slice::from_raw_parts_mut(output, length);
-    output[..4].fill(0.0);
+    let output = &mut *std::ptr::addr_of_mut!(ANSWER);
+    output.clear();
+    if output.capacity() > KEEP { *output = Vec::new(); }
+    output.resize(length, 0.0);
     let mut at = 4;
     let mut stats_at = 4 + count * OUTPUT_STRIDE;
     for (group, result) in layouts.iter().enumerate() {
@@ -224,5 +262,5 @@ pub unsafe extern "C" fn shelf_place(
             stats_at += 3;
         }
     }
-    1
+    output.as_ptr()
 }

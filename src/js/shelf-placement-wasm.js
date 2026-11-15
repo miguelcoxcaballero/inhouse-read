@@ -183,52 +183,32 @@ function preparePlacement(records, cfg, groups) {
     record.requestedX ?? 0, (record.desiredLeft == null ? 0 : 1) | (record.requestedX == null ? 0 : 2)
       | (cfg.physicalPlacement === true && !isCeiling(record.object) ? 4 : 0),
     record.order, record.group], index * INPUT_STRIDE));
-  const maxRow = Array(groups).fill(-1), counts = Array(groups).fill(0);
-  for (const record of records) { counts[record.group]++; maxRow[record.group] = Math.max(maxRow[record.group], record.shelf); }
-  return { records, cfg, groups, count, input, maxRow, counts };
+  return { records, cfg, groups, count, input };
 }
 
 function executePlacement(core, job, pin, target = null) {
-  const { records, cfg, groups, count, input:prepared, maxRow, counts } = job;
-  // Upper bounds include all requested empty rows and the worst possible
-  // one-object-per-row overflow, independently for each mounting surface.
-  const rowLimits = counts.map((count, group) => Math.max(cfg.minShelves,
-    Math.max(maxRow[group], pin >= 0 && records[pin].group === group && target ? target.shelf : -1) + 1 + count));
-  const configOffset = count * INPUT_STRIDE, outputOffset = configOffset + 7;
-  const outputLength = 4 + count * OUTPUT_STRIDE + rowLimits.reduce((sum, rows) => sum + rows * 3, 0);
-  let pointer = 0;
-  const length = outputOffset + outputLength;
-  let output, rows, sizes;
+  const { records, cfg, groups, count, input:prepared } = job;
+  // One arena holds the records and the job's ten numbers. With a target the core moves the pinned record to it
+  // first, and it rejects an answer with more rows than a surface can need (rust-core/src/shelf_placement.rs).
+  const length = prepared.length + 10;
+  let pointer = 0, output;
   try {
     pointer = core.alloc_f64(length);
     if (!pointer) return undefined;
-    const input = new Float64Array(core.memory.buffer, pointer, outputOffset);
+    const input = new Float64Array(core.memory.buffer, pointer, length);
     input.set(prepared);
-    if (target && pin >= 0) {
-      const record = records[pin], at = pin * INPUT_STRIDE;
-      const requestedCenter = cfg.padding + target.x * cfg.available;
-      const center = clamp(requestedCenter, cfg.padding + record.width / 2,
-        cfg.shelfWidth - cfg.padding - record.width / 2);
-      input[at + 1] = target.shelf;
-      input[at + 2] = center - record.width / 2;
-      input[at + 3] = center === requestedCenter ? target.x : 0;
-      input[at + 4] = (center === requestedCenter ? 3 : 1)
-        | (cfg.physicalPlacement === true && !isCeiling(record.object) ? 4 : 0);
-    }
-    input.set([cfg.shelfWidth, cfg.padding, cfg.gap, cfg.available, cfg.minShelves, groups, pin], configOffset);
-    const outputPointer = pointer + outputOffset * 8;
-    if (core.shelf_place(pointer, count, pointer + configOffset * 8, outputPointer, outputLength) !== 1) return undefined;
+    input.set([cfg.shelfWidth, cfg.padding, cfg.gap, cfg.available, cfg.minShelves, groups, pin,
+      target ? 1 : 0, target ? target.shelf : 0, target ? target.x : 0], prepared.length);
+    const answer = core.shelf_place(pointer, count, pointer + prepared.length * 8) >>> 3;
+    if (!answer) return undefined;
     // Internal Vec allocations can grow memory. Copy the complete result out
     // before spreading host metadata, whose getters may invoke another job.
-    const header = new Float64Array(core.memory.buffer, outputPointer, 4);
-    rows = [header[1], header[3]]; sizes = [header[0], header[2]];
-    if (!sizes.every(Number.isInteger) || sizes[0] < 0 || sizes[1] < 0 || sizes[0] + sizes[1] !== count
-      || rows.some((value, group) => !Number.isInteger(value) || value < 0 || value > (rowLimits[group] || 0))) return undefined;
-    const used = 4 + count * OUTPUT_STRIDE + (rows[0] + rows[1]) * 3;
-    output = new Float64Array(core.memory.buffer, outputPointer, used).slice();
+    const memory = new Float64Array(core.memory.buffer);
+    output = memory.slice(answer, answer + 4 + count * OUTPUT_STRIDE + (memory[answer + 1] + memory[answer + 3]) * 3);
     const allocated = pointer; pointer = 0; core.free_f64(allocated, length);
   } catch { return undefined; }
   finally { if (pointer) core.free_f64(pointer, length); }
+  const sizes = [output[0], output[2]], rows = [output[1], output[3]];
   let at = 4, statsAt = 4 + count * OUTPUT_STRIDE;
   const shelvesByGroup = [];
   for (let group = 0; group < groups; group++) {
@@ -251,7 +231,7 @@ function executePlacement(core, job, pin, target = null) {
  * cached by identity, frozen or trusted on later calls. All geometry and top
  * level metadata are copied into owned storage now, after descriptor gating.
  * Nested metadata remains opaque and retains the previous reference identity.
- * No WASM allocation survives move(); dispose drops the owned JS snapshot. */
+ * No host arena survives move() (the answer is the core's own, copied out at once); dispose drops the JS snapshot. */
 export function createShelfPlacementSession(objects, options = {}) {
   if (!dataOnlyInputs(objects, options, { move:true, separateMounts:true })) return null;
   const configurationValue = configuration(options);
@@ -277,8 +257,7 @@ export function createShelfPlacementSession(objects, options = {}) {
   let job = preparePlacement(Object.freeze(records), cfg, 2), active = false;
   return Object.freeze({
     move(core, key, shelf, x) {
-      if (!job || active || typeof core?.shelf_place !== 'function' || !core.memory
-        || typeof core.alloc_f64 !== 'function' || typeof core.free_f64 !== 'function') return undefined;
+      if (!job || active || !usable(core)) return undefined;
       const owned = job, target = placementFor({ shelf, x });
       const pin = target && pins.has(key) ? pins.get(key) : -1;
       active = true;
