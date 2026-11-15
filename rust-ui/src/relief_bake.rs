@@ -5,8 +5,9 @@
 //!
 //! Promise for promise as in the original (tests/unit/book-relief-bake-differential.test.js runs it against
 //! the frozen model of tests/unit/helpers/reference-book-model.js): two bakes racing on one model settle in
-//! the same order. The map builders are the host's (`buildRelief`, `updateRelief`, `materialMap`), so the
-//! page's slice driver and its test doubles stay where they were.
+//! the same order. The map builders are the host's (`buildRelief`, `updateRelief`) and the material map's job
+//! is stepped by the host's slice driver (`slices`), so the page's driver and its test doubles stay where they
+//! were.
 use super::*;
 use std::cmp::Ordering;
 use crate::book_model_build::{book_model_adopt_relief,book_model_arm_relief,book_model_clear_relief,book_model_map_texture,book_model_relief_source,
@@ -27,7 +28,6 @@ extern "C"{
  #[wasm_bindgen(method,getter,catch)]fn invalidate(this:&Part)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=buildRelief)]fn build_relief(this:&Part,source:&JsValue,choice:&JsValue,options:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=updateRelief)]fn update_relief(this:&Part,built:&JsValue,choice:&JsValue,options:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,catch,js_name=materialMap)]fn material_map(this:&Part,maps:&JsValue,finish:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn disposed(this:&Part)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch,js_name=reliefController)]fn relief_controller(this:&Part)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn host(this:&Part)->R<JsValue>;
@@ -124,7 +124,14 @@ fn bake(s:&JsValue,revision:JsValue,maps:JsValue,signal:JsValue)->Promise{
   let ticket=num(&state.material_revision()?)+1.0;
   state.set_material_revision(ticket)?;
   let (finish,host)=(state.surface_finish()?,state.host()?);
-  let composing=part(&host).material_map(&maps,&finish)?;
+  // `const { clearcoat, roughness, clearcoatRoughness } = SURFACE_FINISHES[value]`, then the packed map of
+  // `maps.pixels` as one job in the page's slices (formerly the generator composeMaterialMap).
+  let row=js_sys::Reflect::get(&read(&host,"finishes")?,&finish)?;
+  if absent(&row){return Err(js_sys::TypeError::new("Cannot destructure property 'clearcoat' of 'SURFACE_FINISHES[value]' as it is undefined.").into())}
+  let (clearcoat,roughness,coat)=(read(&row,"clearcoat")?,read(&row,"roughness")?,read(&row,"clearcoatRoughness")?);
+  let pixels=bag(&maps).pixels()?;
+  let pass=task(Pass::Material(pixels,or(clearcoat,number(0.0)),or(roughness,number(0.5)),or(coat,number(0.18))),undefined())?;
+  let composing=bag(&host).drive(&pass,&undefined(),&undefined())?;
   flow.clone().then(&composing,move|rgba|{
    let state=part(&s);
    if revision!=state.relief_revision()?||num(&state.material_revision()?)!=ticket||aborted(&signal)?||truthy(&state.disposed()?){

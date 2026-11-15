@@ -1,6 +1,7 @@
 import { afterEach,beforeEach,expect,it,vi } from 'vitest';
 import { createBookModel } from '../../src/js/book-model.js';
-import { buildMapsFromPixels, buildReliefMaps, drain, heightToNormals } from '../../src/js/cover-relief.js';
+import { buildReliefMaps } from '../../src/js/cover-relief.js';
+import { buildMapsFromPixels, drain, heightToNormals } from './helpers/relief-passes.js';
 import { ShaderLib, Texture, TextureLoader } from 'three';
 
 const gates=vi.hoisted(()=>({next:null,taken:false}));

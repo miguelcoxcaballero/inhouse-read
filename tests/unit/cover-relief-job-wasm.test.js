@@ -13,7 +13,7 @@ vi.mock('../../src/js/rust-core.js', async original => {
 });
 import { loadRustCore } from '../../src/js/rust-core.js';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
-import * as production from '../../src/js/cover-relief.js';
+import * as production from './helpers/relief-passes.js';
 import * as frozen from './helpers/reference-relief-color.js';
 import { shelfWasm } from './helpers/rust-shelf-ready.js';
 import { installLinearTable } from './helpers/core-oklab.js';

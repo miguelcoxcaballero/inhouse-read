@@ -5,7 +5,7 @@ import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs'
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
-import {shadePreview} from '/inhouse-read/src/js/cover-relief.js';
+import { shadePreview } from '/inhouse-read/tests/unit/helpers/relief-passes.js';
 import {wasmShadePreview} from '/inhouse-read/tests/unit/helpers/reference-cover-relief-wasm.js';
 import {shadePreview as reference} from '/inhouse-read/tests/unit/helpers/reference-relief-preview.js';
 const core=await loadRustCore();if(!core?.relief_preview_rows)throw Error('Actual preview core required');

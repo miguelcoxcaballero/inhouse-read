@@ -5,7 +5,7 @@
 // byte, key for key (in order), pause for pause, error for error and job for job.
 import { afterEach, describe, expect, it } from 'vitest';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
-import * as production from '../../src/js/cover-relief.js';
+import * as production from './helpers/relief-passes.js';
 import * as frozen from './helpers/reference-cover-relief-flow.js';
 import { makeColorMaskImage, colorMaskCases, colorMaskSelection } from '../helpers/color-mask-cases.mjs';
 

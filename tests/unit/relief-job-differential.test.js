@@ -6,7 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
-import * as production from '../../src/js/cover-relief.js';
+import * as passes from './helpers/relief-passes.js';
+import { reliefPlanesToRgba } from '../../src/js/cover-relief.js';
+const production = { ...passes, reliefPlanesToRgba };
 import * as frozen from './helpers/reference-cover-relief-wasm.js';
 import { mapsFor, layers } from '../helpers/cover-relief-reference.mjs';
 import { makeColorMaskImage, colorMaskCases, colorMaskSelection } from '../helpers/color-mask-cases.mjs';

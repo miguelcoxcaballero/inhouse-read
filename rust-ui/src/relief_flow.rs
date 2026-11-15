@@ -5,13 +5,15 @@
 //! As in the cover analyser above this module, every `async` function of the original is one promise here and
 //! every `await` one `Promise.resolve(value).then(...)`, in the same order, so a caller sees its answer on the
 //! same microtask as before and two concurrent bakes interleave as they did
-//! (tests/unit/cover-relief-flow-differential.test.js runs both against the frozen copy). The passes themselves
-//! stay generators stepped by the page's slice driver: the host hands over `sliced` (runSliced), the generator
-//! makers and `ready`.
+//! (tests/unit/cover-relief-flow-differential.test.js runs both against the frozen copy). The passes are jobs of
+//! relief_job.rs made and stepped here (formerly the generators `run` and `abortable` and the `runSliced` of
+//! cover-relief.js): the page's slice driver, which the host hands over as `slices` with `ready`, is given a
+//! task whose every `next()` is one step of the job and one look at the signal.
 use super::*;
 use crate::cover_relief::{relief_analysis_report,relief_fit_dimensions,relief_map_mode,relief_map_resolution,relief_normal_unit,relief_proposal,
  relief_selected_layers,relief_thumbnail_size};
-use crate::host::{get_at,method,read,set};
+use crate::host::{get,get_at,method,read,set};
+use crate::relief_job::ReliefJob;
 
 // A book model's relief bake drives these flows and shares their plumbing.
 #[path="relief_bake.rs"]
@@ -63,9 +65,7 @@ extern "C"{
  // The host of src/js/cover-relief.js.
  #[wasm_bindgen(method,catch)]fn normalize(this:&Bag,relief:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=ready)]fn shelf_ready(this:&Bag)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn sliced(this:&Bag,task:&JsValue,signal:&JsValue,stats:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn maps(this:&Bag,work:&JsValue,hires:&JsValue,choice:&JsValue)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn render(this:&Bag,maps:&JsValue,unit:f64,alpha:&JsValue,fresh:bool,layers:&JsValue)->R<JsValue>;
+ #[wasm_bindgen(method,catch,js_name=slices)]fn drive(this:&Bag,task:&JsValue,budget:&JsValue,heard:&JsValue)->R<JsValue>;
 }
 fn bag(value:&JsValue)->&Bag{value.unchecked_ref()}
 fn object()->JsValue{Object::new().into()}
@@ -214,13 +214,91 @@ fn to_canvas(rgba:&JsValue,width:&JsValue,height:&JsValue)->R<JsValue>{
 }
 fn image_data(rgba:&JsValue,width:&JsValue,height:&JsValue)->R<JsValue>{Ok(Bag::image_data(rgba,width,height)?.into())}
 
-/// What the three flows share: the host's generator makers and the slice driver.
+/// A pass before its job is made: what the generator's maker was called with.
+enum Pass{
+ /// `analyzePixels(image)`.
+ Analysis(JsValue),
+ /// `buildMapsFromPixels(work, hires, selection)`.
+ Build(JsValue,JsValue,JsValue),
+ /// The fused maps -> normals -> planes render: maps, unit, the selection in alpha, fresh planes, layers.
+ Render(JsValue,f64,JsValue,bool,JsValue),
+ /// `shadePreview(image, maps, { slope })`.
+ Preview(JsValue,JsValue,f64),
+ /// `composeMaterialMap(maps, { clearcoat, roughness, clearcoatRoughness })`.
+ Material(JsValue,JsValue,JsValue,JsValue),
+}
+impl Pass{
+ fn job(self)->R<ReliefJob>{
+  match self{
+   Pass::Analysis(image)=>ReliefJob::analysis(&image),
+   Pass::Build(work,hires,selection)=>ReliefJob::build(&work,&hires,&selection),
+   Pass::Render(maps,unit,alpha,fresh,layers)=>ReliefJob::render(&maps,&number(unit),&alpha,fresh,&layers),
+   Pass::Preview(image,maps,slope)=>ReliefJob::preview(&image,&maps,&number(slope)),
+   Pass::Material(maps,clearcoat,roughness,coat)=>ReliefJob::material(&maps,&clearcoat,&roughness,&coat),
+  }
+ }
+}
+/// One pass as the slice driver steps it: `{ next }`, the generator `abortable(run(make), signal)` was. The job
+/// is made on the first step (a refused input throws there); every step is one step of the job and then one
+/// look at the signal, so a pass stops at its first safe point after an abort, even on its last step. The job
+/// is freed when it ends, fails or is cancelled, and with the function if the driver never comes back.
+fn task(pass:Pass,signal:JsValue)->R<JsValue>{
+ let (mut pass,mut job)=(Some(pass),None::<ReliefJob>);
+ let pause=record(&[("done",&JsValue::FALSE)])?;
+ let over=|value:&JsValue|record(&[("done",&JsValue::TRUE),("value",value)]);
+ let next=Closure::<dyn FnMut()->R<JsValue>>::new(move||{
+  let stepped=(||->R<Option<JsValue>>{
+   if job.is_none(){match pass.take(){Some(pass)=>job=Some(pass.job()?),None=>return Ok(Some(undefined()))}}
+   let Some(running)=job.as_mut() else{return Ok(Some(undefined()))};
+   let value=match running.step(){0=>Some(running.result()),code if code<0=>return Err(running.error()),_=>None};
+   if aborted(&signal)?{return Err(abort_error())}
+   Ok(value)
+  })();
+  match stepped{
+   Ok(None)=>Ok(pause.clone()),
+   Ok(Some(value))=>{job=None;over(&value)}
+   Err(failure)=>{job=None;Err(failure)}
+  }
+ });
+ record(&[("next",&js_owned(next))])
+}
+/// `typeof performance !== 'undefined'`.
+fn clocked()->bool{!get(&page(),"performance").is_undefined()}
+/// `stats.slices++; stats.longestSliceMs = Math.max(stats.longestSliceMs, duration); stats.durations?.push(duration)`.
+fn heard(stats:&JsValue,duration:&JsValue)->R{
+ if !truthy(stats){return Ok(())}
+ let report=bag(stats);
+ report.set_slices(&number(num(&report.slices()?)+1.0));
+ report.set_longest(&number(jmax(num(&report.longest()?),num(duration))));
+ let durations=read(stats,"durations")?;
+ if !absent(&durations){method(&durations,"push",&[duration])?;}
+ Ok(())
+}
+/// `runSliced(task, { signal, stats })`: the pass in main-thread slices, with the longest slice and their count.
+fn sliced(host:&JsValue,signal:&JsValue,stats:&JsValue,pass:Pass)->JsValue{
+ let (flow,promise)=Flow::new();
+ flow.clone().run(||{
+  if aborted(signal)?{return Err(abort_error())}
+  let started=if clocked(){clock()?}else{0.0};
+  let listener={let stats=stats.clone();js_owned(Closure::<dyn FnMut(JsValue)->R>::new(move|duration:JsValue|heard(&stats,&duration)))};
+  let running=bag(host).drive(&task(pass,signal.clone())?,&undefined(),&listener)?;
+  let stats=stats.clone();
+  flow.clone().then(&running,move|value|{
+   if truthy(&stats)&&clocked(){let so_far=num(&bag(&stats).ms()?);bag(&stats).set_ms(so_far+(clock()?-started));}
+   flow.resolve(&value);
+   Ok(())
+  });
+  Ok(())
+ });
+ promise.into()
+}
+
+/// What the three flows share: the host's slice driver, the signal and the report.
 #[derive(Clone)]
 struct Passes{host:JsValue,signal:JsValue,stats:JsValue}
 impl Passes{
- fn make(&self,name:&str,args:&[&JsValue])->R<JsValue>{method(&self.host,name,args)}
- /// `runSliced(task, { signal, stats })`.
- fn sliced(&self,task:&JsValue)->R<JsValue>{bag(&self.host).sliced(task,&self.signal,&self.stats)}
+ /// One pass in slices; its promise settles as `runSliced`'s did.
+ fn sliced(&self,pass:Pass)->R<JsValue>{Ok(sliced(&self.host,&self.signal,&self.stats,pass))}
  /// `Promise.all([decode(coverUrl, signal), ready()])`.
  fn decoded(&self,cover_url:&JsValue)->R<JsValue>{
   let decoding=decode(cover_url,&self.signal);
@@ -242,7 +320,7 @@ fn thumbnail(passes:&Passes,work:&JsValue,maps:&JsValue)->JsValue{
  let work=work.clone();
  flow.clone().run(||{
   let slope=if truthy(&read(maps,"soft")?){2.2}else{7.0};
-  let shading=passes.sliced(&passes.make("preview",&[&work,maps,&number(slope)])?)?;
+  let shading=passes.sliced(Pass::Preview(work.clone(),maps.clone(),slope))?;
   flow.clone().then(&shading,move|shaded|{
    let canvas=to_canvas(&shaded,&read(&work,"width")?,&read(&work,"height")?)?;
    let size=relief_thumbnail_size(&read(&work,"width")?,&read(&work,"height")?)?;
@@ -267,7 +345,7 @@ impl Proposals{
   while index<self.chosen.length(){
    let choice=self.chosen.get(index);
    if truthy(&self.preview){
-    let building=self.passes.sliced(&self.passes.make("maps",&[&self.work,&self.preview,&choice])?)?;
+    let building=self.passes.sliced(Pass::Build(self.work.clone(),self.preview.clone(),choice.clone()))?;
     let flow=self.flow.clone();
     flow.clone().then(&building,move|maps|{
      let drawn=thumbnail(&self.passes,&self.preview,&maps);
@@ -303,7 +381,7 @@ pub fn relief_analyze_cover(host:JsValue,cover_url:JsValue,options:JsValue)->Pro
   flow.clone().then(&decoded,move|both|{
    let drawable=get_at(&both,0);
    let work=raster(&drawable,WORK_SIZE,true)?;
-   let finding=passes.sliced(&passes.make("analysis",&[&work])?)?;
+   let finding=passes.sliced(Pass::Analysis(work.clone()))?;
    flow.clone().then(&finding,move|found|{
     // Ten choices must not multiply full-size map construction. The small thumbnails only illustrate the
     // selected ink; the model independently rebuilds its physical mask at the appropriate rendering resolution.
@@ -337,10 +415,10 @@ pub fn relief_build_maps(host:JsValue,cover_url:JsValue,relief:JsValue,options:J
    let drawable=get_at(&both,0);
    let hires=raster(&drawable,relief_map_resolution(&max_size)?,false)?;
    let work=if relief_map_mode(&choice)?!=0{hires.clone()}else{raster(&drawable,WORK_SIZE,true)?};
-   let building=passes.sliced(&bag(&passes.host).maps(&work,&hires,&choice)?)?;
+   let building=passes.sliced(Pass::Build(work,hires,choice))?;
    flow.clone().then(&building,move|maps|{
     let unit=relief_normal_unit(&bag(&maps).width()?,&bag(&maps).height()?,&number(1.0))?;
-    let rendering=passes.sliced(&bag(&passes.host).render(&maps,unit,&selection_alpha,true,&JsValue::NULL)?)?;
+    let rendering=passes.sliced(Pass::Render(maps.clone(),unit,selection_alpha.clone(),true,JsValue::NULL))?;
     flow.clone().then(&rendering,move|planes|{
      let planes=bag(&planes);
      let normal=planes.normal()?;
@@ -385,7 +463,7 @@ pub fn relief_update_strengths(host:JsValue,built:JsValue,selection:JsValue,opti
    let layers=relief_selected_layers(&maps,&selection)?;
    let unit=relief_normal_unit(&bag(&maps).width()?,&bag(&maps).height()?,&number(1.0))?;
    let alpha=JsValue::from_bool(bag(&built).normal_selection_alpha()?.as_bool()==Some(true));
-   let rendering=passes.sliced(&bag(&passes.host).render(&maps,unit,&alpha,false,&layers)?)?;
+   let rendering=passes.sliced(Pass::Render(maps,unit,alpha,false,layers.into()))?;
    flow.clone().then(&rendering,move|planes|{
     let (pixels,normal)=(bag(&planes).pixels()?,bag(&planes).normal()?);
     let next=object();

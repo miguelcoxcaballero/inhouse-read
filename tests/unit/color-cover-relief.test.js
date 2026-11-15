@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import { analyzePixels, buildMapsFromPixels, composeMaterialMap, drain, heightToNormals, internals,
-  MAP_SIZE, normalizeCoverRelief, shadePreview, WORK_SIZE } from '../../src/js/cover-relief.js';
+import { internals, MAP_SIZE, normalizeCoverRelief, WORK_SIZE } from '../../src/js/cover-relief.js';
+import { analyzePixels, buildMapsFromPixels, composeMaterialMap, drain, heightToNormals, shadePreview } from './helpers/relief-passes.js';
 // The OKLab conversion and the colour membership are the numeric core's now; the membership of the original
 // (and its JavaScript OKLab) is the frozen reference, and the conversion is read back from the core.
 import { internals as frozen } from './helpers/reference-relief-color.js';

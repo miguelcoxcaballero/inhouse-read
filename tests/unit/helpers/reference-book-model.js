@@ -29,7 +29,8 @@ import { pageRaster } from '../../../src/js/page-raster.js';
 import { bookmarkFor } from '../../../src/js/bookshelf-layout.js';
 import { applyBookReflectionSurface, rememberedPatch } from './reference-book-reflection-host.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from '../../../src/js/gpu-programs.js';
-import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from '../../../src/js/cover-relief.js';
+import { buildReliefMaps, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from '../../../src/js/cover-relief.js';
+import { composeMaterialMap } from './relief-passes.js';
 import { runInSlices } from '../../../src/js/cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from '../../../src/js/native-renderer-presentation.js';

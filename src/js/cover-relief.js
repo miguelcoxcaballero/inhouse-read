@@ -4,11 +4,8 @@
  * height/gloss mask; it never recolors ink or invents borders, grain or foil.
  *
  * Everything here is local, deterministic perceptual clustering (no network,
- * no model). The analysis is split into pure generator functions over RGBA
- * arrays, so Node can test them; they `yield` every few rows so the browser
- * wrapper can hand the main thread back (runInSlices) and stop on an abort.
- * Working rasters are bounded: 288 px on the long side to find things, at
- * most 512 px to build the maps.
+ * no model). Working rasters are bounded: 288 px on the long side to find
+ * things, at most 512 px to build the maps.
  *
  * A saved choice is `{ id:'color-1'..'color-10', color:'#rrggbb',
  * tolerance, strength }`; tolerance is Euclidean OKLab * 100 (1..12). Maps
@@ -19,12 +16,12 @@
  * the original record is only replaced by an explicit new user selection.
  *
  * The shelf module is the only implementation of the maps, the palette and the
- * shading: every pass is a job of rust-ui/src/relief_job.rs, stepped here so the
- * main thread gets its pauses (there is no JavaScript twin: the frozen originals
- * live in tests/unit/helpers/reference-relief-*.js, the frozen bridge to the
- * numeric core in reference-cover-relief-wasm.js). The old family detectors
- * (lettering, foil, frame, emblem, band, varnish) had no production caller and
- * live there too.
+ * shading: every pass is a job of rust-ui/src/relief_job.rs, made and stepped by
+ * the flows of rust-ui/src/relief_flow.rs inside the page's slice driver, which
+ * hands the main thread back between slices; a flow stops at the first step
+ * after its signal aborts. The frozen originals live in
+ * tests/unit/helpers/reference-relief-*.js and reference-cover-relief-flow.js;
+ * tests reach one pass on its own through tests/unit/helpers/relief-passes.js.
  */
 import { runInSlices } from './cover-appearance.js';
 import { needRustShelf, loadRustShelf } from './rust-shelf.js';
@@ -56,51 +53,11 @@ export const colorReliefProfile = choice => needRustShelf().color_relief_profile
 // combined colours have their own stable .16–.30 mm coating profiles.
 export const MAX_RELIEF_MM = .6;
 
-// ---- generators ------------------------------------------------------------
-
-/** Run a generator to its end synchronously (tests, and callers that must not wait). */
-export function drain(task) {
-  for (let step = task.next(); ; step = task.next()) if (step.done) return step.value;
-}
-
-function abortError() {
-  const error = new Error('Análisis cancelado');
-  error.name = 'AbortError';
-  return error;
-}
-
-/** Wrap a generator so it throws at the first safe point after `signal` aborts. */
-function* abortable(task, signal) {
-  try {
-    for (let step = task.next(); ; step = task.next()) {
-      if (signal?.aborted) throw abortError();
-      if (step.done) return step.value;
-      yield;
-    }
-  } finally { task.return?.(); }
-}
-
 // The passes have no JavaScript twin. The page awaits the shelf module before its
 // first shelf render, and every public entry point below waits for it as well; a
 // job that rejects its input is an error, never a silent second path.
 const unavailable = () => new Error('El módulo numérico no se pudo cargar. Recarga la página.');
 async function ready() { if (!await loadRustShelf()) throw unavailable(); }
-/** Step a job of the shelf module to its end, pausing where it asks; it is freed however this ends. */
-function* run(make) {
-  const job = make(needRustShelf().ReliefJob);
-  try { for (let code; (code = job.step()) !== 0;) { if (code < 0) throw job.error(); yield; } return job.result(); }
-  finally { job.free(); }
-}
-
-/** Run in main-thread slices; reports the longest slice and the slice count. */
-async function runSliced(task, { signal, stats } = {}) {
-  if (signal?.aborted) throw abortError();
-  const started = typeof performance !== 'undefined' ? performance.now() : 0;
-  const onSlice = duration => { if (stats) { stats.slices++; stats.longestSliceMs = Math.max(stats.longestSliceMs, duration); stats.durations?.push(duration); } };
-  const value = await runInSlices(abortable(task, signal), undefined, onSlice);
-  if (stats && typeof performance !== 'undefined') stats.ms += performance.now() - started;
-  return value;
-}
 
 // ---- rasters -----------------------------------------------------------------
 
@@ -113,49 +70,10 @@ export const fitDimensions = (width, height, long) => needRustShelf().relief_fit
 // (Delta-E OK), not CIEDE2000 or RGB channel units.
 const colorName = hex => needRustShelf().relief_color_name(hex);
 
-/** Up to ten distinct supported colors, never fabricated family suggestions. Radii are less than half every
- * inter-center distance, so all generated choices remain disjoint even when recreated independently from
- * persistence. Membership is recalculated from real pixels (no dilation/blur can include a pixel whose color is
- * outside the stored ball) and falls toward zero inside its radius, never over an adjacent ink. */
-export function* analyzePixels(image) { return yield* run(Job => Job.analysis(image)); }
-
-/** The maps of one choice: a saved colour is classified at map resolution, several layers are classified
- * (each pixel belongs to exactly one pigment) and composed, a legacy record takes the first colour found. */
-export function* buildMapsFromPixels(work, hires, selection) { return yield* run(Job => Job.build(work, hires, selection)); }
-
-/** Reuse the classified colour ownership while adjusting a layer's intensity.
- * Only three bounded output planes are allocated; no image decode, clustering
- * or per-layer GPU textures are needed on slider updates. */
-export function* composeReliefLayerPixels(maps, selection) { return yield* run(Job => Job.compose(maps, selection)); }
-
-// ---- shading: the preview card and the material maps ----------------------------------
-
-/** Tangent-space normals (RGBA bytes) from the height map; +x right, +y up the cover. */
-export function* heightToNormals(maps, { gain = 1, selectionAlpha = false } = {}) {
-  const { width, height } = maps;
-  const unit = needRustShelf().relief_normal_unit(width, height, gain);
-  return yield* run(Job => Job.normals(maps, unit, selectionAlpha));
-}
-
-/** Packed R clearcoat, G roughness ratio, B metalness, A clearcoat-roughness
- * ratio. Color masks use B=0 and leave the original ink/base finish intact.
- * Generic old map fixtures retain their foil channel and opaque alpha. */
-export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clearcoatRoughness = .18 } = {}) {
-  return yield* run(Job => Job.material(maps, clearcoat, roughness, clearcoatRoughness));
-}
-
-/** Shaded preview, lit from the top-left, as RGBA bytes (pure; the browser
- * wrapper only turns it into a data URL). Foil zones glint, gloss zones shine. */
-export function* shadePreview(image, maps, { slope = 7 } = {}) {
-  return yield* run(Job => Job.preview(image, maps, slope));
-}
-
 // ---- browser wrapper ----------------------------------------------------------------------
-// The bounded decode, the working rasters, the thumbnails and the three flows below are the shelf module's
-// (rust-ui/src/relief_flow.rs), promise for promise; it is handed the generators above and the slice driver.
-const host = { normalize:normalizeCoverRelief, ready, sliced:(task, signal, stats) => runSliced(task, { signal, stats }),
-  analysis:analyzePixels, maps:buildMapsFromPixels, render:(...args) => run(Job => Job.render(...args)),
-  preview:(image, maps, slope) => shadePreview(image, maps, { slope }) };
+// The bounded decode, the working rasters, the passes, the thumbnails and the three flows below are the shelf
+// module's (rust-ui/src/relief_flow.rs), promise for promise; it is handed the slice driver.
+const host = { normalize:normalizeCoverRelief, ready, slices:runInSlices };
 function flow(name, ...args) {
   let shelf;
   try { shelf = needRustShelf(); } catch { return ready().then(() => needRustShelf()[name](host, ...args)); }

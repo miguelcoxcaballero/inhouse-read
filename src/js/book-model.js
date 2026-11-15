@@ -17,7 +17,7 @@ import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface, rememberedPatch } from './book-reflection-surface.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from './gpu-programs.js';
-import { buildReliefMaps, composeMaterialMap, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
+import { buildReliefMaps, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from './native-renderer-presentation.js';
@@ -542,11 +542,7 @@ function modelHost() {
     acquire:acquireCoverImage, reuse:reuseCoverRaster, cloth:replayCloth, paintWeave, drawDevice,
     anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
     // The relief bake (rust-ui/src/relief_bake.rs) builds its maps through these, in the page's slices.
-    buildRelief:(...args) => buildReliefMaps(...args), updateRelief:(...args) => updateReliefMapStrengths(...args),
-    materialMap(maps, value) {
-      const { clearcoat, roughness, clearcoatRoughness } = SURFACE_FINISHES[value];
-      return runInSlices(composeMaterialMap(maps.pixels, { clearcoat, roughness, clearcoatRoughness }));
-    },
+    buildRelief:(...args) => buildReliefMaps(...args), updateRelief:(...args) => updateReliefMapStrengths(...args), slices:runInSlices,
     rebake:needRustShelf().book_model_rebake_relief,
     ribbonGeometry:updateRibbonGeometry,
     preparePresentation:(s, idle, current = () => true) => prepareBookPresentation(s.group, idle, () => !s.disposed && current()),
