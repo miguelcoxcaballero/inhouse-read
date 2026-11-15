@@ -70,7 +70,7 @@ pub fn reader_resize_panel(host:&JsValue,window:&JsValue,reveal:&JsValue)->Resul
 }
 fn resize_panel(host:&JsValue,window:&JsValue)->Result<bool,JsValue>{
  // The panel and its style are read once: the same objects every time within one call.
- let panel=get(host,"panel")?;if !get(&panel,"open")?.is_truthy(){return Ok(false);}
+ let panel=crate::host::read(host,"panel")?;if !crate::host::read(&panel,"open")?.is_truthy(){return Ok(false);}
  let viewport=get(window,"visualViewport")?;
  let visible=if absent(&viewport){JsValue::UNDEFINED}else{get(&viewport,"height")?};
  let visible=number(&if visible.is_truthy(){visible}else{get(window,"innerHeight")?})?;

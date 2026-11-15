@@ -1,5 +1,5 @@
 // The reader classes whose members are answered by Rust dispatchers (rustMethods in
-// readers/rust-ui-required.js): every member that reaches its dispatcher must be one the
+// readers/rust-ui-required.js), and the parts of the experience rust-ui builds: every member that reaches its dispatcher must be one the
 // dispatcher knows, keep the class-member shape (non-enumerable, async ones rejecting), and a
 // missing module must still fail clearly.
 import {readFileSync} from 'node:fs'
@@ -57,8 +57,6 @@ it('dispatches only members its Rust dispatcher knows',async()=>{
   expect(()=>ui.flow_method({host:{}},'missing',which,{},ui)).toThrow(/has no method missing/)
  }
  expect(()=>ui.reader_part({},'missing',{},ui)).toThrow('The reader has no part missing')
- {
- }
  vi.clearAllTimers();vi.useRealTimers()
 })
 it('keeps class-member shape and fails clearly without the module',async()=>{
