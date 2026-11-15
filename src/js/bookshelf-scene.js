@@ -1,4 +1,3 @@
-import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
@@ -193,7 +192,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
   const semanticCovers = new Map();
   const semanticFoliage = new Map();
-  const foliageFrame = createFoliageFrame(rust);
+  // The rectangles no plant's foliage takes taps in (rust-ui/src/scene_foliage.rs).
+  const foliageFrame = new rust.RustFoliageFrame();
   const releasedCandidates = new WeakSet();
   stage.classList.add('has-scene');
   stage.prepend(canvas);
@@ -1539,7 +1539,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     if (!native) {
       const [svg, path, exclusions] = rust.scene_foliage_target(node, entry);
-      native = { svg, path, exclusions, clip:'', state:foliageFrame.createState(),
+      native = { svg, path, exclusions, clip:'', state:new rust.RustFoliageState(), posed:null,
         display:'', left:NaN, top:NaN, width:NaN, height:NaN, events:'' };
       semanticFoliage.set(node, native);
     }
@@ -1557,7 +1557,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Inspection is a uniform scale and translation of the whole room. SVG's
     // viewBox applies exactly that transform to the cached leaf triangles,
     // preserving holes without projecting every leaf again on every finger move.
-    if (native.state.pose(model, furniture.quaternion, rect)) {
+    // Its model's matrix, the room's turn and its rectangle in the arena say whether the leaves moved (rust-ui/src/scene_exclusions.rs).
+    const turn = furniture.quaternion;
+    entryFrame.leaf.set(model.matrix.elements);
+    if (entryFrame.lamp.foliagePose(native.state, entry.row, turn.x, turn.y, turn.z, turn.w, native.posed !== model)) {
+      native.posed = model;
       // Leaf paths consume each mesh's world matrix. Refresh descendants only
       // when rebuilding the path, rather than on every room frame.
       model.updateMatrixWorld(true);
@@ -1568,11 +1572,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // The clip is a pure function of the reference box, this rectangle and every
     // excluded book rectangle: rebuild it only when one of those numbers moved.
     // Gathered from the entry arena in one native call per frame (rust-ui/src/scene_exclusions.rs).
-    if (!exclusionsReady) { entryFrame.exclusions(foliageFrame.native, sceneView.progress > .04); exclusionsReady = true; }
+    if (!exclusionsReady) { entryFrame.exclusions(foliageFrame, sceneView.progress > .04); exclusionsReady = true; }
     // Inside the books' rectangles the existing native book surface already has touch-action:none and
     // resolves true mesh occlusion in its drag handler; the clip (Rust) keeps book clicks native even if
     // foliage is behind a cover. It is rebuilt only when one of its inputs moved.
-    const clipping = native.state.clip();
+    const clipping = native.state.clip(foliageFrame);
     if (!clipping) return;
     if (native.clip !== clipping) {
       native.exclusions.setAttribute('d', clipping); native.clip = clipping;
@@ -2901,7 +2905,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.native.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.native.free(); foliageFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = null;
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
@@ -2922,8 +2926,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       inspectionSnapshot = inspectionOverview = null;
       for (const node of semanticCovers.values()) node.remove();
       semanticCovers.clear();
-      for (const native of semanticFoliage.values()) native.svg.remove();
-      semanticFoliage.clear(); foliageFrame.free();
+      for (const native of semanticFoliage.values()) { native.svg.remove(); native.state.free(); }
+      semanticFoliage.clear();
       for (const node of trashOriginalStates.keys()) restoreTrashNode(node);
       for (const node of catalogOriginalStates.keys()) restoreCatalogNode(node);
     }

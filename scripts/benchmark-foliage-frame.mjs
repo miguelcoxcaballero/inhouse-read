@@ -4,7 +4,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {performance} from 'node:perf_hooks';
 import * as THREE from 'three';
 import * as rust from '../src/wasm/shelf/inhouse_read_shelf.js';
-import {createFoliageFrame} from '../src/js/foliage-frame.js';
+import {createFoliageFrame} from '../tests/unit/helpers/foliage-frame.js';
 import {prepareAreas} from '../tests/unit/helpers/reference-foliage-areas.js';
 rust.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});
 const box=(left,top,width,height)=>({left,top,width,height,right:left+width,bottom:top+height});

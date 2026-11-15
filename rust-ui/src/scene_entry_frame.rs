@@ -71,8 +71,9 @@ pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit
  /// The census: the counts' inputs as last counted, its nine numbers, the resolutions' text,
  /// whether a quality map was loading and the quality hold's deadline.
  counted:Vec<f64>,count_dirty:bool,census:Box<[f64;11]>,resolutions:String,loading:bool,paint_deadline:f64,
- /// The canvas' diagnostics: its data attributes, the host's numbers and what was written last.
- dataset:Option<js_sys::Object>,shown_keys:Vec<JsValue>,shown:Box<[f64;7]>,shown_last:[u64;22],shown_text:String,
+ /// The canvas' diagnostics: its data attributes, the host's numbers (seven, then the sixteen of
+ /// a plant's model matrix for `foliagePose`) and what was written last.
+ dataset:Option<js_sys::Object>,shown_keys:Vec<JsValue>,shown:Box<[f64;23]>,shown_last:[u64;22],shown_text:String,
  /// The lamps' temperatures and tints (`scene_lamp.rs`).
  tints:Vec<f64>,tint_ms:f64,
  /// The room's matrix of the previous pose call (its epoch and whether it moved follow the
@@ -86,7 +87,7 @@ impl RustSceneEntryFrame{
  pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16]),
   rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
   counted:Vec::new(),count_dirty:true,census:Box::new([0.0;11]),resolutions:String::new(),loading:false,paint_deadline:0.0,
-  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0,
+  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;23]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0,
   room_held:[f64::NAN.to_bits();16],reorder:Vec::new(),refused:Vec::new()}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);

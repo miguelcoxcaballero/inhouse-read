@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest';
 import { rustShelf } from './helpers/rust-shelf-ready.js';
 import { exclusionRects, prepareAreas } from './helpers/reference-foliage-areas.js';
-import { createFoliageFrame } from '../../src/js/foliage-frame.js';
+import { createFoliageFrame } from './helpers/foliage-frame.js';
 import { createSceneEntryFrame, ENTRY_OUTPUT, ENTRY_STATE, HIT_INPUT, HIT_OUTPUT } from '../../src/js/scene-entry-frame.js';
 
 // The foliage's exclusion rectangles, gathered from the entry arena in Rust, against the frozen
