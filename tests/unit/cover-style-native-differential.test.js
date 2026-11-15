@@ -67,8 +67,9 @@ it('samples every stride like the bridge, in row-major order', () => {
 });
 
 it('reads an image above the one-visit copy bound one sampled row at a time, like the bridge', () => {
-  // 1,048,576 bytes is the bound: just below, exactly at and above it, and a strip whose rows are single pixels.
-  for (const [width, height, seed] of [[512, 511, 3], [512, 512, 5], [513, 512, 7], [1200, 900, 11], [900, 1200, 13], [3, 90000, 17], [90000, 3, 19]]) {
+  // 262,144 bytes is the bound: just below, exactly at and above it, larger rasters and strips of single pixels.
+  for (const [width, height, seed] of [[256, 255, 2], [256, 256, 3], [257, 256, 4], [255, 257, 6], [512, 512, 5], [513, 512, 7], [1200, 900, 11],
+    [900, 1200, 13], [3, 90000, 17], [90000, 3, 19]]) {
     const found = same(noise(width, height, seed, 'mixed'), width, height);
     expect(found.value.color).toMatch(/^#[0-9a-f]{6}$/);
   }

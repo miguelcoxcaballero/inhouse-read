@@ -12,9 +12,10 @@ use crate::cover_color::cover_dominant_style;
 type R<T> = Result<T, JsValue>;
 /// No more samples than this reach the kernel, whatever the size of the image.
 const MAX_SAMPLES: f64 = 32768.0;
-/// Up to this many bytes the pixels are copied into the module in one visit; a larger image is read one
-/// sampled row at a time, so that an arbitrarily large raster never has to fit in this module's memory.
-const WHOLE_COPY: usize = 1 << 20;
+/// Up to this many bytes (the analyser's own 192 x 288 raster is 221,184) the pixels are copied into the module
+/// in one visit; a larger image is read one sampled row at a time, which is quicker from there on (measured at
+/// 512 x 512) and never asks this module's memory to hold an arbitrarily large raster.
+const WHOLE_COPY: usize = 1 << 18;
 
 /// `Number.isSafeInteger(value) && value >= 1`.
 fn side(value: &JsValue) -> Option<f64> { value.as_f64().filter(|n| n.fract() == 0.0 && *n >= 1.0 && *n <= 9007199254740991.0) }
