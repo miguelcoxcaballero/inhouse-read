@@ -4,11 +4,11 @@
 // takes every button's hit target. The host writes a column of `state` only when its source
 // changes and reads the results from the arena; `refresh` follows any growth of memory (call
 // it before using the views after other native work).
-export const ENTRY_STATE = 91, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
+export const ENTRY_STATE = 117, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT = 24, HIT_OUTPUT = 17;
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
-  const frame = { state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part), showEntries:(active, summary) => native.showEntries(active, summary),
+  const frame = { lamp:native, state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part), showEntries:(active, summary) => native.showEntries(active, summary),
     hold, census, still:asked => native.still(asked), settleLifts:started => native.settleLifts(started), painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
     prepare, bind, refresh, step, poses, settle, place, settled, hits, exclusions, preview, motionRest, motionBegin, motionPoses, free };
   function refresh() {
