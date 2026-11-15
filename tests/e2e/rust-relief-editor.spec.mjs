@@ -3,13 +3,16 @@ import { readFile } from 'node:fs/promises';
 import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs';
 
-// The JavaScript palette that this spec used to hide the compiled export from was removed together
-// with its twin (the frozen original lives in tests/unit/helpers/reference-relief-palette.js and the
-// differential unit tests compare it with the core). The relief passes are jobs of the shelf module now
-// (rust-ui/src/relief_job.rs), observed at that module's own exports. A module whose analysis job fails is
-// the failure case: the editor must report the analysis error instead of silently taking a second path.
-// What happens inside a job (its seed, its colours, the rows of its normals) no longer crosses a boundary
-// this page can watch; relief-job-differential.test.js compares those bytes with the frozen bridge.
+// The relief passes are jobs of the shelf module (rust-ui/src/relief_job.rs), and since the flows make and
+// step them inside that module (rust-ui/src/relief_flow.rs) no pass crosses a wasm export the page could be
+// watched at: `reliefjob_analysis`, `reliefjob_step`, `reliefjob_render` and the job's free are only called by
+// the unit tests' own generators now. What this spec reads instead are the module's own counters, as raw
+// exports of the instantiated module: `relief_analyses_made` and `relief_analysis_steps` (colour analyses made
+// and the steps they took), `relief_jobs_made` and `relief_jobs_live` (every pass, made and not yet freed).
+// The failure case hands the analysis a raster without pixels at the platform boundary the flow reads it from
+// (the 288 px unsmoothed working raster's getImageData): the job refuses it in Rust and the editor must report
+// the analysis error instead of proposing colours. What happens inside a job (its seed, its colours, the rows
+// of its normals) is compared with the frozen bridge by relief-job-differential.test.js.
 for (const enabled of [false,true]) test(`real relief editor cold and cached: ${enabled?'Rust':'module whose analysis job fails'}`,async({page},testInfo)=>{
   // New diagnostic includes a cold room and two real flyouts/materials. It
   // does not alter the original reader/native-return timing contracts.
@@ -18,27 +21,25 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
   await page.emulateMedia({reducedMotion:'no-preference'});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(enabled=>{
-    window.paletteProof={jobs:0,live:0,available:false,normalCalls:0,steps:0,refused:0};
+    const proof=window.paletteProof={available:false,refused:0,read:null};
     const observe=result=>{
-      const instance=result.instance||result,actual=instance.exports;
-      if(typeof actual?.reliefjob_analysis!=='function')return result;
-      const proof=window.paletteProof;proof.available=true;
-      // Fail only the analysis job for the failure case. Every other compiled pass, actual renderer, image and
-      // shader remains identical. A job constructor answers (pointer, error, is-error) at its return pointer;
-      // the analysis is observed where the page makes it, steps it and frees it, the render job (composition,
-      // normals with the selection in their alpha, grey planes) where the page makes it.
-      const analysis=new Set(),made=retptr=>{const view=new DataView(actual.memory.buffer);return view.getInt32(retptr+8,true)?0:view.getInt32(retptr,true)>>>0;};
-      const exports={...actual,reliefjob_analysis(retptr,...args){
-        if(!enabled){proof.refused++;throw new Error('analysis job hidden by the test');}
-        actual.reliefjob_analysis(retptr,...args);const p=made(retptr);if(p){analysis.add(p);proof.jobs++;proof.live++;}
-      },reliefjob_step(p){const code=actual.reliefjob_step(p);if(analysis.has(p>>>0))proof.steps++;return code;
-      },reliefjob_render(retptr,...args){actual.reliefjob_render(retptr,...args);if(made(retptr))proof.normalCalls++;
-      },__wbg_reliefjob_free(p,...rest){actual.__wbg_reliefjob_free(p,...rest);if(analysis.delete(p>>>0))proof.live--;}};
-      const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
-      return result.instance?{...result,instance:proxy}:proxy;
+      const actual=(result.instance||result).exports;
+      if(typeof actual?.relief_analyses_made!=='function')return result;
+      proof.read=()=>({jobs:actual.relief_analyses_made()>>>0,steps:actual.relief_analysis_steps()>>>0,
+        made:actual.relief_jobs_made()>>>0,live:actual.relief_jobs_live()>>>0,refused:proof.refused});
+      proof.available=true;return result;
     };
     for(const name of ['instantiate','instantiateStreaming'])if(typeof WebAssembly[name]==='function'){
       const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args));};
+    }
+    // Fail only the analysis for the failure case: its working raster (288 px on the long side, read without
+    // smoothing) comes back without pixels. Every other raster, pass, renderer, image and shader is untouched.
+    if(!enabled)for(const type of [globalThis.CanvasRenderingContext2D,globalThis.OffscreenCanvasRenderingContext2D])if(type){
+      const original=type.prototype.getImageData;
+      type.prototype.getImageData=function(x,y,width,height,...rest){
+        if(this.imageSmoothingEnabled===false&&Math.max(width,height)===288){proof.refused++;return {data:new Uint8ClampedArray(0),width,height};}
+        return Reflect.apply(original,this,[x,y,width,height,...rest]);
+      };
     }
   },enabled);
   await page.goto(process.env.IHR_TEST_URL||'/');
@@ -71,7 +72,7 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
     await expect(page.getByText('No se pudo analizar la portada')).toBeVisible({timeout:60000});
     await expect(page.getByRole('button',{name:'Reintentar',exact:true})).toBeVisible();
     await expect(cards).toHaveCount(0);
-    const proof=await page.evaluate(()=>({...window.paletteProof}));
+    const proof=await page.evaluate(()=>window.paletteProof.read());
     expect(proof.jobs).toBe(0);expect(proof.live).toBe(0);expect(proof.refused).toBeGreaterThan(0);
     await page.getByRole('button',{name:'Listo',exact:true}).click();
     await page.getByRole('button',{name:'Cerrar',exact:true}).click();
@@ -85,11 +86,11 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
     const bounds=await spine.boundingBox();expect(bounds).not.toBeNull();
     await spine.click({position:await spinePointerPosition(spine,bounds)});
     await page.getByRole('button',{name:'Editar',exact:true}).click();
-    const before=await page.evaluate(()=>({...window.paletteProof,at:performance.now()}));
+    const before=await page.evaluate(()=>({...window.paletteProof.read(),at:performance.now()}));
     await page.getByRole('tab',{name:'Portada',exact:true}).click();
     await expect(cards).toHaveCount(3,{timeout:60000});
     await expect(page.locator('.ihr-flyout__book canvas')).toHaveAttribute('data-angle','0');
-    const after=await page.evaluate(()=>({...window.paletteProof,at:performance.now()}));
+    const after=await page.evaluate(()=>({...window.paletteProof.read(),at:performance.now()}));
     const selected=await cards.evaluateAll(nodes=>nodes.map(node=>node.closest('.ihr-relief-card').dataset.reliefColor));
     expect([...selected].sort()).toEqual([...colors].sort());
     expect(after.live).toBe(0);expect(after.jobs-before.jobs).toBe(enabled&&stage==='cold'?1:0);
@@ -97,8 +98,12 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
     if(stage==='cold')expect(after.steps-before.steps).toBeGreaterThan(Math.floor(288*192/1024));else expect(after.steps-before.steps).toBe(0);
     expect(await page.locator('.ihr-flyout__book canvas').evaluate(canvas=>canvas instanceof HTMLCanvasElement&&canvas.width>0&&canvas.height>0)).toBe(true);
     observations.push({stage,ms:after.at-before.at,jobs:after.jobs-before.jobs,steps:after.steps-before.steps,colors:selected});
+    // Choosing a colour builds and renders its maps: passes are made after the click, and none outlives it.
+    const chosen=await page.evaluate(()=>window.paletteProof.read());
     await page.locator('.ihr-relief-card').nth(stage==='cold'?0:1).click();
-    await expect.poll(()=>page.evaluate(()=>window.paletteProof.normalCalls),{timeout:30000}).toBeGreaterThan(before.normalCalls);
+    await expect.poll(()=>page.evaluate(()=>window.paletteProof.read().made),{timeout:30000}).toBeGreaterThan(chosen.made);
+    await expect.poll(()=>page.evaluate(()=>window.paletteProof.read().live),{timeout:30000}).toBe(0);
+    expect((await page.evaluate(()=>window.paletteProof.read())).jobs).toBe(after.jobs);
 
     await page.getByRole('button',{name:'Listo',exact:true}).click();
     await page.getByRole('button',{name:'Cerrar',exact:true}).click();

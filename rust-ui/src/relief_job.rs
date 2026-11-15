@@ -19,6 +19,8 @@ const LIMIT: f64 = 1_048_576.0;
 const JOB_LIMIT: f64 = 262_144.0;
 static LIVE: AtomicU32 = AtomicU32::new(0);
 static MADE: AtomicU32 = AtomicU32::new(0);
+static ANALYSES: AtomicU32 = AtomicU32::new(0);
+static ANALYSIS_STEPS: AtomicU32 = AtomicU32::new(0);
 static TABLE: Once = Once::new();
 
 #[wasm_bindgen]
@@ -235,6 +237,13 @@ pub fn relief_jobs_live() -> u32 { LIVE.load(Ordering::Relaxed) }
 /// Jobs made since the module started (tests count one job per pass).
 #[wasm_bindgen]
 pub fn relief_jobs_made() -> u32 { MADE.load(Ordering::Relaxed) }
+/// Colour analyses made since the module started. The flows make their jobs inside this module
+/// (relief_flow.rs), so this is where a page test sees that a cover was analysed once, or not again.
+#[wasm_bindgen]
+pub fn relief_analyses_made() -> u32 { ANALYSES.load(Ordering::Relaxed) }
+/// Steps taken by colour analyses since the module started: each one ended a slice of the pass or the pass.
+#[wasm_bindgen]
+pub fn relief_analysis_steps() -> u32 { ANALYSIS_STEPS.load(Ordering::Relaxed) }
 
 /// `{ height, foil, gloss }`: the three material planes of `maps` as opaque grey RGBA, in one pass.
 #[wasm_bindgen]
@@ -262,6 +271,7 @@ impl ReliefJob {
         let (width, height, data) = raster(image).ok_or_else(refused)?;
         let made = unsafe { relief_analysis_new(data.as_ptr(), width, height) };
         if made.is_null() { return Err(refused()); }
+        ANALYSES.fetch_add(1, Ordering::Relaxed);
         Ok(job(Work::Analysis(made, width * height)))
     }
 
@@ -441,6 +451,7 @@ impl ReliefJob {
     /// 1: give the main thread back and call again; 0: finished, `result` is ready; -1: failed, `error` says why.
     /// (A plain number: this is called hundreds of times per job, and an error slot would cost every call.)
     pub fn step(&mut self) -> i32 {
+        if matches!(self.work, Work::Analysis(..)) { ANALYSIS_STEPS.fetch_add(1, Ordering::Relaxed); }
         match self.advance() { Ok(code) => code as i32, Err(error) => { self.work = Work::Done; self.failed(error) } }
     }
 
