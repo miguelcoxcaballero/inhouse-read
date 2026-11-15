@@ -1,10 +1,9 @@
 import {afterEach,expect,it,vi} from 'vitest';
-// The planes are prepared inside the shelf module (rust-ui/src/font_planes.rs), which no test double replaces:
+// The colour and the planes are prepared inside the shelf module (rust-ui/src/cover_style.rs, font_planes.rs), which no test double replaces:
 // what is watched is the host around them. Until the fonts arrive only the colour has asked for the numeric
 // core and the analysis is pending; once they do, it finishes with a family.
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({loadedRustCore:(...args)=>state.core(...args),requireRustCore:async()=>({available:true})}));
-vi.mock('../../src/js/cover-color-wasm.js',()=>({rustCoverColor:()=>({color:'#5a4130',shade:'#443125',ink:'#fffaf0'})}));
 const originalFonts=Object.getOwnPropertyDescriptor(document,'fonts');
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();if(originalFonts)Object.defineProperty(document,'fonts',originalFonts);else delete document.fonts;});
 it('waits for fonts before native pixel preparation',async()=>{

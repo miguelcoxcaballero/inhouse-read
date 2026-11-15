@@ -2,7 +2,7 @@
 import { beforeAll, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { rustCoverColor } from '../../src/js/cover-color-wasm.js';
+import { rustCoverColor } from './helpers/reference-cover-color-wasm.js';
 import { referenceCoverColorFromPixels } from './helpers/reference-cover-color.js';
 import { coverColorCases, createCoverColorPixels } from '../helpers/cover-color-cases.mjs';
 let core;

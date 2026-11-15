@@ -6,7 +6,7 @@ import { coverColorCases } from '../helpers/cover-color-cases.mjs';
 const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
 import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
-import { rustDominantCoverRgb } from '/inhouse-read/src/js/cover-color-wasm.js';
+import { rustDominantCoverRgb } from '/inhouse-read/tests/unit/helpers/reference-cover-color-wasm.js';
 import { referenceDominantRgb } from '/inhouse-read/tests/unit/helpers/reference-cover-color.js';
 import { createCoverColorPixels } from '/inhouse-read/tests/helpers/cover-color-cases.mjs';
 const core = await loadRustCore();

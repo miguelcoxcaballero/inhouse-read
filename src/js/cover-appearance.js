@@ -1,5 +1,4 @@
 import { loadedRustCore, requireRustCore } from './rust-core.js';
-import { rustCoverColor } from './cover-color-wasm.js';
 import { createRustFontScorer } from './font-score-wasm.js';
 export { scoreFontMask } from './font-score-core.js';
 import { shelfWorkReady } from './idle-startup.js';
@@ -14,7 +13,7 @@ import { getRustShelf, loadRustShelf, needRustShelf } from './rust-shelf.js';
  *
  * The analysis itself (decode bounds, sample, colour, font loads, the single-flight search and its
  * slices, the title wraps, the pixel planes and the choice of family) is rust-ui/src/cover_appearance.rs,
- * font_policy.rs and font_planes.rs. This module hands it the core's colour and score bridges, the generator
+ * cover_style.rs, font_policy.rs and font_planes.rs. This module hands it the core's score bridge, the generator
  * slice driver and the Worker client, and keeps the two values a page owns between analyses.
  */
 
@@ -38,12 +37,7 @@ export function coverAspectRatio(width, height) {
 }
 
 /** Pure pixel helper, exported so the colour and contrast rules stay testable. */
-export function coverColorFromPixels(data, width, height) {
-  if (!data || !Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null;
-  const style = rustCoverColor(loadedRustCore(), data, width, height);
-  if (!style) throw new Error('Invalid cover pixels');
-  return style;
-}
+export const coverColorFromPixels = (data, width, height) => needRustShelf().cover_color_style(data, width, height);
 
 export const glyphMask = (raw, maxWidth, rows, stride) => needRustShelf().glyph_mask(raw, maxWidth, rows, stride);
 
@@ -100,7 +94,7 @@ export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
 }
 
 const host = {
-  core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, color: rustCoverColor, mask: fontMask,
+  core: loadedRustCore, requireCore: requireRustCore, ready: shelfWorkReady, mask: fontMask,
   scorer: createRustFontScorer, open: openFontScoreJob, slices: runInSlices, yieldToMain,
   noop: () => {},
   // One cover is searched at a time; the six candidate faces are requested once per page.
