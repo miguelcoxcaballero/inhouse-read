@@ -466,7 +466,7 @@ async fn draw_text(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid, 
             if !live(s, valid)? { return Ok(false); }
             let coordinates = get(page, "imageCoordinates");
             let coordinates = if truthy(&coordinates) { coordinates } else { Array::new().into() };
-            let mut rects: JsValue = crate::pdf_pictures::pdf_image_rects(&coordinates, &get(&source, "width"), &get(&source, "height"))?.into();
+            let mut rects = crate::pdf_pictures::pdf_image_rects(&coordinates, &get(&source, "width"), &get(&source, "height"))?;
             if blank(state)? || crate::pdf_theme::pdf_untracked_images(&operators, &ops)? || !truthy(&get(&rects, "length")) {
                 rects = Array::of1(&plain(&[("x0", 0.into()), ("y0", 0.into()), ("x1", get(&source, "width")), ("y1", get(&source, "height"))])?).into();
             }

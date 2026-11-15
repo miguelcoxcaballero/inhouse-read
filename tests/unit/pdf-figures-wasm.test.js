@@ -5,6 +5,7 @@ import './helpers/rust-ui-ready.js';
 import {expect,it} from 'vitest';
 import {readerUI} from '../../src/js/readers/rust-ui-required.js';
 import {placeFigures as reference} from './helpers/reference-pdf-figures.js';
+import {extractPDFText} from '../../src/js/readers/pdf-text.js';
 const pdfPlaceFigures=(rects,layout,source,viewport)=>readerUI().pdf_place_figures(rects,layout,source,viewport);
 const REFUSED='No se pudo calcular la página del PDF.';
 const source={width:600,height:800},viewport={width:600,height:800,transform:[1,0,0,-1,0,800]};
@@ -97,4 +98,50 @@ it('takes a viewport transform of its own and array-like rectangles',()=>{
   const expected=reference(rects,layout,source,view),actual=pdfPlaceFigures(boxes,layout,source,view);
   expect(actual).toEqual(expected);for(let i=0;i<actual.length;i++)expect(actual[i].rect).toBe(expected[i].rect);
  }
+});
+// A layout made by extractPDFText keeps, out of sight, the line records the text kernel wrote: placing reads those
+// instead of every line and item. The answer must be the one the lines themselves give (a copy of the layout has no record).
+it('places the pictures of extracted pages from the record the extractor keeps, as from the lines themselves',()=>{
+ let seed=9157,recorded=0;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+ for(let trial=0;trial<160;trial++){
+  const columns=1+trial%3,rows=4+trial%37,size=9+trial%5,items=[],quarter=trial%8===7;
+  for(let column=0;column<columns;column++)for(let row=0;row<rows;row++){
+   let x=40+column*190;const y=60+row*(size+7),pieces=1+Math.floor(random()*4);
+   for(let piece=0;piece<pieces;piece++){
+    const str=(piece?'':'c'+column+'r'+row+' ')+'palabra'.slice(0,2+Math.floor(random()*6))+(random()<.2?' 漢字 🦊':'')+' ',width=str.length*size*.5;
+    // One page in eight is turned a quarter: its items run down the sheet.
+    items.push(quarter?{str,width,height:size,transform:[0,size,-size,0,800-y,x],dir:'ltr',hasEOL:piece===pieces-1}
+     :{str,width,height:size,transform:[size,0,0,size,x,800-y],dir:'ltr',hasEOL:piece===pieces-1});
+    x+=width+2;
+   }
+  }
+  const layout=extractPDFText({items},viewport),boxes=Array.from({length:1+trial%9},()=>{const x0=Math.floor(random()*560),y0=Math.floor(random()*760);return{x0,y0,x1:x0+10+Math.floor(random()*120),y1:y0+10+Math.floor(random()*90)};});
+  expect(Object.keys(layout)).toEqual(['geometric','text','items','spans','lines','paragraphs']);
+  const bare={...layout};expect(bare.pictures).toBeUndefined();
+  if(layout.geometric){
+   recorded++;expect(layout.pictures.lines).toHaveLength(layout.lines.length*14);expect(Object.keys(layout.pictures)).toEqual(['lines','paths','dominant']);
+   // The columns of the record are the columns of the lines, and its item is the first of the longest.
+   const all=layout.lines.flatMap(line=>line.entries.map(entry=>entry.item));
+   expect(layout.pictures.dominant).toBe(all.find(item=>item.str.length===Math.max(...all.map(item=>item.str.length))));
+   layout.lines.forEach((line,i)=>{const record=layout.pictures.lines.subarray(i*14,i*14+14);
+    expect([record[1],record[2],record[3],record[6],record[10],layout.pictures.paths.slice(record[8],record[8]+record[9])]).toEqual([line.x0,line.x1,line.y,line.height,line.start,line.column]);});
+  }
+  for(const src of [source,{width:1200,height:1600}]){
+   const expected=reference(boxes,layout,src,viewport);
+   for(const each of [layout,bare]){
+    const actual=pdfPlaceFigures(boxes,each,src,viewport);expect(actual).toEqual(expected);
+    for(let i=0;i<actual.length;i++)expect(actual[i].rect).toBe(expected[i].rect);
+   }
+  }
+ }
+ expect(recorded).toBeGreaterThan(100);
+});
+it('reads the lines themselves when the record is not about them',()=>{
+ const items=Array.from({length:60},(_,i)=>({str:'Línea '+i+' de la página. ',width:150,height:12,transform:[12,0,0,12,40+i%2*260,760-Math.floor(i/2)*20],dir:'ltr',hasEOL:true}));
+ const layout=extractPDFText({items},viewport);expect(layout.geometric).toBe(true);
+ const boxes=rects.slice(0,6),whole=pdfPlaceFigures(boxes,layout,source,viewport);
+ expect(whole).toEqual(reference(boxes,layout,source,viewport));
+ layout.lines.splice(0,layout.lines.length>>1);
+ const cut=pdfPlaceFigures(boxes,layout,source,viewport);
+ expect(cut).toEqual(reference(boxes,layout,source,viewport));expect(cut).not.toEqual(whole);
 });

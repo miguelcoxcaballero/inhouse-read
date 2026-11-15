@@ -8,8 +8,9 @@
 //! tests/unit/helpers/reference-pdf-images.js and reference-pdf-figures.js. A page the kernels
 //! cannot answer is an error to report, never a state to work around with a second implementation.
 use wasm_bindgen::{prelude::*, JsCast};
-use js_sys::{Array, Float32Array, Float64Array, Map, Math, Object};
-use crate::host::{absent, finite, get, get_at, num, read, set, truthy};
+use std::fmt::Write;
+use js_sys::{Array, Float64Array, Map, Math, Object};
+use crate::host::{absent, flag, get, get_at, num, number, read, set, truthy};
 
 /// Pages assembled from tiles can draw many thousands of pictures.
 const MAX_IMAGES: f64 = 1_000_000.0;
@@ -130,11 +131,10 @@ fn place_figures(lines: &[f64], columns: usize, rects: &[f64], params: &[f64; 5]
 
 /// The corner coordinates PDF.js recorded, as numbers; a value that is not a number is NaN, so its picture is skipped.
 fn corners(coordinates: &JsValue, size: u32) -> Vec<f64> {
-    if let Some(list) = coordinates.dyn_ref::<Float32Array>() {
-        if list.length() >= size { return list.subarray(0, size).to_vec().into_iter().map(f64::from).collect(); }
-    }
-    if let Some(list) = coordinates.dyn_ref::<Float64Array>() {
-        if list.length() >= size { return list.subarray(0, size).to_vec(); }
+    // PDF.js records them in a typed array (16- or 32-bit floats): its numbers are copied in one visit.
+    if js_sys::ArrayBuffer::is_view(coordinates) {
+        let mut list = Float64Array::new(coordinates).to_vec();
+        if list.len() >= size as usize { list.truncate(size as usize); return list; }
     }
     (0..size).map(|index| get_at(coordinates, index).as_f64().unwrap_or(f64::NAN)).collect()
 }
@@ -143,21 +143,23 @@ fn corners(coordinates: &JsValue, size: u32) -> Vec<f64> {
 /// `width` x `height` rendering. An unusable page size has no visible regions; a page with more
 /// pictures than the kernel takes is refused.
 #[wasm_bindgen]
-pub fn pdf_image_rects(coordinates: &JsValue, width: &JsValue, height: &JsValue) -> Result<Array, JsValue> {
-    let rects = Array::new();
-    if !finite(width) || !finite(height) { return Ok(rects); }
-    let (width, height) = (num(width), num(height));
-    if width <= 0.0 || height <= 0.0 { return Ok(rects); }
-    let count = (num(&read(coordinates, "length")?) / 6.0).floor();
+pub fn pdf_image_rects(coordinates: &JsValue, width: &JsValue, height: &JsValue) -> Result<JsValue, JsValue> {
+    // `Number.isFinite` of the original: a size that is not a number is no size.
+    let (Some(width), Some(height)) = (width.as_f64(), height.as_f64()) else { return Ok(Array::new().into()) };
+    if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) { return Ok(Array::new().into()); }
+    if absent(coordinates) { read(coordinates, "length")?; }
+    let count = (number(coordinates, "length") / 6.0).floor();
     if count > MAX_IMAGES { return Err(refused()); }
-    if count.is_nan() || count <= 0.0 { return Ok(rects); }
+    if count.is_nan() || count <= 0.0 { return Ok(Array::new().into()); }
+    // The bounds are finite numbers, which the engine reads back exactly from their shortest decimal form:
+    // the list and its objects are made in one visit, as the literals of the original made them.
+    let mut list = String::from("[");
     for rect in image_rects(&corners(coordinates, count as u32 * 6), width, height) {
-        let object = Object::new();
-        set(&object, "x0", &rect.x0.into())?; set(&object, "y0", &rect.y0.into())?;
-        set(&object, "x1", &rect.x1.into())?; set(&object, "y1", &rect.y1.into())?;
-        rects.push(&object);
+        if list.len() > 1 { list.push(','); }
+        let _ = write!(list, r#"{{"x0":{},"y0":{},"x1":{},"y1":{}}}"#, rect.x0, rect.y0, rect.x1, rect.y1);
     }
-    Ok(rects)
+    list.push(']');
+    js_sys::JSON::parse(&list)
 }
 
 /// The text item with the most characters (the first of them): its direction is the page's.
@@ -177,41 +179,85 @@ fn dominant(lines: &JsValue, count: u32) -> Option<JsValue> {
     found.map(|(_, item)| item)
 }
 
-/// Illustrations with the UTF-16 offset of the text they precede, in reading order: an array of
-/// `{rect, offset}` whose `rect` is the caller's own object.
-pub(crate) fn place(rects: &JsValue, layout: &JsValue, source: &JsValue, viewport: &JsValue) -> Result<Array, JsValue> {
-    let images = num(&read(rects, "length")?);
-    // A layout without geometry (the plain stream) has no lines: every figure goes after all the text.
-    let lines = get(layout, "lines");
-    let geometric = truthy(&get(layout, "geometric")) && truthy(&get(&lines, "length"));
-    let count = if geometric { num(&get(&lines, "length")) } else { 0.0 };
-    if !truthy(layout) || count > MAX_LINES || images > MAX_LINES { return Err(refused()); }
-    let figures = Array::new();
-    if images.is_nan() || images == 0.0 { return Ok(figures); }
-    if images < 0.0 || images.fract() != 0.0 || count.is_nan() || count < 0.0 || count.fract() != 0.0 { return Err(refused()); }
-    let (count, images) = (count as u32, images as u32);
-    let size = strict(&get(layout, "text"), "length");
-    let mut params = [1.0, 0.0, 1.0, 1.0, size];
-    if geometric {
-        let item = dominant(&lines, count).ok_or_else(refused)?;
-        let given = get(viewport, "transform");
-        let transform: [f64; 4] = if truthy(&given) { [0, 1, 2, 3].map(|index| num(&get_at(&given, index))) } else { [1.0, 0.0, 0.0, -1.0] };
-        let t = get(&item, "transform");
-        if absent(&t) { return Err(refused()); }
-        let (t0, t1) = (num(&get_at(&t, 0)), num(&get_at(&t, 1)));
-        // The engine's own trigonometry: the frozen original used it.
-        let angle = Math::atan2(transform[1] * t0 + transform[3] * t1, transform[0] * t0 + transform[2] * t1);
-        params = [Math::cos(angle), Math::sin(angle), num(&get(viewport, "width")) / num(&get(source, "width")), num(&get(viewport, "height")) / num(&get(source, "height")), size];
+/// The lines of a layout as the kernel takes them, their number of columns and the dominant text item.
+struct Lines { packed: Vec<f64>, columns: usize, item: JsValue }
+
+/// The lines of a layout made by `extractPDFText`, which keeps for this the line records the text kernel
+/// wrote (fourteen numbers each: x0, x1, y, height, start and the span of the column's path among them), the
+/// paths and the dominant item: nothing is read line by line. `None` when the layout carries no such
+/// record, or one that is not about these lines.
+fn recorded(layout: &JsValue, count: u32) -> Option<Lines> {
+    const RECORD: usize = 14;
+    let facts = get(layout, "pictures");
+    let records = get(&facts, "lines").dyn_into::<Float64Array>().ok()?.to_vec();
+    let paths = get(&facts, "paths").as_string()?;
+    let item = get(&facts, "dominant");
+    let count = count as usize;
+    if records.len() != count * RECORD || !paths.is_ascii() || !item.is_object() { return None; }
+    let paths = paths.as_bytes();
+    let mut spans = Vec::with_capacity(count);
+    for record in records.chunks_exact(RECORD) {
+        let (at, length) = (record[8], record[9]);
+        if !(at >= 0.0 && length >= 0.0 && at + length <= paths.len() as f64) { return None; }
+        spans.push((at as usize, (at + length) as usize));
     }
+    // Lines of one path are one column; the columns are numbered in the order of their first lines, as the
+    // Map of the original numbered them. Sorting the lines by path brings each column together, first line first.
+    let path = |line: u32| { let (from, to) = spans[line as usize]; &paths[from..to] };
+    let mut order: Vec<u32> = (0..count as u32).collect();
+    sort(&mut order, &|b, a| path(b) < path(a));
+    let (mut ids, mut first, mut columns) = (vec![-1.0; count], 0_u32, 0_usize);
+    for (rank, &line) in order.iter().enumerate() { if rank == 0 || path(line) != path(first) { first = line; } ids[line as usize] = -1.0 - f64::from(first); }
+    for line in 0..count {
+        let leader = (-1.0 - ids[line]) as usize;
+        ids[line] = if leader == line { columns += 1; (columns - 1) as f64 } else { ids[leader] };
+    }
+    let mut packed = Vec::with_capacity(count * LINE);
+    for (record, id) in records.chunks_exact(RECORD).zip(ids) { packed.extend([record[1], record[2], record[3], record[6], record[10], id]); }
+    Some(Lines { packed, columns, item })
+}
+
+/// The lines of any other layout, read one by one as the original read them.
+fn read_lines(lines: &JsValue, count: u32) -> Option<Lines> {
+    let item = dominant(lines, count)?;
     // A column is known by its path; the columns are numbered as a Map meets them, which is how the original told them apart.
     let columns = Map::new();
     let mut packed = Vec::with_capacity(count as usize * LINE);
     for index in 0..count {
-        let line = get_at(&lines, index);
+        let line = get_at(lines, index);
         let key = get(&line, "column");
         let known = columns.get(&key);
         let column = match known.as_f64() { Some(id) => id, None => { let id = f64::from(columns.size()); columns.set(&key, &id.into()); id } };
         packed.extend([strict(&line, "x0"), strict(&line, "x1"), strict(&line, "y"), strict(&line, "height"), strict(&line, "start"), column]);
+    }
+    Some(Lines { packed, columns: columns.size() as usize, item })
+}
+
+/// Illustrations with the UTF-16 offset of the text they precede, in reading order; each rectangle is the caller's own object.
+pub(crate) fn place(rects: &JsValue, layout: &JsValue, source: &JsValue, viewport: &JsValue) -> Result<Vec<(JsValue, f64)>, JsValue> {
+    if absent(rects) { read(rects, "length")?; }
+    let images = number(rects, "length");
+    // A layout without geometry (the plain stream) has no lines: every figure goes after all the text.
+    let lines = get(layout, "lines");
+    let geometric = flag(layout, "geometric") && flag(&lines, "length");
+    let count = if geometric { number(&lines, "length") } else { 0.0 };
+    if !truthy(layout) || count > MAX_LINES || images > MAX_LINES { return Err(refused()); }
+    if images.is_nan() || images == 0.0 { return Ok(Vec::new()); }
+    if images < 0.0 || images.fract() != 0.0 || count.is_nan() || count < 0.0 || count.fract() != 0.0 { return Err(refused()); }
+    let (count, images) = (count as u32, images as u32);
+    let size = strict(&get(layout, "text"), "length");
+    let mut params = [1.0, 0.0, 1.0, 1.0, size];
+    let mut page = Lines { packed: Vec::new(), columns: 0, item: JsValue::UNDEFINED };
+    if geometric {
+        page = match recorded(layout, count) { Some(page) => page, None => read_lines(&lines, count).ok_or_else(refused)? };
+        let given = get(viewport, "transform");
+        let transform: [f64; 4] = if truthy(&given) { [0, 1, 2, 3].map(|index| num(&get_at(&given, index))) } else { [1.0, 0.0, 0.0, -1.0] };
+        let t = get(&page.item, "transform");
+        if absent(&t) { return Err(refused()); }
+        let (t0, t1) = (num(&get_at(&t, 0)), num(&get_at(&t, 1)));
+        // The engine's own trigonometry: the frozen original used it.
+        let angle = Math::atan2(transform[1] * t0 + transform[3] * t1, transform[0] * t0 + transform[2] * t1);
+        params = [Math::cos(angle), Math::sin(angle), number(viewport, "width") / number(source, "width"), number(viewport, "height") / number(source, "height"), size];
     }
     let mut boxes = Vec::with_capacity(images as usize * 4);
     let mut owned = Vec::with_capacity(images as usize);
@@ -220,16 +266,19 @@ pub(crate) fn place(rects: &JsValue, layout: &JsValue, source: &JsValue, viewpor
         boxes.extend([strict(&rect, "x0"), strict(&rect, "y0"), strict(&rect, "x1"), strict(&rect, "y1")]);
         owned.push(rect);
     }
-    for (index, offset) in place_figures(&packed, columns.size() as usize, &boxes, &params).ok_or_else(refused)? {
+    let placed = place_figures(&page.packed, page.columns, &boxes, &params).ok_or_else(refused)?;
+    Ok(placed.into_iter().map(|(index, offset)| (owned[index as usize].clone(), offset)).collect())
+}
+
+/// The same, as the array of `{rect, offset}` the original answered with.
+#[wasm_bindgen]
+pub fn pdf_place_figures(rects: &JsValue, layout: &JsValue, source: &JsValue, viewport: &JsValue) -> Result<Array, JsValue> {
+    let figures = Array::new();
+    for (rect, offset) in place(rects, layout, source, viewport)? {
         let figure = Object::new();
-        set(&figure, "rect", &owned[index as usize])?;
+        set(&figure, "rect", &rect)?;
         set(&figure, "offset", &offset.into())?;
         figures.push(&figure);
     }
     Ok(figures)
-}
-
-#[wasm_bindgen]
-pub fn pdf_place_figures(rects: &JsValue, layout: &JsValue, source: &JsValue, viewport: &JsValue) -> Result<Array, JsValue> {
-    place(rects, layout, source, viewport)
 }
