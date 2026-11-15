@@ -19,10 +19,12 @@ impl RustScene{
   self.layout=[stage_left,stage_top,clip_left,clip_top,clip_right,clip_bottom,inner_width,inner_height,visual_bottom,scroll];
   scroll
  }
- /// `trashFrame` in the frame's layout.
+ /// `trashFrame` in the frame's layout, for the rectangle given or, given none, the one of the
+ /// box the host last took (`binBox`).
  #[wasm_bindgen(js_name=trashPlaced)]
  pub fn trash_placed(&self,rect:&[f64],out:&mut [f64]){
   let layout=self.layout;
+  let rect=if rect.is_empty(){&self.bin_rect[..]}else{rect};
   self.trash_frame(rect,layout[9],layout[0],layout[1],&layout[2..6],layout[6],layout[7],layout[8],out);
  }
  /// `catalogFrame` in the frame's layout. The face's text is built and handed over only when one

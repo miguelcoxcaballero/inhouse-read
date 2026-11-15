@@ -173,7 +173,10 @@ it('starts a drop into the bin with the same record',()=>{
   const trash={userData:{openness}},resolve=()=>{};
   const describe=record=>Object.entries(record).map(([key,value])=>[key,value?.isVector3||value?.isQuaternion?bits(value.toArray()):typeof value==='function'?value===resolve:bits([value])[0]]);
   const expected=reference.trashDropRecord(resolve,now,reduced,duration,model,trash),native=rust.scene_trash_drop_record(THREE,resolve,now,reduced,duration,model,trash);
-  expect(describe(native)).toEqual(describe(expected));
+  // The record also holds the flight's twelve numbers for its one native call per frame (rust-ui/src/scene_flight.rs).
+  const {flight,...record}=native;
+  expect(describe(record)).toEqual(describe(expected));
+  expect(flight instanceof Float64Array&&bits(flight)).toEqual(bits([...expected.start.toArray(),expected.startScale,...expected.startQuaternion.toArray(),...expected.bookQuaternion.toArray()]));
   expect(native.start).not.toBe(model.position);expect(native.startQuaternion).not.toBe(model.quaternion);
   expect(native.start.isVector3&&native.endQuaternion.isQuaternion&&native.bookQuaternion.isQuaternion).toBe(true);
  }

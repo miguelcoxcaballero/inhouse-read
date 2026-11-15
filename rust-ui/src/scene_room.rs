@@ -260,9 +260,15 @@ pub fn scene_trash_drop_record(three:&JsValue,resolve:&JsValue,now:f64,reduced:b
  let book=make(three,"Quaternion",&[])?;
  let book=method(&book,"setFromEuler",&[&make(three,"Euler",&[&n(-0.22),&n(0.18),&n(-0.46)])?])?;
  let openness=or_zero(num(&read(&read(trash,"userData")?,"openness")?));
+ // The same numbers for the flight's one call per frame (`binFlight`, scene_flight.rs).
+ let flight=js_sys::Float64Array::new_with_length(12);
+ for (at,(object,key)) in [(&start,"x"),(&start,"y"),(&start,"z"),(model,""),(&turn,"x"),(&turn,"y"),(&turn,"z"),(&turn,"w"),
+  (&book,"x"),(&book,"y"),(&book,"z"),(&book,"w")].into_iter().enumerate(){
+  flight.set_index(at as u32,num(&if key.is_empty(){scale.clone()}else{read(object,key)?}));
+ }
  params(&[("resolve",resolve.clone()),("settled",JsValue::FALSE),("complete",JsValue::FALSE),("started",n(now)),("lastFrame",n(now)),
   ("elapsed",n(0.0)),("duration",n(duration)),("start",start),("startScale",scale),("startQuaternion",turn),("endQuaternion",end),
-  ("bookQuaternion",book),("initialOpenness",n(openness))])
+  ("bookQuaternion",book),("initialOpenness",n(openness)),("flight",flight.into())])
 }
 
 /// A returning book's insertion record: its dock `slot`, started now, its duration (none under reduced

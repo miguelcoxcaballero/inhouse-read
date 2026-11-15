@@ -19,7 +19,7 @@ import { createShelfLamp } from './shelf-lamps.js';
 import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, LAMP_KELVIN_MS, lampTint } from './lamp-kelvin.js';
 import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
 import { createShelfLampLighting } from './shelf-lamp-lighting.js';
-import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
+import { createShelfTrash } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms, prelinkPrograms, prepareInsertionProgramState } from './gpu-programs.js';
@@ -74,7 +74,6 @@ function clearPlantDiagnostics(node) { needRustShelf().scene_clear_plant_diagnos
 // attribute write queues mutation records and style invalidation.
 function setData(element, key, value) { if (element.dataset[key] !== value) element.dataset[key] = value; }
 const SHELF_DIMENSIONS = Object.fromEntries(Object.entries(SHELF_SPECS).map(([type, spec]) => [type, JSON.stringify(spec.dimensions)]));
-const IDENTITY = new THREE.Matrix4();
 const NO_NUMBERS = new Float64Array(0);
 // The inline geometry last written to a projected node: unchanged numbers are not restyled.
 // A plant or a lamp, not a book.
@@ -630,20 +629,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
   const canvasWritten = { width:NaN, height:NaN };
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  // The eight corners of a box under a matrix are projected in Rust. Pass `out` to refresh a retained
-  // rectangle in place instead of allocating one.
-  const cornerBox = new Float64Array(6), cornerRect = new Float64Array(7);
-  const corners = (box, transform, out = {}) => {
-    if (box.isBox3) {
-      const { min, max } = box;
-      cornerBox[0] = min.x; cornerBox[1] = min.y; cornerBox[2] = min.z; cornerBox[3] = max.x; cornerBox[4] = max.y; cornerBox[5] = max.z;
-      box = cornerBox;
-    }
-    rust.scene_corners(box, transform.elements, cornerRect);
-    out.left = cornerRect[0]; out.right = cornerRect[1]; out.top = cornerRect[2]; out.bottom = cornerRect[3];
-    out.width = cornerRect[4]; out.height = cornerRect[5]; out.closest = cornerRect[6];
-    return out;
-  };
   bindEntries();
   // The semantic button's centre lies on one solid mesh of its model. Look that
   // mesh up by name once per model rather than walking the tree every frame.
@@ -863,8 +848,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneView.dropUnshown();
   }
 
-  const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
-  const trashRect0 = {};
+  const dropStep = new Float64Array(5), flight = new Float64Array(8), trashOut = new Float64Array(6);
   let viewTexts = null;
   function updateTrash(now, finishedDrops) {
     if (!trash || !trashNode) { sceneView.trashUnshown(); return false; }
@@ -883,26 +867,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       trash.userData.setState({ openness:dropStep[3], bounce:dropStep[4] });
       trash.updateMatrixWorld(true);
       if (dropEntry.model && !drop.complete) {
-        const worldScale = trash.getWorldScale(new THREE.Vector3()).x;
-        const endScale = rust.scene_trash_end_scale(worldScale, trash.userData.radius, dropEntry.width, dropEntry.height);
-        const motion = sampleTrashDrop(drop.start, trash.userData.getMouth(), t,
-          { height:dropEntry.height, scale:drop.startScale, endScale });
-        dropEntry.model.position.copy(motion.position);
-        dropEntry.model.scale.setScalar(motion.scale);
-        trash.getWorldQuaternion(drop.endQuaternion).multiply(drop.bookQuaternion);
-        dropEntry.model.quaternion.copy(drop.startQuaternion).slerp(drop.endQuaternion, motion.turn);
-        dropEntry.model.updateMatrixWorld(true);
-        // Its slot box, copied out of the arena (the call may move the memory under a view).
-        entryFrame.refresh();
-        const box = dropEntry.row * ENTRY_STATE + 50, flightBounds = corners(entryFrame.state.slice(box, box + 6), dropEntry.model.matrixWorld);
-        rust.scene_trash_overflow(flightBounds.right, sceneWidth, t, overflow);
-        // The pointer may leave a broad book partly outside the canvas at
-        // release. Bend its first few frames inward instead of snapping its
-        // starting pose or clipping the newly exposed cover for the flight.
-        if (overflow[0]) {
-          dropEntry.model.position.x -= overflow[1];
-          dropEntry.model.updateMatrixWorld(true);
-        }
+        // Where the flight is, its scale and its turn, in one call (rust-ui/src/scene_flight.rs). The pointer may
+        // leave a broad book partly outside the canvas at release: its first few frames bend inward
+        // instead of snapping its starting pose or clipping the newly exposed cover for the flight.
+        const mouth = trash.userData.getMouth(), model = dropEntry.model;
+        entryFrame.lamp.binFlight(dropEntry.row, drop.flight, trash.matrixWorld.elements, mouth.x, mouth.y, mouth.z, trash.userData.radius, t, sceneWidth, flight);
+        model.position.set(flight[0], flight[1], flight[2]); model.scale.setScalar(flight[3]);
+        model.quaternion.set(flight[4], flight[5], flight[6], flight[7]);
+        model.updateMatrixWorld(true);
       }
       sceneView.dropShown(t.toFixed(4));
       showData('trashingBookId', String(dropEntry.book?.id ?? ''));
@@ -922,13 +894,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // and its box on screen: they are functions of exactly those numbers.
     if (drop || begun & 4 || binStale) {
       if (!drop) { binStale = false; trash.userData.setState({ openness:sceneView.trashOpenness }); trash.updateMatrixWorld(true); }
-      const trashRect = corners(trashBox.setFromObject(trash), IDENTITY, trashRect0);
-      trashPacked[0] = trashRect.left; trashPacked[1] = trashRect.right; trashPacked[2] = trashRect.top; trashPacked[3] = trashRect.bottom;
-      trashPacked[4] = trashRect.width; trashPacked[5] = trashRect.height;
+      const { min, max } = trashBox.setFromObject(trash);
+      sceneView.binBox(min.x, min.y, min.z, max.x, max.y, max.z);
     }
     // In the frame's layout, read with its other geometry (viewport()): reading the visual viewport after
     // the entries restyled their buttons would force a second layout of the page in every frame.
-    sceneView.trashPlaced(trashPacked, trashOut);
+    sceneView.trashPlaced(NO_NUMBERS, trashOut);
     const visible = trashOut[0] === 1;
     trashWritten = placeHit(trashNode, trashWritten, visible, trashOut[2], trashOut[3], trashOut[4], trashOut[5], 50, true);
     // Its diagnostics, from the bin and the room the view holds: formatted and written to the node and the canvas only

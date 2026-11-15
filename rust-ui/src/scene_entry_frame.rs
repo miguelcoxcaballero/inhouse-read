@@ -42,6 +42,7 @@ const STATE:usize=117;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TO
 #[path="scene_lamp.rs"] mod lamp;
 #[path="scene_rows.rs"] mod rows;
 #[path="scene_rects.rs"] mod rects;
+#[path="scene_flight.rs"] mod flight;
 const STALE_BOX:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
