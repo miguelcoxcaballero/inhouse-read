@@ -164,6 +164,7 @@ const roomCoordinationHost = {
   markBookChanged: (account,id,fields) => libraryBackup.markBookChanged(account,id,fields),
   later,
   backupFailure: error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`),
+  warnRoom: error => console.warn('Colocación pendiente:', error.message),
   state:app
 }
 function scheduleLibraryBackup() {
@@ -298,9 +299,12 @@ const shelfRefreshHost = {
   progressWrites, preparedBooks, coverUpgrades, cloudSync, preparedPages, reader,
   get readingExperience() { return readingExperience },
   scheduleLibraryBackup, releasePageGate, onLocalBookChange:localRoomBookChanged,
+  ignoreRemovalPreparationError: () => {},
+  warnRemovalPreparation: error => console.warn('No se pudo liberar la preparación del libro retirado:', error),
   createShelf: createShelfForRecords,
   recentFirst, retryRoomRefresh, get deployCheck() { return deployCheck },
   later,
+  warnPreparation: error => console.warn('Preparación del grosor:', error),
   state:app
 }
 
@@ -345,6 +349,7 @@ const fileContentHost = {
   supersedePreparation, showScreen, storeBookFile, normalizeBookTitle, normalizeBookAuthor,
   scheduleLibraryBackup, refreshShelf, extractCoverInBackground, onReaderRelocate, setReaderChromeHidden,
   alert: message => alert(message), isUnsupportedFormatError: error => error instanceof UnsupportedFormatError,
+  ignoreFileOpenError: () => {}, warnFileGeometry: error => console.warn('No se pudo medir el libro:', error),
   later,
   state:app
 }
@@ -377,6 +382,8 @@ const readerPreparationHost = {
   needsDriveDownload, hasDriveSession, openFile, markTiming, pageKeyMismatch, idleSlice,
   getComputedStyle: element => getComputedStyle(element),
   createStageGate: settled => createStageGate(settled, { idle:idleSlice }),
+  ignorePreparationError: () => {},
+  warnPagePreparation: error => console.warn('No se pudo preparar la página guardada de antemano:', error),
   later
 }
 
@@ -460,6 +467,7 @@ function extractCoverInBackground(record) {
 }
 const coverBackgroundHost = {
   reader, coverUpgrades, library, refreshShelf, scheduleLibraryBackup, global:globalThis, console,
+  now: () => Date.now(),
   later,
   state:app
 }
@@ -467,7 +475,11 @@ const coverBackgroundHost = {
 function onReaderRelocate({ fraction, cfi, index, textOffset }) {
   return bookDataModule().app_reader_relocate(readerRuntimeHost, { fraction, cfi, index, textOffset })
 }
-const readerRuntimeHost = { els, readingExperience, reader, progressWrites, state:app }
+const readerRuntimeHost = {
+  els, readingExperience, reader, progressWrites,
+  warnReaderProgress: error => console.warn('No se pudo guardar el progreso:', error),
+  state:app
+}
 
 // JS owns callback lifetimes; the close/return sequence and cleanup run in Rust.
 const readerCloseHost = {
@@ -476,7 +488,9 @@ const readerCloseHost = {
   document, console, matchMedia: query => matchMedia(query), getComputedStyle: node => getComputedStyle(node),
   persistablePosition, readerReturnCanvas, supersedePreparation, hasDriveSession,
   isBookLengthReady, showScreen, refreshShelf, setDriveSyncStatus,
+  ignoreCloseError: () => {},
   later,
+  warnPendingShelf: error => console.warn('Estantería pendiente:', error),
   state:app
 }
 els.readerBack.addEventListener('click', () => bookDataModule().app_close_reader(readerCloseHost))

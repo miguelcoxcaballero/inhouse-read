@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.336 — Vuelta atrás a la 1.7.334
+
+La 1.7.335 rompía dos cosas que no había probado antes de publicarla: una sala
+sincronizada podía no mostrar los libros en el segundo dispositivo, y volver
+del lector a la estantería en Android podía quedarse a medias. Esta versión
+es el código de la 1.7.334, sin nada de la 1.7.335, mientras se localiza la
+causa.
+
 ## 1.7.335 — Vuelve la regla de macetas y lámparas, con el toque arreglado
 
 Vuelve la regla de la 1.7.333: un libro que nunca has colocado a mano no cae

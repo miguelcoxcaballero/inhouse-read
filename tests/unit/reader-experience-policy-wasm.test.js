@@ -8,8 +8,14 @@ import {displayBookTitle} from '../../src/js/book-title.js'
 import {readerIcon} from './helpers/live-reader-interface.js'
 
 const Reference=referenceExperiencePolicy({normalizeReadingPreferences,clonePlace,isBookmarked,displayBookTitle,rateLabel,readerIcon,readerUI:()=>ui})
-// The callbacks the experience hands out are bound exports of the module itself; only the names and the rate label are JavaScript.
-const kit={title:displayBookTitle,rate:rateLabel,icon:readerIcon}
+const kit={title:displayBookTitle,rate:rateLabel,icon:readerIcon,
+ metadata:(host,value,record,epoch)=>Promise.resolve(value).then(value=>ui.reader_experience_metadata(host,record,epoch,value)).catch(()=>{}),
+ current:(host,book,generation)=>()=>ui.reader_experience_current(host,book,generation),
+ returnAction:(host,place)=>current=>host.actions.returnToReading(place,current),
+ labels:(host,places)=>places.map(place=>ui.reader_experience_place_label(host,place)),
+ select:(host,name)=>(index,place)=>ui.reader_experience_select_place(host,name,index,place),
+ remove:(host,name,places)=>async index=>ui.reader_experience_remove_place(host,name,places,index),
+ toc:host=>href=>host.jump(null,href),revoker:url=>()=>URL.revokeObjectURL(url)}
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject}}
 const flush=async()=>{for(let n=0;n<8;n++)await Promise.resolve()}
 function setup(native=true){
@@ -26,16 +32,16 @@ function setup(native=true){
  host.location=clonePlace(host.reader.location)
  if(native){Object.assign(host,{
   resetAppearance:()=>ui.reader_experience_reset_appearance(host,normalizeReadingPreferences),
-  open:record=>ui.reader_experience_open(host,record,ui),relocate:()=>ui.reader_experience_relocate(host,clonePlace),
+  open:record=>ui.reader_experience_open(host,record,kit),relocate:()=>ui.reader_experience_relocate(host,clonePlace),
   readingMetrics:()=>ui.reader_experience_metrics(host),updateReadingMetrics:()=>ui.reader_experience_update_metrics(host),
   label:place=>ui.reader_experience_label(host,place),showTab:name=>ui.reader_experience_show_tab(host,name),showPlaceTab:name=>ui.reader_experience_place_tab(host,name),
   updateMiniPlayer:(state=host.voice?.state,message='')=>ui.reader_experience_mini_player(host,state,message,kit),
-  updateBookmarkButton:()=>ui.reader_experience_bookmark(host,isBookmarked),queueNavigation:action=>ui.reader_experience_queue(host,action,ui),
-  returnToReading:(index=0)=>ui.reader_experience_return(host,index,ui),formatSize:(bytes=0)=>ui.reader_experience_size(bytes),
-  renderPlaces:()=>ui.reader_experience_places(host,ui),renderToc:()=>ui.reader_experience_toc(host,ui),
+  updateBookmarkButton:()=>ui.reader_experience_bookmark(host,isBookmarked),queueNavigation:action=>ui.reader_experience_queue(host,action,kit),
+  returnToReading:(index=0)=>ui.reader_experience_return(host,index,kit),formatSize:(bytes=0)=>ui.reader_experience_size(bytes),
+  renderPlaces:()=>ui.reader_experience_places(host,kit),renderToc:()=>ui.reader_experience_toc(host,kit),
   step:direction=>host.queueNavigation(()=>host.voice.continueFromPage(()=>ui.reader_experience_page_step(host,direction))),
   updateReturnButton:()=>ui.reader_experience_return_button(host),
-  rotateReading:async()=>ui.reader_experience_rotate(host),shareBook:async()=>ui.reader_experience_share(host,kit,ui),
+  rotateReading:async()=>ui.reader_experience_rotate(host),shareBook:async()=>ui.reader_experience_share(host,kit),
  })}
  return {host,events}
 }

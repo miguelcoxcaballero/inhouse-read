@@ -1,5 +1,3 @@
-// Frozen copy of src/js/font-glyph-wasm.js, the bridge to the numeric core's glyph and plane kernels that
-// production used until they were compiled into the shelf module (rust-ui/src/font_planes.rs).
 // undefined requests the host fallback; null is a valid empty/rejected glyph.
 export function rustGlyphMask(core,raw,width,rows,stride=width){
  if(typeof core?.font_glyph_mask!=='function'||!core.memory||typeof core.alloc_f64!=='function'||typeof core.free_f64!=='function'

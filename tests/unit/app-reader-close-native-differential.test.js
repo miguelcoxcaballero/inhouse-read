@@ -1,4 +1,4 @@
-import {it,expect,vi} from 'vitest';
+import {it,expect} from 'vitest';
 import {closeReader as reference} from './helpers/reference-app-reader-close.js';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
 const scope=(env,fn)=>new Function('env',`with(env){return (${fn.toString()})}`)(env);
@@ -39,8 +39,6 @@ function fixture(native,options={},module=rustShelf){
  if(options.noOriginMethod)delete state.shelf.hasReaderOrigin;
  if(options.noReturnMethod)delete state.shelf.returnToShelf;
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:v=>state[key]=v,configurable:true});
-// The module reports to the page's console itself (rust-ui/src/app_report.rs): it is heard through this fixture's.
- vi.spyOn(console,'warn').mockImplementation((...args)=>env.console.warn(...args));
  const host={...env,state,ignoreCloseError:()=>{},
   later:(name,take,...head)=>{if(name==='app_return_page_handoff')flight=head[1];return(...tail)=>module[name](...head,...tail.slice(0,take))},
   warnPendingShelf:error=>env.console.warn('Estantería pendiente:',error)};

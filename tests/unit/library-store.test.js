@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
 import { Blob as NativeBlob } from 'node:buffer'
-import { LibraryStore, idForSource, sameBookRecords } from './helpers/library-store-doorways.js'
+import { LibraryStore, idForSource, sameBookRecords } from '../../src/js/library-store.js'
 
 describe('idForSource', () => {
   it('genera un id estable para archivos locales basado en nombre+tamaño', () => {

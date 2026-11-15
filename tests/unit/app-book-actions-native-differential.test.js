@@ -22,8 +22,6 @@ function fixture(native,options={}){
   renderBookshelf(_root,_books,settings){return settings},openBookRecord(){},prepareBookOpen(){},dismissPreparedPage(){},handleCoverAction(){},pickLocalFile(){},bookCloudState(){},hasDriveSession(){},normalizeShelfPosition(){},
  };
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:value=>{state[key]=value},configurable:true});
-// The module reports to the page's console itself (rust-ui/src/app_report.rs): it is heard through this fixture's.
- vi.spyOn(console,'warn').mockImplementation((...args)=>env.console.warn(...args));
  const host={...env,state,ignoreRemovalPreparationError:()=>{},warnRemovalPreparation:error=>env.console.warn('No se pudo liberar la preparación del libro retirado:',error),later:(name,take,...head)=>(...tail)=>rustShelf[name](...head,...tail.slice(0,take))};
  env.bookDataModule=bookDataModule;env.shelfRefreshHost=host;
  env.persistBookState=native?(id,fields)=>rustShelf.app_persist_book_state(host,id,fields):scoped(env,reference.persistBookState);
