@@ -193,6 +193,12 @@ impl RustScene{
  /// Whether a turn between the views is under way.
  #[wasm_bindgen(getter)]pub fn turning(&self)->bool{self.transition.is_some()}
  #[wasm_bindgen(getter)]pub fn reordering(&self)->bool{self.reorder_started.is_some()}
+ /// What the view is doing, in one read: 1 turning, 2 a reorder eases, 4 the bin's lid eases, 8 the
+ /// fingers move the inspection, 16 a drop guide is shown (the five getters of those names).
+ #[wasm_bindgen(getter)]pub fn busy(&self)->u32{
+  u32::from(self.transition.is_some())|u32::from(self.reorder_started.is_some())<<1|u32::from(self.trash_transition.is_some())<<2|
+   u32::from(self.moving)<<3|u32::from(self.drop.is_some())<<4
+ }
  /// The bar is settled at the isometric endpoint: the inspection gestures may start.
  #[wasm_bindgen(js_name=canInspect)]
  pub fn can_inspect(&self)->bool{self.isometric&&self.transition.is_none()&&self.progress==1.0}

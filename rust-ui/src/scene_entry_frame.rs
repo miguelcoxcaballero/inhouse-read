@@ -34,9 +34,10 @@ use super::projection::RustSceneProjectionFrame;
 /// - 85-87 in, whenever it may have changed: what the host holds now (`scene_census.rs`), its
 ///   model's texture resolution and its model's id; 88 the room was last painted without this
 ///   away book; 89-90 the overview flag and the resolution the entry was last told to be drawn at.
-const STATE:usize=91;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TOLD:usize=89;
+const STATE:usize=117;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TOLD:usize=89;
 #[path="scene_census.rs"] mod census;
 #[path="scene_exclusions.rs"] mod exclusions;
+#[path="scene_lamp.rs"] mod lamp;
 const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
@@ -65,14 +66,16 @@ pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit
  /// whether a quality map was loading and the quality hold's deadline.
  counted:Vec<f64>,count_dirty:bool,census:Box<[f64;9]>,resolutions:String,loading:bool,paint_deadline:f64,
  /// The canvas' diagnostics: its data attributes, the host's numbers and what was written last.
- dataset:Option<js_sys::Object>,shown_keys:Vec<JsValue>,shown:Box<[f64;7]>,shown_last:[u64;22],shown_text:String}
+ dataset:Option<js_sys::Object>,shown_keys:Vec<JsValue>,shown:Box<[f64;7]>,shown_last:[u64;22],shown_text:String,
+ /// The lamps' temperatures and tints (`scene_lamp.rs`).
+ tints:Vec<f64>,tint_ms:f64}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
  pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16]),
   rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
   counted:Vec::new(),count_dirty:true,census:Box::new([0.0;9]),resolutions:String::new(),loading:false,paint_deadline:0.0,
-  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new()}}
+  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);
@@ -124,6 +127,7 @@ impl RustSceneEntryFrame{
   let rows=self.state.chunks_exact_mut(STATE).zip(self.input.chunks_exact_mut(INPUT)).zip(self.output.chunks_exact_mut(OUTPUT));
   for (index,((row,input),output)) in rows.enumerate(){
    let decorative=row[0]==1.0||row[0]==2.0;
+   if row[0]==2.0{lamp::step(row,&self.tints,now,scene.entry_reduced);}
    let away=(row[2] as u32)&1!=0;
    let (bits,active)=(row[36] as u32,row[20]!=0.0);
    moving|=active||bits&8!=0;previewing|=active;

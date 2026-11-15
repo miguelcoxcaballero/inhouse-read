@@ -18,7 +18,7 @@ import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './books
 import { createShelfFurniture, createShelfOcclusion } from './shelf-furniture.js';
 import { createShelfPlant } from './shelf-plants.js';
 import { createShelfLamp } from './shelf-lamps.js';
-import { createTintTransition, lampTint } from './lamp-kelvin.js';
+import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, LAMP_KELVIN_MS, lampTint } from './lamp-kelvin.js';
 import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
 import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
@@ -267,6 +267,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // (scene-entry-frame.js); `lift` reads it for whoever inspects an entry from outside the frame.
   const entryFrame = createSceneEntryFrame(rust);
   entryFrame.shows(canvas.dataset);
+  entryFrame.lamp.lampTints([DEFAULT_LAMP_KELVIN, ...LAMP_KELVINS.flatMap(kelvin => [kelvin, ...lampTint(kelvin)])], LAMP_KELVIN_MS);
   const cell = (entry, column) => (entryFrame.refresh(), entryFrame.state[entry.row * ENTRY_STATE + column]);
   function settleLift(entry, started) {
     entryFrame.refresh();
@@ -776,7 +777,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const fontsPending = () => document.fonts?.status === 'loading';
   function settledInvalidate(preserveInspectionOverview, source, caller = null) {
     const gate = startupSettle;
-    if (!gate || !shelfSnapshotRenders || sceneView.moving || sceneView.turning || disposed) {
+    if (!gate || !shelfSnapshotRenders || sceneView.busy & 9 || disposed) {
       invalidate(true, preserveInspectionOverview, source);
       return;
     }
@@ -1269,49 +1270,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const projectionFrame = createSceneProjectionFrame(rust);
-  const lampIo = new Float64Array(8);
   const insertionIo = new Float64Array(4), inverseTurn = new Float64Array(4);
-  function advanceLampPower(entry, now) {
-    const target = entry.isOn === false ? 0 : 1, reduced = reducedMotion.matches;
-    const power = entry.lampPower ||= { value:target, from:target, target, started:now, duration:0 };
-    // A fade that has ended keeps its five numbers (scene_lamp_power at t = 1 writes the same ones
-    // back and reports nothing): a lamp at rest makes no native call.
-    let fading = false;
-    if (!(power.target === target && Object.is(power.value, power.from + (target - power.from)) &&
-        (reduced || power.duration === 0 || power.duration !== power.duration || (now - power.started) / power.duration >= 1))) {
-      lampIo[0] = target; lampIo[1] = power.value; lampIo[2] = power.from; lampIo[3] = power.target;
-      lampIo[4] = power.started; lampIo[5] = power.duration; lampIo[6] = now; lampIo[7] = reduced ? 1 : 0;
-      rust.scene_lamp_power(lampIo);
-      power.value = lampIo[0]; power.from = lampIo[1]; power.target = lampIo[2]; power.started = lampIo[3]; power.duration = lampIo[4];
-      fading = Boolean(lampIo[5]);
-      // Changing radiance repaints the image but never invalidates caster depth.
-      if (lampIo[6]) shelfSnapshotDirty = true;
-    }
-    // The model's emission, the button's data and the tint are written only when the power, the
-    // tint, the model or the button is not the one they were last written for.
-    const model = entry.model, node = entry.node;
-    const shown = entry.lampShown ||= { model:null, power:NaN, node:null, text:NaN, tinted:null, r:NaN, g:NaN, b:NaN };
-    if (shown.model !== model || !Object.is(shown.power, power.value)) {
-      shown.model = model; shown.power = power.value; model?.userData.setPower?.(power.value);
-    }
-    if (node && (shown.node !== node || !Object.is(shown.text, power.value))) {
-      shown.node = node; shown.text = power.value; setData(node, 'lampPower', power.value.toFixed(4));
-    }
-    // A change of colour temperature eases over the same frames.
-    const tint = entry.lampTint ||= createTintTransition(entry.kelvin);
-    if (reduced) tint.set(entry.kelvin, now, false);
-    const tinting = tint.advance(now), value = tint.state.value;
-    if (model && (shown.tinted !== model || shown.r !== value[0] || shown.g !== value[1] || shown.b !== value[2])) {
-      shown.tinted = model; shown.r = value[0]; shown.g = value[1]; shown.b = value[2];
-      const text = value.join();
-      if (model.userData.shownTint !== text) {
-        model.userData.shownTint = text;
-        model.userData.setTint?.(value);
-        shelfSnapshotDirty = true;
-      }
-    }
-    return fading || tinting;
-  }
 
   // A book's lean is formatted and compared with its button's data only when the number moved.
   const leanEuler = new THREE.Euler();
@@ -1392,6 +1351,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         state[at + 44] = row.left || 0; state[at + 45] = row.right ?? width;
         state[at + 46] = row.bottom ?? entry.y + entry.height / 2;
         state[at + 47] = row.ceiling ?? row.top ?? 0; state[at + 48] = entry.gripHeight || 0;
+        // A lamp's switch and the temperature it asks for (rust-ui/src/scene_lamp.rs).
+        if (lamp) { state[at + 91] = entry.isOn === false ? 0 : 1; state[at + 92] = entry.kelvin; }
       }
       if (read) { state[at + 2] = entry.bits; state[at + 3] = entry.dragNumberX; state[at + 4] = entry.dragNumberY; }
     }
@@ -1497,9 +1458,25 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         } else still = true;
         if (!decorative && (!away || insertion)) activeBooks++;
       }
-      if (lamp) moving = advanceLampPower(entry, now) || moving;
       // The button's hit surface is read now, as the frame's models stand; its target is taken below.
       entryFrame.refresh();
+      if (lamp) {
+        // The pose call eased its fade and its tint (rust-ui/src/scene_lamp.rs): the model's emission, the button's
+        // data and the tint are written only when the number, the model or the button is not the one last written for.
+        const lamps = entryFrame.state, lit = lamps[row + 116], power = lamps[row + 94], model = entry.model;
+        const tint = lit & 4 || entry.tinted !== model ? [lamps[row + 108], lamps[row + 109], lamps[row + 110]] : null;
+        // Changing radiance repaints the image but never invalidates caster depth.
+        if (lit & 2) shelfSnapshotDirty = true;
+        if (lit & 24) moving = true;
+        if (lit & 1 || entry.lit !== model) { entry.lit = model; model?.userData.setPower?.(power); }
+        if (node && (lit & 1 || entry.litNode !== node)) { entry.litNode = node; setData(node, 'lampPower', power.toFixed(4)); }
+        if (model && tint) {
+          entry.tinted = model;
+          const text = tint.join();
+          if (model.userData.shownTint !== text) { model.userData.shownTint = text; model.userData.setTint?.(tint); shelfSnapshotDirty = true; }
+        }
+        entryFrame.refresh();
+      }
       const hits = entryFrame.hitInput, h = entryIndex * HIT_INPUT;
       if (node) {
         // A whole-model bounding rectangle includes empty space around plants
@@ -2006,7 +1983,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const snapshot = inspectionSnapshot || inspectionOverview;
     const miss = rust.scene_cache_miss((!inspectionContext ? 1 : 0) | (!snapshot ? 2 : 0) | (shelfSnapshotDirty ? 4 : 0) | (shadowDirty ? 8 : 0) |
       (lastSceneMoving ? 16 : 0) | (lighting.settling && !sceneView.shadowRefit ? 32 : 0) |
-      (sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.progress !== 1 ? 64 : 0) | (sceneView.hasDrop ? 128 : 0));
+      (sceneView.busy & 7 || sceneView.progress !== 1 ? 64 : 0) | (sceneView.busy & 16 ? 128 : 0));
     if (miss) {
       showData('inspectionCacheMissReason', miss);
       showData('inspectionCacheMissSource', canvas.dataset.inspectionDirtySource || '');
@@ -2423,13 +2400,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (!selected || !bookEntries.includes(selected) || !cell(selected, 88) ||
       !selected.node?.classList.contains('is-away') || !selected.model || selected.model.visible ||
       heldStill(1) || programsReady !== true || paintHeld || unpainted.length ||
-      lighting.settling || sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.moving || sceneView.hasDrop ||
+      lighting.settling || sceneView.busy ||
       !sceneView.paintedSame() || modalViewportChanged()) return false;
-    const now = performance.now();
+    if (entryFrame.lamp.lampsBusy(performance.now(), true)) return false;
     for (const entry of bookEntries) {
-      if (entry.lampTint?.moving()) return false;
-      if (entry.lampPower && (entry.lampPower.value !== entry.lampPower.target ||
-        entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return false;
       // Its pressure lift is no longer visible in the already painted slot.
       // Every other entry retains its actual lift/drag frames and endpoint.
       if (entry !== selected) {
@@ -2461,7 +2435,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Pointer classes change before the next scene frame updates its motion
     // flags. Idle work must yield immediately, including a held book that has
     // finished lifting and a compositor-only inspection gesture.
-    return !disposed && canPresent() && !paintHeld && !sceneView.moving && !sceneView.hasDrop &&
+    return !disposed && canPresent() && !paintHeld && !(sceneView.busy & 24) &&
       !hasOngoingMotion() && !canDeferModalPaint() &&
       !bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging'));
   }
@@ -2470,7 +2444,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // owns the screen completely: retain poses/resources and resume on return,
   // without advancing physics or painting an invisible room.
   function hasOngoingMotion() {
-    return Boolean(sceneView.turning || sceneView.reordering || sceneView.trashEasing || lastSceneMoving || lighting.settling || heldStill(2));
+    return Boolean(sceneView.busy & 7 || lastSceneMoving || lighting.settling || heldStill(2));
   }
 
   function presentationChanged() {
@@ -2629,19 +2603,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (roomMotion.changed) invalidate(true, false, 'remote-motion'); return true;
     },
     clearLiveRoomMotion:clearRoomMotion,
-    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || roomTransition.moving(performance.now()) || lastLocalSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
+    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || roomTransition.moving(performance.now()) || lastLocalSceneMoving || sceneView.busy & 11),
     getInspectionZoom:()=>sceneView.zoom,
     beginInspectionGesture() {
       if (disposed || !sceneView.canInspect()) return;
       sceneView.beginGesture();
-      if (!inspectionOverview || sceneView.reordering || sceneView.trashEasing || sceneView.hasDrop) return;
+      if (!inspectionOverview || sceneView.busy & 22) return;
       const now = performance.now();
       // A second finger changes a tentative book tap into navigation. Cancel
       // only the tiny pressure feedback; held books, returns, previews and
       // lamp fades keep their actual physics and demand frames.
       const held = heldStill(13);
-      if (held & 5 || bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging') || entry.lampTint?.moving() ||
-        entry.lampPower?.duration && entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return;
+      if (held & 5 || entryFrame.lamp.lampsBusy(now, false) || bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging'))) return;
       if (held & 8) inspectionSnapshot = null;
       entryFrame.settleLifts(now);
       for (const entry of bookEntries) entry.state = stateFor(entry);
@@ -2654,8 +2627,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (disposed || entry?.kind !== 'lamp') return;
       noteInspectionDirty('lamp-power');
-      // Its power eases from the shown one to the switch's (rust-ui/src/scene_host.rs).
-      rust.scene_lamp_switch(entry, isOn, Boolean(animate && !reducedMotion.matches));
+      // Its power eases from the shown one to the switch's (rust-ui/src/scene_lamp.rs).
+      entryFrame.lamp.lampSwitch(entry.row, entry.model?.userData.lightEmitter?.power ?? (entry.isOn === false ? 0 : 1), entry.isOn = isOn !== false, Boolean(animate && !reducedMotion.matches));
       inspectionOverview = null; shelfSnapshotDirty = true;
       invalidate(false);
     },
@@ -2663,8 +2636,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (disposed || entry?.kind !== 'lamp') return;
       noteInspectionDirty('lamp-kelvin');
-      // Its tint eases to the new temperature (rust-ui/src/scene_room.rs).
-      rust.scene_lamp_kelvin(entry, kelvin, animate && !reducedMotion.matches, createTintTransition);
+      // Its tint eases to the new temperature (rust-ui/src/scene_lamp.rs).
+      entryFrame.lamp.lampKelvin(entry.row, entry.kelvin = kelvin, Boolean(animate && !reducedMotion.matches));
       inspectionOverview = null; shelfSnapshotDirty = true;
       invalidate(false);
     },
@@ -2840,7 +2813,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (changed) invalidate();
     },
     adoptMetadataRecords(previous, records) {
-      if (disposed || !canPresent() || paintHeld || sceneView.moving || hasOngoingMotion() ||
+      if (disposed || !canPresent() || paintHeld || sceneView.busy & 8 || hasOngoingMotion() ||
           drawPending || raf || programsPoll || inspectionQualityDirty || inspectionEntryUpdates.size || unpainted.length)
         return false;
       if (renderer.getContext?.()?.isContextLost?.()) return false;
@@ -2986,7 +2959,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         // (`bind` below clears every preview and landing).
         // The outgoing DOM was just restored and the new one may be a fresh tree:
         // write every inline value of the projected nodes again and reread its state.
-        entry.written = null; entry.leanNode = null; entry.lampShown = null; entry.walked = null; entry.domDirty = true;
+        entry.written = null; entry.leanNode = null; entry.lit = entry.litNode = entry.tinted = null; entry.walked = null; entry.domDirty = true;
         entry.key = key;
         retained.push(entry);
         if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
