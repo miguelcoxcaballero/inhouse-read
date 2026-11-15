@@ -16,7 +16,7 @@ vi.mock('../../src/js/scene-entry-frame.js', async actual => {
   const wanted = entry => {
     const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf', kind = plant ? 1 : lamp ? 2 : 0;
     const row = audit.rows[entry.shelf || 0] || audit.rows[0] || {};
-    return [kind ? entry.width : entry.thickness, undershelf ? 3 : kind, entry.shelf || 0, audit.pixelsPerMetre, row.left || 0, row.right ?? audit.width,
+    return [kind ? entry.width : entry.thickness, undershelf ? 3 : kind || (entry.book && !entry.book.shelfPosition ? .5 : 0), entry.shelf || 0, audit.pixelsPerMetre, row.left || 0, row.right ?? audit.width,
       row.bottom ?? entry.y + entry.height / 2, row.ceiling ?? row.top ?? 0, entry.gripHeight || 0];
   };
   return { ...real, createSceneEntryFrame(rust) {
