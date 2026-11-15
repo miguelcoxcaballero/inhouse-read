@@ -49,7 +49,7 @@ pub fn app_remove_from_shelf(host:JsValue,book:JsValue)->Promise{cloud_host::sta
 #[wasm_bindgen]
 pub fn app_book_remove(host:JsValue,book:JsValue)->R<Promise>{
  method(&read(&host,"wordCountQueue")?,"cancel",&[&read(&book,"id")?])?;
- method(&read(&host,"preparedPages")?,"invalidateBook",&[&read(&book,"id")?,&"removed".into()])?;
+ crate::prepared_page::invalidate_book(&crate::prepared_page::of(&host)?,&read(&book,"id")?,&"removed".into())?;
  method(&host,"releasePageGate",&[&"removed".into(),&read(&book,"id")?])?;
  let task=app_remove_from_shelf(host.clone(),book.clone());
  Ok(cloud_host::start(async move{

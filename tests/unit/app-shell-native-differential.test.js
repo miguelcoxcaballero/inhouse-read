@@ -51,6 +51,9 @@ function page(native, o = {}) {
   const state = { appDisposed:false, closingReader:false, shelf:null, shelfRefreshDeferred:false, lengthStatusVersion:0, shelfLengthStatusVersion:0,
     lengthRefreshTimer:null, roomRefreshRetry:null, shelfRefreshQueued:false, readerLoadGeneration:0, cloudRoomChanged:false,
     pendingLocalReopenId:null, pendingReaderTransition:null, driveProfile:null, ...o.state }
+  // The prepared page is the state's own record (rust-ui/src/prepared_page.rs). This one always holds a page and
+  // says so whenever it is discarded, which is what the frozen shell's `preparedPages.invalidate` is heard by.
+  state.preparedPage = { generation:0, lastBookId:null, get entry() { return true }, set entry(_) {}, set lastDiscard(reason) { record('invalidate', reason) } }
   if (o.shelf === 'presenting') state.shelf = { setPresentationActive:value => record('presentation', value) }
   else if (o.shelf === 'bare') state.shelf = {}
   const books = o.books ?? [{ id:'local', driveFileId:'other' }, { id:'known', driveFileId:'drive-2' }]

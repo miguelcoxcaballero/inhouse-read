@@ -10,8 +10,6 @@ mod room_stream;
 mod android_import;
 mod folder_store;
 mod import_gate;
-mod stage_gate;
-mod prepared_page;
 mod foliage;
 mod catalog_art;
 mod catalog_view;

@@ -1,12 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import * as shipped from '../../src/js/prepared-page.js'
 import * as reference from './helpers/reference-prepared-page.js'
+import { nativePreparedPage } from './helpers/prepared-page-native.js'
 
-// One behaviour suite, two subjects: the frozen JavaScript reference and the shipped module backed by the real Rust UI.
-const runtime = vi.hoisted(() => ({ ui:null }))
-vi.mock('../../src/js/rust-ui.js', () => ({ getRustUI:() => runtime.ui, loadRustUI:() => Promise.resolve(runtime.ui) }))
+// One behaviour suite, two subjects: the frozen JavaScript reference and the Rust the application's flows call.
+const shipped = nativePreparedPage(ui)
 let createPreparedPageCache, createStageGate, pageKeyMismatch
 const owned = []
 beforeAll(() => { ui.initSync({ module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm') }) })
@@ -15,7 +14,7 @@ let gates = 0
 const baseline = () => ui.ui_live_handles()
 let before = 0
 beforeEach(() => { gates = 0; before = baseline() })
-afterEach(() => { for (const item of owned.splice(0)) item.destroy?.(); runtime.ui = null; if (!gates) expect(ui.ui_live_handles()).toBe(before) })
+afterEach(() => { owned.length = 0; if (!gates) expect(ui.ui_live_handles()).toBe(before) })
 const track = (factory, gate = false) => (...args) => { if (gate) gates++; const item = factory(...args); owned.push(item); return item }
 
 const key = (overrides = {}) => ({
@@ -32,7 +31,6 @@ const snapshot = name => ({ source:{ name }, width:780, height:1464,
 describe.each(['reference', 'rust'])('prepared page behaviour (%s)', mode => {
   beforeEach(() => {
     if (mode === 'rust') {
-      runtime.ui = ui
       createPreparedPageCache = track(shipped.createPreparedPageCache); createStageGate = track(shipped.createStageGate, true); pageKeyMismatch = shipped.pageKeyMismatch
     } else {
       createPreparedPageCache = reference.createLegacyPreparedPageCache; createStageGate = reference.createStageGate; pageKeyMismatch = reference.legacyPageKeyMismatch

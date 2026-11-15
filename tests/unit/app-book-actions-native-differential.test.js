@@ -10,6 +10,9 @@ const flush=async()=>{for(let n=0;n<12;n++)await Promise.resolve()};
 function fixture(native,options={}){
  const events=[],book={id:'book',title:'A Book'},state={requestedPreparationId:options.notOwned?'other':options.activeOnly?null:'book',activePreparedBookId:options.notOwned?'other':'book',preparationGeneration:5,currentBookId:'book',shelfRecords:[book,{id:'other'}]};
  let cloudResolve,cloudReject,prepareResolve,prepareReject;
+ // The prepared page is the state's own record (rust-ui/src/prepared_page.rs): this one always holds the book's page
+ // and says so when it is discarded, which is what the frozen `preparedPages.invalidateBook` is heard by.
+ state.preparedPage={generation:0,lastBookId:null,get entry(){return{key:{bookId:book.id}}},set entry(_){},set lastDiscard(reason){events.push(['invalidate',book.id,reason])}};
  state.readerPreparationQueue=new Promise((resolve,reject)=>{prepareResolve=resolve;prepareReject=reject});
  const cloud=new Promise((resolve,reject)=>{cloudResolve=resolve;cloudReject=reject});
  const screen=document.createElement('section'),viewport=document.createElement('div');screen.classList.toggle('is-preparing',!options.notPreparing);viewport.innerHTML='prepared';

@@ -40,7 +40,6 @@ import { studioEnvironmentSettled } from './studio-environment-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone } from './gestures.js'
 import { markTiming } from './perf-marks.js'
-import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
 import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
 import { persistablePosition, persistableRelocation } from './readers/persistable-position.js'
 import { readerReturnCanvas } from './reader-return-canvas.js'
@@ -114,9 +113,6 @@ const app = {
   get driveProfile() { return driveProfile }, set driveProfile(value) { driveProfile = value; syncDrivePoll() }
 }
 const preparedBooks = new Map()
-// The page the open book lands on, prepared while the book is lifted off the
-// shelf (see prepared-page.js and the 'Página preparada' block below).
-const preparedPages = createPreparedPageCache()
 const coverUpgrades = new Map()
 const progressWrites = createReadingProgressQueue(library, {
   // The follow-up of a saved position (rust-ui/src/app_controller.rs).
@@ -205,7 +201,7 @@ const readingExperience = createLazyReaderExperience(reader, {
 })
 
 const shellHost = {
-  els, document, reader, library, cloudSync, preparedPages, progressWrites, readingStreak, STREAK_KEY, APP_VERSION, state:app,
+  els, document, reader, library, cloudSync, progressWrites, readingStreak, STREAK_KEY, APP_VERSION, state:app,
   wordCountQueue, scheduleLibraryBackup, readerPositionGuard, onLocalBookChange:localRoomBookChanged,
   authNotice:document.getElementById('drive-auth-notice'), authMessage:document.getElementById('drive-auth-message'),
   authRetry:document.getElementById('drive-auth-retry'), authCancel:document.getElementById('drive-auth-cancel'),
@@ -295,7 +291,7 @@ function createShelfForRecords(books) {
 
 const shelfRefreshHost = {
   library, libraryHost, nativeImportShelfGate, els, wordCountQueue,
-  progressWrites, preparedBooks, coverUpgrades, cloudSync, preparedPages, reader,
+  progressWrites, preparedBooks, coverUpgrades, cloudSync, reader,
   get readingExperience() { return readingExperience },
   scheduleLibraryBackup, releasePageGate, onLocalBookChange:localRoomBookChanged,
   createShelf: createShelfForRecords,
@@ -358,8 +354,9 @@ function prepareBookOpen(book, { settled } = {}) {
 // out, rasterise it, hand it to the 3D book. All of that now happens while the
 // book sits lifted off the shelf, once the pull-out animation has finished and
 // the main thread is idle, so the tap only plays the animation. The result is
-// kept in `preparedPages` under a key of everything it depends on; the tap
-// reuses it only when the key still holds and otherwise computes it as before.
+// kept in `app.preparedPage` under a key of everything it depends on; the tap
+// reuses it only when the key still holds and otherwise computes it as before
+// (rust-ui/src/prepared_page.rs, stage_gate.rs).
 
 const idleSlice = () => new Promise(resolve => {
   if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout:250 })
@@ -369,14 +366,13 @@ const idleSlice = () => new Promise(resolve => {
 // Rust owns preparation generations and cache decisions. These factories only
 // adapt Promise callbacks; browser idle work and DOM measurements keep their APIs.
 const readerPreparationHost = {
-  library, preparedBooks, preparedPages, progressWrites, reader, els, window, document,
+  library, preparedBooks, progressWrites, reader, els, window, document,
   get positionGuard() { return readerPositionGuard() },
   get readingExperience() { return readingExperience },
   get cloudSync() { return cloudSync },
   state:app,
-  needsDriveDownload, hasDriveSession, openFile, markTiming, pageKeyMismatch, idleSlice,
+  needsDriveDownload, hasDriveSession, openFile, markTiming, idleSlice,
   getComputedStyle: element => getComputedStyle(element),
-  createStageGate: settled => createStageGate(settled, { idle:idleSlice }),
   later
 }
 

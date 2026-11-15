@@ -1,11 +1,10 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {createLegacyPreparedPageCache as createPreparedPageCache,legacyPageKeyMismatch as pageKeyMismatch} from './helpers/reference-prepared-page.js'
-const gates=[]
 beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-afterEach(()=>{for(const gate of gates.splice(0))gate.free()})
-function createStageGate(settled,{idle=()=>new Promise(resolve=>setTimeout(resolve,0))}={}){const gate=new ui.RustStageGate(settled,idle);gates.push(gate);return {wait:()=>gate.wait(),release:reason=>gate.release(reason)}}
+// A gate is a plain record of the page (rust-ui/src/stage_gate.rs): nothing to free.
+function createStageGate(settled,{idle=()=>new Promise(resolve=>setTimeout(resolve,0))}={}){const gate=ui.prepared_page('gate',settled,idle);return {wait:()=>ui.prepared_page('wait',gate),release:reason=>ui.prepared_page('release',gate,reason)}}
 
 describe('createStageGate', () => {
   const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }

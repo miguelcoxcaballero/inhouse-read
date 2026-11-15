@@ -2,14 +2,11 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {createStageGate} from './helpers/reference-prepared-page.js'
-const views=[]
+import {nativePreparedPage} from './helpers/prepared-page-native.js'
 beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-afterEach(()=>{for(const view of views.splice(0))view.free();expect(ui.ui_live_handles()).toBe(0)})
-const pageKeyMismatch=(a,b,{allowViewportTranslation=false}={})=>ui.prepared_page_mismatch(a,b,!!allowViewportTranslation)
-function createPreparedPageCache(){
- const view=new ui.RustPreparedPageCache({generation:0,entry:null,lastBookId:null,lastDiscard:null},(snapshot,bounds,left,top)=>{snapshot.displayBounds={...bounds,left,top}});views.push(view)
- return {begin:book=>view.begin(book),isCurrent:ticket=>view.isCurrent(ticket),store:(ticket,key,snapshot)=>view.store(ticket,key,snapshot),take:key=>view.take(key),has:book=>view.has(book),peek:()=>view.peek(),invalidate(reason='invalidated'){view.invalidate(reason)},invalidateBook(book,reason='book-changed'){view.invalidateBook(book,reason)},get lastDiscard(){return view.lastDiscard}}
-}
+// The cache is a record of the page: the module holds nothing of it between two operations.
+afterEach(()=>{expect(ui.ui_live_handles()).toBe(0)})
+const {createPreparedPageCache,pageKeyMismatch}=nativePreparedPage(ui)
 
 const key = (overrides = {}) => ({
   bookId:'book-1', epoch:3,
