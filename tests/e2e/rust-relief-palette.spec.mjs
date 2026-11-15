@@ -59,18 +59,15 @@ test.afterAll(async()=>{http?.closeAllConnections();if(http)await new Promise(re
 test.use({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});
 test.beforeEach(async({page})=>{
   await page.addInitScript(()=>{
-    window.paletteStats={jobs:0,liveJobs:0,releases:0};
+    // The analysis is a job of the shelf module (rust-ui/src/relief_job.rs). The flows make and free it inside
+    // that module (rust-ui/src/relief_flow.rs), so no export is crossed where it could be counted from here; the
+    // module counts for itself, and these are its raw exports: colour analyses made (by the flows and by the
+    // tests' own generators alike) and jobs of any pass made and not yet freed.
+    let shelf=null;
+    window.paletteStats={get jobs(){return shelf?shelf.relief_analyses_made()>>>0:0;},get liveJobs(){return shelf?shelf.relief_jobs_live()>>>0:0;}};
     const observe=result=>{
-      const instance=result.instance||result,actual=instance.exports;if(typeof actual?.reliefjob_analysis!=='function')return result;
-      // The analysis is a job of the shelf module (rust-ui/src/relief_job.rs): it is observed at the module's own
-      // exports, where the page makes it (`ReliefJob.analysis` answers pointer, error, is-error at the return
-      // pointer) and where it frees it. The map jobs of the previews share the free export and are not counted.
-      const stats=window.paletteStats,analysis=new Set(),exports={...actual,
-        reliefjob_analysis(retptr,...args){actual.reliefjob_analysis(retptr,...args);const view=new DataView(actual.memory.buffer);
-          if(!view.getInt32(retptr+8,true)){analysis.add(view.getInt32(retptr,true)>>>0);stats.jobs++;stats.liveJobs++;}},
-        __wbg_reliefjob_free(p,...rest){actual.__wbg_reliefjob_free(p,...rest);if(analysis.delete(p>>>0)){stats.releases++;stats.liveJobs--;}}};
-      const wrapped=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
-      return result.instance?{...result,instance:wrapped}:wrapped;
+      const actual=(result.instance||result).exports;if(typeof actual?.relief_analyses_made==='function')shelf=actual;
+      return result;
     };
     for(const name of ['instantiate','instantiateStreaming'])if(typeof WebAssembly[name]==='function'){
       const native=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(native,WebAssembly,args));};
@@ -84,13 +81,13 @@ for(const input of reliefPaletteCases)test('complete palette and analysis: '+inp
   // Existing reader and native-return deadlines are not altered.
   test.setTimeout(120000);await ready(page);
   const result=await page.evaluate(input=>window.palettePure(input),input);
-  expect(result.stats.liveJobs).toBe(0);expect(result.stats.jobs).toBe(result.stats.releases);
+  expect(result.stats.liveJobs).toBe(0);expect(result.stats.jobs).toBeGreaterThan(0);
   await testInfo.attach('relief-palette-measurement',{body:JSON.stringify(result),contentType:'application/json'});
 });
 for(const name of ['01-ornate-classic','04-photo','16-cc0-flower-photo','12-tiny-lowres'])for(const previews of [false,true])
 test('actual cover API: '+name+' previews='+previews,async({page},testInfo)=>{
   test.setTimeout(120000);await ready(page);
   const result=await page.evaluate(({name,previews})=>window.paletteCover(name,previews),{name,previews});
-  expect(result.stats.liveJobs).toBe(0);expect(result.stats.jobs).toBe(result.stats.releases);
+  expect(result.stats.liveJobs).toBe(0);expect(result.stats.jobs).toBeGreaterThan(0);
   await testInfo.attach('relief-cover-measurement',{body:JSON.stringify(result),contentType:'application/json'});
 });
