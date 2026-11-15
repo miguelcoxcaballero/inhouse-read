@@ -417,7 +417,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   prelinkPrograms(renderer, scene, camera, furniture.children.filter(child => child !== catalog));
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0;
-  let reorderItems = [];
   let bookPresentationScheduled = false;
   let pageSuspended = false;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
@@ -680,22 +679,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       else object.matrixWorld.multiplyMatrices(parent.matrixWorld, object.matrix);
     }
   }
-  // The room's epoch advances whenever its world matrix is not, bit for bit, the one of the
-  // previous frame of the entries.
-  const roomNow = new Float64Array(16), roomHeld = new Float64Array(16).fill(NaN);
-  const roomNowBits = new Uint32Array(roomNow.buffer), roomHeldBits = new Uint32Array(roomHeld.buffer);
-  let roomEpoch = 0, roomMoved = true;
-  function roomEpochNow() {
-    const room = furniture.matrixWorld.elements;
-    for (let index = 0; index < 16; index++) roomNow[index] = room[index];
-    let same = true;
-    for (let index = 0; same && index < 32; index++) same = roomNowBits[index] === roomHeldBits[index];
-    roomMoved = !same;
-    if (!same) { roomHeld.set(roomNow); roomEpoch++; }
-    return roomEpoch;
-  }
   // Whether a hit surface's world matrix stands as the entry arena holds it: it was taken in this
-  // epoch of the room, and the surface and its ancestors below the room stand (position,
+  // epoch of the room (which the pose call advances: rust-ui/src/scene_rows.rs), and the surface and its ancestors below the room stand (position,
   // quaternion, scale: what their matrices are composed from) where they stood then. When it does
   // not, where they stand now is remembered and the caller takes the matrix again.
   function surfaceStands(entry, surface, epoch) {
@@ -1307,23 +1292,22 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (read) { entry.domDirty = false; entry.state = stateFor(entry); regrown(); }
       const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
       const kind = plant ? 1 : lamp ? 2 : 0;
+      // A standing plant's or lamp's solid is described to the solver again when its size, its model or the
+      // room's scale may have changed; the solver keeps a solid whose description is the same (book_gravity.rs).
+      const stale = staticStale || entry.stale;
+      if (stale) entry.solid = false;
       if (usePhysics) {
-        if ((plant || lamp) && !undershelf) {
-          const stamp = entry.collisionStamp;
-          if (!stamp || stamp.height !== entry.height || stamp.width !== entry.width || stamp.catalogId !== entry.catalogId ||
-              stamp.variant !== entry.variant || stamp.potId !== entry.potId || stamp.lampId !== entry.lampId || stamp.pixelsPerMetre !== pixelsPerMetre) {
-            entry.collisionStamp = { height:entry.height, width:entry.width, catalogId:entry.catalogId, variant:entry.variant,
-              potId:entry.potId, lampId:entry.lampId, pixelsPerMetre };
-            if (plant) {
-              const spec = plantGeometrySpec(entry);
-              bookGravity.decoration(entry.key,1,spec.potId || '',spec.potModelId || '',
-                new Float64Array([spec.real.potDiameter / 2 * spec.unit / pixelsPerMetre,spec.real.potHeight * spec.unit / pixelsPerMetre,spec.height / pixelsPerMetre,0]));
-            } else {
-              const spec = lampGeometrySpec(entry);
-              bookGravity.decoration(entry.key,spec.kind === 1 ? 2 : 3,'','',new Float64Array([0,0,0,spec.scale / pixelsPerMetre]));
-            }
-            regrown();
+        if ((plant || lamp) && !undershelf && !entry.solid) {
+          entry.solid = true;
+          if (plant) {
+            const spec = plantGeometrySpec(entry);
+            bookGravity.decoration(entry.key,1,spec.potId || '',spec.potModelId || '',
+              new Float64Array([spec.real.potDiameter / 2 * spec.unit / pixelsPerMetre,spec.real.potHeight * spec.unit / pixelsPerMetre,spec.height / pixelsPerMetre,0]));
+          } else {
+            const spec = lampGeometrySpec(entry);
+            bookGravity.decoration(entry.key,spec.kind === 1 ? 2 : 3,'','',new Float64Array([0,0,0,spec.scale / pixelsPerMetre]));
           }
+          regrown();
         }
         if (entry.bits & 6) physicsInteracted = true;
       }
@@ -1335,7 +1319,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           completedLegacyInsertionLeases.add(entry.insertion.nativeLease);
         entry.insertion = null;
       }
-      if (staticStale || entry.stale) {
+      if (stale) {
         entry.stale = false;
         state[at] = kind; state[at + 1] = undershelf ? 1 : 0;
         state[at + 23] = entry.x; state[at + 24] = entry.y; state[at + 25] = entry.width; state[at + 26] = entry.height;
@@ -1378,7 +1362,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     moving = Boolean(summary & 1); shelfMoving = Boolean(summary & 2);
     let roomWalked = false;
-    const epoch = roomEpochNow();
+    entryFrame.refresh();
+    const epoch = entryFrame.walk[0], roomMoved = entryFrame.walk[1] === 1;
     for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
       const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
@@ -2084,18 +2069,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       canvas.dataset.inspectionPendingEntries = '0';
     }
     // The turn between the views and a reorder's release advance in one call (rust-ui/src/scene_begin.rs):
-    // 1 the view turned, 2 a reorder eased, 4 and ended, 8 the diagonal view rests.
+    // 1 the view turned, 8 the diagonal view rests. What a reorder leaves of each offset enters the pose call.
     const begun = sceneView.beginFrame(now), furnitureMoving = Boolean(begun & 3);
     // Driver compilation or a slow frame must not consume the entire camera
     // move without painting its intermediate poses. Match the bounded clock
     // already used by the insertion and trash animations.
     if (begun & 1) scroller.scrollTop = sceneView.turnScroll;
-    if (begun & 2) {
-      const amount = sceneView.reorderLeft;
-      entryFrame.refresh();
-      for (const item of reorderItems) { const at = item.entry.row * ENTRY_STATE; entryFrame.state[at + 21] = item.x * amount; entryFrame.state[at + 22] = item.y * amount; }
-      if (begun & 4) reorderItems = [];
-    }
     const zoom = updateTransform();
     // Expanding/shrinking the stage can change the browser's maximum scroll
     // during a turn. Apply the same frame's pan after committing its height.
@@ -2976,14 +2955,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const keys=bookEntries.filter(e=>!(e.kind==='lamp'&&e.mount==='undershelf')).map(e=>e.key);
         if(incoming.restore(pendingCloudPhysics)&&incoming.matches_keys(keys)){
           bookGravity.free();bookGravity=incoming;physicsStarted=false;physicsInteracted=false;installedRoom=pendingCloudPhysics;pendingCloudPhysics=null;
-          for(const entry of bookEntries)entry.collisionStamp=null;
+          for(const entry of bookEntries)entry.solid=false;
         }else incoming.free();
       }
       for (const entry of bookEntries) if (entry.node) {
         byNode.set(entry.node, entry);
         mutations.observe(entry.node, { attributes:true, attributeFilter:['class', 'style', 'disabled'] });
       }
-      if (sceneView.reordering) reorderItems = reorderItems.filter(item => retained.includes(item.entry));
       if (width !== oldWidth || height !== oldHeight || depth !== oldDepth || shelfType !== oldShelfType || JSON.stringify(rows) !== oldRows) rebuildFurniture();
       canvas.dataset.layoutUpdates = String(Number(canvas.dataset.layoutUpdates || 0) + 1);
       // Cached replacements can invalidate while records are rebound. This
@@ -2994,18 +2972,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     animateFromRects(oldRects, { draggedKey } = {}) {
       if (reducedMotion.matches) return;
       const stageRect = stage.getBoundingClientRect(), items = [];
+      let dragged = null;
       for (const entry of bookEntries) {
         const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
           oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
         const targetRect = entry.tapRect || entry.hitRect || entry.rect;
         if (!old || !targetRect) continue;
         const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
-        if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });
+        if (Math.abs(x) + Math.abs(y) > 1) {
+          items.push(entry.row, x, y);
+          if (draggedKey != null) dragged ||= String(entry.node?.dataset.objectId ?? entry.key) === String(draggedKey) && entry;
+        }
       }
       const started = performance.now();
-      reorderItems = items; sceneView.beginReorder(started);
-      const dragged = draggedKey == null ? null : items.find(item =>
-        String(item.entry.node?.dataset.objectId ?? item.entry.key) === String(draggedKey))?.entry;
+      // What is left of each offset enters the entry arena as the release eases (rust-ui/src/scene_rows.rs).
+      entryFrame.lamp.reorder(items); sceneView.beginReorder(started);
       if (dragged && cell(dragged, 5) > 0) {
         const state = entryFrame.state, at = dragged.row * ENTRY_STATE;
         state[at + 9] = 1; state[at + 10] = state[at + 5]; state[at + 11] = started; state[at + 12] = 520;

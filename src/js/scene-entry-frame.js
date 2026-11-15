@@ -8,13 +8,15 @@ export const ENTRY_STATE = 117, ENTRY_INPUT = 22, ENTRY_OUTPUT = 70, HIT_INPUT =
 export function createSceneEntryFrame(rust) {
   const native = new rust.RustSceneEntryFrame(), memory = native.memory(), roomAt = native.room_ptr();
   let count = -1, at = null, buffer = null, room = null, disposed = false;
-  const frame = { lamp:native, state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, shows:dataset => native.shows(dataset), show:part => native.show(part), showEntries:(active, summary) => native.showEntries(active, summary),
+  const frame = { lamp:native, state:null, input:null, output:null, hitInput:null, hitOutput:null, counts:null, shown:null, walk:null, shows:dataset => native.shows(dataset), show:part => native.show(part), showEntries:(active, summary) => native.showEntries(active, summary),
     hold, census, still:asked => native.still(asked), settleLifts:started => native.settleLifts(started), painted:() => native.painted(), qualityHold:(scene, eligible, now) => native.quality_hold(scene, eligible, now),
     prepare, bind, refresh, step, poses, settle, place, settled, hits, exclusions, preview, motionRest, motionBegin, motionPoses, free };
+  function live() { if (disposed) throw new Error('Scene entry frame has been disposed'); }
   function refresh() {
-    if (disposed) throw new Error('Scene entry frame has been disposed');
+    live();
     if (buffer === memory.buffer) return;
     buffer = memory.buffer; room = new Float64Array(buffer, roomAt, 16); frame.counts = new Float64Array(buffer, native.census_ptr(), 9);
+    frame.walk = new Float64Array(buffer, frame.counts.byteOffset + 72, 2);
     frame.shown = new Float64Array(buffer, native.shown_ptr(), 7);
     frame.input = new Float64Array(buffer, at[0], count * ENTRY_INPUT);
     frame.output = new Float64Array(buffer, at[1], count * ENTRY_OUTPUT);
@@ -23,33 +25,30 @@ export function createSceneEntryFrame(rust) {
     frame.state = new Float64Array(buffer, at[4], count * ENTRY_STATE);
   }
   function prepare(length) {
-    if (disposed) throw new Error('Scene entry frame has been disposed');
+    live();
     if (count !== length) {
       count = length; native.resize(count); buffer = null;
       at = [native.input_ptr(), native.output_ptr(), native.hit_input_ptr(), native.hit_output_ptr(), native.state_ptr()];
     }
     refresh();
   }
-  // A layout's entries take the arena's rows in their new order. A retained entry (`row` is
-  // its former place) keeps its state, a new one starts from zeros; `reset` clears every
-  // landing and preview, as a committed layout does. Each row is marked as not yet held by
-  // the host, so the next frame hands over its whole pose, rectangle and hit target.
+  // A layout's entries take the arena's rows in their new order, in one native call
+  // (rust-ui/src/scene_rows.rs). A retained entry (`row` is its former place) keeps its state, a
+  // new one starts from zeros; `reset` clears every landing and preview, as a committed layout
+  // does. Each row is marked as not yet held by the host, so the next frame hands over its whole
+  // pose, rectangle and hit target.
   function bind(entries, reset) {
-    const held = count > 0 ? (refresh(), frame.state.slice()) : null;
-    prepare(entries.length);
-    const state = frame.state;
-    for (let index = 0; index < entries.length; index++) {
-      const entry = entries[index], to = index * ENTRY_STATE, from = entry.row * ENTRY_STATE;
-      if (held && entry.row >= 0) state.set(held.subarray(from, from + ENTRY_STATE), to);
-      else state.fill(0, to, to + ENTRY_STATE);
-      if (reset) state.fill(0, to + 9, to + 21);
-      state[to + 71] = state[to + 73] = 1; entry.row = index;
-    }
+    live();
+    const rows = new Int32Array(entries.length);
+    for (let index = 0; index < rows.length; index++) { rows[index] = entries[index].row; entries[index].row = index; }
+    native.rebind(rows, reset);
+    count = -1; prepare(rows.length);
   }
   // What the host holds of each entry, told to the arena whenever it may have changed (`hold`): a settled
   // entry's quality is decided from it in the pose call, and the census answers the frame's own questions
   // from it (rust-ui/src/scene_census.rs): the result's bits are loading 2, overlay insertion 4, native
-  // insertion 8, busy 16, touched 32 (`still` answers outside a frame: scene_census.rs); `counts` holds the casters' signature and the diagnostics' counts.
+  // insertion 8, busy 16, touched 32 (`still` answers outside a frame: scene_census.rs); `counts` holds the casters' signature and the diagnostics' counts;
+  // `walk`, after them, the room's epoch and whether its matrix moved in the last pose call (rust-ui/src/scene_rows.rs).
   // `show` then writes the canvas' diagnostics that follow from them and from the host's seven numbers in
   // `shown` (`shows` names the canvas' data).
   function hold(entries) {
@@ -107,7 +106,7 @@ export function createSceneEntryFrame(rust) {
   function hits(projectionFrame, scene) { refresh(); native.hits(projectionFrame, scene); refresh(); }
   function free() {
     if (disposed) return;
-    native.free(); disposed = true; buffer = room = frame.counts = frame.shown = frame.state = frame.input = frame.output = frame.hitInput = frame.hitOutput = null;
+    native.free(); disposed = true; buffer = room = frame.counts = frame.shown = frame.walk = frame.state = frame.input = frame.output = frame.hitInput = frame.hitOutput = null;
   }
   return frame;
 }

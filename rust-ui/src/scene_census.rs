@@ -39,7 +39,7 @@ impl RustSceneEntryFrame{
   }
   self.loading=summary&2!=0;
   self.census[0]=f64::from(casters);
-  if changed{self.count_dirty=false;self.resolutions=super::super::scene_counts(&self.counted,&mut self.census[1..]);self.shown_last[9]=FRESH;summary|=1;}
+  if changed{self.count_dirty=false;self.resolutions=super::super::scene_counts(&self.counted,&mut self.census[1..9]);self.shown_last[9]=FRESH;summary|=1;}
   summary
  }
  pub fn census_ptr(&self)->usize{self.census.as_ptr() as usize}

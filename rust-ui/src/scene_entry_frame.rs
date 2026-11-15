@@ -38,6 +38,7 @@ const STATE:usize=117;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TO
 #[path="scene_census.rs"] mod census;
 #[path="scene_exclusions.rs"] mod exclusions;
 #[path="scene_lamp.rs"] mod lamp;
+#[path="scene_rows.rs"] mod rows;
 const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
@@ -64,18 +65,22 @@ pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit
  rest:Vec<f64>,rest_stamp:Vec<u32>,rest_generation:u32,affected:Vec<bool>,published:Vec<f64>,
  /// The census: the counts' inputs as last counted, its nine numbers, the resolutions' text,
  /// whether a quality map was loading and the quality hold's deadline.
- counted:Vec<f64>,count_dirty:bool,census:Box<[f64;9]>,resolutions:String,loading:bool,paint_deadline:f64,
+ counted:Vec<f64>,count_dirty:bool,census:Box<[f64;11]>,resolutions:String,loading:bool,paint_deadline:f64,
  /// The canvas' diagnostics: its data attributes, the host's numbers and what was written last.
  dataset:Option<js_sys::Object>,shown_keys:Vec<JsValue>,shown:Box<[f64;7]>,shown_last:[u64;22],shown_text:String,
  /// The lamps' temperatures and tints (`scene_lamp.rs`).
- tints:Vec<f64>,tint_ms:f64}
+ tints:Vec<f64>,tint_ms:f64,
+ /// The room's matrix of the previous pose call (its epoch and whether it moved follow the
+ /// census' nine numbers) and a reorder's items (`scene_rows.rs`).
+ room_held:[u64;16],reorder:Vec<f64>}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
  pub fn new()->Self{Self{state:Vec::new(),input:Vec::new(),output:Vec::new(),hit_input:Vec::new(),hit_output:Vec::new(),room:Box::new([0.0;16]),
   rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
-  counted:Vec::new(),count_dirty:true,census:Box::new([0.0;9]),resolutions:String::new(),loading:false,paint_deadline:0.0,
-  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0}}
+  counted:Vec::new(),count_dirty:true,census:Box::new([0.0;11]),resolutions:String::new(),loading:false,paint_deadline:0.0,
+  dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0,
+  room_held:[f64::NAN.to_bits();16],reorder:Vec::new()}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);
@@ -100,6 +105,7 @@ impl RustSceneEntryFrame{
  /// A frame without rigid bodies, whole: every row's lift, landing and preview ease and its
  /// pose follows (`RustScene#stepEntry`, in place), then `place`. Returns what `place` does.
  pub fn poses(&mut self,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool)->f64{
+  self.ease_reorder(scene);
   for row in self.state.chunks_exact_mut(STATE){scene.step_entry(&mut row[..40]);}
   self.place(false,motion_frame,scene,motion,transition,now,arranging)
  }
@@ -107,6 +113,7 @@ impl RustSceneEntryFrame{
  /// host registered for these entries) and the final shelf poses are composed. `place` follows,
  /// at once (`settled`) or after the host has acknowledged a room the solver restored.
  pub fn settle(&mut self,gravity_frame:&mut RustGravityFrame,gravity:&mut RustBookGravity,scene:&RustScene,now:f64,reduced:bool){
+  self.ease_reorder(scene);
   gravity_frame.advance_rows(gravity,scene,now,reduced,&mut self.state,STATE,LEAN);
  }
  #[allow(clippy::too_many_arguments)]
@@ -122,6 +129,7 @@ impl RustSceneEntryFrame{
  /// booleans the host formerly gathered entry by entry.
  #[allow(clippy::too_many_arguments)]
  pub fn place(&mut self,physics:bool,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool)->f64{
+  self.walk_room();
   let room=Mat4(*self.room);
   let (mut moving,mut shelf_moving,mut previewing,mut previewed)=(false,false,false,0u32);
   let rows=self.state.chunks_exact_mut(STATE).zip(self.input.chunks_exact_mut(INPUT)).zip(self.output.chunks_exact_mut(OUTPUT));
