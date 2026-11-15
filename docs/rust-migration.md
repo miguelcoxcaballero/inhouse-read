@@ -1,3 +1,7 @@
+# Entrega 1.7.336: vuelta atrás al código de la 1.7.334
+
+El árbol es el de 8e11c6d3 (1.7.334) salvo la versión y estas notas. Se retira todo lo de la 1.7.335 (ready/shelf-physics-1, scene-frame-25..27, book-model-19, decor-shell-13..15, readers-voice-17..19) porque en CI y en local fallan live-room-stability:27 (el segundo cliente no muestra ningún lomo) y los dos contratos de regreso nativo a la estantería (el lector se queda en is-closing-reader). No estaban en la lista de pruebas de navegador que se pasó antes de publicar. Barra estimada: la de la 1.7.334 (75,44 % Rust). Las ramas siguen en origin para volver a integrarlas una vez hallada la causa.
+
 # Entrega 1.7.335 (tanda integ-bar-14): regla de decoración con el toque corregido y cuatro unidades más
 
 Ramas: ready/shelf-physics-1 (692eb09b), ready/scene-frame-27 (990db639), ready/book-model-19 (53d50ffe), ready/decor-shell-15 (e81fad50), ready/readers-voice-19 (105e318c).

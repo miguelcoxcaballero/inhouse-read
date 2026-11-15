@@ -278,16 +278,6 @@ describe('compiled scene plans against the frozen JavaScript', () => {
       const wantedPlan = ref.capturePlan({ cacheInspection:cache, viewportHeight:sizes[0], sceneWidth, ratio, canvas })
       scene.capturePlan(cache, ratio, canvas ? canvas.left : NaN, canvas ? canvas.top : NaN, plan)
       check([wantedPlan.margin, wantedPlan.renderWidth, wantedPlan.renderHeight, (wantedPlan.pixelAligned ? 1 : 0) | (wantedPlan.whole ? 2 : 0) | (wantedPlan.finite ? 4 : 0)], plan, `plan ${trial}`)
-      // A painted room's plan decides first whether its image is kept, as the scene's draw did (1.7.334).
-      if (g.random.chance(.4)) scene.setDrop(true, 0, .5, false, 3)
-      if (g.random.chance(.4)) scene.setInspection(g.random.pick([1, 1, 2]), g.random.pick([0, 0, 5]), g.random.pick([0, 0, -3]), false)
-      for (let eligible = 0; eligible < 4; eligible++) {
-        const kept = Boolean(eligible & 1) && scene.progress === 1 && !scene.hasDrop
-        const overview = kept && scene.zoom === 1 && scene.panX === 0 && scene.panY === 0 && Boolean(eligible & 2)
-        const wantedPaint = ref.capturePlan({ cacheInspection:kept, viewportHeight:sizes[0], sceneWidth, ratio, canvas })
-        scene.paintPlan(eligible, ratio, canvas ? canvas.left : NaN, canvas ? canvas.top : NaN, plan)
-        check([wantedPaint.margin, wantedPaint.renderWidth, wantedPaint.renderHeight, (wantedPaint.pixelAligned ? 1 : 0) | (wantedPaint.whole ? 2 : 0) | (wantedPaint.finite ? 4 : 0) | (kept ? 8 : 0) | (overview ? 16 : 0)], plan, `paint ${trial} ${eligible}`)
-      }
 
       const unitWidth = g.random.pick([width, width / 2 - 12, 300]), specWidth = 600, count = g.random.pick([1, 2, 3]), floorY = g.num(900)
       const wantedRoom = ref.roomPlan({ width, height, depth, sceneWidth, unitWidth, specWidth, baggeboWidth:600, unitCount:count, floorY })

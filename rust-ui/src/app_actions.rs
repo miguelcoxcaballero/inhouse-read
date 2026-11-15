@@ -39,10 +39,10 @@ pub fn app_remove_from_shelf(host:JsValue,book:JsValue)->Promise{cloud_host::sta
  if read(&host,"onLocalBookChange")?.is_function(){method(&host,"onLocalBookChange",&[&read(&book,"id")?,&Array::of1(&"visible".into()).into()])?;}
  method(&host,"scheduleLibraryBackup",&[])?;
  if owns{
-  let caught=method(&preparing,"catch",&[&crate::app_report::ignore()])?;
+  let caught=method(&preparing,"catch",&[&read(&host,"ignoreRemovalPreparationError")?])?;
   let cleanup=later(&host,"app_finish_removed_preparation",0,&[&host,&book,&generation])?;
   let finished=method(&caught,"then",&[&cleanup])?;
-  method(&finished,"catch",&[&crate::app_report::warner("No se pudo liberar la preparación del libro retirado:")])?;
+  method(&finished,"catch",&[&read(&host,"warnRemovalPreparation")?])?;
  }
  Ok(removal)
 })}

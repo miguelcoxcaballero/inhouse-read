@@ -1,3 +1,8 @@
+# 1.7.336 — vuelta atrás al código de la 1.7.334
+
+- Sin verificación nueva: el código es el de la 1.7.334, cuyo CI (run 43637874285) tenía en rojo smoke:540, lamp-switches:136, shelf-close-placement:90, shelf-placement:174 y live-room-sync:11, y en verde live-room-stability:27 y los contratos de regreso nativo.
+- Motivo: en la 1.7.335 fallan en CI y en local live-room-stability:27, native-aligned-shelf-return-contract:10 y native-legacy-shelf-return-contract:10.
+
 # 1.7.335 — regla de decoración con el toque corregido y cuatro unidades más (tanda integ-bar-14)
 
 - Unitarias: cuatro tandas; 9324 pasan, 5 omitidas, 1 fallo en bookshelf-scene-solver-columns (referencia de prueba sin el tipo .5), corregido y repetido en verde solo ese archivo, no la tanda entera.

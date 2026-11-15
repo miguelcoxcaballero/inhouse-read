@@ -39,7 +39,7 @@ pub fn app_open_file_content(host:JsValue,file:JsValue,options:JsValue)->Promise
   if !truthy(&preparing){
    method(&host,"supersedePreparation",&[&"reader-replaced".into()])?;set(&state,"requestedPreparationId",&JsValue::NULL)?;set(&state,"activePreparedBookId",&JsValue::NULL)?;
    method(&read(&host,"preparedBooks")?,"clear",&[])?;
-   let pending=method(&read(&state,"readerPreparationQueue")?,"catch",&[&crate::app_report::ignore()])?;c::settle(Ok(pending)).await?;
+   let pending=method(&read(&state,"readerPreparationQueue")?,"catch",&[&read(&host,"ignoreFileOpenError")?])?;c::settle(Ok(pending)).await?;
   }
   if !active(&transition)?{return Ok(JsValue::FALSE);}
   method(&experience,"reset",&[])?;classes(&read(&read(&host,"document")?,"body")?,"remove",&["is-reader-focus"])?;
@@ -89,7 +89,7 @@ pub fn app_open_file_content(host:JsValue,file:JsValue,options:JsValue)->Promise
   }};
   if !truthy(&record){return Ok(JsValue::FALSE);}if !active(&transition)?{return Ok(JsValue::FALSE);}
   set(&state,"currentBookId",&read(&record,"id")?)?;method(&host,"scheduleLibraryBackup",&[])?;
-  let count=method(&read(&host,"wordCountQueue")?,"ensure",&[&record])?;method(&count,"catch",&[&crate::app_report::warner("No se pudo medir el libro:")])?;
+  let count=method(&read(&host,"wordCountQueue")?,"ensure",&[&record])?;method(&count,"catch",&[&read(&host,"warnFileGeometry")?])?;
   set(&state,"restoringProgress",&JsValue::TRUE)?;
   let restored=async{
    c::settle(method(&experience,"open",&[&record])).await?;

@@ -38,7 +38,21 @@ export function withDefaults(defaults, options) {
   return merged;
 }
 
+/**
+ * Semilla estable de un libro. Se prefiere el id del store (`local:name:size`
+ * o `drive:fileId`), que sobrevive a renombrados de la entrada de biblioteca.
+ */
+export function seedFor(book) {
+  return bookDataModule().book_seed_for(book);
+}
+
 const progressRaw = book => Number(book?.progressFraction ?? book?.progress);
+
+/** Progreso 0..1 del libro, aceptando los dos nombres que circulan. */
+export const progressOf = book => core.progress_of(progressRaw(book));
+
+/** Un libro "en curso" es el que se ha empezado y no se ha terminado. */
+export const isInProgress = book => core.book_in_progress(progressRaw(book), book?.lastOpenedAt != null ? 1 : 0) === 1;
 
 /**
  * Marcapáginas de un libro, o `null` si no hay nada que marcar. Una posición
@@ -70,7 +84,7 @@ function writeSeeds(pointer, at, texts) {
 const spineHost = { core, palette: SPINE_PALETTE, textures: SPINE_TEXTURES, spine: DEFAULT_SPINE };
 
 /**
- * Estilo del lomo de cada libro: determinista respecto a su semilla. El
+ * Estilo del lomo de cada libro: determinista respecto a `seedFor(book)`. El
  * grosor usa el total de palabras normalizado a una convención física de
  * papel, sin depender de páginas, compresión, imágenes o ID.
  * @returns {Array<{seed:string, palette:object, color:string, shade:string, ink:string,

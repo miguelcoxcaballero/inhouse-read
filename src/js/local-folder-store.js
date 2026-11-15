@@ -31,8 +31,23 @@ export async function getSavedFolderHandle() {
   return isFolderApiSupported() ? withCloudModule(ui => ui.folderSavedHandle()) : null
 }
 
+/** Pide al usuario que elija una carpeta y la recuerda para la próxima vez. */
+export const chooseFolder = () => withCloudModule(ui => ui.chooseFolder())
+
 /** The permission of a stored directory may have lapsed: it is asked for again before reading or writing. */
 export const ensureFolderPermission = handle => withCloudModule(ui => ui.ensureFolderPermission(handle))
+
+/** Handle ya guardado y con permiso vigente, o pide elegir uno nuevo si hace falta. */
+export const getOrChooseFolder = () => withCloudModule(ui => ui.getOrChooseFolder(isFolderApiSupported()))
+
+/** `String(name)` with every run of reserved characters replaced by one underscore, trimmed; "libro" when nothing is left. */
+export const sanitizeFileName = name => withCloudModule(ui => ui.sanitizeFileName(name))
+
+/** Evita pisar un archivo distinto con el mismo nombre; el mismo tamaño se toma por el mismo libro. */
+export const resolveNonCollidingName = (handle, name, size) => withCloudModule(ui => ui.resolveNonCollidingName(handle, name, size))
+
+/** Copia el archivo dentro de la carpeta elegida. Devuelve el nombre final usado. */
+export const saveFileIntoFolder = (handle, file) => withCloudModule(ui => ui.saveFileIntoFolder(handle, file))
 
 /** Lee de vuelta un libro ya guardado, o null si ya no está (borrado, etc.). */
 export const readFileFromFolder = (handle, name) => withCloudModule(ui => ui.readFileFromFolder(handle, name))

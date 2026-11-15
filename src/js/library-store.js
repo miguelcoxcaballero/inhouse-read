@@ -48,6 +48,7 @@ function wrap(request) {
   })
 }
 
+export const idForSource = source => bookDataModule().library_id_for_source(source)
 // A browser type primitive; comparison and traversal belong to Rust.
 const dateInstance = value => value instanceof Date
 export const libraryHost = {

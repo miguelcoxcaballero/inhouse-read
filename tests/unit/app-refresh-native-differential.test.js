@@ -1,4 +1,4 @@
-import {it,expect,vi} from 'vitest';
+import {it,expect} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {performShelfRefresh as frozen} from './helpers/reference-app-refresh.js';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
@@ -26,8 +26,6 @@ function fixture(options={}){
   openBookRecord(){},prepareBookOpen(){},dismissPreparedPage(){},handleCoverAction(){},pickLocalFile(){},persistBookState(){},removeBookFromShelf(){},scheduleLibraryBackup(){},releasePageGate(){},preparedPages:{},readingExperience:{}
  };
  for(const key of Object.keys(state))Object.defineProperty(env,key,{get:()=>state[key],set:value=>{state[key]=value},configurable:true});
-// The module reports to the page's console itself (rust-ui/src/app_report.rs): it is heard through this fixture's.
- vi.spyOn(console,'warn').mockImplementation((...args)=>env.console.warn(...args));
  const host={state,els:env.els,library:env.library,wordCountQueue:queue,nativeImportShelfGate:env.nativeImportShelfGate,libraryHost,createShelf:scoped(env,factory),warnPreparation:(error)=>env.console.warn('Preparación del grosor:',error)};
  return {stored,host,env,events,state,snapshot(){return {events,appDisposed:state.appDisposed,roomChanged:state.cloudRoomChanged,hasShelf:!!state.shelf,recordIds:state.shelfRecords&&ids(state.shelfRecords),version:state.shelfLengthStatusVersion}}};
 }

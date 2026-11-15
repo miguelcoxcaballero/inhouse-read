@@ -132,7 +132,7 @@ describe('compiled scene view against the frozen JavaScript', () => {
   }
 
   it('runs 300 random sessions of turns, fits, inspection and viewport sizes alike', () => {
-    const out = new Float64Array(8), out2 = new Float64Array(8), sizes = new Float64Array(4), six = new Float64Array(6), pixels = new Float64Array(2)
+    const out = new Float64Array(8), out2 = new Float64Array(8), sizes = new Float64Array(4)
     let transforms = 0, freshTexts = 0, keptTexts = 0
     for (let session = 0; session < 300; session++) {
       const g = generator(100 + session), { rust, state } = makePair(g)
@@ -186,9 +186,6 @@ describe('compiled scene view against the frozen JavaScript', () => {
           rust.sizeViewport(inputs.clientHeight, inputs.innerHeight, inputs.devicePixelRatio, sizes)
           state.viewportHeight = expected.viewportHeight
           check([expected.viewportHeight, expected.ratio, expected.baseRatio, expected.shelfHeight], sizes, label)
-          // Asked for six, the framebuffer's size follows (framePixels at that ratio).
-          rust.sizeViewport(inputs.clientHeight, inputs.innerHeight, inputs.devicePixelRatio, six); rust.framePixels(six[1], pixels)
-          check([...sizes, ...pixels], six, label)
           check(state.viewportHeight, rust.viewportHeight, label)
         } else if (kind === 7) {
           const trash = g.random.chance(.5) ? { bounds:box(g, true), position:new THREE.Vector3(g.num(300), g.num(80), g.num(100)) } : null
@@ -318,13 +315,6 @@ describe('compiled scene view against the frozen JavaScript', () => {
       rust.trashFrame([rect.left, rect.right, rect.top, rect.bottom, rect.width, rect.height], inputs.scroll, inputs.stageBounds.left, inputs.stageBounds.top,
         [inputs.scrollerBounds.left, inputs.scrollerBounds.top, inputs.scrollerBounds.right, inputs.scrollerBounds.bottom], inputs.innerWidth, inputs.innerHeight, inputs.visualBottom, out)
       check([frame.visible ? 1 : 0, frame.inFrame ? 1 : 0, frame.hitLeft, frame.hitTop, frame.hitWidth, frame.hitHeight], out, `frame ${trial}`)
-      // The frame's layout, given once (viewport() of bookshelf-scene.js), places the bin alike.
-      const canvasTop = g.random.pick([inputs.stageBounds.top, inputs.stageBounds.top + 120, g.num(400)]), scroll = Math.max(0, canvasTop - inputs.stageBounds.top)
-      check(scroll, rust.frameLayout(canvasTop, inputs.stageBounds.left, inputs.stageBounds.top, inputs.scrollerBounds.left, inputs.scrollerBounds.top,
-        inputs.scrollerBounds.right, inputs.scrollerBounds.bottom, inputs.innerWidth, inputs.innerHeight, inputs.visualBottom), `layout scroll ${trial}`)
-      const placed = ref.trashFrame({ ...inputs, scroll })
-      out.fill(-7); rust.trashPlaced([rect.left, rect.right, rect.top, rect.bottom, rect.width, rect.height], out)
-      check([placed.visible ? 1 : 0, placed.inFrame ? 1 : 0, placed.hitLeft, placed.hitTop, placed.hitWidth, placed.hitHeight], out, `placed ${trial}`)
       rust.free()
     }
     const g2 = generator(17), memo = new rustShelf.RustScene(390, 700, 390, 150, false, true, 0)
@@ -362,22 +352,6 @@ describe('compiled scene view against the frozen JavaScript', () => {
         [layout.stageBounds.left, layout.stageBounds.top], [layout.clip.left, layout.clip.top, layout.clip.right, layout.clip.bottom], [layout.innerWidth, layout.innerHeight], out)
       check([expected.visible ? 1 : 0, expected.viewHidden ? 1 : 0, expected.targetWidth, expected.targetHeight, expected.left, expected.top], out, `frame ${trial}`)
       check(expected.face, face, `face ${trial}`)
-      // In the frame's layout, given once; the face's text is handed over only when it changed.
-      const canvasTop = g.random.pick([layout.stageBounds.top, layout.stageBounds.top + 130, g.num(300)]), scroll = rust.frameLayout(canvasTop, layout.stageBounds.left, layout.stageBounds.top,
-        layout.clip.left, layout.clip.top, layout.clip.right, layout.clip.bottom, layout.innerWidth, layout.innerHeight, g.num(900))
-      check(Math.max(0, canvasTop - layout.stageBounds.top), scroll, `layout scroll ${trial}`)
-      const placed = ref.catalogFrame({ bounds, matrixWorld:world, cover, scroll, viewportHeight:rust.viewportHeight, progress:rust.progress, desiredMode:rust.isometric ? 'isometric' : 'spine',
-        stageBounds:layout.stageBounds, clip:layout.clip, innerWidth:layout.innerWidth, innerHeight:layout.innerHeight })
-      const packed = [[bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z], world.elements, [coverWidth, coverHeight, thickness]]
-      out.fill(-7); check(placed.face, rust.catalogPlaced(...packed, out), `placed face ${trial}`)
-      check([placed.visible ? 1 : 0, placed.viewHidden ? 1 : 0, placed.targetWidth, placed.targetHeight, placed.left, placed.top], out, `placed ${trial}`)
-      out.fill(-7); check(undefined, rust.catalogPlaced(...packed, out), `placed face ${trial} again`)
-      check([placed.visible ? 1 : 0, placed.viewHidden ? 1 : 0, placed.targetWidth, placed.targetHeight, placed.left, placed.top], out, `placed ${trial} again`)
-      // A booklet that moved by a pixel has another face in its (unmoved) tap box only if the box moved differently: either way the text is the frozen one.
-      const moved = world.clone(); moved.elements[12] += 1; packed[1] = moved.elements
-      const next = ref.catalogFrame({ bounds, matrixWorld:moved, cover, scroll, viewportHeight:rust.viewportHeight, progress:rust.progress, desiredMode:rust.isometric ? 'isometric' : 'spine',
-        stageBounds:layout.stageBounds, clip:layout.clip, innerWidth:layout.innerWidth, innerHeight:layout.innerHeight })
-      check(next.face, rust.catalogPlaced(...packed, out) ?? placed.face, `placed face ${trial} moved`)
       rust.free()
     }
   })

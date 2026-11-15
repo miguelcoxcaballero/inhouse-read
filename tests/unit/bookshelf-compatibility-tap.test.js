@@ -153,31 +153,4 @@ describe('validated compatibility taps with genuine queued record changes',()=>{
     click(spine());expect(observed.prepared).toHaveBeenCalledOnce();
     expect(observed.prepared.mock.calls[0][0]).toBe(latest);
   });
-
-  it('a touch that ends without a click does not swallow the next mouse click redirected to that book',async()=>{
-    // animation-continuity.spec.mjs:194 with 1.7.333's decoration-free slots: the finger swipe that changes the view
-    // starts just above the first book (Chromium hands such a touch to the nearest button) and sends no click, so the
-    // book kept its "ignore the compatibility click" mark. The next mouse press at that book's centre lands on the
-    // neighbour's overlapping tap rectangle (only that button was reset); the scene redirects it to the book, whose
-    // stale mark then swallowed the click and no flyout opened.
-    const other={...book,id:'compat-neighbour',title:'Neighbour whose tap rectangle is on top'};
-    observed.native=true;observed.layout=null;observed.hit=null;observed.updates=0;
-    shelf=renderBookshelf(container,[book,other],{shelfWidth:390,sections:false,sort:'none',viewMode:'spine',
-      onPrepareBook:observed.prepared,coverSrcFor:()=>new Promise(()=>{})});
-    const [first,neighbour]=container.querySelectorAll('.ihr-spine');
-    expect(first.dataset.bookId).toBe(book.id);expect(neighbour.dataset.bookId).toBe(other.id);
-    observed.hit=first;
-    pointer(first,'pointerdown',{kind:'touch',id:3,x:40,y:60});pointer(first,'pointermove',{kind:'touch',id:3,x:240,y:60});
-    pointer(first,'pointerup',{kind:'touch',id:3,x:240,y:60});await vi.advanceTimersByTimeAsync(0);
-    expect(observed.prepared).not.toHaveBeenCalled();
-    // The press lands on the neighbour's button; pointer capture gives the release and the click to the 3D hit.
-    pointer(neighbour,'pointerdown');pointer(first,'pointerup');click(first);
-    expect(observed.prepared).toHaveBeenCalledOnce();expect(observed.prepared.mock.calls[0][0]).toBe(book);
-  });
-
-  it('still swallows the one click that follows a cancelled touch on the same book',()=>{
-    mount();const down=spine();pointer(down,'pointerdown',{kind:'touch'});pointer(down,'pointercancel',{kind:'touch'});
-    click(down);expect(observed.prepared).not.toHaveBeenCalled();
-    click(down);expect(observed.prepared).toHaveBeenCalledOnce();
-  });
 });

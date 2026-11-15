@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
-import {rustPrepareCoverPixels} from './helpers/reference-font-glyph-wasm.js';
+import {rustPrepareCoverPixels} from '../../src/js/font-glyph-wasm.js';
 import {referencePrepare} from './helpers/reference-cover-preparation.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.font_prepare_pixels).toBe('function');});

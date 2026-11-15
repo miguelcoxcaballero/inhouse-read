@@ -29,7 +29,8 @@ window.warmCoverCore = async()=>{
   // Numeric helpers are statically imported; extraction awaits the native core.
   await Promise.all([
     import('/inhouse-read/src/js/cover-color-wasm.js'),
-    import('/inhouse-read/src/js/rust-core.js')
+    import('/inhouse-read/src/js/rust-core.js'),
+    import('/inhouse-read/src/js/font-glyph-wasm.js')
   ]);
 };
 window.exerciseColdCover = async()=>{
@@ -122,10 +123,10 @@ test('real URL cover analyzer invokes the actual Rust kernel and preserves decod
   await info.attach('production-cover-rust-proof.json',{contentType:'application/json',body:Buffer.from(JSON.stringify(result,null,2))});
   assertReady(result);expect(errors).toEqual([]);
 });
-test('a delayed colour bridge module keeps the page responsive and resumes native extraction',async({page},info)=>{
+test('a delayed glyph module keeps the page responsive and resumes native extraction',async({page},info)=>{
   let release,started;
   const held=new Promise(resolve=>{release=resolve}),requested=new Promise(resolve=>{started=resolve});
-  await page.route('**/src/js/cover-color-wasm.js*',async route=>{started();await held;await route.continue()});
+  await page.route('**/src/js/font-glyph-wasm.js*',async route=>{started();await held;await route.continue()});
   try{
     await page.goto(url,{waitUntil:'commit'});await requested;
     const pending=await page.evaluate(async()=>{

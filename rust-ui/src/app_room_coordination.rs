@@ -39,7 +39,7 @@ pub fn app_room_capture_run(host:JsValue)->Promise {cloud_host::start(async move
  let warned=if let Err(error)=result {
   let failures=num(&read(&state,"roomCaptureFailures")?)+1.0;
   set(&state,"roomCaptureFailures",&failures.into())?;set(&state,"roomCaptureAgain",&JsValue::TRUE)?;
-  read(&error,"message").and_then(|message|crate::app_report::warn("Colocación pendiente:",&message))
+  method(&host,"warnRoom",&[&error]).map(|_|())
  }else{Ok(())};
  // Exactly like finally: queue cleanup/rescheduling also runs if warning throws.
  set(&state,"roomCaptureBusy",&JsValue::FALSE)?;
