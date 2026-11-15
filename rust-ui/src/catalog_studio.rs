@@ -72,7 +72,11 @@ pub fn studio_render(state: &JsValue) -> R<()> {
     let mut tinting = false;
     if kind(state) == LAMP && showing {
         // 1: the transition is still easing; 2: the shown tint changed and was applied.
-        let code = method(&host(state), "retint", &[&clock()?.into()])?.as_f64().unwrap_or(0.0) as u32;
+        // The lamp studio's own transition says whether it has anything to do (rust-ui/src/catalog_lamp.rs);
+        // another host is asked.
+        let slot = crate::host::number(state, "tinting");
+        let code = if slot.is_nan() { method(&host(state), "retint", &[&clock()?.into()])?.as_f64().unwrap_or(0.0) as u32 }
+            else if slot > 0.0 { crate::catalog_lamp::retint(state, slot as usize - 1, clock()?)? } else { 0 };
         tinting = code & 1 != 0;
         if code & 2 != 0 { put(state, "dirty", true)?; }
     }
@@ -106,8 +110,11 @@ pub fn studio_build(state: &JsValue, prepare: JsValue) -> R<()> {
     put(state, "shown", false)?;
     let stage = if kind(state) == SHELF { cabinet_stage(&selection)? } else { JsValue::UNDEFINED };
     // The cabinet's studio hands over what its model is made of (`rig`) and the model is made here.
+    let lamp = if kind(state) == LAMP { get(state, "lamp") } else { JsValue::UNDEFINED };
     let model = if kind(state) == SHELF && !absent(&get(&host(state), "rig")) {
         shelf_make(&host(state), &get(state, "element"), &selection, &stage, &get(state, "model"), &get(state, "invalidate"))?
+    } else if !absent(&lamp) {
+        crate::catalog_lamp::build(state, &lamp, &selection, &get(state, "model"), &get(state, "invalidate"))?
     } else {
         method(&host(state), "make", &[&selection, &stage, &get(state, "model"), &get(state, "invalidate")])?
     };
@@ -214,7 +221,10 @@ pub fn studio_update_lamp(state: &JsValue, lamp: &JsValue, kelvin: &JsValue) -> 
     if !flag(state, "disposed") {
         let now = clock()?;
         let animate = flag(state, "shown") && !reduced_motion()?;
-        if truthy(&method(&host(state), "tintSet", &[kelvin, &now.into(), &animate.into()])?) { put(state, "dirty", true)?; studio_request(state)?; }
+        let tinting = crate::host::number(state, "tinting");
+        let changed = if tinting.is_nan() { truthy(&method(&host(state), "tintSet", &[kelvin, &now.into(), &animate.into()])?) }
+            else { crate::catalog_lamp::tint_set(state, tinting, kelvin, now, animate)? };
+        if changed { put(state, "dirty", true)?; studio_request(state)?; }
     }
     let material = if id == JsValue::from_str("tarnaby") { "glass-brass-black-steel" } else if id == JsValue::from_str("tripod") { "linen-oak" } else { "aluminium-opal" };
     set(&data, "material", &JsValue::from_str(material))?;
@@ -462,7 +472,9 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     let framing = method(&hooks, "createCatalogPreviewFrame", &[])?;
     let parts = field_object(&[("scene", scene.clone()), ("camera", camera.clone()), ("renderer", JsValue::NULL), ("environment", JsValue::NULL),
         ("lights", Object::new().into()), ("framing", framing), ("observer", JsValue::NULL)])?;
-    crate::host::method_opt(&adapter, "prepareScene", &[&parts])?;
+    // The lamp studio hands over what its model is made with (`lamp`) and is set up here.
+    let lamp = read(&adapter, "lamp")?;
+    if absent(&lamp) { crate::host::method_opt(&adapter, "prepareScene", &[&parts])?; } else { crate::catalog_lamp::scene(&lamp, &scene)?; }
     let record = field_object(&[("host", host.clone()), ("adapter", adapter.clone()), ("hooks", hooks.clone()), ("parts", parts.clone()),
         ("scene", scene.clone()), ("camera", camera), ("renderer", JsValue::NULL), ("state", JsValue::UNDEFINED)])?;
     if studio_build_renderer(&three, &room_environment, &hooks, &exports, &plan, &parts, &scene, &host, &record).is_err() {
@@ -479,13 +491,17 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     let rig = read(&adapter, "rig")?;
     if !absent(&rig) { set(&studio, "rig", &rig)?; set(&studio, "parts", &parts)?; }
     for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
-        set(&studio, name, &bind_export(&exports, export, &record)?)?;
+        // A picture is told whether it is the lamp studio's (its measure and filament lights are on the record).
+        let bound = if name == "draw" { method(&read(&exports, export)?, "bind", &[&JsValue::UNDEFINED, &record, &(!absent(&lamp)).into()])? }
+            else { bind_export(&exports, export, &record)? };
+        set(&studio, name, &bound)?;
     }
     let callbacks = field_object(&[("render", read(&exports, "studio_render")?), ("build", read(&exports, "studio_build")?),
         ("visibility", read(&exports, "studio_visibility")?), ("invalidate", read(&exports, "studio_invalidate")?),
         ("reveal", read(&exports, "studio_shown")?), ("swap", read(&exports, "studio_swap")?)])?;
     let state = studio_open(kind, studio, host.clone(), truthy(&renderer), callbacks)?;
     set(&record, "state", &state)?;
+    if !absent(&lamp) { set(&record, "lamp", &lamp)?; crate::catalog_lamp::opened(&record, &lamp, &state)?; }
     if truthy(&renderer) {
         set(&parts, "observer", &crate::host::construct("ResizeObserver", &[&read(&state, "invalidate")?])?)?;
         method(&read(&parts, "observer")?, "observe", &[&host])?;
@@ -505,14 +521,16 @@ pub fn studio_three_lost(record: &JsValue, event: &JsValue) -> R<()> {
 /// answers the cancellation.
 #[wasm_bindgen]
 pub fn studio_three_link(record: &JsValue, model: JsValue, done: JsValue) -> R<JsValue> {
-    let root = crate::host::method_opt(&get(record, "adapter"), "linkRoot", &[&model])?.filter(|root| !absent(root)).unwrap_or_else(|| model.clone());
+    let lamp = get(record, "lamp");
+    let root = if absent(&lamp) { crate::host::method_opt(&get(record, "adapter"), "linkRoot", &[&model])? } else { Some(get(&lamp, "display")) }
+        .filter(|root| !absent(root)).unwrap_or_else(|| model.clone());
     method(&get(record, "hooks"), "whenProgramsReady", &[&get(record, "renderer"), &get(record, "scene"), &get(record, "camera"), &root, &done])
 }
 
 /// Draw a model at the preview's layout size (the page may be scaled mid-flight, its drawing buffer not),
 /// keep its linked programs for a return to an earlier selection, and count the frame on the node.
 #[wasm_bindgen]
-pub fn studio_three_draw(record: &JsValue, model: JsValue) -> R<()> {
+pub fn studio_three_draw(record: &JsValue, lamp: bool, model: JsValue) -> R<()> {
     let (host, adapter, renderer, camera) = (get(record, "host"), get(record, "adapter"), get(record, "renderer"), get(record, "camera"));
     let rect = if truthy(&read(&host, "clientWidth")?) {
         field_object(&[("width", read(&host, "clientWidth")?), ("height", read(&host, "clientHeight")?)])?
@@ -520,10 +538,11 @@ pub fn studio_three_draw(record: &JsValue, model: JsValue) -> R<()> {
     let framing = read(&get(record, "parts"), "framing")?;
     let apply: js_sys::Function = read(&framing, "apply")?.dyn_into()
         .map_err(|_| JsValue::from(js_sys::TypeError::new("apply is not a function")))?;
-    let size = method(&adapter, "size", &[&model])?;
+    // The lamp studio's record holds its measure and its filament lights (null without them).
+    let size = if lamp { get(record, "size") } else { method(&adapter, "size", &[&model])? };
     let padding = read(&adapter, "padding")?;
     apply.apply(&framing, &[camera.clone(), renderer.clone(), rect, size, padding].into_iter().collect::<Array>())?;
-    crate::host::method_opt(&adapter, "beforeDraw", &[&model])?;
+    if lamp { crate::catalog_lamp::light_filaments(&get(record, "lighting"), record)?; } else { crate::host::method_opt(&adapter, "beforeDraw", &[&model])?; }
     method(&renderer, "render", &[&get(record, "scene"), &camera])?;
     // Going back to an earlier selection reuses its linked shaders.
     if truthy(&read(&renderer, "info")?) { method(&get(record, "hooks"), "retainPrograms", &[&renderer])?; }
@@ -544,7 +563,9 @@ pub fn studio_three_finish(record: &JsValue, model: JsValue) -> R<()> {
     let parts = get(record, "parts");
     present_call(&read(&parts, "observer")?, "disconnect")?;
     let rig = read(&get(record, "adapter"), "rig")?;
-    if absent(&rig) { method(&get(record, "adapter"), "release", &[&model, &parts])?; } else { shelf_release(&rig, &parts, &model)?; }
+    if !absent(&rig) { shelf_release(&rig, &parts, &model)?; }
+    else if !absent(&get(record, "lamp")) { crate::catalog_lamp::release(record, &model)?; }
+    else { method(&get(record, "adapter"), "release", &[&model, &parts])?; }
     present_call(&read(&parts, "environment")?, "dispose")?;
     let renderer = get(record, "renderer");
     if !absent(&renderer) { method(&renderer, "dispose", &[])?; }

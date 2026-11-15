@@ -1,20 +1,26 @@
-//! The lamp studio's model set-up (formerly `make`, `removeModel`, `prepareScene` and `release` of
-//! src/js/lamp-catalog-preview.js): the chosen lamp's glass and texture settings, the fixture's own light and
-//! its target, the stand's surfaces, where the camera stands and the centring of the whole display. Every
-//! three.js object is made, configured and added in the original's order, so three numbers them the same and
-//! the pictures are identical.
+//! The lamp studio (formerly the whole adapter of src/js/lamp-catalog-preview.js: `make`, `removeModel`,
+//! `prepareScene`, `release`, `retint`, `tintSet`, `applyTint`, the filament lamp's lighting and the lamp's
+//! builder call): the chosen lamp's glass and texture settings, the fixture's own light and its target, the
+//! stand's surfaces, where the camera stands, the centring of the whole display and the colour temperature
+//! that eases in. Every three.js object is made, configured and added in the original's order, so three
+//! numbers them the same and the pictures are identical.
 //!
-//! What it makes lives on `rig`, a plain record the preview owns (`{display, presentation, fixture, target,
-//! surfaces, size}`); `host` is the preview's own `{three, host, unlight(), create(lamp), light()}`, whose
-//! three functions stay JavaScript: the lamp's builder and the filament lamp's area lights. Nothing here
-//! outlives a call: the two traversal callbacks are dropped before it returns.
+//! What it makes lives on `rig`, a plain record the preview owns (`{three, host, createShelfLamp,
+//! createShelfLampLighting, tintLamp, tints, ms, display, presentation, fixture, target, surfaces}`): the
+//! lamp's builder, the filament lamp's area lights and the one function that writes a tint on three's
+//! colours stay JavaScript. What a frame reads is on the studio's own record (`size`, `lighting`, `entries`,
+//! `slot`). The transition's eighteen numbers are kept here, one slot per open studio, freed when it closes;
+//! the studio's state says in `tinting` whether a frame has anything to ease (slot + 1) or not (its negative),
+//! so a frame at rest reads one number. Nothing else outlives a call: the two traversal callbacks are
+//! dropped before it returns.
 //!
 //! Properties are read and written through declared accessors, each one direct call with no key string to
 //! build: a selection touches a few hundred of them.
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Object};
-use crate::host::{absent, call, jmin, num, truthy};
+use crate::host::{absent, call, function_of, get, jmin, method, num, read, set, truthy};
+use crate::studio_tint::{studio_tint_set, studio_tint_step, BUSY, FRESH, SHOWN, VALUE};
 
 type R<T> = Result<T, JsValue>;
 
@@ -63,7 +69,7 @@ extern "C" {
     #[wasm_bindgen(method, getter, catch)] fn target(this: &Thing) -> R<JsValue>;
     #[wasm_bindgen(method, setter, catch)] fn set_target(this: &Thing, value: &JsValue) -> R<()>;
     #[wasm_bindgen(method, getter, catch)] fn surfaces(this: &Thing) -> R<Thing>;
-    #[wasm_bindgen(method, setter, catch)] fn set_size(this: &Thing, value: &JsValue) -> R<()>;
+    #[wasm_bindgen(method, catch, js_name = tintLamp)] fn tint_lamp(this: &Thing, model: &JsValue, r: f64, g: f64, b: f64) -> R<JsValue>;
     #[wasm_bindgen(method, getter, catch)] fn three(this: &Thing) -> R<Thing>;
     #[wasm_bindgen(method, getter, catch)] fn host(this: &Thing) -> R<Thing>;
     #[wasm_bindgen(method, getter, catch)] fn dataset(this: &Thing) -> R<Thing>;
@@ -90,9 +96,6 @@ extern "C" {
     #[wasm_bindgen(method, catch)] fn traverse(this: &Thing, visit: &JsValue) -> R<JsValue>;
     #[wasm_bindgen(method, catch)] fn splice(this: &Thing, start: f64) -> R<Array>;
     #[wasm_bindgen(method, catch)] fn push(this: &Thing, value: &JsValue) -> R<JsValue>;
-    #[wasm_bindgen(method, catch)] fn unlight(this: &Thing) -> R<JsValue>;
-    #[wasm_bindgen(method, catch)] fn create(this: &Thing, lamp: &JsValue) -> R<Thing>;
-    #[wasm_bindgen(method, catch)] fn light(this: &Thing) -> R<JsValue>;
     // three's classes, read off its namespace.
     #[wasm_bindgen(method, getter = Group, catch)] fn group_class(this: &Thing) -> R<JsValue>;
     #[wasm_bindgen(method, getter = SpotLight, catch)] fn spot_class(this: &Thing) -> R<JsValue>;
@@ -131,10 +134,18 @@ fn walk(root: &Thing, mut visit: impl FnMut(&Thing) -> R<()> + 'static) -> R<()>
     walked.map(|_| ())
 }
 
+/// What one open lamp studio keeps here: the transition (rust-ui/src/studio_tint.rs) and the table it reads.
+struct Tint { state: [f64; 18], tints: Vec<f64>, ms: f64 }
+thread_local! { static TINTS: RefCell<Vec<Option<Tint>>> = const { RefCell::new(Vec::new()) }; }
+fn tint<T>(slot: usize, work: impl FnOnce(&mut Tint) -> T) -> Option<T> {
+    TINTS.with(|all| all.borrow_mut().get_mut(slot).and_then(Option::as_mut).map(work))
+}
+fn slot_of(record: &JsValue) -> usize { num(&get(record, "slot")) as usize }
+
 /// The display group and, inside it, the group of the stand's surfaces.
-#[wasm_bindgen]
-pub fn studio_lamp_scene(rig: &JsValue, three: &JsValue, scene: &JsValue) -> R<()> {
-    let (rig, three) = (thing(rig), thing(three));
+pub(crate) fn scene(rig: &JsValue, scene: &JsValue) -> R<()> {
+    let rig = thing(rig);
+    let three = rig.three()?;
     let display = make(three.group_class()?, "Group", &[])?;
     thing(scene).add(&display)?;
     let presentation = make(three.group_class()?, "Group", &[])?;
@@ -143,9 +154,61 @@ pub fn studio_lamp_scene(rig: &JsValue, three: &JsValue, scene: &JsValue) -> R<(
     rig.set_presentation(&presentation)
 }
 
+/// The studio is open: its transition is made at the default temperature (nothing applied yet), and its
+/// state and record learn where it is kept.
+pub(crate) fn opened(record: &JsValue, rig: &JsValue, state: &JsValue) -> R<()> {
+    let tints = js_sys::Float64Array::new(&read(rig, "tints")?).to_vec();
+    let mut made = Tint { state: [0.0; 18], ms: num(&read(rig, "ms")?), tints };
+    studio_tint_set(&mut made.state, &made.tints, made.ms, made.tints.first().copied().unwrap_or(f64::NAN), 0.0, false);
+    let slot = TINTS.with(|all| {
+        let mut all = all.borrow_mut();
+        match all.iter().position(Option::is_none) { Some(free) => { all[free] = Some(made); free } None => { all.push(Some(made)); all.len() - 1 } }
+    });
+    set(record, "slot", &number(slot as f64))?;
+    set(record, "lighting", &JsValue::NULL)?;
+    set(state, "lamp", record)?;
+    set(state, "rig", rig)?;
+    set(state, "tinting", &number((slot + 1) as f64))
+}
+
+/// The tint shown becomes the transition's value: the lamp's own materials and its fixture's light.
+fn apply_tint(rig: &JsValue, slot: usize, model: &JsValue) -> R<()> {
+    let Some([r, g, b]) = tint(slot, |tint| {
+        let value = [tint.state[VALUE], tint.state[VALUE + 1], tint.state[VALUE + 2]];
+        tint.state.copy_within(VALUE..VALUE + 3, SHOWN); tint.state[FRESH] = 0.0;
+        value
+    }) else { return Ok(()); };
+    thing(rig).tint_lamp(model, r, g, b).map(|_| ())
+}
+
+/// One frame of a studio whose transition has something to do. 1: still easing; 2: the shown tint changed
+/// and was applied.
+pub(crate) fn retint(state: &JsValue, slot: usize, now: f64) -> R<u32> {
+    let Some((code, busy)) = tint(slot, |tint| { let code = studio_tint_step(&mut tint.state, now); (code, tint.state[BUSY] != 0.0) }) else { return Ok(0); };
+    if !busy { set(state, "tinting", &number(-((slot + 1) as f64)))?; }
+    if code & 2 != 0 { apply_tint(&get(state, "rig"), slot, &get(state, "model"))?; }
+    Ok(code)
+}
+
+/// A colour temperature is asked for (`tinting` is the state's): true when it is not the one in use.
+pub(crate) fn tint_set(state: &JsValue, tinting: f64, kelvin: &JsValue, now: f64, animate: bool) -> R<bool> {
+    let (slot, kelvin) = (tinting.abs() as usize - 1, num(kelvin));
+    let changed = tint(slot, |tint| studio_tint_set(&mut tint.state, &tint.tints, tint.ms, kelvin, now, animate)).unwrap_or(false);
+    if tint(slot, |tint| tint.state[BUSY] != 0.0) == Some(true) { set(state, "tinting", &number((slot + 1) as f64))?; }
+    Ok(changed)
+}
+
+/// The filament lamp's area lights follow the lamp shown (before each picture).
+pub(crate) fn light_filaments(lighting: &JsValue, record: &JsValue) -> R<()> {
+    if !absent(lighting) { method(lighting, "update", &[&get(record, "entries")])?; }
+    Ok(())
+}
+
 /// Takes the lamp, its light and its stand out of the display and disposes of them.
-fn empty(rig: &Thing, host: &Thing, model: &JsValue) -> R<()> {
-    host.unlight()?;
+fn empty(record: &JsValue, rig: &Thing, model: &JsValue) -> R<()> {
+    let lighting = get(record, "lighting");
+    if !absent(&lighting) { method(&lighting, "dispose", &[])?; }
+    set(record, "lighting", &JsValue::NULL)?;
     let display = rig.display()?;
     if truthy(model) {
         display.remove(model)?;
@@ -173,19 +236,41 @@ fn empty(rig: &Thing, host: &Thing, model: &JsValue) -> R<()> {
     Ok(())
 }
 
-/// Builds the chosen lamp in place of `previous` and returns it. `parts` are the studio's own (`renderer`,
-/// `camera`); the preview tints the lamp and lights its filaments after this.
-#[wasm_bindgen]
-pub fn studio_lamp_make(rig: &JsValue, host: &JsValue, parts: &JsValue, lamp: &JsValue, previous: &JsValue, invalidate: &JsValue) -> R<JsValue> {
-    let (rig, host, parts) = (thing(rig), thing(host), thing(parts));
-    let three = host.three()?;
+/// Builds the chosen lamp in place of `previous`, tints it, lights its filaments and returns it. `record` is
+/// the studio's own (`lamp` the rig, `parts` with `renderer`, `camera` and `scene`).
+pub(crate) fn build(state: &JsValue, record: &JsValue, lamp: &JsValue, previous: &JsValue, invalidate: &JsValue) -> R<JsValue> {
+    let (rig, slot) = (get(record, "lamp"), slot_of(record));
+    let model = set_up(state, record, thing(&rig), slot, lamp, previous, invalidate)?;
+    apply_tint(&rig, slot, &model)?;
+    let lighting = get(record, "lighting");
+    if !absent(&lighting) {
+        let entry: JsValue = Object::new().into();
+        set(&entry, "kind", &"lamp".into())?; set(&entry, "key", &"catalog-filaments".into())?;
+        set(&entry, "model", &model)?; set(&entry, "width", &read(&get(record, "size"), "x")?)?;
+        set(record, "entries", &Array::of1(&entry))?;
+    }
+    light_filaments(&lighting, record)?;
+    Ok(model)
+}
+
+fn set_up(state: &JsValue, record: &JsValue, rig: &Thing, slot: usize, lamp: &JsValue, previous: &JsValue, invalidate: &JsValue) -> R<JsValue> {
+    let parts = get(record, "parts");
+    let parts = thing(&parts);
+    let three = rig.three()?;
     let (renderer, camera) = (parts.renderer()?, parts.camera()?);
-    empty(rig, host, previous)?;
+    empty(record, rig, previous)?;
     let display = rig.display()?;
     let zero = number(0.0);
     display.position()?.set(&zero, &zero, &zero)?;
     renderer.shadow_map()?.set_needs_update(true)?;
-    let model = host.create(lamp)?;
+    let options: JsValue = Object::new().into();
+    set(&options, "lampId", &read(lamp, "id")?)?; set(&options, "width", &read(&read(lamp, "dimensions")?, "width")?)?;
+    set(&options, "quality", &"high".into())?;
+    set(&options, "kelvin", &number(tint(slot, |tint| tint.state[0]).unwrap_or(f64::NAN)))?;
+    let model: Thing = function_of(rig, "createShelfLamp", &[&options])?.unchecked_into();
+    // A new lamp shows no tint yet: the next frame applies the transition's.
+    tint(slot, |tint| { tint.state[FRESH] = 1.0; tint.state[BUSY] = 1.0; });
+    set(state, "tinting", &number((slot + 1) as f64))?;
     model.user_data()?.set_invalidate(invalidate)?;
     walk(&model, move |object| {
         if !truthy(&object.is_mesh()?) { return Ok(()); }
@@ -214,7 +299,9 @@ pub fn studio_lamp_make(rig: &JsValue, host: &JsValue, parts: &JsValue, lamp: &J
     if !absent(&emitter) && truthy(&thing(&emitter).filaments()?) {
         let emitter = thing(&emitter);
         emitter.set_intensity(num(&emitter.intensity()?) * stage.filament)?;
-        host.light()?;
+        let options: JsValue = Object::new().into();
+        set(&options, "maxLights", &number(1.0))?; set(&options, "filamentAreas", &JsValue::TRUE)?;
+        set(record, "lighting", &function_of(rig, "createShelfLampLighting", &[&get(&get(record, "parts"), "scene"), &options])?)?;
     } else if truthy(&emitter) {
         let emitter = thing(&emitter);
         let fixture = if truthy(&emitter.direction()?) {
@@ -256,19 +343,21 @@ pub fn studio_lamp_make(rig: &JsValue, host: &JsValue, parts: &JsValue, lamp: &J
     camera.position()?.set(&number(stage.camera[0]), &number(stage.camera[1]), &number(stage.camera[2]))?;
     let bounds = make(three.box_class()?, "Box3", &[])?.set_from_object(&display)?;
     let size = make(three.vector_class()?, "Vector3", &[])?;
-    rig.set_size(&bounds.get_size(&size)?)?;
+    set(record, "size", &bounds.get_size(&size)?)?;
     let centre = make(three.vector_class()?, "Vector3", &[])?;
     display.position()?.sub(&bounds.get_center(&centre)?)?;
     camera.look_at(0.0, 0.0, 0.0)?;
-    host.host()?.dataset()?.set_light_emitter(if truthy(&emitter) { "warm-physical" } else { "none" })?;
+    rig.host()?.dataset()?.set_light_emitter(if truthy(&emitter) { "warm-physical" } else { "none" })?;
     // Its light must exist before linking: every lit program depends on it.
     display.update_matrix_world(true)?;
     Ok(model.into())
 }
 
-/// The studio is closed: the lamp, its light and its stand go, and every light left in the scene is disposed of.
-#[wasm_bindgen]
-pub fn studio_lamp_release(rig: &JsValue, host: &JsValue, model: &JsValue, scene: &JsValue) -> R<()> {
-    empty(thing(rig), thing(host), model)?;
-    walk(thing(scene), |object| { if truthy(&object.is_light()?) { object.dispose()?; } Ok(()) })
+/// The studio is closed: the lamp, its light and its stand go, every light left in the scene is disposed of,
+/// and its transition's slot is free again.
+pub(crate) fn release(record: &JsValue, model: &JsValue) -> R<()> {
+    let slot = slot_of(record);
+    TINTS.with(|all| if let Some(kept) = all.borrow_mut().get_mut(slot) { *kept = None; });
+    empty(record, thing(&get(record, "lamp")), model)?;
+    walk(thing(&get(&get(record, "parts"), "scene")), |object| { if truthy(&object.is_light()?) { object.dispose()?; } Ok(()) })
 }

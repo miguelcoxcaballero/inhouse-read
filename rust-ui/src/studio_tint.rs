@@ -6,8 +6,8 @@
 //! while a frame has something to do (the host does not call for a frame at rest).
 use wasm_bindgen::prelude::*;
 use crate::host::{jmax,jmin};
-const FROM:usize=1;const TO:usize=4;const VALUE:usize=7;const STARTED:usize=10;const DURATION:usize=11;
-const SHOWN:usize=12;const FRESH:usize=15;const MADE:usize=16;const BUSY:usize=17;
+const FROM:usize=1;const TO:usize=4;pub(crate) const VALUE:usize=7;const STARTED:usize=10;const DURATION:usize=11;
+pub(crate) const SHOWN:usize=12;pub(crate) const FRESH:usize=15;const MADE:usize=16;pub(crate) const BUSY:usize=17;
 
 /// `normalizeLampKelvin` and `lampTint` over `[default, kelvin, r, g, b, ...]`.
 fn wanted(tints:&[f64],kelvin:f64)->(f64,[f64;3]){
