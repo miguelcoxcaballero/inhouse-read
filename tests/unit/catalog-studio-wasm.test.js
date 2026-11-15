@@ -8,11 +8,11 @@ import { createShelfCatalogPreview as frozenShelf } from './helpers/reference-sh
 import { createLampCatalogPreview as frozenLamp } from './helpers/reference-lamp-catalog-preview.js';
 import { rustShelf } from './helpers/rust-shelf-ready.js';
 
-// The studios' loop (frames, builds, links, visibility, activity, recolouring, tint easing), their lights
-// and the lamp's stand run in Rust (rust-ui/src/catalog_studio.rs). The frozen originals are the oracle:
+// The studios' loop (frames, builds, links, visibility, activity, recolouring, tint easing), their lights,
+// the lamp's stand and the cabinet's model run in Rust (rust-ui/src/catalog_studio.rs). The frozen originals are the oracle:
 // both are driven by the same pseudo-random scripts and every observable effect is compared step by step.
 
-const log = vi.hoisted(() => ({ entries:[], renderers:[], models:[] }));
+const log = vi.hoisted(() => ({ entries:[], renderers:[], models:[], watched:new WeakSet() }));
 vi.mock('three', async importOriginal => {
   const three = await importOriginal();
   return { ...three,
@@ -51,6 +51,20 @@ function model(kind) {
       // Uuids are random per object: the options are compared without them.
       log.entries.push(['create', kind, JSON.stringify(options ?? null, (key, value) =>
         typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value) ? 'uuid' : value)]);
+      // The wooden cabinet's own materials (rust-ui/src/catalog_studio.rs makes them): the options' order, how three
+      // numbered them, what they share, how their two pictures are set, and when each of the five is disposed of.
+      if (options?.wood) {
+        const { wood, backWood, darkWood } = options;
+        log.entries.push(['walnut', Object.keys(options).join(), backWood.id - wood.id, darkWood.id - wood.id, wood.bumpMap.id - wood.map.id,
+          [backWood, darkWood].every(material => material.map === wood.map && material.bumpMap === wood.bumpMap && material.roughnessMap === wood.bumpMap),
+          wood.roughnessMap === wood.bumpMap, ...[wood.map, wood.bumpMap].flatMap(texture => [texture.colorSpace, texture.wrapS, texture.wrapT, texture.anisotropy]),
+          [wood, backWood, darkWood].map(material => [material.type, material.color.getHex(), material.roughness, material.bumpScale, material.vertexColors,
+            material.clearcoat ?? null, material.clearcoatRoughness ?? null, material.envMapIntensity]).join('|'), JSON.stringify(options.rows)]);
+        if (!log.watched.has(wood)) {
+          log.watched.add(wood);
+          for (const [name, item] of Object.entries({ wood, backWood, darkWood, colour:wood.map, surface:wood.bumpMap })) item.addEventListener('dispose', () => log.entries.push(['dispose', name]));
+        }
+      }
       group.userData.setTint = tint => log.entries.push(['setTint', group.name, ...tint]);
       group.userData.dispose = () => log.entries.push(['model.dispose', group.name]);
       group.userData.updatePotColor = color => { log.entries.push(['recolour', group.name, color]); return color !== 'blue'; };
@@ -88,6 +102,9 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
   vi.stubGlobal('ResizeObserver', class { constructor(callback) { observers.push(callback); } observe() {} disconnect() { log.entries.push(['observer.disconnect']); } });
+  // A light's shadow disposed of (the cabinet studio lets its key light's go when it closes).
+  const shadows = Object.getPrototypeOf(Object.getPrototypeOf(new THREE.DirectionalLight().shadow));
+  vi.spyOn(shadows, 'dispose').mockImplementation(function () { log.entries.push(['shadow.dispose', this.mapSize.x]); });
   vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((url, onLoad) => { log.entries.push(['load', url]); setTimeout(() => onLoad?.(new THREE.Texture()), 40); return new THREE.Texture(); });
 });
 afterEach(() => { document.body.replaceChildren(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -151,7 +168,7 @@ function run(kind, create, seed, steps) {
 describe.each(Object.keys(factories))('%s studio against the frozen JavaScript', kind => {
   it('does the same thing at every step of 60 random scripts', () => {
     const [frozen, production] = factories[kind];
-    const seen = { render:0, create:0, 'model.dispose':0, setSize:0, setTint:0, recolour:0 };
+    const seen = { render:0, create:0, 'model.dispose':0, setSize:0, setTint:0, recolour:0, walnut:0, dispose:0, 'shadow.dispose':0, load:0 };
     const set = { textured:0, glass:0, opaque:0, cones:0, bulbs:0, stand:0 };
     for (let seed = 1; seed <= 60; seed++) {
       const expected = run(kind, frozen, seed, 80), actual = run(kind, production, seed, 80);
@@ -175,6 +192,8 @@ describe.each(Object.keys(factories))('%s studio against the frozen JavaScript',
     if (kind === 'lamp') expect(seen.setTint).toBeGreaterThan(40);
     if (kind === 'lamp') { console.log(JSON.stringify(set)); for (const count of Object.values(set)) expect(count).toBeGreaterThan(20); }
     if (kind === 'plant') expect(seen.recolour).toBeGreaterThan(5);
+    // The wooden cabinet was made again and again from one set of materials, which went with each studio.
+    if (kind === 'shelf') { expect(seen.walnut).toBeGreaterThan(30); expect(seen.load).toBeGreaterThan(40); expect(seen.dispose).toBe(seen.load / 2 * 5); expect(seen['shadow.dispose']).toBeGreaterThan(50); }
   });
 
   it('keeps no module handles and no callbacks once disposed', () => {

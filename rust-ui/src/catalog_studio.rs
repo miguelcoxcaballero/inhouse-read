@@ -105,7 +105,12 @@ pub fn studio_build(state: &JsValue, prepare: JsValue) -> R<()> {
     put(state, "cancelLink", JsValue::NULL)?;
     put(state, "shown", false)?;
     let stage = if kind(state) == SHELF { cabinet_stage(&selection)? } else { JsValue::UNDEFINED };
-    let model = method(&host(state), "make", &[&selection, &stage, &get(state, "model"), &get(state, "invalidate")])?;
+    // The cabinet's studio hands over what its model is made of (`rig`) and the model is made here.
+    let model = if kind(state) == SHELF && !absent(&get(&host(state), "rig")) {
+        shelf_make(&host(state), &get(state, "element"), &selection, &stage, &get(state, "model"), &get(state, "invalidate"))?
+    } else {
+        method(&host(state), "make", &[&selection, &stage, &get(state, "model"), &get(state, "invalidate")])?
+    };
     put(state, "model", model.clone())?;
     put(state, "cancelLink", method(&host(state), "link", &[&model, &get(state, "reveal")])?)?;
     Ok(())
@@ -471,6 +476,8 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     set(&record, "renderer", &renderer)?;
     let studio: JsValue = Object::new().into();
     for name in ["make", "swap", "retint", "tintSet"] { set(&studio, name, &read(&adapter, name)?)?; }
+    let rig = read(&adapter, "rig")?;
+    if !absent(&rig) { set(&studio, "rig", &rig)?; set(&studio, "parts", &parts)?; }
     for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
         set(&studio, name, &bind_export(&exports, export, &record)?)?;
     }
@@ -536,11 +543,180 @@ pub fn studio_three_unframe(record: &JsValue) -> R<JsValue> { method(&read(&get(
 pub fn studio_three_finish(record: &JsValue, model: JsValue) -> R<()> {
     let parts = get(record, "parts");
     present_call(&read(&parts, "observer")?, "disconnect")?;
-    method(&get(record, "adapter"), "release", &[&model, &parts])?;
+    let rig = read(&get(record, "adapter"), "rig")?;
+    if absent(&rig) { method(&get(record, "adapter"), "release", &[&model, &parts])?; } else { shelf_release(&rig, &parts, &model)?; }
     present_call(&read(&parts, "environment")?, "dispose")?;
     let renderer = get(record, "renderer");
     if !absent(&renderer) { method(&renderer, "dispose", &[])?; }
     if !absent(&renderer) { method(&renderer, "forceContextLoss", &[])?; }
     method(&get(record, "host"), "replaceChildren", &[])?;
+    Ok(())
+}
+
+// ---- The cabinet studio's model (formerly `make`, `walnutMaterials`, `removeModel` and `release` of
+// src/js/shelf-catalog-preview.js). `rig` is the preview's own record: `three`, the two walnut pictures
+// (`maps`), the wooden cabinet's measures (`spec`), the two builders (`createBaggebo`, `createShelfFurniture`),
+// the measured `size` of the model shown (the preview measures it when it is first asked) and what the walnut
+// is made of once it has been needed (`walnut`, `textures`, `materials`). Every three.js object is made in the
+// original's order, so three numbers them the same.
+//
+// The straight runs of this set-up are written as data, one host access a step, over numbered places: a
+// cold path costs a few bytes a step this way, where a line of code costs about a hundred with its error
+// path. Places: 0 three, 1 the rig, 2 the renderer, 3 invalidate, 4 the scene, 5 the lights, 6 the stage,
+// 7-15 the walnut's work (9 colour, 10 surface, 12-14 the materials, 15 the three of them), 16 the studio's
+// parts and then the wooden cabinet's measures, 17 a builder's options, 18 a hand, 19 the model, 20 the
+// preview's node.
+#[derive(Clone, Copy)]
+enum Step {
+    /// `a = b[name]`
+    Get(u8, u8, &'static str),
+    /// `a[name] = b`
+    Put(u8, &'static str, u8),
+    /// `a[name] = NUMBERS[n]`, a text, true or null
+    Num(u8, &'static str, u8),
+    Text(u8, &'static str, &'static str),
+    Yes(u8, &'static str),
+    Null(u8, &'static str),
+    /// `a = NUMBERS[n]`
+    Const(u8, u8),
+    /// `a = b[index]`
+    At(u8, u8, u8),
+    /// `a = b.name(...places)`
+    Call(u8, u8, &'static str, &'static [u8]),
+    /// `a = b(...places)`, a plain call of the function in `b` (named for its error)
+    Run(u8, u8, &'static str, &'static [u8]),
+    /// `a = new b.name(...places)`, `b` being three
+    New(u8, u8, &'static str, &'static [u8]),
+    /// `a = {}`
+    Fresh(u8),
+    /// `a = Math.min(8, a)`
+    Min8(u8),
+    /// `a = a === 1`
+    One(u8),
+    /// `for (const item of a) item.name()`
+    Each(u8, &'static str),
+}
+use Step::*;
+const PLACES: usize = 21;
+const THREE: u8 = 0;
+const NUMBERS: [f64; 15] = [0.55, 0.9, 0.32, 0.36, 0.4, 1.0, 0.7, 0.5, 0.95, 0.26, 0.4, 0.075, -0.28, 0.0, 600.0];
+type Places = [JsValue; PLACES];
+
+#[inline(never)]
+fn run(places: &mut Places, steps: &[Step]) -> R<()> {
+    for step in steps {
+        let (to, made): (u8, JsValue) = match *step {
+            Get(a, b, name) => (a, read(&places[b as usize], name)?),
+            Put(a, name, b) => { set(&places[a as usize], name, &places[b as usize])?; continue; }
+            Num(a, name, n) => { set(&places[a as usize], name, &NUMBERS[n as usize].into())?; continue; }
+            Text(a, name, text) => { set(&places[a as usize], name, &text.into())?; continue; }
+            Yes(a, name) => { set(&places[a as usize], name, &JsValue::TRUE)?; continue; }
+            Null(a, name) => { set(&places[a as usize], name, &JsValue::NULL)?; continue; }
+            Const(a, n) => (a, NUMBERS[n as usize].into()),
+            At(a, b, index) => (a, at(&places[b as usize], u32::from(index))),
+            Call(a, b, name, list) | Run(a, b, name, list) | New(a, b, name, list) => {
+                // Up to three arguments, by place.
+                let hold: [&JsValue; 3] = std::array::from_fn(|index| &places[list.get(index).map_or(0, |place| *place as usize)]);
+                let (target, args) = (&places[b as usize], &hold[..list.len()]);
+                (a, match *step { Call(..) => method(target, name, args)?, Run(..) => crate::host::call(target, name, args)?, _ => three_new(target, name, args)? })
+            }
+            Fresh(a) => (a, Object::new().into()),
+            Min8(a) => (a, crate::host::jmin(8.0, crate::host::num(&places[a as usize])).into()),
+            One(a) => (a, (places[a as usize] == JsValue::from_f64(1.0)).into()),
+            Each(a, name) => {
+                let mut index = 0;
+                while f64::from(index) < crate::host::num(&read(&places[a as usize], "length")?) { method(&at(&places[a as usize], index), name, &[])?; index += 1; }
+                continue;
+            }
+        };
+        places[to as usize] = made;
+    }
+    Ok(())
+}
+
+/// The studio's parts, then its lights for the cabinet's type (the stage: hemisphere, key, fill, environment,
+/// key casts shadows).
+const OPEN: [Step; 3] = [Get(4, 16, "scene"), Get(2, 16, "renderer"), Get(5, 16, "lights")];
+const LIGHTS: [Step; 18] = [
+    Get(18, 5, "hemisphere"), At(7, 6, 0), Put(18, "intensity", 7), Get(18, 5, "key"), At(7, 6, 1), Put(18, "intensity", 7),
+    Get(18, 5, "fill"), At(7, 6, 2), Put(18, "intensity", 7), At(7, 6, 3), Put(4, "environmentIntensity", 7),
+    Get(18, 5, "key"), At(7, 6, 4), One(7), Put(18, "castShadow", 7), Get(18, 2, "shadowMap"), Yes(18, "needsUpdate"),
+    Get(THREE, 1, "three"),
+];
+/// The white steel cabinet.
+const BAGGEBO: [Step; 4] = [Fresh(17), Num(17, "width", 14), Get(18, 1, "createBaggebo"), Run(19, 18, "createBaggebo", &[17])];
+/// The wooden cabinet's measures; its rows follow, then the walnut.
+const MEASURES: [Step; 9] = [
+    Get(16, 1, "spec"), Fresh(17), Get(18, 16, "width"), Put(17, "width", 18), Get(18, 16, "height"), Put(17, "height", 18),
+    Get(18, 16, "depth"), Put(17, "depth", 18), Num(17, "scale", 5),
+];
+/// The walnut's three materials over its two pictures, made the first time a wooden cabinet is shown: the
+/// pictures repeat and take the renderer's anisotropy (8 at most), the colour one is sRGB. The last eight steps
+/// hand the three to the cabinet's options and build it.
+const WALNUT: [Step; 72] = [
+    Get(6, 1, "maps"), New(7, THREE, "TextureLoader", &[]),
+    At(8, 6, 0), Call(9, 7, "load", &[8, 3]), At(8, 6, 1), Call(10, 7, "load", &[8, 3]),
+    Get(8, THREE, "SRGBColorSpace"), Put(9, "colorSpace", 8), Get(11, 1, "textures"),
+    Get(8, THREE, "RepeatWrapping"), Put(9, "wrapT", 8), Put(9, "wrapS", 8),
+    Get(8, 2, "capabilities"), Call(8, 8, "getMaxAnisotropy", &[]), Min8(8), Put(9, "anisotropy", 8), Call(8, 11, "push", &[9]),
+    Get(8, THREE, "RepeatWrapping"), Put(10, "wrapT", 8), Put(10, "wrapS", 8),
+    Get(8, 2, "capabilities"), Call(8, 8, "getMaxAnisotropy", &[]), Min8(8), Put(10, "anisotropy", 8), Call(8, 11, "push", &[10]),
+    Fresh(8), Put(8, "map", 9), Put(8, "bumpMap", 10), Num(8, "bumpScale", 0), Put(8, "roughnessMap", 10), Yes(8, "vertexColors"),
+    Text(8, "color", "#ffffff"), Num(8, "roughness", 1), Num(8, "clearcoat", 2), Num(8, "clearcoatRoughness", 3), New(12, THREE, "MeshPhysicalMaterial", &[8]),
+    Fresh(8), Put(8, "map", 9), Put(8, "bumpMap", 10), Num(8, "bumpScale", 4), Put(8, "roughnessMap", 10), Yes(8, "vertexColors"),
+    Text(8, "color", "#e6dccf"), Num(8, "roughness", 5), Num(8, "envMapIntensity", 6), New(13, THREE, "MeshStandardMaterial", &[8]),
+    Fresh(8), Put(8, "map", 9), Put(8, "bumpMap", 10), Num(8, "bumpScale", 7), Put(8, "roughnessMap", 10), Yes(8, "vertexColors"),
+    Text(8, "color", "#f2e6d6"), Num(8, "roughness", 8), Num(8, "clearcoat", 9), Num(8, "clearcoatRoughness", 10), New(14, THREE, "MeshPhysicalMaterial", &[8]),
+    Get(8, 1, "materials"), Call(8, 8, "push", &[12, 13, 14]),
+    Fresh(15), Put(15, "wood", 12), Put(15, "backWood", 13), Put(15, "darkWood", 14), Put(1, "walnut", 15),
+    Get(18, 15, "wood"), Put(17, "wood", 18), Get(18, 15, "backWood"), Put(17, "backWood", 18), Get(18, 15, "darkWood"), Put(17, "darkWood", 18),
+    Get(18, 1, "createShelfFurniture"), Run(19, 18, "createShelfFurniture", &[17]),
+];
+/// A near-front angle reveals the shallow depth and perforations while retaining an easy comparison of the two
+/// furniture silhouettes; the model is centred, shown, and its measures (mm) written on the preview's node.
+const PLACE: [Step; 16] = [
+    Get(18, 19, "rotation"), Const(6, 11), Const(7, 12), Const(8, 13), Call(18, 18, "set", &[6, 7, 8]),
+    New(6, THREE, "Box3", &[]), Call(6, 6, "setFromObject", &[19]), Get(8, 19, "position"), New(7, THREE, "Vector3", &[]), Call(7, 6, "getCenter", &[7]),
+    Call(8, 8, "sub", &[7]), Call(8, 4, "add", &[19]),
+    Get(18, 20, "dataset"), Text(18, "modelWidth", "600"), Text(18, "modelDepth", "250"), Text(18, "modelHeight", "1160"),
+];
+
+/// Takes the cabinet in place 19 out of the scene and disposes of it.
+fn shelf_remove(places: &mut Places) -> R<()> {
+    if !truthy(&places[19]) { return Ok(()); }
+    run(places, &[Call(18, 4, "remove", &[19]), Get(18, 19, "userData"), Get(7, 18, "dispose")])?;
+    if places[7].is_function() { run(places, &[Call(7, 18, "dispose", &[])])?; } else { crate::host::method_opt(&places[18], "disposeGeometry", &[])?; }
+    run(places, &[Null(1, "size")])
+}
+
+/// Builds the chosen cabinet in place of `previous` under the studio's lights for its type, and returns it.
+fn shelf_make(studio: &JsValue, element: &JsValue, kind: &JsValue, stage: &JsValue, previous: &JsValue, invalidate: &JsValue) -> R<JsValue> {
+    let mut places: Places = std::array::from_fn(|_| JsValue::UNDEFINED);
+    for (place, value) in [(1, get(studio, "rig")), (16, get(studio, "parts")), (3, invalidate.clone()), (6, stage.clone()), (19, previous.clone()), (20, element.clone())] { places[place] = value; }
+    run(&mut places, &OPEN)?;
+    shelf_remove(&mut places)?;
+    run(&mut places, &LIGHTS)?;
+    if *kind == JsValue::from_str("baggebo") { run(&mut places, &BAGGEBO)?; } else {
+        run(&mut places, &MEASURES)?;
+        let (bottoms, rows) = (read(&places[16], "shelfBottoms")?, Array::new());
+        for index in 0..crate::host::num(&read(&bottoms, "length")?) as u32 { rows.push(&field_object(&[("bottom", at(&bottoms, index))])?); }
+        set(&places[17], "rows", &rows)?;
+        places[15] = read(&places[1], "walnut")?;
+        // Made already: only the last eight steps.
+        let steps: &[Step] = if truthy(&places[15]) { &WALNUT[WALNUT.len() - 8..] } else { &WALNUT };
+        run(&mut places, steps)?;
+    }
+    run(&mut places, &PLACE)?;
+    Ok(places[19].clone())
+}
+
+/// The studio is closed: the cabinet goes, then the walnut's materials and pictures and the key light's shadow.
+fn shelf_release(rig: &JsValue, parts: &JsValue, model: &JsValue) -> R<()> {
+    let mut places: Places = std::array::from_fn(|_| JsValue::UNDEFINED);
+    for (place, value) in [(1, rig), (16, parts), (19, model)] { places[place] = value.clone(); }
+    run(&mut places, &OPEN)?;
+    shelf_remove(&mut places)?;
+    run(&mut places, &[Get(8, 1, "materials"), Each(8, "dispose"), Get(8, 1, "textures"), Each(8, "dispose"), Get(18, 5, "key")])?;
+    if !absent(&places[18]) { run(&mut places, &[Get(18, 18, "shadow"), Call(18, 18, "dispose", &[])])?; }
     Ok(())
 }
