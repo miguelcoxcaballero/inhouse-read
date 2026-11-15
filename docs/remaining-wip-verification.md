@@ -1,3 +1,12 @@
+# 1.8.1 — tanda integ-bar-17
+
+- Unitarias: 0 fallos. Capturas: 26 estados contra la 1.7.339, 13 idénticos bit a bit, diferencia máxima 1/255.
+- Navegador en local (442 pruebas, antes de los dos arreglos): fallaban 13. smoke:80 venía de la 1.8.0 (pasa 3/3 con la 1.7.338) y pasa con el arreglo de mensajes. Las 10 de rust-relief-editor y rust-relief-palette observaban exportaciones que la página ya no cruza; reancladas en contadores del módulo, pasan las 18. Siguen: native-aligned-shelf-return-contract:10 (rojo habitual en esta máquina) y live-room-stability:27 (inestable; 2 de 2 al repetir).
+- Tras los dos arreglos solo se repitieron smoke, los dos specs del relieve y las unitarias, no las 442.
+- La prueba del relieve ya no comprueba en el navegador que la pasada tras elegir una tarjeta sea la de normales, ni jobs===releases; queda en relief-job-differential y cover-relief-flow-differential.
+- Los specs editados a ciegas por los agentes (rust-prepared-page, rust-stage-gate y los de importaciones) pasan.
+- Sin verificar: teléfono real, WebView de Android, lector de pantalla; las velocidades son de Node/WASM.
+
 # 1.7.339 — tanda integ-bar-16
 
 - Unitarias: 4 tandas, 0 fallos. Capturas: 26 estados contra la 1.7.338, 15 idénticos bit a bit, diferencia máxima 1/255.

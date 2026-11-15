@@ -1,3 +1,15 @@
+# Entrega 1.8.1 (tanda integ-bar-17): rectángulos de la escena, pasadas del relieve, páginas preparadas y figuras de PDF
+
+Ramas sobre la 1.8.0: ready/scene-frame-34 (cd14ae2c), ready/book-model-26 (4206e431, incluye la 24 y la 25), ready/decor-shell-25 (506ea54f), ready/readers-voice-26 (880299ab), ready/ci-reds-4 (c082b728).
+Barra estimada en local (bytes al estilo de GitHub): 77,31 % Rust; quedan unos 787 KB de JavaScript (1.7.339: 76,75 %, 816 KB).
+
+- Escena: rectángulos y empaquetado binario en rust-ui/src/scene_rects.rs y scene_bin.rs (-7.250 B de JS).
+- Libro: las pasadas del relieve las crea, avanza y libera el propio módulo (rust-ui/src/relief_flow.rs). El bloque 24 hace 2,7 µs más lenta una ruta en frío; el bloque 25 solo mueve constantes de prueba (cosmética de la barra). Dos contadores nuevos (relief_analyses_made, relief_analysis_steps) para poder observarlo desde el navegador.
+- Decoración: prepared-page.js desaparece. Cambio de comportamiento: la preparación de una página espera al módulo del lector en vez de saltársela a los 2 s.
+- Lector: figuras de PDF en rust-ui/src/pdf_pictures.rs; pdf-figures-wasm.js desaparece.
+- Google: la 1.8.0 mostraba «No se pudo conectar. popup_closed»; app_cloud_actions.rs traduce popup_closed y popup_failed_to_open a frases. El módulo compartido de vendor no se toca.
+- Pruebas (ci-reds-4): cuatro pruebas de navegador que el CI daba en rojo desde hace versiones eran pruebas mal planteadas y se reescriben (shelf-placement:174, shelf-close-placement:90, shelf-input-responsiveness:22, lamp-switches:136). Sin confirmar todavía en el CI.
+
 # Entrega 1.7.339 (tanda integ-bar-16): filas de la escena, reserva del lomo, cola de refresco, kelvin y partes del lector
 
 Ramas: ready/scene-frame-30 (169d3193), ready/book-model-22 (7af66f79, incluye la 21), ready/decor-shell-23 (20dc097b, incluye la 22), ready/readers-voice-24 (cd087c30).

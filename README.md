@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.8.1 — Más Rust y mensajes de Google legibles
+
+Pasan a Rust los rectángulos y el empaquetado de la escena, las pasadas del
+relieve, la preparación de páginas y las figuras de los PDF. Al cerrar o
+bloquear la ventana de Google vuelve a leerse una frase y no un código.
+No cambia el aspecto (estimación local: 77,3 % Rust).
+
+
 ## 1.8.0 — Google compartido entre apps
 
 Login común de Inhouse Services Updater y reutilización segura de la cuenta en las APK oficiales. Android 1.1.26 añade el proveedor de sesión compartida.
