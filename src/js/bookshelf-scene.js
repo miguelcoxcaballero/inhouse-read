@@ -69,18 +69,14 @@ if (offThreadVeneer()) {
     if (normalizeShelfType(localStorage.getItem('inhouse-read-shelf-type')) === 'walnut') { veneer(WALNUT); veneer(WALNUT_SURFACE); }
   } catch { /* Without storage the scene decodes the veneer itself. */ }
 }
-const DURATION = 700;
 const VENEER_WAIT = 3000;
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
-const TRASH_PADDING = 7, TRASH_GAP = 12;
+const TRASH_GAP = 12;
 // A plant button's model diagnostics, the foliage target and the scene's other cold DOM recipes: rust-ui/src/scene_dom.rs.
 function clearPlantDiagnostics(node) { needRustShelf().scene_clear_plant_diagnostics(node); }
 // Diagnostics rarely change from one frame to the next, yet even an identical
 // attribute write queues mutation records and style invalidation.
 function setData(element, key, value) { if (element.dataset[key] !== value) element.dataset[key] = value; }
 const SHELF_DIMENSIONS = Object.fromEntries(Object.entries(SHELF_SPECS).map(([type, spec]) => [type, JSON.stringify(spec.dimensions)]));
-const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
 const IDENTITY = new THREE.Matrix4();
 const NO_NUMBERS = new Float64Array(0);
 // The inline geometry last written to a projected node: unchanged numbers are not restyled.
@@ -276,10 +272,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   const freshEntry = (entry, index) => {
     const fresh = { ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(), row:-1, stale:true,
-    lift:null, state:'', rect:null, hitRect:null, insertion:null, posed:null,
+    lift:null, state:'', rect:null, insertion:null, posed:null,
     overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
     // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
-    classText:null, flags:NO_FLAGS, bits:0, dragX:'', dragY:'', dragNumberX:0, dragNumberY:0, stateText:'', box:null, fallback:null,
+    classText:null, bits:0, dragX:'', dragY:'', stateText:'', box:null, fallback:null,
     written:null, seen:0, domDirty:true, walked:null, rested:0 };
     fresh.lift = { get value() { return cell(fresh, 5); }, get from() { return cell(fresh, 6); }, get target() { return cell(fresh, 7); }, get started() { return cell(fresh, 8); } };
     return fresh;
@@ -627,11 +623,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     rust.scene_restore_node(node, original, false);
   }
   rememberCatalogNode(catalogNode);
-  const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
+  const inverseRotation = new THREE.Quaternion();
   const shadowBounds = new THREE.Box3(), shadowOut = new Float64Array(6), captureOut = new Float64Array(4);
   const rendererSize = new THREE.Vector2();
   const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
-  const framedScratch = new THREE.Box3(), framedTrash = new THREE.Box3(), transformRects = { unscaled:{}, framed:{}, bounds:{}, world:{} };
   const canvasWritten = { width:NaN, height:NaN };
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   // The eight corners of a box under a matrix are projected in Rust. Pass `out` to refresh a retained
@@ -1107,10 +1102,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (floorLit !== darkPage()) rebuildOcclusion();
   }
 
-  // Cache the geometry flags and native hit-control state. Tokenise the
-  // classes and rebuild the joined string only when one of these inputs
-  // differs from the last read, instead of asking
-  // classList and the style four to six times per entry and frame.
+  // The classes, the drag variables and the native hit-control state of a button are parsed only
+  // when one of them differs from the last read, in one call that keeps the flags and the drag
+  // offsets in the entry's row (rust-ui/src/scene_rects.rs) and returns the joined text.
   function stateFor(entry) {
     const node = entry.node;
     if (!node) return '';
@@ -1118,16 +1112,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const disabled = Boolean(node.disabled), pointerEvents = node.style.pointerEvents;
     if (classes === entry.classText && dragX === entry.dragX && dragY === entry.dragY &&
       disabled === entry.controlDisabled && pointerEvents === entry.controlPointerEvents) return entry.stateText;
-    if (classes !== entry.classText) {
-      const bits = entry.bits = rust.scene_class_flags(classes);
-      entry.flags = { away:Boolean(bits & 1), dragging:Boolean(bits & 2), lifted:Boolean(bits & 4), pressed:Boolean(bits & 8) };
-      entry.classText = classes;
-    }
-    if (dragX !== entry.dragX) entry.dragNumberX = rust.scene_drag_offset(dragX);
-    if (dragY !== entry.dragY) entry.dragNumberY = rust.scene_drag_offset(dragY);
-    entry.dragX = dragX; entry.dragY = dragY;
+    entry.classText = classes; entry.dragX = dragX; entry.dragY = dragY;
     entry.controlDisabled = disabled; entry.controlPointerEvents = pointerEvents;
-    return entry.stateText = rust.scene_state_text(entry.bits, dragX, dragY, disabled, pointerEvents);
+    entry.stateText = entryFrame.lamp.domState(entry.row, classes, dragX, dragY, disabled, pointerEvents);
+    // Away 1, dragging 2, lifted 4, pressed 8.
+    entry.bits = cell(entry, 2);
+    return entry.stateText;
   }
 
   const viewSizes = new Float64Array(6), viewFrame = new Float64Array(8), binBox = new Float64Array(9);
@@ -1278,8 +1268,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneMotionFrame.prepare(bookEntries, rows, width, pixelsPerMetre);
     arranging = arrangingNow();
     if (usePhysics) { physicsStarted = true; gravityFrame.prepare(bookEntries); }
-    // What changed since the last frame enters the entry arena: a class or a drag variable (when the
-    // DOM was read again), a size or a place and with them the rigid bodies' bay (`stale`); what the host
+    // What changed since the last frame enters the entry arena: a class or a drag variable (as the
+    // DOM is read again: stateFor), a size or a place and with them the rigid bodies' bay (`stale`); what the host
     // holds follows below (`tellHeld`). The lift, the landing, the preview and the pose stay in Rust.
     // The arena's view is taken again only after native work that may have grown the memory.
     entryFrame.refresh();
@@ -1288,8 +1278,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (let index = 0; index < bookEntries.length; index++) {
       const entry = bookEntries[index], at = index * ENTRY_STATE;
       // The DOM is read only for a node whose class or style changed.
-      const read = entry.domDirty;
-      if (read) { entry.domDirty = false; entry.state = stateFor(entry); regrown(); }
+      if (entry.domDirty) { entry.domDirty = false; entry.state = stateFor(entry); regrown(); }
       const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
       const kind = plant ? 1 : lamp ? 2 : 0;
       // A standing plant's or lamp's solid is described to the solver again when its size, its model or the
@@ -1314,7 +1303,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (entry.insertion || entry.trashDrop) censusStale = true;
       // A completed insertion remains painted until its owner restores the
       // semantic shelf book. This avoids an empty frame at the final handoff.
-      if (entry.insertion?.complete && !entry.flags.away) {
+      if (entry.insertion?.complete && !(entry.bits & 1)) {
         if(entry.insertion.nativeLegacyBackground && entry.insertion.nativeLease)
           completedLegacyInsertionLeases.add(entry.insertion.nativeLease);
         entry.insertion = null;
@@ -1338,7 +1327,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         // A lamp's switch and the temperature it asks for (rust-ui/src/scene_lamp.rs).
         if (lamp) { state[at + 91] = entry.isOn === false ? 0 : 1; state[at + 92] = entry.kelvin; }
       }
-      if (read) { state[at + 2] = entry.bits; state[at + 3] = entry.dragNumberX; state[at + 4] = entry.dragNumberY; }
     }
     staticStale = false;
     // One native call eases every lift, landing and preview (or steps the rigid bodies), samples the
@@ -1368,7 +1356,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = bookEntries[entryIndex];
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
       const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
-      const away = entry.flags.away, insertion = entry.insertion, trashDrop = entry.trashDrop, pose = entry.pose;
+      const away = entry.bits & 1, insertion = entry.insertion, trashDrop = entry.trashDrop, pose = entry.pose;
       // Native work below (models, quality, hits) may grow the memory: the views follow it.
       entryFrame.refresh();
       const live = entryFrame.output, at = entryIndex * ENTRY_OUTPUT, liveFlags = live[at];
@@ -1516,28 +1504,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const plant = entry.kind === 'plant', lamp = entry.kind === 'lamp', undershelf = lamp && entry.mount === 'undershelf';
       entryFrame.refresh();
       const hit = entryFrame.hitOutput, h = entryIndex * HIT_OUTPUT, dirtyStyle = hit[h];
-      // An entry whose hit target and styles stand as written has nothing to copy or restyle
+      // An entry whose hit target and styles stand as written has nothing to restyle
       // (a button without its cover span is always dirty: scene_projection.rs).
       const hull = usePhysics && lamp && !undershelf && entry.model;
-      if (dirtyStyle === 0 && !hull && entry.hitRect) continue;
+      if (dirtyStyle === 0 && !hull) continue;
       const rect = entry.rect, written = entry.written;
-      const tapLeft = hit[h + 8], tapTop = hit[h + 9], tapWidth = hit[h + 10], tapHeight = hit[h + 11];
-      const zIndex = hit[h + 12], coverLeft = hit[h + 13], coverTop = hit[h + 14], coverShown = hit[h + 15], coverEvents = hit[h + 16];
-      if (dirtyStyle & 8192 || !entry.hitRect) {
-        const hitRect = entry.hitRect || (entry.hitRect = {});
-        hitRect.left = hit[h + 1]; hitRect.right = hit[h + 2]; hitRect.top = hit[h + 3]; hitRect.bottom = hit[h + 4];
-        hitRect.width = hit[h + 5]; hitRect.height = hit[h + 6]; hitRect.closest = hit[h + 7];
-      }
       // The button covers the hit surface, but a real-scale spine is only 5-13 px
       // thick: a book's button is padded to the minimum tap width around the
-      // spine's centre (hitRect keeps the drawn surface). A lamp's switch is
+      // spine's centre (the hit rectangle keeps the drawn surface). A lamp's switch is
       // padded to a finger-sized square around its light: a MITTLED puck is
       // a few pixels tall and often sits behind a board. Plants are not thin,
-      // so their button is the hit surface itself.
-      if (!plant && (dirtyStyle & 8192 || !entry.tapRect)) {
-        const tapRect = entry.tapRect || (entry.tapRect = {});
-        tapRect.left = tapLeft; tapRect.top = tapTop; tapRect.width = tapWidth; tapRect.height = tapHeight;
-      }
+      // so their button is the hit surface itself. Both rectangles stay in the arena (rust-ui/src/scene_rects.rs).
+      const tapLeft = hit[h + 8], tapTop = hit[h + 9], tapWidth = hit[h + 10], tapHeight = hit[h + 11];
+      const zIndex = hit[h + 12], coverLeft = hit[h + 13], coverTop = hit[h + 14], coverShown = hit[h + 15], coverEvents = hit[h + 16];
       // A frame that moves nothing restyles nothing: only numbers that differ
       // from the last written ones reach the DOM, in the same order as a first write.
       // The style objects are fetched only when something is written to them.
@@ -1605,11 +1584,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function updatePlantFoliage(entry) {
-    const { node, model, rect, hitRect } = entry;
+    const { node, model, rect } = entry;
     if (model?.userData.shelfPlantDiagnostics && !node.dataset.plantModelDepth)
       Object.assign(node.dataset, model.userData.shelfPlantDiagnostics);
     let native = semanticFoliage.get(node);
-    if (!model?.visible || !rect || !hitRect || entry.flags.away || entry.flags.dragging || entry.trashDrop) {
+    if (!model?.visible || entry.bits & 3 || entry.trashDrop) {
       if (native && native.display !== 'none') native.svg.style.display = native.display = 'none';
       return;
     }
@@ -1621,7 +1600,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     // The pot keeps its own accessible focus/drag centre. Its child extends
     // over the leaves, but only painted triangles participate in hit testing.
-    const svgStyle = native.svg.style, left = rect.left - hitRect.left, top = rect.top - hitRect.top;
+    entryFrame.refresh();
+    const svgStyle = native.svg.style, hit = entryFrame.hitOutput, h = entry.row * HIT_OUTPUT, left = rect.left - hit[h + 1], top = rect.top - hit[h + 3];
     if (native.display !== 'block') svgStyle.display = native.display = 'block';
     if (left !== native.left) svgStyle.left = `${native.left = left}px`;
     if (top !== native.top) svgStyle.top = `${native.top = top}px`;
@@ -1692,25 +1672,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // each other's taps. A lamp's finger-sized square takes part too, so wood that
   // covers a light (a MITTLED under its board) does not block its switch.
   // Rectangles are in the stage's frame, as the buttons are.
-  const tapNodes = new Array(entries.length).fill(null);
-  let tapPacked = new Float64Array(entries.length * 4);
+  // The arena answers (rust-ui/src/scene_rects.rs); a button that is gone, or whose live class says away, is asked past.
   function tapTargetNear(clientX, clientY) {
-    const origin = stage.getBoundingClientRect(), count = bookEntries.length;
-    if (tapPacked.length !== count * 4) tapPacked = new Float64Array(count * 4);
-    tapNodes.length = count; tapNodes.fill(null);
-    for (let index = 0; index < count; index++) {
-      const entry = bookEntries[index], tap = entry.tapRect, at = index * 4;
-      if (!tap || !entry.node || !entry.model?.visible || entry.flags?.away || entry.flags?.dragging || entry.trashDrop ||
-          entry.kind === 'plant' || entry.node.classList.contains('is-away')) {
-        // Keep stable indices without allocating a compact array for each hit.
-        tapPacked[at] = Infinity; tapPacked[at + 1] = tapPacked[at + 2] = tapPacked[at + 3] = 0;
-        continue;
-      }
-      tapNodes[index] = entry.node;
-      tapPacked[at] = tap.left + origin.left; tapPacked[at + 1] = tap.top + origin.top;
-      tapPacked[at + 2] = tap.width; tapPacked[at + 3] = tap.height;
+    const origin = stage.getBoundingClientRect();
+    tellHeld();
+    for (let index = -1;;) {
+      index = entryFrame.lamp.tapNear(clientX, clientY, origin.left, origin.top, index);
+      const node = index < 0 ? null : bookEntries[index].node;
+      if (index < 0 || node && !node.classList.contains('is-away')) return node;
     }
-    return tapNodes[rust.scene_nearest_tap(tapPacked, clientX, clientY)] ?? null;
   }
 
   // A press is validated by the semantic button, drag controller and grip.
@@ -2971,26 +2941,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     animateFromRects(oldRects, { draggedKey } = {}) {
       if (reducedMotion.matches) return;
-      const stageRect = stage.getBoundingClientRect(), items = [];
-      let dragged = null;
-      for (const entry of bookEntries) {
+      // Where each button was, whether it is the dragged one and its projected rectangle: what eases, and
+      // the dragged book's landing from its lift, is decided over the arena (rust-ui/src/scene_rects.rs).
+      const stageRect = stage.getBoundingClientRect(), olds = new Float64Array(bookEntries.length * 5);
+      bookEntries.forEach((entry, index) => {
         const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
-          oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
-        const targetRect = entry.tapRect || entry.hitRect || entry.rect;
-        if (!old || !targetRect) continue;
-        const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
-        if (Math.abs(x) + Math.abs(y) > 1) {
-          items.push(entry.row, x, y);
-          if (draggedKey != null) dragged ||= String(entry.node?.dataset.objectId ?? entry.key) === String(draggedKey) && entry;
-        }
-      }
+          oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key), rect = entry.rect, at = index * 5;
+        if (old) { olds[at] = old.left; olds[at + 1] = old.top; olds[at + 2] = draggedKey != null && String(entry.node?.dataset.objectId ?? entry.key) === String(draggedKey) ? 3 : 1; }
+        if (rect) { olds[at + 2] += 4; olds[at + 3] = rect.left; olds[at + 4] = rect.top; }
+      });
       const started = performance.now();
-      // What is left of each offset enters the entry arena as the release eases (rust-ui/src/scene_rows.rs).
-      entryFrame.lamp.reorder(items); sceneView.beginReorder(started);
-      if (dragged && cell(dragged, 5) > 0) {
-        const state = entryFrame.state, at = dragged.row * ENTRY_STATE;
-        state[at + 9] = 1; state[at + 10] = state[at + 5]; state[at + 11] = started; state[at + 12] = 520;
-      }
+      entryFrame.lamp.reorderFrom(olds, stageRect.left, stageRect.top, started); sceneView.beginReorder(started);
       // Paint the old positions before yielding. Otherwise a synchronous
       // layout replacement can flash its final positions for one frame.
       drawNow(started);

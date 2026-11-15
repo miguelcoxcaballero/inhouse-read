@@ -6,14 +6,15 @@
 //! generated bindings.)
 use wasm_bindgen::prelude::*;
 use crate::scene_view::RustScene;
-use super::{RustSceneEntryFrame,STATE,FRESH,HIT_FRESH};
+use super::{RustSceneEntryFrame,STATE,HIT_OUTPUT,FRESH,HIT_FRESH};
 
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  // A layout's entries take the arena's rows in their new order: `rows` is each entry's former
  // row, or a negative number for a new one, which starts from zeros. `reset` clears every
  // landing and preview, as a committed layout does. Each row is marked as not yet held by the
- // host. The other arenas keep their numbers where they were, as a resize does. A reorder's
+ // host. The other arenas keep their numbers where they were, as a resize does, but the hit
+ // targets, which follow their rows. A reorder's
  // items follow their entries, and the ones of entries that left are dropped.
  pub fn rebind(&mut self,rows:&[i32],reset:bool){
   let held=std::mem::take(&mut self.state);
@@ -23,7 +24,19 @@ impl RustSceneEntryFrame{
    if reset{row[9..21].fill(0.0);}
    row[FRESH]=1.0;row[HIT_FRESH]=1.0;
   }
-  self.resize(rows.len());
+  // Each row's hit target follows it (`scene_rects.rs`); the other arenas keep their numbers.
+  // (Most layouts keep every entry in its row: only a new one's target is cleared then.)
+  if rows.iter().enumerate().all(|(index,&from)|from<0||from as usize==index){
+   self.resize(rows.len());
+   for (target,&from) in self.hit_output.chunks_exact_mut(HIT_OUTPUT).zip(rows){if from<0{target.fill(0.0);}}
+  }else{
+   let mut targets=Vec::with_capacity(rows.len()*HIT_OUTPUT);
+   for &from in rows{
+    targets.extend_from_slice(self.hit_output.chunks_exact(HIT_OUTPUT).nth(from as usize).unwrap_or(&[0.0;HIT_OUTPUT]));
+   }
+   self.hit_output=targets;
+   self.resize(rows.len());
+  }
   let mut kept=0;
   for at in (0..self.reorder.len()).step_by(3){
    if let Some(to)=rows.iter().position(|&from|f64::from(from)==self.reorder[at]){

@@ -29,6 +29,7 @@ use super::projection::RustSceneProjectionFrame;
 ///   one the host holds, 2 its matrix differs, 4 its projected rectangle differs, 8 its quality
 ///   has work to do (`scene_update_quality`); 71 in: the host holds nothing of this row yet;
 /// - 72 the previous frame's motion flags; 73 in: the host holds no hit target of this row yet;
+/// - 75 `hits` has taken the row's hit target (`scene_rects.rs`);
 /// - 74 the number of the shared key the entry's local pose was sampled under (0: it has none
 ///   yet) and 76-84 that pose, as the room publishes it: `[shelf, x, y, z, quaternion, scale]`;
 /// - 85-87 in, whenever it may have changed: what the host holds now (`scene_census.rs`), its
@@ -39,6 +40,7 @@ const STATE:usize=117;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TO
 #[path="scene_exclusions.rs"] mod exclusions;
 #[path="scene_lamp.rs"] mod lamp;
 #[path="scene_rows.rs"] mod rows;
+#[path="scene_rects.rs"] mod rects;
 const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
@@ -72,7 +74,9 @@ pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit
  tints:Vec<f64>,tint_ms:f64,
  /// The room's matrix of the previous pose call (its epoch and whether it moved follow the
  /// census' nine numbers) and a reorder's items (`scene_rows.rs`).
- room_held:[u64;16],reorder:Vec<f64>}
+ room_held:[u64;16],reorder:Vec<f64>,
+ /// The entries the host refused of the last taps asked (`scene_rects.rs`).
+ refused:Vec<usize>}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
@@ -80,7 +84,7 @@ impl RustSceneEntryFrame{
   rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
   counted:Vec::new(),count_dirty:true,census:Box::new([0.0;11]),resolutions:String::new(),loading:false,paint_deadline:0.0,
   dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0,
-  room_held:[f64::NAN.to_bits();16],reorder:Vec::new()}}
+  room_held:[f64::NAN.to_bits();16],reorder:Vec::new(),refused:Vec::new()}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);
@@ -210,7 +214,7 @@ impl RustSceneEntryFrame{
    let dirty=projection.hit_io(scene,index,bits&8!=0,bits&16!=0,&mut io);
    // The host copies the numbers into its objects only when they moved (or it holds none yet).
    let moved=row[HIT_FRESH]!=0.0||bits&8!=0||out[1..17].iter().zip(&io[33..49]).any(|(a,b)|a.to_bits()!=b.to_bits());
-   row[HIT_FRESH]=0.0;
+   row[HIT_FRESH]=0.0;row[rects::TAKEN]=1.0;
    out[0]=f64::from(dirty|if moved{HIT_MOVED}else{0});out[1..17].copy_from_slice(&io[33..49]);
   }
  }
