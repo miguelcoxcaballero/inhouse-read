@@ -113,6 +113,64 @@ it('paints every canvas operation of 1500 random spines exactly like the origina
   console.log(`measureText calls of 1500 spines: original ${measures.original}, production ${measures.production}`);
 },120_000);
 
+// The pool of scratch rasters (rust-ui/src/spine_surface.rs; the original's scratchRaster): several spines in one
+// task share the mask, ink and relief rasters of their size and kind, wiped by reset(); the task's end lets them go.
+it('reuses, wipes and lets go of its scratch rasters exactly like the original over runs of spines',()=>{
+  const next=random(4242);let resets=0,reused=0,letGo=0;
+  for(let sequence=0;sequence<120;sequence++){
+    const partial=sequence%9===0,sizes=[[256,1024],[256,1024],[256,1024],[128,512],[512,2048]];
+    const steps=Array.from({length:2+Math.floor(next()*7)},(_,index)=>{
+      const input=sample(next,sequence*100+index),[textureWidth,textureHeight]=sizes[Math.floor(next()*sizes.length)];
+      return {input:{...input,options:{...input.options,textureWidth,textureHeight}},end:next()<.2};
+    });
+    const play=module=>{
+      const log=environment({partial}),outcomes=[];
+      for(const {input,end} of steps){
+        try{outcomes.push(describe(module.spineSurface(input.book,input.style,input.height,input.thickness,input.options)));}
+        catch(error){outcomes.push(`${error.constructor.name}: ${error.message}`);}
+        log.push(['queued',queue.length]);
+        if(end){release();log.push(['task end']);}
+      }
+      release();
+      return {log:log.filter(entry=>entry[1]!=='measureText'),outcomes};
+    };
+    const expected=play(original),actual=play(production);
+    expect(actual.outcomes).toEqual(expected.outcomes);
+    expect(actual.log.length).toBe(expected.log.length);
+    for(let j=0;j<expected.log.length;j++)if(JSON.stringify(actual.log[j])!==JSON.stringify(expected.log[j]))throw new Error(`sequence ${sequence}, operation ${j}: ${JSON.stringify(actual.log[j])} / ${JSON.stringify(expected.log[j])}`);
+    resets+=expected.log.filter(entry=>entry[1]==='reset').length;
+    if(expected.log.some(entry=>entry[1]==='reset'))reused++;
+    letGo+=steps.filter(step=>step.end).length;
+  }
+  expect(resets).toBeGreaterThan(200);expect(reused).toBeGreaterThan(60);expect(letGo).toBeGreaterThan(40);
+});
+// A canvas without a context and a context whose reset is not a function.
+it('keeps the original answers of a scratch raster the pool cannot reuse',()=>{
+  const input={book:{id:'pool',title:'Pool',author:'Author',spineEngraved:true},style:{color:'#42604b',ink:'#ffffff',width:40},options:{textureWidth:256,textureHeight:1024,level:'shelf'}};
+  const twice=(module,reset)=>{
+    const log=[];let canvases=0;
+    vi.stubGlobal('document',{createElement:()=>{const id=++canvases;return {width:0,height:0,getContext:(type,attributes)=>{log.push([id,'getContext',type,attributes===undefined?'undefined':JSON.stringify(attributes)]);
+      return new Proxy({reset},{get:(target,key)=>key==='reset'?target.reset:key==='measureText'?text=>({width:String(text).length*9}):key==='createLinearGradient'?()=>({addColorStop(){}}):
+        key==='getImageData'?(x,y,w,h)=>({data:new Uint8ClampedArray(w*h*4)}):key==='createImageData'?(w,h)=>({data:new Uint8ClampedArray(w*h*4)}):key==='createPattern'?()=>null:()=>{},set:()=>true});}};}});
+    const outcomes=[];
+    for(let n=0;n<2;n++){try{module.spineSurface(input.book,input.style,200,32,input.options);outcomes.push('painted');}catch(error){outcomes.push(`${error.constructor.name}: ${error.message}`);}}
+    release();
+    return {log,outcomes,canvases};
+  };
+  const made=[undefined,null,0,'',5,()=>{}].map(reset=>{
+    const expected=twice(original,reset),actual=twice(production,reset);
+    expect(actual).toEqual(expected);
+    return actual.canvases;
+  });
+  // Only a context that can be wiped is used again: the second spine then makes three rasters fewer.
+  expect(made.slice(0,5)).toEqual(Array(5).fill(made[0]));expect(made[5]).toBe(made[0]-3);
+  const without=module=>{
+    environment();vi.stubGlobal('document',{createElement:()=>({width:0,height:0,getContext:()=>null})});
+    try{module.spineSurface(input.book,input.style,200,32,input.options);return 'painted';}catch(error){return error.constructor.name;}finally{release();}
+  };
+  expect(without(production)).toBe(without(original));
+});
+
 it('lays out and decorates spines with the same bytes as the original for random books',()=>{
   const next=random(77);
   for(let i=0;i<4000;i++){
@@ -158,4 +216,17 @@ it('leaves the pooled rasters and throws like the original when a canvas call fa
     }
     expect(results[1]).toEqual(results[0]);
   }
+});
+
+// Last in this file: neither pool can schedule its release again afterwards, as in the original.
+it('fails like the original on a page without queueMicrotask',()=>{
+  const book={id:'pool',title:'Pool',author:'Author'},style={color:'#42604b',ink:'#ffffff',width:40};
+  const unscheduled=module=>{
+    environment();vi.stubGlobal('queueMicrotask',undefined);delete globalThis.queueMicrotask;
+    const outcomes=[];
+    for(let n=0;n<2;n++){try{module.spineSurface(book,style,200,32,{textureWidth:256,textureHeight:1024,level:'shelf'});outcomes.push('painted');}catch(error){outcomes.push(error.constructor.name);}}
+    return outcomes;
+  };
+  const expected=unscheduled(original);
+  expect(unscheduled(production)).toEqual(expected);expect(expected).toEqual(['ReferenceError','painted']);
 });

@@ -12,8 +12,7 @@ import * as THREE from 'three';
 import { createStudioRenderer, studioEnvironmentFor } from './studio-renderer.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
 import { spineSurface, releaseSurface, textSeed, replayCloth, paintWeave, drawDevice } from './spine-surface.js';
-import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
-import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
+import { METAL_COLORS, SURFACE_FINISHES, surfaceFinish } from './book-colors.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface, rememberedPatch } from './book-reflection-surface.js';
@@ -536,14 +535,12 @@ let modelHostObject;
 function modelHost() {
   return modelHostObject ||= {
     three:THREE, rust:needRustShelf(), noop:() => {},
-    finish:(value, fallback) => SURFACE_FINISHES[surfaceFinish(value, fallback)], surfaceFinish, normalizeRelief:normalizeCoverRelief,
-    reflect:applyBookReflectionSurface, spine:shelfSpineSurface, releaseSurface, spineFinish, metal:METAL_COLORS,
-    rememberedPatch, spineFadePatches:new Map(), reliefPatches:new Map(), constant:value => value,
-    pageBlock:pageBlockGeometry, leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
+    finishes:SURFACE_FINISHES, spine:shelfSpineSurface, releaseSurface, metal:METAL_COLORS,
+    rememberedPatch, spineFadePatches:new Map(), reliefPatches:new Map(),
+    leafStack:leafStackGeometry, binding:bindingGeometry, bookmark:bookmarkGeometry, bookmarkFor,
     silkHost:ribbonColorHost, leafLight:LEAF_LIGHT, pageRaster, paperTone, applyPageTheme,
     acquire:acquireCoverImage, reuse:reuseCoverRaster, cloth:replayCloth, paintWeave, drawDevice,
-    title:displayBookTitle, author:normalizeBookAuthor, anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
-    pageTheme:setPageTheme, getPageTheme:s => s.pageTheme, coverRelief:s => normalizeCoverRelief(s.wantedRelief),
+    anisotropy:() => renderer?.capabilities.getMaxAnisotropy() || 1,
     // The relief bake (rust-ui/src/relief_bake.rs) builds its maps through these, in the page's slices.
     buildRelief:(...args) => buildReliefMaps(...args), updateRelief:(...args) => updateReliefMapStrengths(...args),
     materialMap(maps, value) {
@@ -551,7 +548,7 @@ function modelHost() {
       return runInSlices(composeMaterialMap(maps.pixels, { clearcoat, roughness, clearcoatRoughness }));
     },
     rebake:needRustShelf().book_model_rebake_relief,
-    coverOpen:setCoverOpen, bookmarkWithdraw:setBookmarkWithdraw, motionPose:setMotionPose, ribbonGeometry:updateRibbonGeometry,
+    ribbonGeometry:updateRibbonGeometry,
     preparePresentation:(s, idle, current = () => true) => prepareBookPresentation(s.group, idle, () => !s.disposed && current()),
     prepareDetailPresentation:(s, idle, current = () => true) => prepareBookDetailPresentation(() => createBookModel(s.book, s.style,
       s.width, s.height, s.thickness, s.coverUrl, { eagerRelief:false }), idle, () => !s.disposed && current())

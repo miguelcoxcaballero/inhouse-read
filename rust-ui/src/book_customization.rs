@@ -19,9 +19,11 @@ fn fields(entries:&[(&str,JsValue)])->R<JsValue>{let values=Array::new();for(key
 #[wasm_bindgen]
 pub fn book_spine_finish(value:JsValue)->JsValue{if value==s("gold")||value==s("silver"){value}else{s("matte")}}
 #[wasm_bindgen]
-pub fn book_surface_finish(value:JsValue,fallback:JsValue,finishes:JsValue)->R<JsValue>{
- if value.is_string()&&Object::has_own(finishes.unchecked_ref(),&value){return Ok(value);}
- Ok(if fallback.is_string()&&Object::has_own(finishes.unchecked_ref(),&fallback){fallback}else{s("satin")})
+pub fn book_surface_finish(value:JsValue,fallback:JsValue,finishes:JsValue)->R<JsValue>{Ok(surface_finish(value,fallback,&finishes))}
+/// The same over a table the caller keeps.
+pub(crate) fn surface_finish(value:JsValue,fallback:JsValue,finishes:&JsValue)->JsValue{
+ if value.is_string()&&Object::has_own(finishes.unchecked_ref(),&value){return value;}
+ if fallback.is_string()&&Object::has_own(finishes.unchecked_ref(),&fallback){fallback}else{s("satin")}
 }
 #[wasm_bindgen]
 pub fn book_shelf_position(value:JsValue)->R<JsValue>{
