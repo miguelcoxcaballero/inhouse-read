@@ -155,6 +155,10 @@ pub struct RustScene{
  pub(crate) layout:[f64;10],pub(crate) face_key:Option<[u64;4]>,
  // What a frame's first step asks of the host (`scene_begin.rs`), and the view the room was last painted in.
  pub(crate) begun:[f64;2],pub(crate) painted:Option<[f64;4]>,
+ // The room's world matrix as of the last fit, and the bin as it was placed (`scene_bin.rs`).
+ pub(crate) room:Option<[f64;16]>,pub(crate) bin:Option<[f64;13]>,
+ // What the bin's box on screen was last taken from (`scene_bin.rs`).
+ pub(crate) bin_seen:[u64;20],
 }
 
 fn full_bounds(width:f64,height:f64,depth:f64,baggebo:bool)->Box3{
@@ -171,7 +175,7 @@ impl RustScene{
    progress:if isometric{1.0}else{0.0},isometric,frontal_scroll:if isometric{0.0}else{scroll_top},transition:None,reorder_started:None,
    fit_height:1.0,edge_to_edge:false,viewport_height:1.0,zoom:1.0,pan_x:0.0,pan_y:0.0,moving:false,shadow_refit:false,drop:None,
    entry_now:0.0,entry_reduced:false,entry_zoom:1.0,entry_q:[0.0,0.0,0.0,1.0],entry_ratio:1.0,entry_window:0.0,entry_scroll:0.0,entry_lamp_tap:44.0,
-   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new(),shown:Default::default(),layout:[f64::NAN;10],face_key:None,begun:[f64::NAN;2],painted:None}
+   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new(),shown:Default::default(),layout:[f64::NAN;10],face_key:None,begun:[f64::NAN;2],painted:None,room:None,bin:None,bin_seen:[0;20]}
  }
  /// A new semantic layout: the sizes and the furniture's bounds change, the view does not.
  pub fn configure(&mut self,width:f64,height:f64,scene_width:f64,depth:f64,baggebo:bool){
@@ -282,16 +286,14 @@ impl RustScene{
   let yaw=-std::f64::consts::PI/6.0*progress;
   let pitch=14.0*std::f64::consts::PI/180.0*progress;
   let rotation=quaternion_xyz(pitch,yaw,0.0);
+  // The room's inverse turn, for the entries of the frame (`Quaternion#invert` of the room's own).
+  self.entry_q=[rotation[0]*-1.0,rotation[1]*-1.0,rotation[2]*-1.0,rotation[3]];
   let place=|scale:f64,position:[f64;3]|Mat4::compose(position,rotation,[scale,scale,scale]);
   let unscaled=corners_of(&self.full,&place(1.0,[0.0;3]));
   let padding=(if self.edge_to_edge{0.0}else{8.0})*progress;
   let mut framed_bounds=self.full;
   framed_bounds.max[1]=jmax(framed_bounds.max[1],rooftop);
-  if trash.len()>=9{
-   let mut bin=Box3{min:[trash[0],trash[1],trash[2]],max:[trash[3],trash[4],trash[5]]};
-   for axis in 0..3{bin.min[axis]+=trash[6+axis];bin.max[axis]+=trash[6+axis];}
-   framed_bounds.union(&bin);
-  }
+  if let Some(bin)=self.bin_box(trash){framed_bounds.union(&bin);}
   let framed=corners_of(&framed_bounds,&place(1.0,[0.0;3]));
   let frame_left=unscaled[0]+(framed[0]-unscaled[0])*progress;
   let frame_right=unscaled[1]+(framed[1]-unscaled[1])*progress;
@@ -314,7 +316,9 @@ impl RustScene{
   let object_height=(bounds[5]+padding*2.0-1e-7).ceil();
   let stage_height=if self.edge_to_edge{object_height+jmax(0.0,self.fit_height-object_height)*progress}else{object_height};
   // The room's root hangs from the scene, whose own matrix is the identity.
-  let world=corners_of(&framed_bounds,&Mat4::multiply(&Mat4::identity(),&place(zoom,[x,y,0.0])));
+  let room=Mat4::multiply(&Mat4::identity(),&place(zoom,[x,y,0.0]));
+  self.room=Some(room.0);
+  let world=corners_of(&framed_bounds,&room);
   let in_frame=world[0]>=-0.01&&world[1]<=self.scene_width+0.01&&world[2]>=-0.01&&world[3]<=self.fit_height+0.01;
   let values=[yaw,pitch,zoom,x,y,reserve,stage_height,if in_frame{1.0}else{0.0}];
   for (slot,value) in out.iter_mut().zip(values){*slot=value;}

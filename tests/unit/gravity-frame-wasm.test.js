@@ -5,7 +5,7 @@ import { rustShelf, shelfWasm } from './helpers/rust-shelf-ready.js';
 // The marshalling adapter is frozen (the scene now steps its own arena: scene-entry-state-wasm.test.js);
 // it still guards RustGravityFrame#advance, which the arena path runs.
 import { createGravityFrame } from './helpers/reference-gravity-frame.js';
-import { createGravityFrame as createLiveGravityFrame } from '../../src/js/gravity-frame.js';
+import { createGravityFrame as createLiveGravityFrame } from './helpers/gravity-frame.js';
 
 const bay={left:0,right:600,bottom:300,ceiling:10};
 function entry(key,x,kind='book') { return {key,kind,x,y:200,width:150,height:200,depth:150,depthInset:0,thickness:20,shelf:0,

@@ -1,4 +1,4 @@
-import { configureNativeRendererSize } from './native-renderer-size.js';
+import { configureNativeRendererSize } from '../../../src/js/native-renderer-size.js';
 
 // The shelf's shared Three renderer owns a native GL framebuffer even when
 // its final image is copied into a 2D canvas. Change DPR and size together,

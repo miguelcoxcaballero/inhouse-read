@@ -22,13 +22,15 @@ use super::projection::RustSceneProjectionFrame;
 /// - 37-39 the solver's presentation: book Euler order is `ZYX`, moving, projection flags;
 /// - 40-48 the solver's geometry (thickness or width, kind, shelf, pixels per metre, the bay's
 ///   left, right, bottom, ceiling and the grip height);
-/// - 49 unused (what the host holds is columns 85 and 89); 50-55 the slot box;
+/// - 49 in: the row's size or kind changed, so its slot box (50-55) is taken again by the pose
+///   call (`scene_entry_boxes`, from columns 0, 1, 25-27 and 40);
 /// - 56 the pose's Euler order (0 `XYZ`, 1 `ZYX`), which a frame without rigid bodies keeps;
 /// - 57-60 the pose's quaternion (`Quaternion#setFromEuler`, recomputed when the Euler moved);
 /// - 61-68 the pose last handed to the host; 69 the lean; 70 out: 1 the pose differs from the
 ///   one the host holds, 2 its matrix differs, 4 its projected rectangle differs, 8 its quality
 ///   has work to do (`scene_update_quality`); 71 in: the host holds nothing of this row yet;
 /// - 72 the previous frame's motion flags; 73 in: the host holds no hit target of this row yet;
+/// - 75 `hits` has taken the row's hit target (`scene_rects.rs`);
 /// - 74 the number of the shared key the entry's local pose was sampled under (0: it has none
 ///   yet) and 76-84 that pose, as the room publishes it: `[shelf, x, y, z, quaternion, scale]`;
 /// - 85-87 in, whenever it may have changed: what the host holds now (`scene_census.rs`), its
@@ -39,7 +41,8 @@ const STATE:usize=117;const HOSTED:usize=85;const PAINTED_AWAY:usize=88;const TO
 #[path="scene_exclusions.rs"] mod exclusions;
 #[path="scene_lamp.rs"] mod lamp;
 #[path="scene_rows.rs"] mod rows;
-const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
+#[path="scene_rects.rs"] mod rects;
+const STALE_BOX:usize=49;const BOX:usize=50;const ORDER:usize=56;const QUATERNION:usize=57;
 const HELD:usize=61;const LEAN:usize=69;const CHANGED:usize=70;const FRESH:usize=71;const LIVE:usize=72;const HIT_FRESH:usize=73;const LOCAL_KEY:usize=74;const LOCAL:usize=76;
 
 /// Per entry in: pose position, quaternion `[x, y, z, w]` and scale; the projection's kind,
@@ -50,8 +53,9 @@ const INPUT:usize=22;
 /// visible, quality applies, overview, resolution and model visible.
 const OUTPUT:usize=70;
 /// Per entry hit in: bits (1 has a button, 2 under-shelf, 4 disabled or inert, 8 reset its
-/// written styles, 16 fresh cover, 32 use the placed matrix), the button's flags, the hit
-/// surface's box and its world matrix.
+/// written styles, 16 fresh cover, 32 use the placed matrix, 128 with the row's own stand-in box:
+/// a lamp's slot, else `scene_entry_boxes`' fallback), the button's flags, the hit surface's box
+/// and its world matrix.
 const HIT_INPUT:usize=24;
 /// Per entry hit out: the style dirty bits (and `HIT_MOVED` when one of the sixteen numbers
 /// after it differs from the ones the host holds), the hit rectangle (7), the tap rectangle (4),
@@ -72,7 +76,9 @@ pub struct RustSceneEntryFrame{state:Vec<f64>,input:Vec<f64>,output:Vec<f64>,hit
  tints:Vec<f64>,tint_ms:f64,
  /// The room's matrix of the previous pose call (its epoch and whether it moved follow the
  /// census' nine numbers) and a reorder's items (`scene_rows.rs`).
- room_held:[u64;16],reorder:Vec<f64>}
+ room_held:[u64;16],reorder:Vec<f64>,
+ /// The entries the host refused of the last taps asked (`scene_rects.rs`).
+ refused:Vec<usize>}
 #[wasm_bindgen]
 impl RustSceneEntryFrame{
  #[wasm_bindgen(constructor)]
@@ -80,7 +86,7 @@ impl RustSceneEntryFrame{
   rest:Vec::new(),rest_stamp:Vec::new(),rest_generation:0,affected:Vec::new(),published:Vec::new(),
   counted:Vec::new(),count_dirty:true,census:Box::new([0.0;11]),resolutions:String::new(),loading:false,paint_deadline:0.0,
   dataset:None,shown_keys:Vec::new(),shown:Box::new([0.0;7]),shown_last:[u64::MAX;22],shown_text:String::new(),tints:Vec::new(),tint_ms:0.0,
-  room_held:[f64::NAN.to_bits();16],reorder:Vec::new()}}
+  room_held:[f64::NAN.to_bits();16],reorder:Vec::new(),refused:Vec::new()}}
  pub fn resize(&mut self,count:usize){
   self.state.resize(count*STATE,0.0);
   self.input.resize(count*INPUT,0.0);self.output.resize(count*OUTPUT,0.0);
@@ -104,10 +110,10 @@ impl RustSceneEntryFrame{
  }
  /// A frame without rigid bodies, whole: every row's lift, landing and preview ease and its
  /// pose follows (`RustScene#stepEntry`, in place), then `place`. Returns what `place` does.
- pub fn poses(&mut self,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool)->f64{
+ pub fn poses(&mut self,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool,follow:bool)->f64{
   self.ease_reorder(scene);
   for row in self.state.chunks_exact_mut(STATE){scene.step_entry(&mut row[..40]);}
-  self.place(false,motion_frame,scene,motion,transition,now,arranging)
+  self.place(false,motion_frame,scene,motion,transition,now,arranging,follow)
  }
  /// A frame of the rigid bodies: the solver steps every row (`RustGravityFrame`, whose keys the
  /// host registered for these entries) and the final shelf poses are composed. `place` follows,
@@ -117,24 +123,27 @@ impl RustSceneEntryFrame{
   gravity_frame.advance_rows(gravity,scene,now,reduced,&mut self.state,STATE,LEAN);
  }
  #[allow(clippy::too_many_arguments)]
- pub fn settled(&mut self,gravity_frame:&mut RustGravityFrame,gravity:&mut RustBookGravity,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,reduced:bool,arranging:bool)->f64{
+ pub fn settled(&mut self,gravity_frame:&mut RustGravityFrame,gravity:&mut RustBookGravity,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,reduced:bool,arranging:bool,follow:bool)->f64{
   self.settle(gravity_frame,gravity,scene,now,reduced);
-  self.place(true,motion_frame,scene,motion,transition,now,arranging)
+  self.place(true,motion_frame,scene,motion,transition,now,arranging,follow)
  }
  /// Every row's pose becomes the entry's input (its quaternion is three's
  /// `Quaternion#setFromEuler`, with the host's `Math.sin` and `Math.cos`, taken again only when
  /// the Euler angles or their order moved) and `step` runs. `physics` says the rigid bodies
  /// chose the poses: a book then takes the order the solver names and its projection flags.
  /// Returns `moving | shelf moving << 1 | previewing << 2 | previewed entries << 3`, the
- /// booleans the host formerly gathered entry by entry.
+ /// booleans the host formerly gathered entry by entry. `follow`: the room's world matrix is the
+ /// one of the view's last fit (the host wrote none at `room_ptr`).
  #[allow(clippy::too_many_arguments)]
- pub fn place(&mut self,physics:bool,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool)->f64{
+ pub fn place(&mut self,physics:bool,motion_frame:&mut RustSceneMotionFrame,scene:&RustScene,motion:&RustRoomMotion,transition:&mut RustRoomTransition,now:f64,arranging:bool,follow:bool)->f64{
+  if follow{if let Some(room)=scene.room{*self.room=room;}}
   self.walk_room();
   let room=Mat4(*self.room);
   let (mut moving,mut shelf_moving,mut previewing,mut previewed)=(false,false,false,0u32);
   let rows=self.state.chunks_exact_mut(STATE).zip(self.input.chunks_exact_mut(INPUT)).zip(self.output.chunks_exact_mut(OUTPUT));
   for (index,((row,input),output)) in rows.enumerate(){
    let decorative=row[0]==1.0||row[0]==2.0;
+   if row[STALE_BOX]!=0.0{row[STALE_BOX]=0.0;let boxes=boxes_of(row);row[BOX..BOX+6].copy_from_slice(&boxes[..6]);}
    if row[0]==2.0{lamp::step(row,&self.tints,now,scene.entry_reduced);}
    let away=(row[2] as u32)&1!=0;
    let (bits,active)=(row[36] as u32,row[20]!=0.0);
@@ -205,12 +214,14 @@ impl RustSceneEntryFrame{
    if bits&1==0{continue;}
    let mut io=[0.0;49];
    io[0]=input[8];io[1]=f64::from(bits&2!=0);io[2]=hit[1];io[3]=f64::from(bits&4!=0);
-   io[4..11].copy_from_slice(&output[58..65]);io[11..17].copy_from_slice(&hit[2..8]);
+   io[4..11].copy_from_slice(&output[58..65]);
+   if bits&128!=0{let boxes=boxes_of(row);io[11..17].copy_from_slice(if row[0]==2.0{&row[BOX..BOX+6]}else{&boxes[6..12]});}
+   else{io[11..17].copy_from_slice(&hit[2..8]);}
    io[17..33].copy_from_slice(if bits&32!=0{&output[42..58]}else{&hit[8..24]});
    let dirty=projection.hit_io(scene,index,bits&8!=0,bits&16!=0,&mut io);
    // The host copies the numbers into its objects only when they moved (or it holds none yet).
    let moved=row[HIT_FRESH]!=0.0||bits&8!=0||out[1..17].iter().zip(&io[33..49]).any(|(a,b)|a.to_bits()!=b.to_bits());
-   row[HIT_FRESH]=0.0;
+   row[HIT_FRESH]=0.0;row[rects::TAKEN]=1.0;
    out[0]=f64::from(dirty|if moved{HIT_MOVED}else{0});out[1..17].copy_from_slice(&io[33..49]);
   }
  }
@@ -275,6 +286,14 @@ impl RustSceneEntryFrame{
   }
   changed
  }
+}
+
+/// A row's slot box and stand-in box (`scene_entry_boxes`) from its own columns: kind, under-shelf,
+/// width, height, thickness (a book's: column 40; no other kind's box reads it) and depth.
+fn boxes_of(row:&[f64])->[f64;12]{
+ let mut boxes=[0.0;12];
+ crate::scene_entries::scene_entry_boxes(row[0],row[1]!=0.0,row[25],row[26],row[40],row[27],&mut boxes);
+ boxes
 }
 
 /// One entry of `step`: the motion sample, the pose matrix, its place in the room and the projection.

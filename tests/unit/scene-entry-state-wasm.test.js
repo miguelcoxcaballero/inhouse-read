@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
 import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
 import {createSceneEntryFrame,ENTRY_STATE,ENTRY_OUTPUT} from '../../src/js/scene-entry-frame.js';
-import {createGravityFrame} from '../../src/js/gravity-frame.js';
+import {createGravityFrame} from './helpers/gravity-frame.js';
 import {createGravityFrame as referenceGravityFrame} from './helpers/reference-gravity-frame.js';
 import {createMarshalFrame} from './helpers/reference-scene-entry-marshal.js';
 

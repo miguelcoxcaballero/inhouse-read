@@ -1,4 +1,4 @@
-import { prepareInsertionProgramState } from './gpu-programs.js';
+import { prepareInsertionProgramState } from '../../../src/js/gpu-programs.js';
 
 /** Prepare the hidden placement/depth programs after the room's first paint.
  * No geometry is drawn or changed; disposal cancels every deferred slice. */

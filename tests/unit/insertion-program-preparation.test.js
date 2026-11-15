@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { prepareInsertionPrograms } from '../../src/js/insertion-program-preparation.js';
+import { prepareInsertionPrograms } from './helpers/insertion-program-preparation.js';
 
 function fixture() {
   const material = new THREE.MeshBasicMaterial({ colorWrite:false });

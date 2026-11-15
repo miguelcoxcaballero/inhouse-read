@@ -109,7 +109,7 @@ describe('actual scene handling of pending native presses', () => {
     expect(shelf.flush()).toBe(false); flushFrames()
     expect(gpu.renders).toBe(renders); expect(roomRenders()).toBe(snapshots); expect(copyCalls()).toBe(copies)
     expect(shelf.canvas.dataset.inspectionDirtyCount).toBe(dirty)
-    expect(bookModel(1).userData.entry.flags.pressed).toBe(false)
+    expect(bookModel(1).userData.entry.bits & 8).toBe(0)
     expect(bookModel(1).userData.entry.lift.target).toBe(0)
     nodes[1].classList.remove('is-pressed', 'is-press-pending'); await Promise.resolve()
     expect(shelf.flush()).toBe(false); flushFrames()
@@ -129,7 +129,7 @@ describe('actual scene handling of pending native presses', () => {
     const renders = gpu.renders
     nodes[1].classList.remove('is-press-pending'); expect(shelf.flush()).toBe(true); flushFrames()
     expect(gpu.renders).toBeGreaterThan(renders)
-    expect(bookModel(1).userData.entry.flags.pressed).toBe(true)
+    expect(bookModel(1).userData.entry.bits & 8).toBe(8)
     expect(bookModel(1).userData.entry.lift.value).toBe(.22)
   })
   it('still renders a genuine model appearance invalidation while pending', async () => {

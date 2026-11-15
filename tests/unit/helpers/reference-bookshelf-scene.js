@@ -5,7 +5,7 @@
 // Tests only: scene-differential.test.js replays the same scripts against this scene and the live one.
 import * as THREE from 'three';
 import {projectPlantFoliage} from '../../../src/js/foliage-projection.js';
-import { configureShelfRendererSize } from '../../../src/js/shelf-renderer-size.js';
+import { configureShelfRendererSize } from './shelf-renderer-size.js';
 import { shelfPixelOffset } from '../../../src/js/shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from '../../../src/js/canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from '../../../src/js/book-model.js';
@@ -23,7 +23,7 @@ import { createShelfTrash, sampleTrashDrop } from '../../../src/js/shelf-trash.j
 import { createShelfCatalog } from '../../../src/js/shelf-catalog.js';
 import { createBaggebo } from '../../../src/js/baggebo-model.js';
 import { compilePrograms, prelinkPrograms } from '../../../src/js/gpu-programs.js';
-import { prepareInsertionPrograms } from '../../../src/js/insertion-program-preparation.js';
+import { prepareInsertionPrograms } from './insertion-program-preparation.js';
 import { idleSlice } from '../../../src/js/idle-startup.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from '../../../src/js/shelf-types.js';
 import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from './plant-dimensions-doorways.js';
