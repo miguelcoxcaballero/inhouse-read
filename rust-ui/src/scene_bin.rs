@@ -35,6 +35,13 @@ impl RustScene{
 }
 #[wasm_bindgen]
 impl RustScene{
+ // The bin's box in the world, as three measured it: its rectangle on screen (`scene_corners`
+ // under the identity, which the host asked for and packed) is kept for `trashPlaced`.
+ #[wasm_bindgen(js_name=binBox)]
+ pub fn bin_box_taken(&mut self,min_x:f64,min_y:f64,min_z:f64,max_x:f64,max_y:f64,max_z:f64){
+  let rect=crate::scene_view::corners_of(&Box3{min:[min_x,min_y,min_z],max:[max_x,max_y,max_z]},&Mat4::identity());
+  self.bin_rect.copy_from_slice(&rect[..6]);
+ }
  // `trashShown` for the bin the view holds, in the room of its last fit: the bin's place, its
  // unit scale and upright turn, its foot and the floor under it, both also in the world
  // (`Object3D#localToWorld`: the point under the room's world matrix), its radius and height.

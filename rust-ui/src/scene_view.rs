@@ -159,6 +159,8 @@ pub struct RustScene{
  pub(crate) room:Option<[f64;16]>,pub(crate) bin:Option<[f64;13]>,
  // What the bin's box on screen was last taken from (`scene_bin.rs`).
  pub(crate) bin_seen:[u64;20],
+ // The bin's box on screen as the host last took it (`binBox`).
+ pub(crate) bin_rect:[f64;6],
 }
 
 fn full_bounds(width:f64,height:f64,depth:f64,baggebo:bool)->Box3{
@@ -175,7 +177,7 @@ impl RustScene{
    progress:if isometric{1.0}else{0.0},isometric,frontal_scroll:if isometric{0.0}else{scroll_top},transition:None,reorder_started:None,
    fit_height:1.0,edge_to_edge:false,viewport_height:1.0,zoom:1.0,pan_x:0.0,pan_y:0.0,moving:false,shadow_refit:false,drop:None,
    entry_now:0.0,entry_reduced:false,entry_zoom:1.0,entry_q:[0.0,0.0,0.0,1.0],entry_ratio:1.0,entry_window:0.0,entry_scroll:0.0,entry_lamp_tap:44.0,
-   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new(),shown:Default::default(),layout:[f64::NAN;10],face_key:None,begun:[f64::NAN;2],painted:None,room:None,bin:None,bin_seen:[0;20]}
+   trash_hover:false,trash_openness:0.0,trash_transition:None,text_key:Vec::new(),trash_text_key:Vec::new(),shown:Default::default(),layout:[f64::NAN;10],face_key:None,begun:[f64::NAN;2],painted:None,room:None,bin:None,bin_seen:[0;20],bin_rect:[f64::NAN;6]}
  }
  /// A new semantic layout: the sizes and the furniture's bounds change, the view does not.
  pub fn configure(&mut self,width:f64,height:f64,scene_width:f64,depth:f64,baggebo:bool){

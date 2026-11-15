@@ -1,5 +1,3 @@
-import { createFoliageFrame } from './foliage-frame.js';
-import { createSceneMotionFrame } from './scene-motion-frame.js';
 import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
@@ -7,7 +5,6 @@ import * as THREE from 'three';
 import {plantGeometrySpec,lampGeometrySpec} from './decor-geometry-spec.js';
 import {projectPlantFoliage} from './foliage-projection.js';
 import { configureNativeRendererSize } from './native-renderer-size.js';
-import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
@@ -19,7 +16,7 @@ import { createShelfLamp } from './shelf-lamps.js';
 import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, LAMP_KELVIN_MS, lampTint } from './lamp-kelvin.js';
 import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
 import { createShelfLampLighting } from './shelf-lamp-lighting.js';
-import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
+import { createShelfTrash } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms, prelinkPrograms, prepareInsertionProgramState } from './gpu-programs.js';
@@ -74,7 +71,6 @@ function clearPlantDiagnostics(node) { needRustShelf().scene_clear_plant_diagnos
 // attribute write queues mutation records and style invalidation.
 function setData(element, key, value) { if (element.dataset[key] !== value) element.dataset[key] = value; }
 const SHELF_DIMENSIONS = Object.fromEntries(Object.entries(SHELF_SPECS).map(([type, spec]) => [type, JSON.stringify(spec.dimensions)]));
-const IDENTITY = new THREE.Matrix4();
 const NO_NUMBERS = new Float64Array(0);
 // The inline geometry last written to a projected node: unchanged numbers are not restyled.
 // A plant or a lamp, not a book.
@@ -196,7 +192,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
   const semanticCovers = new Map();
   const semanticFoliage = new Map();
-  const foliageFrame = createFoliageFrame(rust);
+  // The rectangles no plant's foliage takes taps in (rust-ui/src/scene_foliage.rs).
+  const foliageFrame = new rust.RustFoliageFrame();
   const releasedCandidates = new WeakSet();
   stage.classList.add('has-scene');
   stage.prepend(canvas);
@@ -298,7 +295,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   const motionKey = entry => isDecor(entry) ? entry.key
     : entry.book?.driveFileId ? `book:drive:${entry.book.driveFileId}` : null;
-  const sceneMotionFrame = createSceneMotionFrame(rust, motionKey);
+  // The shared room's keys, shelves and bays are a layout's (rust-ui/src/scene_motion.rs): told again when a
+  // layout or a record's identity changed. Each key has one number for the scene's whole life (0: no key).
+  const motionNames = [null], motionNumbers = new Map();
+  const sceneMotionFrame = { native:new rust.RustSceneMotionFrame(), name:number => motionNames[number] };
+  let motionStale = true;
+  function tellMotion(pixelsPerMetre) {
+    motionStale = false;
+    const keys = bookEntries.map(motionKey), native = sceneMotionFrame.native;
+    native.register(keys, Float64Array.from(bookEntries, entry => entry.shelf || 0));
+    native.identify(Uint32Array.from(keys, key => {
+      if (typeof key !== 'string' || !key) return 0;
+      let number = motionNumbers.get(key);
+      if (number === undefined) { number = motionNames.length; motionNames.push(key); motionNumbers.set(key, number); }
+      return number;
+    }));
+    native.bays(packRows(rows), width, pixelsPerMetre);
+  }
   function clearRoomMotion(source = '') {
     roomMotion.clear(source); clearTimeout(motionExpiry); motionExpiry = null;
     if (roomMotion.active(performance.now())) motionExpiry = setTimeout(() => invalidate(true, false, 'remote-motion-expired'), 5050);
@@ -334,7 +347,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // (rust-ui/src/book_gravity_frame.rs, scene_projection.rs): both are a layout's, like the arena's rows.
   const gravityFrame = new rust.RustGravityFrame(), projectionFrame = new rust.RustSceneProjectionFrame();
   function bindEntries() {
-    entryFrame.bind(bookEntries, true); projectionFrame.reset_entries(bookEntries.length);
+    entryFrame.bind(bookEntries, true); projectionFrame.reset_entries(bookEntries.length); motionStale = true;
     if (settleBooks) gravityFrame.register(bookEntries.map(entry => entry.key));
   }
   let bookEntries = entries.map(freshEntry);
@@ -630,20 +643,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
   const canvasWritten = { width:NaN, height:NaN };
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  // The eight corners of a box under a matrix are projected in Rust. Pass `out` to refresh a retained
-  // rectangle in place instead of allocating one.
-  const cornerBox = new Float64Array(6), cornerRect = new Float64Array(7);
-  const corners = (box, transform, out = {}) => {
-    if (box.isBox3) {
-      const { min, max } = box;
-      cornerBox[0] = min.x; cornerBox[1] = min.y; cornerBox[2] = min.z; cornerBox[3] = max.x; cornerBox[4] = max.y; cornerBox[5] = max.z;
-      box = cornerBox;
-    }
-    rust.scene_corners(box, transform.elements, cornerRect);
-    out.left = cornerRect[0]; out.right = cornerRect[1]; out.top = cornerRect[2]; out.bottom = cornerRect[3];
-    out.width = cornerRect[4]; out.height = cornerRect[5]; out.closest = cornerRect[6];
-    return out;
-  };
   bindEntries();
   // The semantic button's centre lies on one solid mesh of its model. Look that
   // mesh up by name once per model rather than walking the tree every frame.
@@ -863,8 +862,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneView.dropUnshown();
   }
 
-  const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
-  const trashRect0 = {};
+  const dropStep = new Float64Array(5), flight = new Float64Array(8), trashOut = new Float64Array(6);
   let viewTexts = null;
   function updateTrash(now, finishedDrops) {
     if (!trash || !trashNode) { sceneView.trashUnshown(); return false; }
@@ -883,26 +881,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       trash.userData.setState({ openness:dropStep[3], bounce:dropStep[4] });
       trash.updateMatrixWorld(true);
       if (dropEntry.model && !drop.complete) {
-        const worldScale = trash.getWorldScale(new THREE.Vector3()).x;
-        const endScale = rust.scene_trash_end_scale(worldScale, trash.userData.radius, dropEntry.width, dropEntry.height);
-        const motion = sampleTrashDrop(drop.start, trash.userData.getMouth(), t,
-          { height:dropEntry.height, scale:drop.startScale, endScale });
-        dropEntry.model.position.copy(motion.position);
-        dropEntry.model.scale.setScalar(motion.scale);
-        trash.getWorldQuaternion(drop.endQuaternion).multiply(drop.bookQuaternion);
-        dropEntry.model.quaternion.copy(drop.startQuaternion).slerp(drop.endQuaternion, motion.turn);
-        dropEntry.model.updateMatrixWorld(true);
-        // Its slot box, copied out of the arena (the call may move the memory under a view).
-        entryFrame.refresh();
-        const box = dropEntry.row * ENTRY_STATE + 50, flightBounds = corners(entryFrame.state.slice(box, box + 6), dropEntry.model.matrixWorld);
-        rust.scene_trash_overflow(flightBounds.right, sceneWidth, t, overflow);
-        // The pointer may leave a broad book partly outside the canvas at
-        // release. Bend its first few frames inward instead of snapping its
-        // starting pose or clipping the newly exposed cover for the flight.
-        if (overflow[0]) {
-          dropEntry.model.position.x -= overflow[1];
-          dropEntry.model.updateMatrixWorld(true);
-        }
+        // Where the flight is, its scale and its turn, in one call (rust-ui/src/scene_flight.rs). The pointer may
+        // leave a broad book partly outside the canvas at release: its first few frames bend inward
+        // instead of snapping its starting pose or clipping the newly exposed cover for the flight.
+        const mouth = trash.userData.getMouth(), model = dropEntry.model;
+        entryFrame.lamp.binFlight(dropEntry.row, drop.flight, trash.matrixWorld.elements, mouth.x, mouth.y, mouth.z, trash.userData.radius, t, sceneWidth, flight);
+        model.position.set(flight[0], flight[1], flight[2]); model.scale.setScalar(flight[3]);
+        model.quaternion.set(flight[4], flight[5], flight[6], flight[7]);
+        model.updateMatrixWorld(true);
       }
       sceneView.dropShown(t.toFixed(4));
       showData('trashingBookId', String(dropEntry.book?.id ?? ''));
@@ -922,13 +908,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // and its box on screen: they are functions of exactly those numbers.
     if (drop || begun & 4 || binStale) {
       if (!drop) { binStale = false; trash.userData.setState({ openness:sceneView.trashOpenness }); trash.updateMatrixWorld(true); }
-      const trashRect = corners(trashBox.setFromObject(trash), IDENTITY, trashRect0);
-      trashPacked[0] = trashRect.left; trashPacked[1] = trashRect.right; trashPacked[2] = trashRect.top; trashPacked[3] = trashRect.bottom;
-      trashPacked[4] = trashRect.width; trashPacked[5] = trashRect.height;
+      const { min, max } = trashBox.setFromObject(trash);
+      sceneView.binBox(min.x, min.y, min.z, max.x, max.y, max.z);
     }
     // In the frame's layout, read with its other geometry (viewport()): reading the visual viewport after
     // the entries restyled their buttons would force a second layout of the page in every frame.
-    sceneView.trashPlaced(trashPacked, trashOut);
+    sceneView.trashPlaced(NO_NUMBERS, trashOut);
     const visible = trashOut[0] === 1;
     trashWritten = placeHit(trashNode, trashWritten, visible, trashOut[2], trashOut[3], trashOut[4], trashOut[5], 50, true);
     // Its diagnostics, from the bin and the room the view holds: formatted and written to the node and the canvas only
@@ -1046,7 +1031,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
     const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
     entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
-    if (identityChanged) { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); }
+    if (identityChanged) { motionStale = true; acknowledgeRoom(roomCheckpoint); }
     entry.stale = true;
     if (entry.model) {
       const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
@@ -1100,7 +1085,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // alignment. Its framebuffer dimensions and DPR remain untouched.
     const stageBounds = stage.getBoundingClientRect();
     const restingTop = stageBounds.top + scroller.scrollTop - stagePixelOffset;
-    const offset = nativeRoomLease ? shelfPixelOffset(restingTop, sceneWidth, viewSizes[3], viewSizes[2]) : 0;
+    const offset = nativeRoomLease ? sceneView.pixelOffset(restingTop, viewSizes[3], viewSizes[2]) : 0;
     const settledStageBounds = offset === stagePixelOffset ? stageBounds : null;
     if (offset !== stagePixelOffset) {
       stagePixelOffset = offset;
@@ -1224,7 +1209,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneView.beginEntries(now, reducedMotion.matches, zoom, NO_NUMBERS, frameLayout.ratio, frameLayout.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
     const usePhysics = settleBooks && (physicsReady || physicsStarted);
     const pixelsPerMetre = pixelsPerMetreNow();
-    sceneMotionFrame.prepare(bookEntries, rows, width, pixelsPerMetre);
+    if (motionStale) tellMotion(pixelsPerMetre);
     arranging = arrangingNow();
     if (usePhysics) physicsStarted = true;
     // What changed since the last frame enters the entry arena: a class or a drag variable (as the
@@ -1554,7 +1539,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     if (!native) {
       const [svg, path, exclusions] = rust.scene_foliage_target(node, entry);
-      native = { svg, path, exclusions, clip:'', state:foliageFrame.createState(),
+      native = { svg, path, exclusions, clip:'', state:new rust.RustFoliageState(), posed:null,
         display:'', left:NaN, top:NaN, width:NaN, height:NaN, events:'' };
       semanticFoliage.set(node, native);
     }
@@ -1572,7 +1557,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Inspection is a uniform scale and translation of the whole room. SVG's
     // viewBox applies exactly that transform to the cached leaf triangles,
     // preserving holes without projecting every leaf again on every finger move.
-    if (native.state.pose(model, furniture.quaternion, rect)) {
+    // Its model's matrix, the room's turn and its rectangle in the arena say whether the leaves moved (rust-ui/src/scene_exclusions.rs).
+    const turn = furniture.quaternion;
+    entryFrame.leaf.set(model.matrix.elements);
+    if (entryFrame.lamp.foliagePose(native.state, entry.row, turn.x, turn.y, turn.z, turn.w, native.posed !== model)) {
+      native.posed = model;
       // Leaf paths consume each mesh's world matrix. Refresh descendants only
       // when rebuilding the path, rather than on every room frame.
       model.updateMatrixWorld(true);
@@ -1583,11 +1572,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // The clip is a pure function of the reference box, this rectangle and every
     // excluded book rectangle: rebuild it only when one of those numbers moved.
     // Gathered from the entry arena in one native call per frame (rust-ui/src/scene_exclusions.rs).
-    if (!exclusionsReady) { entryFrame.exclusions(foliageFrame.native, sceneView.progress > .04); exclusionsReady = true; }
+    if (!exclusionsReady) { entryFrame.exclusions(foliageFrame, sceneView.progress > .04); exclusionsReady = true; }
     // Inside the books' rectangles the existing native book surface already has touch-action:none and
     // resolves true mesh occlusion in its drag handler; the clip (Rust) keeps book clicks native even if
     // foliage is behind a cover. It is rebuilt only when one of its inputs moved.
-    const clipping = native.state.clip();
+    const clipping = native.state.clip(foliageFrame);
     if (!clipping) return;
     if (native.clip !== clipping) {
       native.exclusions.setAttribute('d', clipping); native.clip = clipping;
@@ -2916,7 +2905,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       stage.style.top = originalTop;
-      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
+      if (!disposed) { projectionFrame.free(); entryFrame.free(); sceneMotionFrame.native.free(); foliageFrame.free(); gravityFrame.free(); bookGravity.free(); roomMotion.free(); roomTransition.free(); clearTimeout(motionExpiry); }
       disposed = true; modalDeferredEntry = inactiveModalEntry = null;
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
@@ -2937,8 +2926,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       inspectionSnapshot = inspectionOverview = null;
       for (const node of semanticCovers.values()) node.remove();
       semanticCovers.clear();
-      for (const native of semanticFoliage.values()) native.svg.remove();
-      semanticFoliage.clear(); foliageFrame.free();
+      for (const native of semanticFoliage.values()) { native.svg.remove(); native.state.free(); }
+      semanticFoliage.clear();
       for (const node of trashOriginalStates.keys()) restoreTrashNode(node);
       for (const node of catalogOriginalStates.keys()) restoreCatalogNode(node);
     }

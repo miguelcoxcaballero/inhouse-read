@@ -35,6 +35,10 @@ pub struct RustFoliageState {
  input:Box<[f64;26]>, pose:[f64;20], reference:[f64;6], previous:[f64;10],
  exclusions:Vec<f64>, exclusions_have_nan:bool, projected:bool, clipped:bool, revision:u64,
 }
+impl RustFoliageState {
+ /// Its inputs, for whoever fills them natively (`scene_exclusions.rs`).
+ pub(super) fn input(&mut self)->&mut [f64;26]{&mut self.input}
+}
 #[wasm_bindgen]
 impl RustFoliageState {
  #[wasm_bindgen(constructor)]

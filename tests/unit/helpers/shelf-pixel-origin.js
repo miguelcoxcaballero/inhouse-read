@@ -1,4 +1,4 @@
-import { getRustCore } from './rust-core.js';
+import { getRustCore } from '../../../src/js/rust-core.js';
 
 // CSS layout uses fractional positions even when the retained room has an
 // integral framebuffer. Choose the nearest integral CSS origin that also

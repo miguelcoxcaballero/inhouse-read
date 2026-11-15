@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import * as THREE from 'three';
 import { rustShelf, shelfWasm } from './helpers/rust-shelf-ready.js';
 import { foliageClip } from './helpers/reference-scene-math.js';
-import { createFoliageFrame } from '../../src/js/foliage-frame.js';
+import { createFoliageFrame } from './helpers/foliage-frame.js';
 import { prepareAreas } from './helpers/reference-foliage-areas.js';
 
 const rect=(left,top,width,height)=>({left,top,right:left+width,bottom:top+height,width,height});

@@ -44,6 +44,9 @@ mod occlusion_table;
 mod jsmath;
 #[path="../../rust-core/src/cabinet.rs"]
 mod cabinet;
+// The stage's pixel origin: the core's search, asked by the view (scene_layout.rs).
+#[path="../../rust-core/src/shelf_pixel.rs"]
+mod shelf_pixel;
 mod earcut;
 mod three_geo;
 mod three_shape;

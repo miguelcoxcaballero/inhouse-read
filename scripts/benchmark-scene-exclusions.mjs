@@ -8,7 +8,7 @@ import {readFileSync} from 'node:fs';
 import {performance} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import * as rust from '../src/wasm/shelf/inhouse_read_shelf.js';
-import {createFoliageFrame} from '../src/js/foliage-frame.js';
+import {createFoliageFrame} from '../tests/unit/helpers/foliage-frame.js';
 import {createSceneEntryFrame,ENTRY_OUTPUT,ENTRY_STATE,HIT_INPUT,HIT_OUTPUT} from '../src/js/scene-entry-frame.js';
 import {exclusionRects,prepareAreas} from '../tests/unit/helpers/reference-foliage-areas.js';
 rust.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});

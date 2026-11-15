@@ -2,7 +2,7 @@
 import {expect,it} from 'vitest';
 import * as THREE from 'three';
 import {rustShelf as rust,shelfWasm} from './helpers/rust-shelf-ready.js';
-import {createSceneMotionFrame} from '../../src/js/scene-motion-frame.js';
+import {createSceneMotionFrame} from './helpers/scene-motion-frame.js';
 import {createSceneProjectionFrame} from './helpers/scene-projection-frame.js';
 import {createSceneProjectionFrame as perEntryProjection} from './helpers/scene-frame-per-entry.js';
 import {createSceneEntryFrame,ENTRY_INPUT,ENTRY_OUTPUT,HIT_INPUT,HIT_OUTPUT} from '../../src/js/scene-entry-frame.js';

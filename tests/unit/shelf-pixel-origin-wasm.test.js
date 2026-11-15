@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shelfPixelOffset } from '../../src/js/shelf-pixel-origin.js'
+import { shelfPixelOffset } from './helpers/shelf-pixel-origin.js'
 import { shelfPixelOffset as original } from './helpers/reference-shelf-pixel-origin.js'
 import { prng } from './helpers/pointer-harness.js'
 

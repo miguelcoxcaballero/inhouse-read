@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 const load=async dir=>{const rust=await import(pathToFileURL(resolve(dir)+'/inhouse_read_shelf.js').href);rust.initSync({module:readFileSync(resolve(dir)+'/inhouse_read_shelf_bg.wasm')});return rust;};
 const old=await load(process.argv[2]),rust=await load(process.argv[4]||'src/wasm/shelf');
 const before=await import(pathToFileURL(resolve(process.argv[3])).href),after=await import('../src/js/scene-entry-frame.js');
-const {createSceneMotionFrame}=await import('../src/js/scene-motion-frame.js');
+const {createSceneMotionFrame}=await import('../tests/unit/helpers/scene-motion-frame.js');
 const median=a=>a.toSorted((x,y)=>x-y)[Math.floor(a.length/2)];
 const rows=[{left:0,right:600,bottom:300,ceiling:10},{left:0,right:600,bottom:600,top:310},{left:0,right:600,bottom:900,ceiling:610}];
 const room={elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]};
