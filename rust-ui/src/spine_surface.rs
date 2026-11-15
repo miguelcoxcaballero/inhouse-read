@@ -401,8 +401,9 @@ fn flag(options:&JsValue,key:&'static str,fallback:&JsValue)->R<JsValue>{
  Ok(if value.is_undefined(){fallback.clone()}else{value})
 }
 
-/// Colour and packed rasters of one spine, plus the numbers its material needs. `host` supplies `author`, `spineFinish`, `surface` (the finish row of a surface name),
-/// `cloth` (the replay of a cloth plan on a canvas) and the weave's tiles. The book's stream is native.
+/// Colour and packed rasters of one spine, plus the numbers its material needs. `host` supplies `finishes` (the
+/// table of surface finishes), `cloth` (the replay of a cloth plan on a canvas) and the weave's tiles. The book's
+/// stream, its author's name and its finishes are native.
 /// The answer is the spine's textures and material description (`material`): one call per spine.
 #[wasm_bindgen]
 pub fn spine_surface(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsValue,options:&JsValue,host:&JsValue)->R<JsValue>{
@@ -433,7 +434,7 @@ fn rasters(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsVa
  let override_title=rd(book,"spineTitleOverride")?;
  let mut title=if truthy(&override_title){string_of(&override_title)}else{let t=rd(book,"title")?;if truthy(&t){string_of(&t)}else{lit("Sin título").unchecked_into::<JsString>()}};
  let author:Option<JsString>=if num(&rd(style,"width")?)>=32.0{
-  let name=call(&rd(host,"author")?,"author",&[&rd(book,"author")?])?;
+  let name=crate::book_title::book_normalize_author(rd(book,"author")?)?;
   if truthy(&name){Some(string_of(&name))}else{None}
  }else{None};
  let author_size=if author.is_some(){jmin(design_width*0.82,28.0*pick(num(&rd(style,"spineAuthorFontSize")?),12.0)/12.0)}else{0.0};
@@ -507,9 +508,8 @@ fn rasters(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsVa
   draw_device(&c,&val(device),&val(jmin(design_width*0.24,26.0)))?;mc.restore()?;
  }
 
- let spine_finish=rd(host,"spineFinish")?;
- let binding_finish=txt_of(&call(&spine_finish,"spineFinish",&[&rd(book,"spineFinish")?])?);
- let text_finish=txt_of(&call(&spine_finish,"spineFinish",&[&rd(book,"spineTextFinish")?])?);
+ let binding_finish=txt_of(&crate::book_customization::book_spine_finish(rd(book,"spineFinish")?));
+ let text_finish=txt_of(&crate::book_customization::book_spine_finish(rd(book,"spineTextFinish")?));
  let metal_binding=binding_finish!="matte";let metal_text=text_finish!="matte";
  let visual=rd(book,"shelfVisualId")?;
  let (id,book_title)=(if absent(&visual){rd(book,"id")?}else{visual},rd(book,"title")?);
@@ -551,7 +551,7 @@ fn rasters(book:&JsValue,style:&JsValue,physical_height:&JsValue,thickness:&JsVa
 
  // R = surface height, G = roughness, B = metalness. Linear, never sRGB.
  let packed=canvas(width,height)?;let packed_context=context_2d(&packed)?;let pc=ctx(&packed_context);
- let surface=call(&rd(host,"surface")?,"surface",&[&rd(book,"spineSurfaceFinish")?])?;
+ let surface=crate::book_model_build::finish(host,rd(book,"spineSurfaceFinish")?,"matte")?;
  let binding_roughness=jround(num(&rd(&surface,"roughness")?)*255.0);let metal=if metal_binding{255.0}else{0.0};
  pc.set_fill_text(&rgb(&show(SURFACE),&show(jmax(0.0,binding_roughness-12.0)),&show(metal)))?;pc.fill_rect(0.0,0.0,width,height)?;
  to_design(&packed_context)?;

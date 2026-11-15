@@ -116,8 +116,16 @@ fn template_seed(parts:&[Part])->f64{
  f64::from(state)
 }
 fn template_seed_text(mut state:u32,text:&str)->u32{for unit in text.encode_utf16(){state=(state^u32::from(unit)).wrapping_mul(16777619);}state}
-/// The surface finish table entry the host keeps for `value` (fallback as `surfaceFinish` takes it).
-fn finish(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
+/// The name of the surface finish of `value` in the host's table (`finishes`), `fallback` for anything the table
+/// does not have: `surfaceFinish(value, fallback)`.
+fn finish_name(host:&JsValue,value:JsValue,fallback:&'static str)->R<JsValue>{
+ Ok(crate::book_customization::surface_finish(value,word(fallback),&read(host,"finishes")?))
+}
+/// The row of that table for `value`: `SURFACE_FINISHES[surfaceFinish(value, fallback)]`.
+pub(crate) fn finish(host:&JsValue,value:JsValue,fallback:&'static str)->R<JsValue>{
+ let finishes=read(host,"finishes")?;
+ Reflect::get(&finishes,&crate::book_customization::surface_finish(value,word(fallback),&finishes))
+}
 fn apply_finish(material:&JsValue,finish:JsValue,kind:&str,metallic:bool)->R<()>{crate::book_model_policy::book_apply_material_finish(material.clone(),finish,kind,metallic)}
 
 // ---- leaves: the textures and geometries every model installs ----------------------------------------
@@ -223,8 +231,8 @@ fn cover_texture(host:&JsValue,three:&JsValue,book:&JsValue,style:&JsValue,textu
    }
   }
  };
- let title=call(host,"title",&[book])?;let title=if truthy(&title){title}else{word("Sin título")};
- let author=call(host,"author",&[&bread(book,"author")?])?;let author=if truthy(&author){author}else{word("")};
+ let title=crate::book_title::book_display_title(book.clone())?;let title=if truthy(&title){title}else{word("Sin título")};
+ let author=crate::book_title::book_normalize_author(bread(book,"author")?)?;let author=if truthy(&author){author}else{word("")};
  // `String(title)` and `String(author)` (each already a string from the host's title and author).
  let text=|value:JsValue|->JsString{if value.is_string(){value.unchecked_into()}else{JsString::from(string(&value))}};
  crate::book_paint::cover_case(c.unchecked_ref::<Canvas2d>(),design_width,&text(title),&text(author),
@@ -278,15 +286,14 @@ pub fn book_model_spine_fade_compile(host:&JsValue,uniforms:&JsValue,shader:&JsV
 }
 #[wasm_bindgen]
 pub fn book_model_spine_fade_update(host:&JsValue,uniforms:&JsValue,book:&JsValue,style:&JsValue)->R<()>{
- let finish=call(host,"spineFinish",&[&bread(book,"spineFinish")?])?;
+ let finish=crate::book_customization::book_spine_finish(bread(book,"spineFinish")?);
  let matte=finish.as_string().is_some_and(|value|value=="matte");
  let color=if matte{bread(style,"color")?}else{crate::host::read(&read(host,"metal")?,&string(&finish))?};
  call(&read(&read(uniforms,"spineCloth")?,"value")?,"set",&[&color])?;
  putn(&read(uniforms,"spineClothMetal")?,"value",if matte{0.0}else{1.0})?;
- let surface=finish_entry(host,&bread(book,"spineSurfaceFinish")?,&word("matte"))?;
+ let surface=self::finish(host,bread(book,"spineSurfaceFinish")?,"matte")?;
  put(&read(uniforms,"spineClothRough")?,"value",&read(&surface,"roughness")?)
 }
-fn finish_entry(host:&JsValue,value:&JsValue,fallback:&JsValue)->R<JsValue>{call(host,"finish",&[value,fallback])}
 /// The cover relief's hook, installed by the host (installCoverRelief): relief reaches the shader through the
 /// clearcoat normal map. The same tangent-space normal also bends the base layer's normal, so the raised zones
 /// read under a matte, satin or glossy laminate alike.
@@ -319,7 +326,7 @@ fn bump(s:&JsValue,name:&'static str)->R<f64>{let next=num(&state(s,name))+1.0;p
 /// that keeps its program from the start: raising varnish later only changes uniforms and textures.
 fn laminate(s:&JsValue,value:&JsValue)->R<()>{
  let cover=state(s,"cover");
- apply_finish(&cover,finish(&state(s,"host"),value,&word("satin"))?,"cover",false)?;
+ apply_finish(&cover,finish(&state(s,"host"),value.clone(),"satin")?,"cover",false)?;
  if truthy(&state(s,"reliefArmed"))&&!truthy(&get(&cover,"clearcoat")){putn(&cover,"clearcoat",0.001)?;}
  Ok(())
 }
@@ -336,7 +343,7 @@ pub fn book_model_arm_relief(s:&JsValue)->R<()>{
  put(&cover,"needsUpdate",&JsValue::TRUE)
 }
 fn relief_base_finish(s:&JsValue)->R<()>{
- let finish=finish(&state(s,"host"),&state(s,"coverFinishValue"),&JsValue::UNDEFINED)?;
+ let finish=finish(&state(s,"host"),state(s,"coverFinishValue"),"satin")?;
  call(&read(&read(&state(s,"reliefUniforms"),"bookReliefBaseFinish")?,"value")?,"set",
   &[&read(&finish,"clearcoat")?,&read(&finish,"roughness")?,&read(&finish,"clearcoatRoughness")?])?;Ok(())
 }
@@ -651,7 +658,7 @@ fn leaf_depth(s:&JsValue)->R<f64>{
 }
 fn leaf_options(s:&JsValue)->R<JsValue>{object(&[("board",state(s,"board")),("inset",state(s,"inset"))])}
 fn cap_finish(s:&JsValue,material:&JsValue,book:&JsValue)->R<()>{
- let finish=finish(&state(s,"host"),&bread(book,"spineSurfaceFinish")?,&word("matte"))?;
+ let finish=finish(&state(s,"host"),bread(book,"spineSurfaceFinish")?,"matte")?;
  let metal=bread(book,"spineFinish")?.as_string().is_some_and(|f|f=="gold")||bread(book,"spineFinish")?.as_string().is_some_and(|f|f=="silver");
  apply_finish(material,finish,"cap",metal)
 }
@@ -699,7 +706,7 @@ pub fn book_model_spine_appearance(s:&JsValue,book:&JsValue,style:&JsValue)->R<(
 #[wasm_bindgen]
 pub fn book_model_cover_appearance(s:&JsValue,book:&JsValue)->R<()>{
  let host=state(s,"host");
- let finish_of=|book:&JsValue|->R<JsValue>{call(&host,"surfaceFinish",&[&bread(book,"coverFinish")?])};
+ let finish_of=|book:&JsValue|->R<JsValue>{finish_name(&host,bread(book,"coverFinish")?,"satin")};
  let changed=finish_of(book)?!=state(s,"coverSurfaceFinish");
  put(s,"coverSurfaceFinish",&finish_of(book)?)?;
  put(s,"coverFinishValue",&bread(book,"coverFinish")?)?;
@@ -707,7 +714,7 @@ pub fn book_model_cover_appearance(s:&JsValue,book:&JsValue)->R<()>{
  book_model_relief_uniforms(s)?;
  grain_strength(s)?;
  let current=state(s,"wantedRelief");
- let wanted=if Reflect::has(book,&JsValue::from_str(k("coverRelief")))?{call(&host,"normalizeRelief",&[&bread(book,"coverRelief")?])?}else{current.clone()};
+ let wanted=if Reflect::has(book,&JsValue::from_str(k("coverRelief")))?{crate::cover_relief_portable::normalize_cover_relief(&bread(book,"coverRelief")?)?}else{current.clone()};
  let selection_changed=JsValue::from(js_sys::JSON::stringify(&wanted)?)!=JsValue::from(js_sys::JSON::stringify(&current)?);
  if selection_changed{call(&read(&state(s,"group"),"userData")?,"setCoverRelief",&[&wanted])?;}
  else if changed&&truthy(&state(s,"reliefMaps")){call(&host,"rebake",&[s,&state(s,"reliefRevision")])?;}
@@ -747,7 +754,7 @@ pub fn book_model_update_bookmark(s:&JsValue,book:&JsValue)->R<()>{
 }
 #[wasm_bindgen]
 pub fn book_model_edge_appearance(s:&JsValue,book:&JsValue)->R<()>{
- apply_finish(&state(s,"edges"),finish(&state(s,"host"),&bread(book,"pageEdgeFinish")?,&word("satin"))?,"paper",false)
+ apply_finish(&state(s,"edges"),finish(&state(s,"host"),bread(book,"pageEdgeFinish")?,"satin")?,"paper",false)
 }
 
 // ---- construction ------------------------------------------------------------------------------------

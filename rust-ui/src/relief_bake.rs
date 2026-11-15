@@ -25,7 +25,6 @@ extern "C"{
  #[wasm_bindgen(method,catch,js_name=localeCompare)]fn locale_compare(this:&Part,other:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=invalidate)]fn redraw(this:&Part)->R<()>;
  #[wasm_bindgen(method,getter,catch)]fn invalidate(this:&Part)->R<JsValue>;
- #[wasm_bindgen(method,catch,js_name=normalizeRelief)]fn normalize_relief(this:&Part,relief:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=buildRelief)]fn build_relief(this:&Part,source:&JsValue,choice:&JsValue,options:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=updateRelief)]fn update_relief(this:&Part,built:&JsValue,choice:&JsValue,options:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=materialMap)]fn material_map(this:&Part,maps:&JsValue,finish:&JsValue)->R<JsValue>;
@@ -260,7 +259,7 @@ pub fn book_model_set_relief(s:JsValue,relief:JsValue)->Promise{
   if !absent(&previous){part(&previous).abort()?;}
   let controller:JsValue=Part::controller()?.into();
   state.set_relief_controller(&controller)?;
-  let next=part(&state.host()?).normalize_relief(&relief)?;
+  let next=crate::cover_relief_portable::normalize_cover_relief(&relief)?;
   let revision=num(&state.relief_revision()?)+1.0;
   state.set_relief_revision(revision)?;
   state.set_wanted_relief(&next)?;

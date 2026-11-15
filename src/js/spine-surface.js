@@ -1,6 +1,5 @@
 import * as THREE from 'three'
-import { spineFinish, surfaceFinish, SURFACE_FINISHES } from './book-colors.js'
-import { normalizeBookAuthor } from './book-title.js'
+import { SURFACE_FINISHES } from './book-colors.js'
 import { needRustShelf } from './rust-shelf.js'
 
 // The binding layout, the lettering fit and every canvas operation of a spine run in Rust
@@ -46,8 +45,7 @@ export const WEAVE = 4.4 / 8
 export function paintWeave(c, designWidth, options) { needRustShelf().spine_paint_weave(host, c, designWidth, options) }
 
 const host = {
-  author: normalizeBookAuthor, spineFinish, cloth: replayCloth,
-  surface: value => SURFACE_FINISHES[surfaceFinish(value, 'matte')],
+  cloth: replayCloth, finishes: SURFACE_FINISHES,
   three: THREE, tiles: null,
   // The spine's relief as the binding samples it: the mesh reads `pixels` (256 x 1024 RGBA) in one pass.
   bindingRelief: pixels => Object.assign((u, v) => pixels[needRustShelf().book_mesh_relief_index(u, v, 256, 1024)] / 255, { pixels })
