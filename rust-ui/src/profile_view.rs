@@ -26,12 +26,20 @@ use web_sys::{Document,Element,HtmlElement};
 use std::{cell::{RefCell,Cell},rc::Rc};
 use js_sys::Function;
 use web_sys::{Event,EventTarget,KeyboardEvent};
-use crate::Listener;
+use crate::host;
+/// A listener this view placed, taken off when it is dropped.
+struct Listener{target:EventTarget,kind:&'static str,callback:Closure<dyn FnMut(Event)>}
+impl Drop for Listener{fn drop(&mut self){let _=self.target.remove_event_listener_with_callback(self.kind,self.callback.as_ref().unchecked_ref());}}
 
 fn text(node:&Element,value:&JsValue)->Result<(),JsValue>{node.unchecked_ref::<ProfileNode>().set_raw_text(value)?;Ok(())}
 fn hidden(node:&Element,value:bool){node.unchecked_ref::<HtmlElement>().set_hidden(value);}
-struct ProfileState{nodes:Vec<Element>,aria_label:JsValue,aria_expanded:JsValue,yes:JsValue,no:JsValue,src:JsValue,syncing:JsValue,cache:RefCell<Vec<Option<JsValue>>>,connected:Cell<Option<bool>>,close_updates:RefCell<Option<Function>>}
+struct ProfileState{nodes:Vec<Element>,aria_label:JsValue,aria_expanded:JsValue,yes:JsValue,no:JsValue,src:JsValue,syncing:JsValue,cache:RefCell<Vec<Option<JsValue>>>,connected:Cell<Option<bool>>,close_updates:RefCell<Option<Function>>,theme_toggle:RefCell<Option<HtmlElement>>}
 impl ProfileState{
+ /// The account button: an open menu closes; a closed one opens with the theme switch focused.
+ fn press(&self){
+  if !self.nodes[9].unchecked_ref::<HtmlElement>().hidden(){self.close_menu();return;}
+  self.toggle_menu();let toggle=self.theme_toggle.borrow().clone();if let Some(toggle)=toggle{let _=toggle.focus();}
+ }
  fn changed(&self,index:usize,value:&JsValue)->bool{
   let primitive=value.is_string()||value.is_null()||value.is_undefined()||value.as_bool().is_some()||value.as_f64().is_some();
   let mut cache=self.cache.borrow_mut();
@@ -41,7 +49,7 @@ impl ProfileState{
  fn text_changed(&self,index:usize,node:usize,value:&JsValue)->Result<(),JsValue>{if self.changed(index,value){text(&self.nodes[node],value)?;}Ok(())}
   pub fn new(document:Document)->Result<Self,JsValue>{
   let ids=["drive-profile","drive-connect-btn","theme-toggle","drive-sync-btn","drive-signout-btn","drive-sync-status","drive-profile-name","drive-profile-email","drive-profile-btn","drive-profile-menu","drive-profile-initial","drive-profile-initial-menu","drive-profile-avatar","drive-profile-avatar-menu"];
-  let mut nodes=Vec::with_capacity(ids.len());for id in ids{nodes.push(document.get_element_by_id(id).ok_or_else(||JsValue::from_str("Missing profile element"))?);}Ok(Self{nodes,aria_label:"aria-label".into(),aria_expanded:"aria-expanded".into(),yes:"true".into(),no:"false".into(),src:"src".into(),syncing:"is-syncing".into(),cache:RefCell::new(vec![None;8]),connected:Cell::new(None),close_updates:RefCell::new(None)})
+  let mut nodes=Vec::with_capacity(ids.len());for id in ids{nodes.push(document.get_element_by_id(id).ok_or_else(||JsValue::from_str("Missing profile element"))?);}Ok(Self{nodes,aria_label:"aria-label".into(),aria_expanded:"aria-expanded".into(),yes:"true".into(),no:"false".into(),src:"src".into(),syncing:"is-syncing".into(),cache:RefCell::new(vec![None;8]),connected:Cell::new(None),close_updates:RefCell::new(None),theme_toggle:RefCell::new(None)})
  }
   pub fn sync_status(&self,message:JsValue,syncing:bool)->Result<(),JsValue>{self.text_changed(0,5,&message)?;self.nodes[5].unchecked_ref::<ProfileNode>().raw_class_list().toggle_raw(&self.syncing,syncing)?;Ok(())}
  pub fn visibility(&self,connected:bool){
@@ -78,8 +86,24 @@ impl RustProfileView{
  #[wasm_bindgen(constructor)]
  pub fn new(document:Document)->Result<Self,JsValue>{Ok(Self{state:Rc::new(ProfileState::new(document.clone())?),document,listeners:RefCell::new(Vec::new())})}
  #[wasm_bindgen(js_name=syncStatus)]
- pub fn sync_status(&self,message:JsValue,syncing:bool)->Result<(),JsValue>{self.state.sync_status(message,syncing)}
- pub fn visibility(&self,connected:bool){self.state.visibility(connected);}
+ pub fn sync_status(&self,message:JsValue,syncing:JsValue)->Result<(),JsValue>{self.state.sync_status(message,syncing.is_truthy())}
+ pub fn visibility(&self,connected:JsValue){self.state.visibility(connected.is_truthy());}
+ /// A Google account: its name, address and photo, and the first letter of the name (or of the
+ /// address, or G) where there is no photo.
+ pub fn account(&self,profile:JsValue)->Result<(),JsValue>{
+  let (name,email)=(host::read(&profile,"name")?,host::read(&profile,"email")?);
+  let named=if name.is_truthy(){name.clone()}else if email.is_truthy(){email.clone()}else{"G".into()};
+  let letter=host::method(&host::method(&host::method(&named,"trim",&[])?,"charAt",&[&JsValue::from_f64(0.0)])?,"toUpperCase",&[])?;
+  let initial=if letter.is_truthy(){letter}else{"G".into()};
+  let label:JsValue=if email.is_truthy(){host::method(&"Cuenta de Google: ".into(),"concat",&[&email])?}else{"Cuenta de Google".into()};
+  self.state.profile(name.clone(),email,label,name,initial,host::read(&profile,"photo")?)
+ }
+ /// No account: the library of this device.
+ #[wasm_bindgen(js_name=localAccount)]
+ pub fn local_account(&self)->Result<(),JsValue>{self.state.profile("Inhouse Read".into(),"Biblioteca en este dispositivo".into(),"Cuenta y ajustes".into(),"Cuenta y ajustes".into(),"I".into(),JsValue::UNDEFINED)}
+ /// The account button pressed before this view existed (src/js/profile-view.js keeps such a tap);
+ /// nothing for a view that was never wired, whose button had no listener either.
+ pub fn press(&self){if self.state.theme_toggle.borrow().is_some(){self.state.press();}}
  #[wasm_bindgen(js_name=profileText)]
  pub fn profile_text(&self,name:JsValue,email:JsValue,label:JsValue,title:JsValue)->Result<(),JsValue>{self.state.profile_text(name,email,label,title)}
  pub fn avatar(&self,initial:JsValue,photo:JsValue)->Result<(),JsValue>{self.state.avatar(initial,photo)}
@@ -89,13 +113,10 @@ impl RustProfileView{
  #[wasm_bindgen(js_name=toggleMenu)]
  pub fn toggle_menu(&self)->bool{self.state.toggle_menu()}
  pub fn connect(&self,close_updates:Function,theme_toggle:HtmlElement)->Result<(),JsValue>{
-  self.listeners.borrow_mut().clear();*self.state.close_updates.borrow_mut()=Some(close_updates);
+  self.listeners.borrow_mut().clear();*self.state.close_updates.borrow_mut()=Some(close_updates);*self.state.theme_toggle.borrow_mut()=Some(theme_toggle);
   let mut listeners=Vec::new();
-  let mut listen=|target:EventTarget,kind:&'static str,callback:Closure<dyn FnMut(Event)>|->Result<(),JsValue>{target.add_event_listener_with_callback(kind,callback.as_ref().unchecked_ref())?;listeners.push(Listener{target,kind,callback,capture:false});Ok(())};
-  let state=self.state.clone();listen(self.state.nodes[8].clone().into(),"click",Closure::wrap(Box::new(move|_:Event|{
-   if !state.nodes[9].unchecked_ref::<HtmlElement>().hidden(){state.close_menu();return;}
-   state.toggle_menu();let _=theme_toggle.focus();
-  })as Box<dyn FnMut(Event)>))?;
+  let mut listen=|target:EventTarget,kind:&'static str,callback:Closure<dyn FnMut(Event)>|->Result<(),JsValue>{target.add_event_listener_with_callback(kind,callback.as_ref().unchecked_ref())?;listeners.push(Listener{target,kind,callback});Ok(())};
+  let state=self.state.clone();listen(self.state.nodes[8].clone().into(),"click",Closure::wrap(Box::new(move|_:Event|state.press())as Box<dyn FnMut(Event)>))?;
   let state=self.state.clone();listen(self.document.clone().into(),"click",Closure::wrap(Box::new(move|event:Event|{
    // The updater can replace its button while this event bubbles.
    if !event.composed_path().includes(state.nodes[0].as_ref(),0){state.close_menu();}

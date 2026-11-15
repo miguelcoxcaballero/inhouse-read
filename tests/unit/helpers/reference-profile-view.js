@@ -18,3 +18,20 @@ export class LegacyProfileView{
  disconnect(){for(const remove of this.listeners.splice(0))remove()}
  free(){this.disconnect();this.nodes=[];this.closeUpdates=()=>{}}
 }
+// The account view as src/js/profile-view.js made it before the module's view was adopted (frozen with the class above).
+export function createReferenceProfileView(document){
+ let view=new LegacyProfileView(document),connection=null,disposed=false;
+ return{
+  syncStatus(message,syncing=false){if(disposed)return;view.syncStatus(message,!!syncing)},
+  visibility(connected){if(disposed)return;view.visibility(!!connected)},
+  account(profile){
+   if(disposed)return;
+   const initial=(profile.name||profile.email||'G').trim().charAt(0).toUpperCase()||'G';
+   view.profile(profile.name,profile.email,profile.email?`Cuenta de Google: ${profile.email}`:'Cuenta de Google',profile.name,initial,profile.photo);
+  },
+  localAccount(){if(disposed)return;view.profile('Inhouse Read','Biblioteca en este dispositivo','Cuenta y ajustes','Cuenta y ajustes','I',undefined)},
+  closeMenu(){if(disposed)return;view.closeMenu()},
+  connect(...args){if(disposed)return;connection=args;view.connect(...args)},
+  destroy(){if(disposed)return;disposed=true;view.free();connection=null}
+ };
+}

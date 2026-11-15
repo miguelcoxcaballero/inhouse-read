@@ -14,7 +14,6 @@ mod stage_gate;
 mod prepared_page;
 mod refresh_queue;
 mod foliage;
-mod profile_view;
 mod catalog_art;
 mod catalog_view;
 mod catalog_controller;
