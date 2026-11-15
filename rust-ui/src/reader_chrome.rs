@@ -9,6 +9,23 @@ fn query(root:&Element,selector:&str)->Result<Element,JsValue>{root.query_select
 fn absent(value:&JsValue)->bool{value.is_null()||value.is_undefined()}
 #[wasm_bindgen]
 extern "C"{#[wasm_bindgen(catch,js_name=Number)]fn number(value:&JsValue)->Result<f64,JsValue>;}
+thread_local!{
+ /// The return button: `() => host.voice.browsing ? host.voice.returnToAudio() : host.returnToReading()`. One closure per
+ /// realm with no captured state, bound to the reader it belongs to and collected with its button.
+ static RETURN:Function={let closure=Closure::<dyn FnMut(JsValue)->Result<JsValue,JsValue>>::new(|host:JsValue|{
+  let voice=get(&host,"voice")?;
+  if get(&voice,"browsing")?.is_truthy(){crate::host::method(&voice,"returnToAudio",&[])}else{crate::host::method(&host,"returnToReading",&[])}
+ });closure.into_js_value().unchecked_into()};
+}
+/// `ReaderChrome.prototype.create.call(chrome)`: the reader's panel, with one speed choice for each of `steps`, its mini
+/// player and its return button. The frozen original is tests/unit/helpers/reference-reader-chrome-create.js.
+#[wasm_bindgen]
+pub fn reader_chrome_create(host:JsValue,steps:&js_sys::Array,doc:web_sys::Document)->Result<(),JsValue>{
+ let on_return=RETURN.with(|back|back.bind1(&JsValue::NULL,&host));
+ let mini=format!("<button type=\"button\" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><span class=\"reading-audio-remaining\" data-audio-remaining title=\"Tiempo restante estimado\">—h —min</span><button type=\"button\" class=\"reading-icon-button\" data-mini-play aria-label=\"Pausar lectura\">{}</button><button type=\"button\" class=\"reading-icon-button\" data-mini-stop aria-label=\"Detener lectura\">{}</button>",
+  crate::reader_markup::icon("pause"),crate::reader_markup::icon("stop"));
+ reader_create_chrome(host,crate::reader_markup::reader_panel_markup(steps),mini,on_return,doc)
+}
 #[wasm_bindgen]
 pub fn reader_create_chrome(host:JsValue,panel_markup:String,mini_markup:String,on_return:Function,doc:web_sys::Document)->Result<(),JsValue>{
  for (key,id) in [("screen","reader-screen"),("toolbar","reader-toolbar"),("locationButton","reader-location")]{

@@ -8,9 +8,9 @@ test('compiled reader keeps audio controls and keyboard-aware panel geometry thr
  await page.addInitScript(fakeEngineScript({voices:neuralVoices.filter(voice=>voice.id===LESSAC),installed:[LESSAC],holdAfter:1}))
  await page.addInitScript(()=>{
   window.chromeProof={available:false,calls:{}}
-  const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reader_create_chrome)return result
+  const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reader_chrome_create)return result
    window.chromeProof.available=true;const exports={...actual}
-   for(const name of ['reader_create_chrome','reader_voice_state','reader_resize_panel','reader_reveal_field'])exports[name]=(...args)=>{window.chromeProof.calls[name]=(window.chromeProof.calls[name]||0)+1;return actual[name](...args)}
+   for(const name of ['reader_chrome_create','reader_voice_state','reader_resize_panel','reader_reveal_field'])exports[name]=(...args)=>{window.chromeProof.calls[name]=(window.chromeProof.calls[name]||0)+1;return actual[name](...args)}
    // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
    // dispatched member's name from the call and count it as the implementation it runs.
    const dispatched={"flow_method":{"voiceState":"reader_voice_state"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)window.chromeProof.calls[name]=(window.chromeProof.calls[name]||0)+1;return actual[dispatch](...args)}
@@ -31,6 +31,6 @@ test('compiled reader keeps audio controls and keyboard-aware panel geometry thr
  await expect.poll(()=>page.locator('#reading-controls').evaluate(node=>node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(540)
  await expect.poll(()=>page.evaluate(()=>window.chromeProof.calls.reader_reveal_field||0)).toBeGreaterThan(0)
  const proof=await page.evaluate(()=>window.chromeProof)
- for(const name of ['reader_create_chrome','reader_voice_state','reader_resize_panel','reader_reveal_field'])expect(proof.calls[name]).toBeGreaterThan(0)
+ for(const name of ['reader_chrome_create','reader_voice_state','reader_resize_panel','reader_reveal_field'])expect(proof.calls[name]).toBeGreaterThan(0)
  expect(errors).toEqual([]);await info.attach('compiled-reader-chrome',{body:JSON.stringify(proof),contentType:'application/json'})
 })
