@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { cpus } from 'node:os';
-import { rustDominantCoverRgb } from '../src/js/cover-color-wasm.js';
+import { rustDominantCoverRgb } from '../tests/unit/helpers/reference-cover-color-wasm.js';
 import { referenceDominantRgb } from '../tests/unit/helpers/reference-cover-color.js';
 import { coverColorCases, createCoverColorPixels } from '../tests/helpers/cover-color-cases.mjs';
 

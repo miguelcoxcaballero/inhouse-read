@@ -1,3 +1,5 @@
+// FROZEN copy of src/js/cover-color-wasm.js as it was when the shelf module took the sample and the clustering
+// (rust-ui/src/cover_style.rs). The differential tests compare production with this bridge over the numeric core.
 // Only bounded sampled RGBA crosses the WASM boundary. Rust returns the final
 // cover, shade and ink strings together; no complete image is retained.
 const MAX_SAMPLES = 32768;

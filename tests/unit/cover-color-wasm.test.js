@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { rustDominantCoverRgb } from '../../src/js/cover-color-wasm.js';
+import { rustDominantCoverRgb } from './helpers/reference-cover-color-wasm.js';
 import { referenceDominantRgb } from './helpers/reference-cover-color.js';
 import { coverColorCases, createCoverColorPixels } from '../helpers/cover-color-cases.mjs';
 

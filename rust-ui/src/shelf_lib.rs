@@ -233,6 +233,10 @@ mod font_glyph;
 #[path="../../rust-core/src/font_prepare.rs"]
 mod font_prepare;
 mod font_planes;
+// A cover's colour: the core's clustering, called natively.
+#[path="../../rust-core/src/cover_color.rs"]
+mod cover_color;
+mod cover_style;
 mod cover_appearance;
 mod launch_frames;
 mod app_controller;

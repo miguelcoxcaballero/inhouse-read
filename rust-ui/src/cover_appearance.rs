@@ -46,7 +46,6 @@ extern "C"{
  #[wasm_bindgen(method,catch)]fn core(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch,js_name=requireCore)]fn require_core(this:&Duck)->R<JsValue>;
  #[wasm_bindgen(method,catch)]fn ready(this:&Duck)->R<JsValue>;
- #[wasm_bindgen(method,catch)]fn color(this:&Duck,core:&JsValue,pixels:&JsValue,width:f64,height:f64)->R<JsValue>;
  /// `fontMask(title, before, after, plan, width, rows, wraps, surface)`: the mask, or `null` without one that fits.
  #[wasm_bindgen(method,catch)]fn mask(this:&Duck,title:&JsValue,before:&JsValue,after:&JsValue,plan:&JsValue,width:f64,rows:&JsValue,wraps:&JsValue,surface:&JsValue)->R<JsValue>;
  #[wasm_bindgen(method,getter,catch)]fn canvas(this:&Duck)->R<JsValue>;
@@ -382,8 +381,9 @@ impl Analysis{
   let (pixels,width,height)=(self.pixels.borrow().clone(),self.width.get(),self.height.get());
   // `coverColorFromPixels(pixels, width, height)`
   let color=if !truthy(&pixels)||!width.is_finite()||!height.is_finite()||width<1.0||height<1.0{JsValue::NULL}else{
-   let style=self.host.color(&self.host.core()?,&pixels,width,height)?;
-   if !truthy(&style){return Err(error("Invalid cover pixels"))}
+   // The clustering runs in this module (cover_style.rs); a page without its numeric core fails as it did.
+   let style=if truthy(&self.host.core()?){crate::cover_style::cover_style(&pixels,&number(width),&number(height))}else{None};
+   let Some(style)=style else{return Err(error("Invalid cover pixels"))};
    style
   };
   *self.color.borrow_mut()=color;
