@@ -5,7 +5,7 @@ import { NeuralEngine } from '../../src/js/readers/neural-voice/engine.js'
 import { piperVoices, supertonicVoices, isNeuralVoiceId } from '../../src/js/readers/neural-voice/catalog.js'
 import { recommendedVoice } from './helpers/reference-voice-urls.js'
 import { normalizeReadingPreferences } from '../../src/js/readers/reading-preferences.js'
-import { isNeuralId, normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
+import { isNeuralId, normalizeNeuralVoice } from './helpers/live-voice-catalog.js'
 import { advance, fakeAudioContext, fakeClients, feedJob, flush, recordEvents } from './neural-fakes.js'
 
 function stores() {

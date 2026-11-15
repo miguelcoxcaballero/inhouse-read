@@ -183,8 +183,14 @@ pub fn native_encode_pcm(pcm:Float32Array,encode:JsValue)->R{
  }
  crate::host::call(&encode,"encode",&[&JsValue::from_str(&String::from_utf16_lossy(&units))])
 }
+/// `audio[name]()`: the native player's doorway to the audio session; without `audio` (the player hands none any
+/// more) it is neural_audio.rs itself.
+fn audio_door(audio:&JsValue,name:&str)->R{
+ crate::neural_audio::door(&if audio.is_undefined(){JsValue::UNDEFINED}else{read(audio,name)?},name,&[])
+}
+fn native_state(audio:&JsValue)->R{audio_door(audio,"nativeAudio")}
 fn native_now(p:&JsValue,audio:&JsValue)->R<f64>{
- let state=crate::host::call(&read(audio,"nativeAudio")?,"nativeAudio",&[])?;
+ let state=native_state(audio)?;
  if !t(&state)||read(&state,"session")?!=read(p,"session")?{return Ok(0.0);}
  let clock=(||->R<f64>{
   let clock=js_sys::JSON::parse(&string_of(&method(&read(&state,"bridge")?,"getState",&[])?))?;
@@ -205,7 +211,7 @@ pub fn native_event(p:JsValue,event:JsValue,audio:JsValue)->R<()>{
  let detail=read(&event,"detail")?;
  if !t(&detail){return Ok(());}
  let mut session=read(&p,"session")?;
- if !t(&session){session=get(&crate::host::call(&read(&audio,"nativeAudio")?,"nativeAudio",&[])?,"session");}
+ if !t(&session){session=get(&native_state(&audio)?,"session");}
  if read(&detail,"session")?!=session{return Ok(());}
  let epoch=read(&detail,"epoch")?;
  if !absent(&epoch)&&epoch!=read(&p,"epoch")?{return Ok(());}
@@ -239,7 +245,7 @@ fn reset_clock(p:&JsValue)->R<()>{
 #[wasm_bindgen]
 pub fn native_schedule(p:JsValue,id:JsValue,pcm:JsValue,sample_rate:JsValue,options:JsValue,audio:JsValue)->R{
  let (last,marks)=if options.is_undefined(){(JsValue::FALSE,JsValue::UNDEFINED)}else{(read(&options,"last")?,read(&options,"marks")?)};
- let state=crate::host::call(&read(&audio,"nativeAudio")?,"nativeAudio",&[])?;
+ let state=native_state(&audio)?;
  let rate=num(&sample_rate);
  if !t(&state)||!pcm.is_instance_of::<Float32Array>()||num(&read(&pcm,"length")?)==0.0||!Number::is_integer(&sample_rate)||rate<8000.0||rate>96000.0{return Err(error("invalid native audio"));}
  // Reject the complete buffer before enqueueing any slice or changing the playback clock; a corrupt later slice must not leave a partial utterance.
@@ -295,10 +301,10 @@ pub fn native_stop_all(p:JsValue,options:JsValue,audio:JsValue)->R<()>{
  let (keep,pause)=if options.is_undefined(){(false,false)}else{(t(&read(&options,"keepSession")?),t(&read(&options,"pause")?))};
  reset_clock(&p)?;
  let epoch=method(&p,"_nextEpoch",&[])?;set(&p,"epoch",&epoch)?;
- let state=crate::host::call(&read(&audio,"nativeAudio")?,"nativeAudio",&[])?;
+ let state=native_state(&audio)?;
  if keep&&t(&state){method(&read(&state,"bridge")?,"reset",&[&read(&state,"session")?,&epoch])?;}
- else if pause{crate::host::call(&read(&audio,"pauseNativeAudio")?,"pauseNativeAudio",&[])?;}
- else{crate::host::call(&read(&audio,"stopNativeAudio")?,"stopNativeAudio",&[])?;}
+ else if pause{audio_door(&audio,"pauseNativeAudio")?;}
+ else{audio_door(&audio,"stopNativeAudio")?;}
  if !keep{set(&p,"session",&JsValue::NULL)?;}
  Ok(())
 }
@@ -316,7 +322,7 @@ pub fn native_truncate_after(p:JsValue,id:JsValue,audio:JsValue)->R<()>{
   for i in 1..ends.length(){latest=jmax(latest,num(&read(&ends.get(i),"end")?));}
   set(&p,"nextTime",&n(latest))?;
  }
- let state=crate::host::call(&read(&audio,"nativeAudio")?,"nativeAudio",&[])?;
+ let state=native_state(&audio)?;
  if t(&state)&&read(&state,"session")?==read(&p,"session")?&&!absent(&last){
   method(&read(&state,"bridge")?,"truncateAfter",&[&read(&state,"session")?,&read(&p,"epoch")?,&last])?;
  }

@@ -5,6 +5,8 @@ import {it,vi} from 'vitest'
 import {LegacyPolicy,DOWNLOAD_ERRORS} from './helpers/reference-picker-policy.js'
 const runtime=vi.hoisted(()=>({base:null,recommend:null}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({langBase:x=>runtime.base(x),recommendedNeuralFor:(...args)=>runtime.recommend(...args)}))
+// The frozen references import the same names from the test harness of the catalogue: they get the same stand-ins.
+vi.mock('./helpers/live-voice-catalog.js',()=>({langBase:x=>runtime.base(x),recommendedNeuralFor:(...args)=>runtime.recommend(...args)}))
 function dependencies(base,recommend){Object.assign(runtime,{base,recommend})}
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const key='inhouse-read-neural-offer-dismissed',base=x=>(x||'').split('-')[0];let recommend,events,raw,trial

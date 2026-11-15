@@ -1,6 +1,6 @@
 // Frozen pre-object-policy implementation, including the numeric-core boundary.
 import { isNeuralVoiceId, neuralVoices } from '../../../src/js/readers/neural-voice/catalog.js'
-import { langBase } from '../../../src/js/readers/voice-catalog.js'
+import { langBase } from './live-voice-catalog.js'
 import {rustNearestRate,rustReadingNumbers,rustReadingCSS} from '../../../src/js/readers/reading-preferences-wasm.js'
 
 import {READING_THEMES,PDF_PAGE_FILTERS,READING_FONTS} from '../../../src/js/readers/reading-palette.js'

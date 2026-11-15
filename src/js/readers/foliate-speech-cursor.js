@@ -5,12 +5,12 @@
 // read and the callbacks Foliate and the voice session invoke.
 import { SectionProgress } from 'foliate-js/progress.js'
 import { Overlayer } from 'foliate-js/overlayer.js'
-import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
 import { readerUI, rustMethods } from './rust-ui-required.js'
 
 // The constructor, wrap() and the handlers of the chapters next() finds: rust-ui cursor_* (foliate_open.rs).
-const kit = { SectionProgress, mapText:mapSpeechText, pageBreaks:speechPageBreaks }
+// The text map of a chapter is rust-ui's own (reader_doors.rs), reached through `ui`.
+const kit = { SectionProgress, ui:readerUI, pageBreaks:speechPageBreaks }
 
 export class FoliateSpeechCursor {
   constructor(view, { env = document, onRelocate = () => {}, theme = () => 'light' } = {}) {

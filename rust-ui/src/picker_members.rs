@@ -23,16 +23,16 @@ thread_local! {
 
 /// `NeuralVoicePicker.prototype[name].apply(host, args)` for `install` and `remove`.
 #[wasm_bindgen]
-pub fn picker_member(host: JsValue, name: &str, args: Array, kit: JsValue, _ui: JsValue) -> R {
+pub fn picker_member(host: JsValue, name: &str, args: Array, kit: JsValue, ui: JsValue) -> R {
     let id = args.get(0);
     Ok(match name {
         "install" => eager(async move {
-            let context = picker_install_begin(host.clone(), id.clone(), door(&kit, "runtime.neuralEngine")?, door(&kit, "catalog.isNeuralId")?, CONTROLLER.with(Function::clone))?;
+            let context = picker_install_begin(host.clone(), id.clone(), door(&kit, "runtime.neuralEngine")?, crate::catalog_doors::door(&kit, &ui, "isNeuralId")?, CONTROLLER.with(Function::clone))?;
             if !context.is_truthy() { return Ok(JsValue::UNDEFINED); }
             // try { await context.task; done } catch (error) { failed }
             let installed: R<()> = async {
                 wait(&read(&context, "task")?).await?;
-                picker_install_done(host.clone(), id.clone(), context.clone(), door(&kit, "catalog.declaredLanguage")?, door(&kit, "catalog.langBase")?, door(&kit, "runtime.neuralVoiceList")?)
+                picker_install_done(host.clone(), id.clone(), context.clone(), crate::catalog_doors::door(&kit, &ui, "declaredLanguage")?, door(&kit, "catalog.langBase")?, door(&kit, "runtime.neuralVoiceList")?)
             }.await;
             if let Err(error) = installed { picker_install_error(host, id, context, error, read(&kit, "messages")?)?; }
             Ok(JsValue::UNDEFINED)

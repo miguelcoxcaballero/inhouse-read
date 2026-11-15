@@ -13,7 +13,7 @@ import { rustMethods } from '../../src/js/readers/rust-ui-required.js'
 import { NeuralVoiceEngine as Frozen, imports } from './helpers/reference-neural-voice-index.js'
 import { NeuralVoiceEngine as Live } from '../../src/js/readers/neural-voice/index.js'
 import * as planModule from '../../src/js/readers/neural-voice/client-plan.js'
-import { nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio, resetAudio } from '../../src/js/readers/neural-voice/audio.js'
+import { nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio, resetAudio } from './helpers/live-audio.js'
 
 const voiceCore = new WebAssembly.Instance(new WebAssembly.Module(readFileSync('src/wasm/inhouse_read_voice.wasm'))).exports
 const MEMBERS = 'getDiagnosticState preload !refresh !install cancel !remove !warmUp !prime current unlock speak extendUpcoming stop release pause cancelCurrent'

@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
+import { normalizeNeuralVoice } from './helpers/live-voice-catalog.js'
 // Device voices are not part of the product any more: their normaliser is the frozen original.
 import { normalizeVoices } from './helpers/reference-voice-catalog.js'
 import { languageOptions, orderLanguages, voiceOptions } from './helpers/live-voice-menus.js'

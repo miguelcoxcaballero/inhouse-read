@@ -17,7 +17,7 @@ use crate::voice_join::voice_join_sentence;
 use crate::voice_navigation::{voice_browse, voice_continue_page, voice_jump_point, voice_return_audio, voice_seek_point};
 use crate::voice_preparation::{voice_prepare, voice_prepare_next, voice_prepare_opening, voice_prepare_playback, voice_refresh_breaks};
 use crate::voice_presentation::{voice_engine_ended, voice_engine_started, voice_present, voice_unpaint};
-use crate::voice_selection::{voice_audio_item, voice_for, voice_needs_join, voice_upcoming};
+use crate::voice_selection::{voice_audio_item, voice_needs_join, voice_upcoming};
 use crate::voice_session::{voice_diagnostic, voice_prepare_text};
 use crate::voice_start::{voice_play, voice_restart_visible};
 use crate::voice_stop::{voice_cancel, voice_fail, voice_pause, voice_restart, voice_retry, voice_stop};
@@ -63,13 +63,16 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
     let a = |index: u32| args.get(index);
     let d = |name: &str| door(&kit, name);
     let done = |result: Result<(), JsValue>| result.map(|_| JsValue::UNDEFINED);
+    // The native audio session: this module's own doorway (neural_audio.rs `audio_native`), unless the kit names one.
+    let native = || if crate::host::get(&kit, "audio").is_undefined() { door(&ui, "audio_native") } else { d("audio.nativeAudio") };
     match name {
-        "getDiagnosticState" => voice_diagnostic(host, a(0), d("audio.nativeAudio")?, d("runtime.neuralEngine")?, read(&global(), "document")?),
+        "getDiagnosticState" => voice_diagnostic(host, a(0), native()?, d("runtime.neuralEngine")?, read(&global(), "document")?),
         "restartFromVisiblePage" => voice_restart_visible(host),
-        "play" => voice_play(host, d("runtime.loadNeural")?, d("runtime.neuralEngine")?, d("runtime.unlockNeural")?, d("audio.nativeAudio")?).map(Into::into),
-        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, d("catalog.isNeuralId")?, d("now")?, bound(&ui, "voice_join_wait", &[&ui])?)),
-        "voiceFor" => voice_for(host, a(0), d("runtime.neuralVoiceList")?, d("catalog.isNeuralId")?, d("catalog.declaredLanguage")?, d("catalog.langBase")?, d("catalog.resolveVoice")?, door(&ui, "voice_device_language")?),
-        "speakNeural" => voice_speak_neural(host, a(0), a(1), a(2), d("runtime.neuralEngine")?, d("audio.nativeAudio")?, d("clearTimeout")?,
+        "play" => voice_play(host, d("runtime.loadNeural")?, d("runtime.neuralEngine")?, d("runtime.unlockNeural")?, native()?).map(Into::into),
+        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, crate::catalog_doors::door(&kit, &ui, "isNeuralId")?, d("now")?, bound(&ui, "voice_join_wait", &[&ui])?)),
+        "voiceFor" => crate::catalog_doors::voice_for(host, a(0), &d("runtime.neuralVoiceList")?, &d("catalog.langBase")?, &door(&ui, "voice_device_language")?, &kit),
+        "detectLanguage" => crate::catalog_doors::detect(&host, a(0), &kit),
+        "speakNeural" => voice_speak_neural(host, a(0), a(1), a(2), d("runtime.neuralEngine")?, native()?, d("clearTimeout")?,
             bound(&ui, "voice_wait_timer", &[&ui])?, bound(&ui, "voice_synth_failed", &[&ui])?).map(Into::into),
         "upcomingFor" => voice_upcoming(host, a(0)),
         "audioItem" => voice_audio_item(a(0)),
@@ -95,7 +98,7 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "pagePlanValid" => Ok(voice_page_valid(a(0)).into()),
         "revalidateNext" => voice_revalidate_next(host, a(0), a(1)).map(Into::into),
         "adopt" => done(voice_adopt_plan(host, a(0))),
-        "engineStarted" => done(voice_engine_started(host, a(0), d("clearTimeout")?, d("audio.nativeAudio")?)),
+        "engineStarted" => done(voice_engine_started(host, a(0), d("clearTimeout")?, native()?)),
         "engineEnded" => done(voice_engine_ended(host, a(0))),
         // present(id = this.utteranceId, offset = 0)
         "present" => {
@@ -106,7 +109,7 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "unpaint" => done(voice_unpaint(host, d("clearTimeout")?)),
         "restart" => done(voice_restart(host)),
         // cancelUtterance(reason = 'stop')
-        "cancelUtterance" => { let reason = or(a(0), || Ok(JsValue::from_str("stop")))?; done(voice_cancel(host, reason, door(&ui, "voice_clear_timer")?, d("audio.nativeAudio")?, d("runtime.neuralEngine")?)) }
+        "cancelUtterance" => { let reason = or(a(0), || Ok(JsValue::from_str("stop")))?; done(voice_cancel(host, reason, door(&ui, "voice_clear_timer")?, native()?, d("runtime.neuralEngine")?)) }
         "prepareText" => voice_prepare_text(host, a(0)),
         "pause" => done(voice_pause(host)),
         "stop" => done(voice_stop(host, door(&ui, "voice_clear_timer")?)),

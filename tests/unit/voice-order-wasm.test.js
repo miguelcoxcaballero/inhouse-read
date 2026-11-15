@@ -4,7 +4,7 @@ import {it,expect,beforeAll} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {orderNeuralVoices,recommendedNeuralFor} from './helpers/reference-voice-order.js'
-import {normalizeLang,languageName,normalizeNeuralVoice} from '../../src/js/readers/voice-catalog.js'
+import {normalizeLang,languageName,normalizeNeuralVoice} from './helpers/live-voice-catalog.js'
 import {neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
 import {makeCases,collator} from '../helpers/voice-order-cases.js'
 let core,retained,capacity

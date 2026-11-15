@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { afterEach, expect, it, vi } from 'vitest'
-import { settlePageLayout } from '../../src/js/readers/page-snapshot.js'
+import { settlePageLayout } from './helpers/live-page-snapshot.js'
 
 afterEach(() => vi.unstubAllGlobals())
 

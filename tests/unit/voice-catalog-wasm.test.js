@@ -1,7 +1,7 @@
 // @vitest-environment node
-import './helpers/rust-ui-ready.js'
+import { rustUI } from './helpers/rust-ui-ready.js'
 import { it, expect } from 'vitest'
-import * as production from '../../src/js/readers/voice-catalog.js'
+import * as production from './helpers/live-voice-catalog.js'
 import * as original from './helpers/reference-voice-catalog.js'
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 
@@ -67,7 +67,37 @@ it('reads the properties of an entry in the order the original did', () => {
   expect(a).toEqual(b)
 })
 
-const REGIONS = ['ES', 'MX', 'AR', 'GB', 'US', 'FR', 'BR', 'PT']
+// The whole list in one visit (what neuralVoiceList answers) against the original's map and filter, and the downloaded
+// voices alone (what the audiobook asks before each fragment) against that list filtered.
+it('makes a whole catalogue of voices like the original made them one by one, key for key and in order', () => {
+  const guarded = run => { try { return run() } catch { return [] } }
+  const frozenList = (list, installed) => guarded(() => list.map(entry => original.normalizeNeuralVoice(entry, installed)).filter(Boolean))
+  const liveList = (list, installed, only) => guarded(() => rustUI.catalog_neural_voices(list, installed || [], production.normalizeLang, only))
+  const sparse = [...neuralVoices.slice(0, 6)]; delete sparse[2]; sparse.length = 9
+  const lists = [neuralVoices, entries(), entries().reverse(), [], sparse, [null, undefined, 0, 'piper:x'], [{ id: 'piper:a', lang: 'es', dialect: 5 }, { id: 'piper:b', lang: 'es-MX' }, { id: 'piper:b', lang: 'es_mx' }]]
+  const sets = [[], new Set(), new Set(['piper:x', 'piper:y', 'piper:b']), ['piper:z', 'supertonic3:F1:es'], 'piper:x', new Set(neuralVoices.map(voice => voice.id)), new Set(neuralVoices.filter((_, index) => index % 37 === 5).map(voice => voice.id)), 5, {}]
+  let voices = 0, installedVoices = 0
+  for (const list of lists) for (const installed of sets) {
+    const expected = frozenList(list, installed), all = liveList(list, installed, false), some = liveList(list, installed, true)
+    expect(all).toEqual(expected)
+    expect(all.map(voice => Object.keys(voice))).toEqual(expected.map(voice => Object.keys(voice)))
+    for (const voice of all) for (const [key, value] of Object.entries(voice)) expect(Object.is(value, expected[all.indexOf(voice)][key]) || Array.isArray(value)).toBe(true)
+    const wanted = expected.filter(voice => voice.installed)
+    expect(some).toEqual(wanted)
+    expect(some.map(voice => Object.keys(voice))).toEqual(wanted.map(voice => Object.keys(voice)))
+    voices += all.length; installedVoices += some.length
+  }
+  expect(voices).toBeGreaterThan(2000)
+  expect(installedVoices).toBeGreaterThan(300)
+  // Fresh records and fresh `features` lists on every call, as the original's object literal made them.
+  const [first, second] = [liveList(neuralVoices, [], false), liveList(neuralVoices, [], false)]
+  expect(first[0]).not.toBe(second[0])
+  expect(first[0].features).not.toBe(second[0].features)
+  expect(first[0].features).not.toBe(first[1].features)
+  expect(() => rustUI.catalog_neural_voices({ length: 1, 0: neuralVoices[0] }, [], production.normalizeLang, false)).toThrow(TypeError)
+})
+
+const REGIONS =['ES', 'MX', 'AR', 'GB', 'US', 'FR', 'BR', 'PT']
 function randomCatalog() {
   const size = next() % 14
   return Array.from({ length: size }, (_, index) => {

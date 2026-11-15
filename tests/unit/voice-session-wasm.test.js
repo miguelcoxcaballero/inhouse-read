@@ -6,7 +6,7 @@ import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
 const fixture=vi.hoisted(()=>({ui:null,native:()=>null,engine:()=>null,pcm:()=>false}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine()}))
-vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.native(),nativePcmBridge:()=>fixture.pcm()}))
+vi.mock('./helpers/live-audio.js',()=>({nativeAudio:()=>fixture.native(),nativePcmBridge:()=>fixture.pcm()}))
 function dependencies(n,e,d,p){fixture.native=n;fixture.engine=e;fixture.pcm=p;vi.stubGlobal('document',d)}
 afterEach(()=>{fixture.ui=null;vi.unstubAllGlobals()})
 import {LegacySession,legacyVoiceEvent as legacyEvent} from './helpers/reference-voice-session.js'
@@ -63,7 +63,7 @@ assert.equal(ui.ui_live_handles(),before);assert.equal(core.memory.buffer.byteLe
 
 it('uses the compiled session adapters without changing reader or callback identity',()=>{
  // The session's constructor and window listeners (reading-voice.js), as the former voice-session.js adapters drove them.
- fixture.ui=ui;const host=new ReadingVoice(reader,onState)
+ fixture.ui={...ui,audio_native:()=>fixture.native(),audio_bridge:()=>fixture.pcm()};const host=new ReadingVoice(reader,onState)
  expect(host.reader).toBe(reader);expect(host.onState).toBe(onState)
  host.state='playing';host.utteranceId='current';host.engineStarted=vi.fn()
  window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{id:'old',type:'start'}}))

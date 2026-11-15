@@ -9,7 +9,7 @@ const pauseReadingVoice=method('pause')
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({deps:{},ui:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.deps.engine()}))
-vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.deps.native()}))
+vi.mock('./helpers/live-audio.js',()=>({nativeAudio:()=>fixture.deps.native()}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 const configure=deps=>{fixture.deps=deps}
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
@@ -71,6 +71,6 @@ it('rejects a cyclic location before modifying stop state or cancelling transpor
  expect(()=>host.stop()).toThrow();expect(events).toEqual([]);expect(host.generation).toBe(5);expect(host.utteranceId).toBe('active')
 })
 it('adopts a late pause implementation without replacing the active voice',()=>{
- const {host}=setup(false,1),native={...ui,voice_method:vi.fn(ui.voice_method)}
+ const {host}=setup(false,1),native={...ui,audio_native:()=>fixture.deps.native(),voice_method:vi.fn(ui.voice_method)}
  fixture.ui=native;pauseReadingVoice(host);expect(native.voice_method.mock.calls[0].slice(0,3)).toEqual([host,'pause',[]]);expect(host.state).toBe('paused')
 })

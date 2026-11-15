@@ -11,7 +11,6 @@ import { storeError } from './store.js'
 import { NeuralPackageStore } from './package-store.js'
 import { SynthClient } from './client.js'
 import { NativeSynthClient } from './native-client.js'
-import { audioContext, nativePcmBridge, unlockAudio } from './audio.js'
 import { readerUI as ui } from '../rust-ui-required.js'
 
 // What was an `async` method: the promise of the Rust flow itself (neural_engine_flows.rs), a rejected one when the module is missing.
@@ -36,13 +35,13 @@ export class FragmentCache {
 const clients = { NativeSynthClient, SynthClient, base: () => new URL(`${import.meta.env?.BASE_URL || '/'}neural-voice/`, globalThis.location?.href || 'http://localhost/').href,
   createWorker: () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }) }
 const defaultCreateClient = store => ui().neural_default_client(store, clients)
-const kit = { neuralVoices, modelsOf, NeuralPackageStore, defaultCreateClient, audioContext, unlockAudio, nativePcmBridge, NativePcmPlayer, GaplessPlayer, FragmentCache, LIMITS }
+const kit = { neuralVoices, modelsOf, NeuralPackageStore, defaultCreateClient, NativePcmPlayer, GaplessPlayer, FragmentCache, LIMITS }
 
 export class NeuralEngine extends EventTarget {
   /** @param {object} [deps] voices, store, createClient, audio, env, setTimer, clearTimer, limits (tests inject fakes) */
   constructor(deps) { super(); ui().neural_construct(this, deps, kit) }
 
-  static isSupported(env = globalThis) { return ui().neural_supported(env, nativePcmBridge) }
+  static isSupported(env = globalThis) { return ui().neural_supported(env) }
   get supported() { return NeuralEngine.isSupported(this.env) }
   get installed() { return this._installed }
   get downloads() { return this._downloads }
@@ -53,7 +52,7 @@ export class NeuralEngine extends EventTarget {
   install(id, options = undefined) { return waiting(ui => ui.neural_install(this, id, options, ui, storeError)) }
   cancel(id) { ui().neural_cancel(this, id) }
   remove(id) { return waiting(ui => ui.neural_remove(this, id)) }
-  unlock(options) { ui().neural_unlock(this, options, nativePcmBridge) }
+  unlock(options) { ui().neural_unlock(this, options) }
   warmUp(voiceId) { return waiting(ui => ui.neural_warm_up(this, voiceId)) }
   prime(request) { return ui().neural_prime(this, request) }
   speak(request) { ui().neural_speak(this, request) }

@@ -1,4 +1,4 @@
-import {nativeAudio} from '../../../src/js/readers/neural-voice/audio.js'
+import {nativeAudio} from './live-audio.js'
 const NEURAL_ERRORS={default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'}
 export class LegacyVoicePresentation{
   engineStarted(id) {

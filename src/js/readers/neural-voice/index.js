@@ -4,7 +4,6 @@
 // to be JavaScript: the class (an EventTarget whose fields the reader and the diagnostics read), the getters the
 // picker reads while it paints, and the two dynamic imports, which keep the engine out of the app's start-up.
 import { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices } from './catalog.js'
-import { nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio } from './audio.js'
 import { readerUI, rustMethods } from '../rust-ui-required.js'
 
 export { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices }
@@ -14,7 +13,7 @@ const NONE = new Set(), NO_DOWNLOADS = new Map()
 
 export class NeuralVoiceEngine extends EventTarget {
   /** Worker + WebAssembly + AudioContext + Cache Storage are all available. */
-  static isSupported(env = globalThis) { return readerUI().neural_supported(env, nativePcmBridge) }
+  static isSupported(env = globalThis) { return readerUI().neural_supported(env) }
 
   /** @param {object} [options] dependencies handed to the real engine (tests inject fakes; see engine.js) */
   constructor(options = {}) {
@@ -34,7 +33,7 @@ export class NeuralVoiceEngine extends EventTarget {
   get stats() { return this.core ? this.core.stats : { rtf: 0, underruns: 0, firstAudioMs: 0, cacheHits: 0, prefetchHits:0, tooSlow: 0 } }
 }
 rustMethods(NeuralVoiceEngine, 'facade_method', 'getDiagnosticState preload !refresh !install cancel !remove !warmUp !prime current unlock speak extendUpcoming stop release pause cancelCurrent',
-  { engine: () => import('./engine.js'), plan: () => import('./client-plan.js'), nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio })
+  { engine: () => import('./engine.js'), plan: () => import('./client-plan.js') })
 
 let shared = null
 /** The one engine of the app (tests replace it with setNeuralEngine). */

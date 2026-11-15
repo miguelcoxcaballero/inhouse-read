@@ -69,7 +69,9 @@ thread_local! {
     /// `() => this.audio.context()`.
     static CONTEXT: Function = function(Closure::<dyn FnMut(JsValue) -> R>::new(|e: JsValue| method(&read(&e, "audio")?, "context", &[])));
     /// `() => unlockAudio(env)`.
-    static UNLOCK: Function = function(Closure::<dyn FnMut(JsValue, JsValue) -> R>::new(|unlock: JsValue, env: JsValue| call(&unlock, "unlockAudio", &[&env])));
+    static UNLOCK: Function = function(Closure::<dyn FnMut(JsValue, JsValue) -> R>::new(|unlock: JsValue, env: JsValue| crate::neural_audio::door(&unlock, "unlockAudio", &[&env])));
+    /// `audioContext`, the shared context of this module, for a kit that names none.
+    static SHARED_CONTEXT: Function = function(Closure::<dyn FnMut() -> JsValue>::new(crate::neural_audio::audio_context));
     /// `() => defaultCreateClient(this.store)`.
     static CLIENT: Function = function(Closure::<dyn FnMut(JsValue, JsValue) -> R>::new(|create: JsValue, e: JsValue| call(&create, "defaultCreateClient", &[&read(&e, "store")?])));
     /// `(fn, ms) => setTimeout(fn, ms)` and `id => clearTimeout(id)`: the timers of the page at the time of the call.
@@ -168,7 +170,8 @@ pub fn neural_construct(e: JsValue, deps: JsValue, kit: JsValue) -> R<()> {
     let own_audio = audio.is_truthy();
     let audio = if own_audio { audio } else {
         let audio = Object::new();
-        set(&audio, "context", &read(&kit, "audioContext")?)?;
+        let context = read(&kit, "audioContext")?;
+        set(&audio, "context", &if context.is_undefined() { SHARED_CONTEXT.with(|shared| shared.clone().into()) } else { context })?;
         set(&audio, "unlock", &bound(&UNLOCK, &[&read(&kit, "unlockAudio")?, &env])?)?;
         audio.into()
     };
@@ -180,7 +183,7 @@ pub fn neural_construct(e: JsValue, deps: JsValue, kit: JsValue) -> R<()> {
     set(&e, "limits", &merged)?;
     set(&e, "cache", &create(&read(&kit, "FragmentCache")?, &[&read(&merged, "lruEntries")?, &read(&merged, "lruSamples")?])?)?;
     let options = Object::new();
-    let native = !own_audio && call(&read(&kit, "nativePcmBridge")?, "nativePcmBridge", &[&env])?.is_truthy();
+    let native = !own_audio && crate::neural_audio::of(&kit, "nativePcmBridge", &[&env])?.is_truthy();
     if native { set(&options, "env", &env)?; } else { set(&options, "context", &bound(&CONTEXT, &[&e])?)?; }
     set(&options, "onStart", &bound(&UNIT_STARTED, &[&e])?)?;
     set(&options, "onEnd", &bound(&UNIT_ENDED, &[&e])?)?;

@@ -9,7 +9,7 @@ import './helpers/rust-ui-ready.js'
 import { readerUI } from '../../src/js/readers/rust-ui-required.js'
 import { NeuralEngine as Frozen, LIMITS as FROZEN_LIMITS, FragmentCache as FrozenCache } from './helpers/reference-neural-engine-shell.js'
 import { NeuralEngine as Live, LIMITS, FragmentCache } from '../../src/js/readers/neural-voice/engine.js'
-import { audioContext, resetAudio, unlockAudio } from '../../src/js/readers/neural-voice/audio.js'
+import { audioContext, resetAudio, unlockAudio } from './helpers/live-audio.js'
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 import { fakeAudioContext } from './neural-fakes.js'
 
@@ -82,7 +82,10 @@ it('gives the same defaults: timers of the page, the shared audio context, the w
     expect(engine.clearTimer(engine.setTimer(cancelled, 10))).toBe(undefined)
     vi.advanceTimersByTime(20); expect(cancelled).not.toHaveBeenCalled()
     expect(id).toBeTruthy()
-    expect(engine.audio.context).toBe(audioContext)
+    // The frozen engine was handed the module's audioContext; the live one keeps rust-ui's own doorway to the same
+    // shared context, one function for every engine.
+    if (Class === Frozen) expect(engine.audio.context).toBe(audioContext)
+    else { expect(engine.audio.context).toBe(new Class({ env }).audio.context); expect(engine.audio.context()).toBe(audioContext()) }
     const context = engine.audio.unlock('ignored')
     expect(begun).toEqual([2, 'Audiolibro'])
     expect(context).toMatchObject({ native:true, state:'running' })

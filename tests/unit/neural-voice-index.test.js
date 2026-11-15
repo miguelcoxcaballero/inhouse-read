@@ -56,13 +56,11 @@ describe('the contract (index.js)', () => {
   it('does not import the engine, the store, the player or the worker statically (they are lazy chunks)', () => {
     const source = readFileSync(new URL('../../src/js/readers/neural-voice/index.js', import.meta.url), 'utf8')
     const staticImports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map(m => m[1])
-    expect(staticImports.sort()).toEqual(['../rust-ui-required.js', './audio.js', './catalog.js'])
+    // The audio doorways are rust-ui's own (neural_audio.rs): the facade imports no audio module any more.
+    expect(staticImports.sort()).toEqual(['../rust-ui-required.js', './catalog.js'])
     expect(source).toMatch(/import\('\.\/engine\.js'\)/)
-    for (const file of ['catalog.js', 'audio.js']) {
-      const text = readFileSync(new URL(`../../src/js/readers/neural-voice/${file}`, import.meta.url), 'utf8')
-      const imports = [...text.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
-      expect(imports).toEqual(file === 'catalog.js' ? ['./supertonic-catalog.js'] : ['../rust-ui-required.js'])
-    }
+    const text = readFileSync(new URL('../../src/js/readers/neural-voice/catalog.js', import.meta.url), 'utf8')
+    expect([...text.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])).toEqual(['./supertonic-catalog.js'])
     // The catalogue's tables come from the app core the page already compiled for the shelf: only its loader, no engine.
     const sharedData=readFileSync(new URL('../../src/js/readers/neural-voice/supertonic-catalog.js',import.meta.url),'utf8')
     expect([...sharedData.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])).toEqual(['../../rust-core.js', '../../core-tables.js'])

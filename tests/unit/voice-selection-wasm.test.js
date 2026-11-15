@@ -6,7 +6,7 @@ import {LegacyVoiceSelection} from './helpers/reference-voice-selection.js'
 import {ReadingVoice} from '../../src/js/readers/reading-voice.js'
 const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...args)
 const selectReadingVoice=method('voiceFor')
-import {declaredLanguage,isNeuralId,langBase,resolveVoice} from '../../src/js/readers/voice-catalog.js'
+import {declaredLanguage,isNeuralId,langBase,resolveVoice} from './helpers/live-voice-catalog.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({catalog:()=>[],ui:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralVoiceList:()=>fixture.catalog()}))

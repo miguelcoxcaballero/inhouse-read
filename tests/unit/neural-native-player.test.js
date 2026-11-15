@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NativePcmPlayer, encodePcm } from './helpers/live-native-player.js'
-import { audioContext, nativeAudio, pauseNativeAudio, resetAudio, stopNativeAudio, unlockAudio } from '../../src/js/readers/neural-voice/audio.js'
+import { audioContext, nativeAudio, pauseNativeAudio, resetAudio, stopNativeAudio, unlockAudio } from './helpers/live-audio.js'
 import { NeuralEngine } from '../../src/js/readers/neural-voice/engine.js'
 import { NeuralVoiceEngine } from '../../src/js/readers/neural-voice/index.js'
 import { fakeClients, feedJob, flush, recordEvents } from './neural-fakes.js'

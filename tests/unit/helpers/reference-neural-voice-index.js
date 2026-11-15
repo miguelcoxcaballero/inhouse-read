@@ -11,7 +11,7 @@
 // client) with a dynamic import the first time it is needed. The worker, onnxruntime-web and the phonemizer are loaded
 // even later, on the first speak(), inside the worker. Nothing of this reaches the cold start of the 3D shelf.
 import { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices } from '../../../src/js/readers/neural-voice/catalog.js'
-import { nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio } from '../../../src/js/readers/neural-voice/audio.js'
+import { nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio } from './live-audio.js'
 
 export { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices }
 export { piperVoices, supertonicVoices } from '../../../src/js/readers/neural-voice/catalog.js'

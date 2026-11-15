@@ -53,7 +53,7 @@ pub fn picker_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: J
         "dismissed" => Ok(picker_dismissed(door(&ui, "picker_read_offer")?)),
         "snoozed" => picker_snoozed(host, a(0), now()?).map(Into::into),
         "dismiss" => done(picker_dismiss(host, d("catalog.langBase")?, now()?, door(&ui, "picker_write_offer")?)),
-        "offerFor" => picker_offer_for(host, a(0), a(1).unchecked_into(), d("catalog.langBase")?, d("catalog.recommendedNeuralFor")?, read(&read(&global(), "navigator")?, "language")?),
+        "offerFor" => picker_offer_for(host, a(0), a(1).unchecked_into(), d("catalog.langBase")?, crate::catalog_doors::door(&kit, &ui, "recommendedNeuralFor")?, read(&read(&global(), "navigator")?, "language")?),
         "renderOffer" => done(picker_render_offer(host, a(0), a(1))),
         _ => Err(js_sys::TypeError::new(&format!("NeuralVoicePicker has no method {name}")).into()),
     }

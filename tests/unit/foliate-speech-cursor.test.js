@@ -2,7 +2,7 @@ import './helpers/rust-ui-ready.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as CFI from 'foliate-js/epubcfi.js'
 import { FoliateSpeechCursor } from '../../src/js/readers/foliate-speech-cursor.js'
-import { mapSpeechText } from '../../src/js/readers/speech-map.js'
+import { mapSpeechText } from './helpers/live-speech-map.js'
 
 const parse = text => new DOMParser().parseFromString(`<html><head></head><body>${text}</body></html>`, 'text/html')
 const pending = () => { let resolve; const promise = new Promise(finish => { resolve = finish }); return {promise,resolve} }

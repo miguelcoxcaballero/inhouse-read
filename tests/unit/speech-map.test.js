@@ -5,7 +5,7 @@ const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 
-import { mapSpeechText, mapTextLayer, mapTextNode } from '../../src/js/readers/speech-map.js'
+import { mapSpeechText, mapTextLayer, mapTextNode } from './helpers/live-speech-map.js'
 import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from './helpers/live-speech-text.js'
 import { installSpeechStyle, paintSpeechRange, clearSpeechRange, SPEECH_HIGHLIGHT, speechCSS } from './helpers/live-speech-highlight.js'
 

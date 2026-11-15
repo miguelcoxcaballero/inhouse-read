@@ -2,7 +2,7 @@
 // Rust owns grouping, stable order, regional scores and duplicate labels.
 // Locale display names still come from the same browser ICU-backed helpers.
 import {readerUI} from '../../../src/js/readers/rust-ui-required.js'
-import {normalizeLang,langBase,baseLanguageName,regionName} from '../../../src/js/readers/voice-catalog.js'
+import {normalizeLang,langBase,baseLanguageName,regionName} from './live-voice-catalog.js'
 export const AUTO = ''
 const region = tag => normalizeLang(tag).split('-')[1] || ''
 export function orderLanguages(bases, {bookLang='',deviceLang=''} = {}) {

@@ -10,7 +10,7 @@ const playReadingVoice=method('play')
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({deps:{},ui:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({loadNeural:()=>fixture.deps.load(),neuralEngine:()=>fixture.deps.engine(),unlockNeural:()=>fixture.deps.unlock()}))
-vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.deps.native()}))
+vi.mock('./helpers/live-audio.js',()=>({nativeAudio:()=>fixture.deps.native()}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 const configure=deps=>{fixture.deps=deps}
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
@@ -67,7 +67,7 @@ for(let round=0;round<2;round++){
 
 it('delegates every start and the visible-page decision to the Rust functions',async()=>{
  const {host}=setup(false,1);host.restartFromVisiblePage=()=>restartVisibleVoice(host)
- const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
+ const native={...ui,audio_native:()=>fixture.deps.native(),voice_method:vi.fn(ui.voice_method)};fixture.ui=native
  await playReadingVoice(host);expect(host.state).toBe('playing')
  host.state='paused';await playReadingVoice(host)
  const names=native.voice_method.mock.calls.map(call=>call[1]);expect(names.filter(name=>name==='play')).toHaveLength(2);expect(names).toContain('restartFromVisiblePage');expect(host.state).toBe('playing')

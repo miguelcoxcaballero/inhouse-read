@@ -47,6 +47,24 @@ pub fn audio_bridge(env: JsValue) -> R {
 }
 #[wasm_bindgen]
 pub fn audio_native() -> JsValue { native() }
+/// A doorway of the audio, `given(...args)`, answered by this file when none is given: the engine, the facade and the
+/// native player were handed these functions by a JavaScript module (neural-voice/audio.js) that only called back
+/// here. A caller that still hands one (a test with its own audio) is obeyed.
+#[inline(never)]
+pub(crate) fn door(given: &JsValue, name: &str, args: &[&JsValue]) -> R {
+    if !given.is_undefined() { return crate::host::call(given, name, args); }
+    let env = || args.first().map_or(JsValue::UNDEFINED, |value| (*value).clone());
+    Ok(match name {
+        "nativePcmBridge" => audio_bridge(env())?,
+        "unlockAudio" => audio_unlock(env())?,
+        "audioContext" => context(),
+        "nativeAudio" => native(),
+        "pauseNativeAudio" => { audio_pause_native()?; JsValue::UNDEFINED }
+        _ => { audio_stop_native()?; JsValue::UNDEFINED }
+    })
+}
+/// `kit[name](...args)`, or this file's own when the kit does not name it.
+pub(crate) fn of(kit: &JsValue, name: &str, args: &[&JsValue]) -> R { door(&read(kit, name)?, name, args) }
 /// The shared context, if unlock() has created one.
 #[wasm_bindgen]
 pub fn audio_context() -> JsValue { context() }

@@ -9,13 +9,15 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs',()=>({
  })}),destroy:vi.fn()}),TextLayer:class {constructor({container,textContentSource}){this.container=container;this.content=textContentSource}async render(){this.container.textContent=this.content.items.map(i=>i.str).join('')}cancel(){}}
 }))
 vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url',()=>({default:'worker.mjs'}))
-vi.mock('../../src/js/readers/page-snapshot.js',()=>({
+vi.mock('../../src/js/gestures.js',()=>({attachSwipeNavigation:()=>()=>{}}))
+import { PdfReader } from '../../src/js/readers/pdf-reader.js'
+// The page snapshot is rust-ui's own; a kit that names a helper is asked first (reader_doors.rs), which is how this
+// suite keeps its stand-ins.
+Object.assign(new PdfReader().s.kit,{
  renderedPageFilter:()=> 'none',settlePageLayout:async()=>{},
  snapshotDOMPage:async()=>({text:'Mock snapshot.',source:document.createElement('canvas')}),
  snapshotCanvas:()=>({source:document.createElement('canvas')})
-}))
-vi.mock('../../src/js/gestures.js',()=>({attachSwipeNavigation:()=>()=>{}}))
-import { PdfReader } from '../../src/js/readers/pdf-reader.js'
+})
 let reader,container,height,overflow,relocate
 beforeEach(()=>{
  document.body.innerHTML='<main></main>';container=document.querySelector('main');height=500;overflow=1700;state.pages=2;state.reads=[]

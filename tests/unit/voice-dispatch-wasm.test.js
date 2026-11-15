@@ -10,8 +10,10 @@ const dispatchNeuralVoice=method('speakNeural')
 const fixture=vi.hoisted(()=>({ui:null,engine:null,native:null,voices:[]}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine,neuralVoiceList:()=>fixture.voices}))
-vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.native}))
+vi.mock('./helpers/live-audio.js',()=>({nativeAudio:()=>fixture.native}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({langBase:language=>language.split('-')[0],isNeuralId:id=>id.startsWith('piper:')}))
+// The frozen references import the same names from the test harness of the catalogue: they get the same stand-ins.
+vi.mock('./helpers/live-voice-catalog.js',()=>({langBase:language=>language.split('-')[0],isNeuralId:id=>id.startsWith('piper:')}))
 function dependencies(engine,native,voices){fixture.engine=engine;fixture.native=native;fixture.voices=voices}
 import {LegacyDispatch} from './helpers/reference-voice-dispatch.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
@@ -70,14 +72,14 @@ assert.equal(ui.ui_live_handles(),before);assert.equal(core.memory.buffer.byteLe
 })
 
 it('discards a page-join callback after the listening generation changes',async()=>{
- const{host}=setup(false,4);fixture.ui=ui
+ const{host}=setup(false,4);fixture.ui={...ui,audio_native:()=>fixture.native}
  let resolve;host.prepareAhead=()=>{host.aheadPage={promise:new Promise(done=>{resolve=done})}}
  host.joinPageSentence=vi.fn();host.speakCurrent=vi.fn()
  dispatchVoice(host);host.generation++;resolve();await Promise.resolve();await Promise.resolve()
  expect(host.joinPageSentence).not.toHaveBeenCalled();expect(host.speakCurrent).not.toHaveBeenCalled()
 })
 it('does not replace audible status with preparing after the engine started',()=>{
- const{host,voice,callbacks}=setup(false,1);fixture.ui=ui;host.waiting=false;host.startedId=undefined
+ const{host,voice,callbacks}=setup(false,1);fixture.ui={...ui,audio_native:()=>fixture.native};host.waiting=false;host.startedId=undefined
  host.notify=vi.fn();dispatchNeuralVoice(host,'old','Two.',voice);host.startedId='old'
  callbacks.at(-1)();expect(host.notify).not.toHaveBeenCalled();expect(host.waiting).toBe(false)
 })

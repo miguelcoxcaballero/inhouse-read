@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
-import { normalizeLang, languageName, detectLanguage, langBase } from '../../src/js/readers/voice-catalog.js'
+import { normalizeLang, languageName, detectLanguage, langBase } from './helpers/live-voice-catalog.js'
 // The ranking against the device's own voices is no longer part of the product (the reader only speaks with the on-device
 // neural voices): the frozen original holds it.
 import { normalizeVoice, normalizeVoices, scoreVoice, isHighQuality, rankedVoicesFor, bestVoiceFor, needsBetterVoice, voiceLabel, buildVoiceGroups, resolveVoice, readSystemVoices } from './helpers/reference-voice-catalog.js'

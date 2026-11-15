@@ -362,9 +362,8 @@ pub fn foliate_snapshot(s: JsValue, deps: JsValue) -> Promise {
         let initial = match method_opt(&get(&view, "renderer"), "getContents", &[])? { Some(items) => Array::from(&items), None => Array::new() };
         let drawable = |item: &JsValue| { let doc = get(item, "doc"); truthy(&get(&doc, "body")) || get(&get(&doc, "documentElement"), "localName") == "svg" };
         if !initial.iter().any(|item| drawable(&item)) { return Ok(JsValue::NULL); }
-        let settle = get(&deps, "settlePageLayout");
         let waits = Array::new();
-        for item in initial.iter() { if truthy(&get(&item, "doc")) { waits.push(&call(&settle, "settlePageLayout", &[&get(&item, "doc")])?); } }
+        for item in initial.iter() { if truthy(&get(&item, "doc")) { waits.push(&crate::reader_doors::invoke(&deps, "settlePageLayout", &[&get(&item, "doc")])?); } }
         settled(method(&get(&global(), "Promise"), "all", &[&waits])?).await?;
         if view != get(&s, "view") { return Ok(JsValue::NULL); }
         let viewport = method(&view, "getBoundingClientRect", &[])?;
@@ -397,7 +396,7 @@ pub fn foliate_snapshot(s: JsValue, deps: JsValue) -> Promise {
         let background = get(&theme, "background");
         // The physical book starts with white paper even when the reader uses sepia.
         let paper = plain(&[("background", "#ffffff".into()), ("color", "#292821".into()), ("themeColor", get(&theme, "color"))])?;
-        let filter = call(&get(&deps, "renderedPageFilter"), "renderedPageFilter", &[&get(&s, "container")])?;
+        let filter = crate::reader_doors::invoke(&deps, "renderedPageFilter", &[&get(&s, "container")])?;
         let deadline = JsValue::from_f64(clock()? + 1500.0);
         let pages = Array::new();
         for (item, rect, scale_x, scale_y, clip) in &contents {
@@ -407,11 +406,11 @@ pub fn foliate_snapshot(s: JsValue, deps: JsValue) -> Promise {
             let options = plain(&[("viewport", viewport.clone()), ("offsetX", ((vl - num(&get(rect, "left"))) / scale_x).into()),
                 ("offsetY", ((vt - num(&get(rect, "top"))) / scale_y).into()), ("coordinateScaleX", (*scale_x).into()), ("coordinateScaleY", (*scale_y).into()),
                 ("clipBounds", clip.clone()), ("background", background.clone()), ("filter", filter.clone()), ("deadline", deadline.clone()), ("paper", paper.clone()), ("range", range)])?;
-            let page = settled(call(&get(&deps, "snapshotDOMPage"), "snapshotDOMPage", &[&root, &options])?).await?;
+            let page = settled(crate::reader_doors::invoke(&deps, "snapshotDOMPage", &[&root, &options])?).await?;
             if truthy(&page) { pages.push(&page); }
         }
         let options = plain(&[("viewport", viewport.clone()), ("background", background), ("filter", filter), ("paperBackground", get(&paper, "background"))])?;
-        let snapshot = call(&get(&deps, "compositePageSnapshots"), "compositePageSnapshots", &[&pages, &options])?;
+        let snapshot = crate::reader_doors::invoke(&deps, "compositePageSnapshots", &[&pages, &options])?;
         if !truthy(&snapshot) || view != get(&s, "view") || location != get(&view, "lastLocation") { return Ok(JsValue::NULL); }
         let page_label = get(&get(&location, "pageItem"), "label");
         let label = if truthy(&page_label) { page_label } else { or_text(get(&get(&location, "tocItem"), "label"), "") };

@@ -31,7 +31,14 @@ pub(crate) struct PickerServices {
 }
 fn function(value:&JsValue,key:&str)->Result<Function,JsValue>{get(value,key)?.dyn_into().map_err(|_|js_sys::TypeError::new("Missing picker service").into())}
 impl PickerServices {
- fn new(v:JsValue)->Result<Self,JsValue>{Ok(Self{engine:function(&v,"engine")?,list:function(&v,"list")?,order:function(&v,"order")?,language:function(&v,"language")?,url:function(&v,"url")?,base:function(&v,"base")?,recommend:function(&v,"recommend")?,cancel:function(&v,"cancel")?,device:function(&v,"device")?,messages:get(&v,"messages")?,warnings:get(&v,"warnings")?})}
+ fn new(v:JsValue)->Result<Self,JsValue>{
+  // The order of the list, the name of a language and the recommended voice are this module's own (catalog_doors.rs,
+  // over the page's `normalize`) unless the services name them.
+  let own=|key:&str,name:&str|->Result<Function,JsValue>{
+   if !get(&v,key)?.is_undefined(){return function(&v,key)}
+   crate::catalog_doors::own(&get(&v,"normalize")?,&function(&v,"ui")?.call0(&JsValue::UNDEFINED)?,name)
+  };
+  Ok(Self{engine:function(&v,"engine")?,list:function(&v,"list")?,order:own("order","order")?,language:own("language","languageName")?,url:function(&v,"url")?,base:function(&v,"base")?,recommend:own("recommend","recommendedNeuralFor")?,cancel:function(&v,"cancel")?,device:function(&v,"device")?,messages:get(&v,"messages")?,warnings:get(&v,"warnings")?})}
  fn voices(&self,engine:&JsValue)->Result<Array,JsValue>{self.list.call1(&JsValue::UNDEFINED,engine)?.dyn_into().map_err(|_|js_sys::TypeError::new("Voice list is not an array").into())}
  fn state(&self,host:&JsValue,engine:&JsValue,voice:&JsValue)->Result<JsValue,JsValue>{Ok(picker_state(host.clone(),engine.clone(),voice.clone(),self.messages.clone())?.into())}
  fn offered(&self,host:&JsValue,engine:&JsValue,voices:&Array)->Result<JsValue,JsValue>{picker_offer_for(host.clone(),engine.clone(),voices.clone(),self.base.clone(),self.recommend.clone(),self.device.call0(&JsValue::UNDEFINED)?)}

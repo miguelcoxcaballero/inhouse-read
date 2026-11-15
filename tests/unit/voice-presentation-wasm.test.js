@@ -8,7 +8,7 @@ const method=name=>(host,...args)=>ReadingVoice.prototype[name].call(host,...arg
 const presentVoice=method('present')
 const fixture=vi.hoisted(()=>({ui:null,native:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
-vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.native}))
+vi.mock('./helpers/live-audio.js',()=>({nativeAudio:()=>fixture.native}))
 const setNative=value=>{fixture.native=value}
 afterEach(()=>{fixture.ui=null;fixture.native=null;globalThis.clearTimeout=originalClear})
 import {LegacyVoicePresentation} from './helpers/reference-voice-presentation.js'
@@ -54,18 +54,18 @@ for(let round=0;round<2;round++){
 })
 
 it('waits for audible start before activating or highlighting a detached page',()=>{
- const {host,next}=setup(false,1);host.source=next;host.state='playing';host.startedId='old';next.activate=vi.fn(()=>true);next.highlight=vi.fn();fixture.ui=ui
+ const {host,next}=setup(false,1);host.source=next;host.state='playing';host.startedId='old';next.activate=vi.fn(()=>true);next.highlight=vi.fn();fixture.ui={...ui,audio_native:()=>fixture.native}
  presentVoice(host,'u1');expect(next.activate).not.toHaveBeenCalled();expect(next.highlight).not.toHaveBeenCalled()
  host.startedId='u1';presentVoice(host,'u1');expect(next.activate).toHaveBeenCalledOnce();expect(next.highlight).toHaveBeenCalledWith(0,200)
  expect(host.shown.source).toBe(next)
 })
 it('keeps a full sentence highlighted while following marks in the same source',()=>{
- const {host,current}=setup(false,1);host.state='playing';host.shown=null;current.highlight=vi.fn();current.follow=vi.fn();fixture.ui=ui
+ const {host,current}=setup(false,1);host.state='playing';host.shown=null;current.highlight=vi.fn();current.follow=vi.fn();fixture.ui={...ui,audio_native:()=>fixture.native}
  presentVoice(host,'u1',0);const shown=host.shown;presentVoice(host,'u1',50)
  expect(current.highlight).toHaveBeenCalledOnce();expect(host.shown).toBe(shown)
  expect(current.follow.mock.calls).toEqual([[0,50],[50,200]])
 })
 it('preserves source identity when presentation adopts a late native module',()=>{
- const {host,current}=setup(false,1);host.shown=null;const native={...ui,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
+ const {host,current}=setup(false,1);host.shown=null;const native={...ui,audio_native:()=>fixture.native,voice_method:vi.fn(ui.voice_method)};fixture.ui=native
  presentVoice(host);expect(native.voice_method).toHaveBeenCalledOnce();expect(native.voice_method.mock.calls[0].slice(0,2)).toEqual([host,'present']);expect(host.shown.source).toBe(current)
 })

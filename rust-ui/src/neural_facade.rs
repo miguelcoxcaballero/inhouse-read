@@ -75,7 +75,7 @@ fn forget(host: &JsValue, plan_method: &str) -> R<()> {
     if plan_method == "invalidate" { set(&read(host, "queue")?, "length", &JsValue::from_f64(0.0))?; }
     Ok(())
 }
-fn kit_call(kit: &JsValue, name: &str, args: &[&JsValue]) -> R { call(&read(kit, name)?, name, args) }
+fn kit_call(kit: &JsValue, name: &str, args: &[&JsValue]) -> R { crate::neural_audio::of(kit, name, args) }
 
 /// What the bridge diagnostics read while no engine is loaded; reading it loads nothing.
 fn unloaded_state(host: &JsValue) -> R {

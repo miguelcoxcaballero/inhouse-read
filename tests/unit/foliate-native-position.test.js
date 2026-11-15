@@ -11,7 +11,7 @@ import { ReaderController } from '../../src/js/readers/reader-controller.js'
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
 import { loadNeural } from '../../src/js/readers/neural-runtime.js'
 import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
-import { resetAudio, stopNativeAudio, unlockAudio } from '../../src/js/readers/neural-voice/audio.js'
+import { resetAudio, stopNativeAudio, unlockAudio } from './helpers/live-audio.js'
 import { FAKE_CATALOG, createFakeNeuralEngine } from '../helpers/fake-neural-engine.js'
 
 const progress = new SectionProgress(Array.from({length:6}, () => ({size:100})),1500,1000)
