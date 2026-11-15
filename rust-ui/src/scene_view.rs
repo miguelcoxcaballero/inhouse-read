@@ -282,6 +282,8 @@ impl RustScene{
   let yaw=-std::f64::consts::PI/6.0*progress;
   let pitch=14.0*std::f64::consts::PI/180.0*progress;
   let rotation=quaternion_xyz(pitch,yaw,0.0);
+  // The room's inverse turn, for the entries of the frame (`Quaternion#invert` of the room's own).
+  self.entry_q=[rotation[0]*-1.0,rotation[1]*-1.0,rotation[2]*-1.0,rotation[3]];
   let place=|scale:f64,position:[f64;3]|Mat4::compose(position,rotation,[scale,scale,scale]);
   let unscaled=corners_of(&self.full,&place(1.0,[0.0;3]));
   let padding=(if self.edge_to_edge{0.0}else{8.0})*progress;

@@ -17,7 +17,7 @@ const dir=resolve(process.argv[2]||'src/wasm/shelf');
 const rust=await import(pathToFileURL(dir+'/inhouse_read_shelf.js').href);
 rust.initSync({module:readFileSync(dir+'/inhouse_read_shelf_bg.wasm')});
 const {createSceneMotionFrame}=await import('../src/js/scene-motion-frame.js');
-const {createSceneProjectionFrame}=await import('../src/js/scene-projection-frame.js');
+const {createSceneProjectionFrame}=await import('../tests/unit/helpers/scene-projection-frame.js');
 const {createSceneEntryFrame,ENTRY_STATE:S,ENTRY_OUTPUT,HIT_INPUT,HIT_OUTPUT}=await import('../src/js/scene-entry-frame.js');
 const median=a=>a.toSorted((x,y)=>x-y)[Math.floor(a.length/2)],results=[];
 const perShelf=28,width=perShelf*21+20;

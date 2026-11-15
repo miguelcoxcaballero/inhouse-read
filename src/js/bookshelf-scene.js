@@ -1,7 +1,5 @@
-import { createGravityFrame } from './gravity-frame.js';
 import { createFoliageFrame } from './foliage-frame.js';
 import { createSceneMotionFrame } from './scene-motion-frame.js';
-import { createSceneProjectionFrame } from './scene-projection-frame.js';
 import { createSceneEntryFrame, ENTRY_STATE, ENTRY_OUTPUT, HIT_INPUT, HIT_OUTPUT } from './scene-entry-frame.js';
 import { notifyCloudSettingsChanged } from './cloud-settings.js';
 import {playShelfSound,shelfSoundsEnabled} from './cozy-sounds.js';
@@ -333,7 +331,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const physicsStorageKey = 'inhouse-read-shelf-physics-v1';
   let physicsStarted = false, physicsInteracted = false, pendingCloudPhysics = null;
   if (settleBooks) { try { bookGravity.restore(localStorage.getItem(physicsStorageKey) || ''); } catch {} }
-  const gravityFrame = createGravityFrame(rust);
+  // The solver knows the entries by key and every button keeps a history of its written styles
+  // (rust-ui/src/book_gravity_frame.rs, scene_projection.rs): both are a layout's, like the arena's rows.
+  const gravityFrame = new rust.RustGravityFrame(), projectionFrame = new rust.RustSceneProjectionFrame();
+  function bindEntries() {
+    entryFrame.bind(bookEntries, true); projectionFrame.reset_entries(bookEntries.length);
+    if (settleBooks) gravityFrame.register(bookEntries.map(entry => entry.key));
+  }
   let bookEntries = entries.map(freshEntry);
   acknowledgeRoom(roomCheckpoint);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
@@ -399,9 +403,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     rust.scene_room_occlusion(THREE, occlusion, baggebo, baggebo ? NO_NUMBERS : roomPlan(), unitCount, unitWidth, height, depth, floorY,
       rows, floorLit ? DARK_FLOOR_LIGHT : null, trash, createShelfOcclusion, mergeGeometries);
   }
+  // The bin's footprint and place, for the view's fit and the shadow's bounds: taken when it is placed.
+  const binBox = new Float64Array(9);
   function positionTrash() {
     // The bin stands on the floor clear of the wall with its lid's whole sweep (rust-ui/src/scene_room.rs).
-    if (trash) rust.scene_position_trash(sceneView, trash, trashBounds, roomWall, floorY, TRASH_GAP);
+    if (trash) {
+      rust.scene_position_trash(sceneView, trash, trashBounds, roomWall, floorY, TRASH_GAP);
+      const { min, max } = trashBounds, { position } = trash;
+      binBox.set([min.x, min.y, min.z, max.x, max.y, max.z, position.x, position.y, position.z]);
+    }
     rebuildOcclusion();
   }
   // Lights and environment are final once the lamps' light pool exists. The
@@ -623,7 +633,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     rust.scene_restore_node(node, original, false);
   }
   rememberCatalogNode(catalogNode);
-  const inverseRotation = new THREE.Quaternion();
   const shadowBounds = new THREE.Box3(), shadowOut = new Float64Array(6), captureOut = new Float64Array(4);
   const rendererSize = new THREE.Vector2();
   const frameLayout = { canvas:null, stage:null, scroller:null, visualBottom:NaN, innerWidth:NaN, innerHeight:NaN, ratio:NaN, clientHeight:NaN, scrollTop:NaN };
@@ -651,7 +660,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     entry.box = boxScratch.slice(0, 6); entry.fallback = boxScratch.slice(6, 12); entry.stale = true;
   }
   for (const entry of bookEntries) placeBoxes(entry);
-  entryFrame.bind(bookEntries, true);
+  bindEntries();
   // The semantic button's centre lies on one solid mesh of its model. Look that
   // mesh up by name once per model rather than walking the tree every frame.
   function hitSurface(entry, name) {
@@ -1120,14 +1129,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return entry.stateText;
   }
 
-  const viewSizes = new Float64Array(6), viewFrame = new Float64Array(8), binBox = new Float64Array(9);
-  // The bin's footprint and place, for the view's fit and the shadow's bounds (written element by
-  // element: a temporary array and TypedArray#set cost several times more, twice per frame).
-  function packBin() {
-    const { min, max } = trashBounds, { position } = trash;
-    binBox[0] = min.x; binBox[1] = min.y; binBox[2] = min.z; binBox[3] = max.x; binBox[4] = max.y; binBox[5] = max.z;
-    binBox[6] = position.x; binBox[7] = position.y; binBox[8] = position.z;
-  }
+  const viewSizes = new Float64Array(6), viewFrame = new Float64Array(8);
   function viewport() {
     // The view's height, the pixel ratio and the framebuffer's size, in one call.
     sceneView.sizeViewport(scroller.clientHeight, window.innerHeight, window.devicePixelRatio, viewSizes);
@@ -1192,7 +1194,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // leaves room around the diagonal furniture instead of cropping its edges.
     let rooftop = -Infinity;
     for (const entry of bookEntries) if (entry.rooftop) rooftop = Math.max(rooftop, -entry.y + entry.height / 2);
-    if (trash) packBin();
     // The diagnostics are formatted and written only when a number they show moved; the four the
     // finger-following image also writes are handed over then, and held otherwise.
     const texts = viewTexts = sceneView.transformShown(trash ? binBox : NO_NUMBERS, rooftop, floor.visible, unitCount, viewFrame) || viewTexts;
@@ -1205,7 +1206,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     furniture.updateWorldMatrix(false, false);
     stage.style.height = `${viewFrame[6]}px`;
     showData('zoom', texts[0]); showData('inspectionZoom', texts[1]); showData('inspectionMoving', texts[2]); showData('inspectionPan', texts[3]);
-    inverseRotation.copy(furniture.quaternion).invert();
     return viewFrame[2];
   }
 
@@ -1244,8 +1244,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     showData('catalog3d', 'true'); showData('catalogVisible', String(visible));
   }
 
-  const projectionFrame = createSceneProjectionFrame(rust);
-  const insertionIo = new Float64Array(4), inverseTurn = new Float64Array(4);
+  const insertionIo = new Float64Array(4);
 
   // A book's lean is formatted and compared with its button's data only when the number moved.
   const leanEuler = new THREE.Euler();
@@ -1260,14 +1259,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Changes the observer has not yet delivered (a synchronous draw right after
     // a class or drag-variable write) are examined here, as the frame's own read.
     for (const record of mutations.takeRecords()) { const entry = byNode.get(record.target); if (entry) entry.domDirty = true; }
-    inverseTurn[0] = inverseRotation.x; inverseTurn[1] = inverseRotation.y; inverseTurn[2] = inverseRotation.z; inverseTurn[3] = inverseRotation.w;
-    sceneView.beginEntries(now, reducedMotion.matches, zoom, inverseTurn, frameLayout.ratio, frameLayout.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
+    // The room's inverse turn is the one of the view's last fit (updateTransform; rust-ui/src/scene_view.rs).
+    sceneView.beginEntries(now, reducedMotion.matches, zoom, NO_NUMBERS, frameLayout.ratio, frameLayout.innerWidth, scroll, MINIMUM_LAMP_TAP_SIZE);
     const usePhysics = settleBooks && (physicsReady || physicsStarted);
-    projectionFrame.prepare(bookEntries);
     const pixelsPerMetre = pixelsPerMetreNow();
     sceneMotionFrame.prepare(bookEntries, rows, width, pixelsPerMetre);
     arranging = arrangingNow();
-    if (usePhysics) { physicsStarted = true; gravityFrame.prepare(bookEntries); }
+    if (usePhysics) physicsStarted = true;
     // What changed since the last frame enters the entry arena: a class or a drag variable (as the
     // DOM is read again: stateFor), a size or a place and with them the rigid bodies' bay (`stale`); what the host
     // holds follows below (`tellHeld`). The lift, the landing, the preview and the pose stay in Rust.
@@ -1340,10 +1338,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const reduced = reducedMotion.matches;
       if (installedRoom) {
         // A room the solver restores in this step is acknowledged before the shared motion is sampled.
-        entryFrame.settle(gravityFrame.native, bookGravity, sceneView, now, reduced);
+        entryFrame.settle(gravityFrame, bookGravity, sceneView, now, reduced);
         if (bookGravity.restored_room()) { acknowledgeRoom(installedRoom); installedRoom = null; }
         summary = entryFrame.place(true, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging, furniture.matrixWorld);
-      } else summary = entryFrame.settled(gravityFrame.native, bookGravity, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, reduced, arranging, furniture.matrixWorld);
+      } else summary = entryFrame.settled(gravityFrame, bookGravity, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, reduced, arranging, furniture.matrixWorld);
       const sounds=bookGravity.take_sounds();
       // [material, strength, pan, kind]; a module without kinds reports book impacts in threes.
       if(sounds){const stride=bookGravity.sound_stride?.()||3;for(let at=0;at+2<sounds.length;at+=stride)playShelfSound(stride>3?sounds[at+3]:3,sounds[at],sounds[at+1],sounds[at+2]);}
@@ -1497,7 +1495,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (created?.visible && programsReady !== true) prelinkPrograms(renderer, scene, camera, [created]);
     }
     // Every button's hit target and the style writes it needs, in one native call (scene-entry-frame.js).
-    entryFrame.hits(projectionFrame.native, sceneView);
+    entryFrame.hits(projectionFrame, sceneView);
     for (let entryIndex = 0; entryIndex < bookEntries.length; entryIndex++) {
       const entry = bookEntries[entryIndex], node = entry.node;
       if (!node) continue;
@@ -2129,7 +2127,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (batchQuality) hideInspectionSnapshot();
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
-    if (trash) packBin();
     sceneView.shadowBounds(trash ? binBox : NO_NUMBERS, furniture.matrixWorld.elements, shadowOut);
     shadowBounds.min.set(shadowOut[0], shadowOut[1], shadowOut[2]); shadowBounds.max.set(shadowOut[3], shadowOut[4], shadowOut[5]);
     // Scrolling creates and releases culled models: those change the casters.
@@ -2915,7 +2912,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       for (const entry of oldEntries.values()) releaseEntry(entry);
       bookEntries = retained; byNode.clear();
-      entryFrame.bind(bookEntries, true); staticStale = true;
+      bindEntries(); staticStale = true;
       // Lamp fixtures are structural scene data. Rebuild their cached list and
       // light pool only when a layout is committed, not once per rendered frame.
       lampLighting.prepare(bookEntries);

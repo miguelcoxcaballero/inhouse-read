@@ -21,7 +21,7 @@ const dir=resolve(process.argv[2]||'src/wasm/shelf');
 const rust=await import(pathToFileURL(dir+'/inhouse_read_shelf.js').href);
 rust.initSync({module:readFileSync(dir+'/inhouse_read_shelf_bg.wasm')});
 const {createSceneEntryFrame,ENTRY_STATE:S,HIT_INPUT,HIT_OUTPUT}=await import('../src/js/scene-entry-frame.js');
-const {createSceneProjectionFrame}=await import('../src/js/scene-projection-frame.js');
+const {createSceneProjectionFrame}=await import('../tests/unit/helpers/scene-projection-frame.js');
 const median=a=>a.toSorted((x,y)=>x-y)[Math.floor(a.length/2)];
 const rounds=(label,unit,times,previous,current)=>{
  const olds=[],news=[];
