@@ -69,7 +69,8 @@ pub fn reader_resize_panel(host:&JsValue,window:&JsValue,reveal:&JsValue)->Resul
  if fitted{crate::host::request_frame(reveal)?;}Ok(JsValue::UNDEFINED)
 }
 fn resize_panel(host:&JsValue,window:&JsValue)->Result<bool,JsValue>{
- if !get(&get(host,"panel")?,"open")?.is_truthy(){return Ok(false);}
+ // The panel and its style are read once: the same objects every time within one call.
+ let panel=get(host,"panel")?;if !get(&panel,"open")?.is_truthy(){return Ok(false);}
  let viewport=get(window,"visualViewport")?;
  let visible=if absent(&viewport){JsValue::UNDEFINED}else{get(&viewport,"height")?};
  let visible=number(&if visible.is_truthy(){visible}else{get(window,"innerHeight")?})?;
@@ -78,8 +79,8 @@ fn resize_panel(host:&JsValue,window:&JsValue)->Result<bool,JsValue>{
  let keyboard=js_sys::Math::max(0.0,number(&get(window,"innerHeight")?)?-visible-offset);
  let anchor=if !JsValue::from_f64(keyboard).is_truthy()&&number(&get(window,"innerWidth")?)?>=760.0{node(host,"toolbar")?.get_bounding_client_rect().height()+12.0}else{0.0};
  let max=js_sys::Math::max(0.0,js_sys::Math::min(visible-anchor-16.0,number(&get(window,"innerHeight")?)?*0.82));
- let style=get(&get(host,"panel")?,"style")?;set(&style,"maxHeight",&format!("{}px",crate::js_string(&max.into())).into())?;
- let style=get(&get(host,"panel")?,"style")?;set(&style,"bottom",&format!("{}px",crate::js_string(&(keyboard+anchor).into())).into())?;
+ let style=get(&panel,"style")?;set(&style,"maxHeight",&format!("{}px",crate::js_string(&max.into())).into())?;
+ set(&style,"bottom",&format!("{}px",crate::js_string(&(keyboard+anchor).into())).into())?;
  Ok(true)
 }
 #[wasm_bindgen]
