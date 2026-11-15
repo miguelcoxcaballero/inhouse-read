@@ -1,9 +1,10 @@
-import {beforeAll,afterEach,it,expect} from 'vitest'
+import {beforeAll,it,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {createStageGate as original} from './helpers/reference-prepared-page.js'
-const gates=[];beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}));afterEach(()=>{for(const gate of gates.splice(0))gate.free()});
-const native=(settled,options)=>{const gate=new ui.RustStageGate(settled,options.idle);gates.push(gate);return gate};
+beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}));
+// A gate is a plain record of the page (rust-ui/src/stage_gate.rs): nothing to free.
+const native=(settled,options)=>{const gate=ui.prepared_page('gate',settled,options.idle);return{wait:()=>ui.prepared_page('wait',gate),release:reason=>ui.prepared_page('release',gate,reason)}};
 async function trace(factory,{settled=true,idleValue=undefined,releaseTurn=-1,reason='open'}={}){
  const events=[];const gate=factory(settled,{idle:()=>{events.push('idle');return idleValue}});const result=gate.wait();result.then(value=>events.push('done:'+value),error=>events.push('error:'+error));
  for(let turn=0;turn<15;turn++){if(turn===releaseTurn){gate.release(reason);events.push('release')}await Promise.resolve();events.push('turn:'+turn)}return events;

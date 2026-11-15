@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Array, Object, Promise};
 use crate::host::{read, set, method, truthy, absent, later};
 use crate::cloud_host as c;
+use crate::{prepared_page as pages, stage_gate};
 type R<T> = Result<T, JsValue>;
 
 fn object(fields: &[(&str, JsValue)]) -> R<JsValue> {
@@ -30,7 +31,7 @@ fn current(host: &JsValue, id: &JsValue, generation: &JsValue) -> R<bool> {
 
 #[wasm_bindgen]
 pub fn app_open_page_gate(host: JsValue, id: JsValue, settled: JsValue) -> R<JsValue> {
-    let gate = method(&host, "createStageGate", &[&settled])?;
+    let gate = stage_gate::open(settled, read(&host, "idleSlice")?)?;
     set(&read(&host, "state")?, "pageGate", &object(&[("bookId", id), ("gate", gate.clone())])?)?;
     Ok(gate)
 }
@@ -39,7 +40,7 @@ pub fn app_open_page_gate(host: JsValue, id: JsValue, settled: JsValue) -> R<JsV
 pub fn app_release_page_gate(host: JsValue, reason: JsValue, id: JsValue) -> R<()> {
     let entry = read(&read(&host, "state")?, "pageGate")?;
     if truthy(&entry) && (!truthy(&id) || read(&entry, "bookId")? == id) {
-        method(&read(&entry, "gate")?, "release", &[&reason])?;
+        stage_gate::release(&read(&entry, "gate")?, &reason)?;
     }
     Ok(())
 }
@@ -49,13 +50,13 @@ pub fn app_supersede_preparation(host: JsValue, reason: JsValue) -> R<()> {
     let state = read(&host, "state")?;
     let generation = c::number(&read(&state, "preparationGeneration")?) + 1.0;
     set(&state, "preparationGeneration", &generation.into())?;
-    method(&read(&host, "preparedPages")?, "invalidate", &[&reason])?;
+    pages::invalidate(&pages::of(&host)?, &reason)?;
     app_release_page_gate(host, reason, JsValue::UNDEFINED)
 }
 
 #[wasm_bindgen]
 pub fn app_dismiss_prepared_page(host: JsValue) -> R<()> {
-    method(&read(&host, "preparedPages")?, "invalidate", &[&"dismissed".into()])?;
+    pages::invalidate(&pages::of(&host)?, &"dismissed".into())?;
     app_release_page_gate(host, "dismissed".into(), JsValue::UNDEFINED)
 }
 
@@ -182,21 +183,21 @@ pub fn app_restore_and_snapshot(host: JsValue, record: JsValue) -> Promise {
 }
 
 async fn page_stage(host: &JsValue, id: &JsValue, generation: &JsValue, gate: &JsValue) -> R<JsValue> {
-    if !truthy(&c::settle(method(gate, "wait", &[])).await?) || !current(host, id, generation)? { return Ok(JsValue::FALSE); }
-    let pages = read(host, "preparedPages")?;
-    if !truthy(&method(&pages, "isReady", &[])?) && !truthy(&c::settle(method(&pages, "whenReady", &[])).await?) { return Ok(JsValue::FALSE); }
+    if !truthy(&c::settle(stage_gate::wait(gate).map(JsValue::from)).await?) || !current(host, id, generation)? { return Ok(JsValue::FALSE); }
+    let cache = pages::of(host)?;
     let record = c::settle(method(&read(host, "library")?, "get", &[id])).await?;
     if !truthy(&record) || !current(host, id, generation)? { return Ok(JsValue::FALSE); }
-    let ticket = method(&pages, "begin", &[id])?;
+    let ticket = pages::begin(&cache, id)?;
     let started = app_page_key(host.clone(), id.clone(), record.clone())?;
     let snapshot = c::settle(Ok(app_restore_and_snapshot(host.clone(), record.clone()).into())).await?;
-    if !truthy(&snapshot) || !current(host, id, generation)? || !truthy(&method(&pages, "isCurrent", &[&ticket])?) { return Ok(JsValue::FALSE); }
+    if !truthy(&snapshot) || !current(host, id, generation)? || !pages::is_current(&cache, &ticket)? { return Ok(JsValue::FALSE); }
     let key = app_page_key(host.clone(), id.clone(), record)?;
     let entries = Array::new(); c::copy_data_entries(&entries, &key)?;
     c::data_entry(&entries, &"location".into(), &read(&started, "location")?);
     let comparison: JsValue = Object::from_entries(entries.as_ref())?.into();
-    if truthy(&method(host, "pageKeyMismatch", &[&comparison, &started])?) { return Ok(JsValue::FALSE); }
-    if !truthy(&method(&pages, "store", &[&ticket, &key, &snapshot])?) { return Ok(JsValue::FALSE); }
+    // Size, preferences or theme moved while the page was being made: it is not the page for either.
+    if truthy(&pages::mismatch(&comparison, &started, false)?) { return Ok(JsValue::FALSE); }
+    if !pages::store(&cache, &ticket, &key, &snapshot)? { return Ok(JsValue::FALSE); }
     let shelf = read(&read(host, "state")?, "shelf")?;
     let prepared = if absent(&shelf) { JsValue::UNDEFINED } else { method(&shelf, "prepareOpeningPage", &[id, &snapshot, &read(host, "idleSlice")?])? };
     c::settle(Ok(prepared)).await?;
@@ -217,7 +218,7 @@ pub fn app_prepare_page_stage(host: JsValue, id: JsValue, generation: JsValue, g
 pub fn app_opening_page_snapshot(host: JsValue, id: JsValue, record: JsValue) -> Promise {
     c::start(async move {
         let key = app_page_key(host.clone(), id, record.clone())?;
-        let prepared = method(&read(&host, "preparedPages")?, "take", &[&key])?;
+        let prepared = pages::take(&pages::of(&host)?, &key)?;
         if truthy(&prepared) { method(&host, "markTiming", &[&"page-reused".into()])?; return Ok(prepared); }
         c::settle(Ok(app_restore_and_snapshot(host, record).into())).await
     })

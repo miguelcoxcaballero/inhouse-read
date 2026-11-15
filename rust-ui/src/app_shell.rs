@@ -233,8 +233,8 @@ pub fn app_watch_reader_controls(host:&JsValue)->R{
 /// and layout: the page prepared for a lifted book no longer holds.
 #[wasm_bindgen]
 pub fn app_watch_prepared_pages(host:&JsValue)->R{
- let pages=read(host,"preparedPages")?;
- let invalidate=move|pages:&JsValue,reason:&str|->R{method(pages,"invalidate",&[&reason.into()])?;Ok(())};
+ let pages=crate::prepared_page::of(host)?;
+ let invalidate=move|pages:&JsValue,reason:&str|->R{crate::prepared_page::invalidate(pages,&reason.into())};
  let p=pages.clone();
  let mut listeners=vec![listen(&global(),"resize",None,false,move|_|invalidate(&p,"resize"))?];
  let within=|event:&JsValue,selector:&str|->R<bool>{

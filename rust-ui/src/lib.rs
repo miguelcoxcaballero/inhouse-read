@@ -40,6 +40,12 @@ mod app_actions;
 mod app_reader_preparation;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod prepared_page;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod stage_gate;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod app_reader_close;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
