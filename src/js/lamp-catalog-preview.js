@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { createShelfLamp } from './shelf-lamps.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 import { createShelfLampLighting, ensureAreaLights } from './shelf-lamp-lighting.js';
@@ -16,7 +15,7 @@ await ensureAreaLights().catch(() => {});
  * and writing a tint on the model and its light. */
 export function createLampCatalogPreview(host) {
   const studio = openStudio(LAMP_STUDIO, host, { padding:1.13, lamp:{
-    three:THREE, host, createShelfLamp, createShelfLampLighting, ms:LAMP_KELVIN_MS,
+    host, createShelfLamp, createShelfLampLighting, ms:LAMP_KELVIN_MS,
     tints:[DEFAULT_LAMP_KELVIN, ...LAMP_KELVINS.flatMap(kelvin => [kelvin, ...lampTint(kelvin)])],
     display:null, presentation:null, fixture:null, target:null, surfaces:[],
     tintLamp(model, r, g, b) {

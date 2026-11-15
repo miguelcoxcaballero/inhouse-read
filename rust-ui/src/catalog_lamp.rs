@@ -5,7 +5,7 @@
 //! that eases in. Every three.js object is made, configured and added in the original's order, so three
 //! numbers them the same and the pictures are identical.
 //!
-//! What it makes lives on `rig`, a plain record the preview owns (`{three, host, createShelfLamp,
+//! What it makes lives on `rig`, a plain record the preview owns (`{host, createShelfLamp,
 //! createShelfLampLighting, tintLamp, tints, ms, display, presentation, fixture, target, surfaces}`): the
 //! lamp's builder, the filament lamp's area lights and the one function that writes a tint on three's
 //! colours stay JavaScript. What a frame reads is on the studio's own record (`size`, `lighting`, `entries`,
@@ -70,7 +70,6 @@ extern "C" {
     #[wasm_bindgen(method, setter, catch)] fn set_target(this: &Thing, value: &JsValue) -> R<()>;
     #[wasm_bindgen(method, getter, catch)] fn surfaces(this: &Thing) -> R<Thing>;
     #[wasm_bindgen(method, catch, js_name = tintLamp)] fn tint_lamp(this: &Thing, model: &JsValue, r: f64, g: f64, b: f64) -> R<JsValue>;
-    #[wasm_bindgen(method, getter, catch)] fn three(this: &Thing) -> R<Thing>;
     #[wasm_bindgen(method, getter, catch)] fn host(this: &Thing) -> R<Thing>;
     #[wasm_bindgen(method, getter, catch)] fn dataset(this: &Thing) -> R<Thing>;
     #[wasm_bindgen(method, getter, catch)] fn renderer(this: &Thing) -> R<Thing>;
@@ -143,9 +142,8 @@ fn tint<T>(slot: usize, work: impl FnOnce(&mut Tint) -> T) -> Option<T> {
 fn slot_of(record: &JsValue) -> usize { num(&get(record, "slot")) as usize }
 
 /// The display group and, inside it, the group of the stand's surfaces.
-pub(crate) fn scene(rig: &JsValue, scene: &JsValue) -> R<()> {
-    let rig = thing(rig);
-    let three = rig.three()?;
+pub(crate) fn scene(rig: &JsValue, three: &JsValue, scene: &JsValue) -> R<()> {
+    let (rig, three) = (thing(rig), thing(three));
     let display = make(three.group_class()?, "Group", &[])?;
     thing(scene).add(&display)?;
     let presentation = make(three.group_class()?, "Group", &[])?;
@@ -256,7 +254,8 @@ pub(crate) fn build(state: &JsValue, record: &JsValue, lamp: &JsValue, previous:
 fn set_up(state: &JsValue, record: &JsValue, rig: &Thing, slot: usize, lamp: &JsValue, previous: &JsValue, invalidate: &JsValue) -> R<JsValue> {
     let parts = get(record, "parts");
     let parts = thing(&parts);
-    let three = rig.three()?;
+    let three = get(record, "three");
+    let three = thing(&three);
     let (renderer, camera) = (parts.renderer()?, parts.camera()?);
     empty(record, rig, previous)?;
     let display = rig.display()?;

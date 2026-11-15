@@ -12,8 +12,9 @@ const hooks = { createCatalogPreviewFrame, whenProgramsReady, retainPrograms, co
 
 /** One catalogue studio. Its three.js side (the scene, the orthographic camera, the renderer with its studio
  * environment and lights, the resize observer and the draw) and its loop are rust-ui/src/catalog_studio.rs
- * (studio_open_three, studio_open). `adapter` adds the studio's own `make`, `swap`, `retint`, `tintSet` and
- * `release`. Returns the native state and the parts. */
+ * (studio_open_three, studio_open). `adapter` hands over what the studio's model is made
+ * with (the plant's builder, the cabinet's `rig`, the lamp's record) and its `padding`. Returns the native
+ * state and the parts. */
 export function openStudio(kind, host, adapter) {
   const shelf = needRustShelf();
   return shelf.studio_open_three(kind, host, adapter, THREE, RoomEnvironment, hooks, shelf);

@@ -14,8 +14,7 @@ const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.me
 export function createShelfCatalogPreview(host) {
   const rig = { three:THREE, maps:[WALNUT,WALNUT_SURFACE], spec:WALNUT_SPEC, createBaggebo, createShelfFurniture,
     size:null, walnut:null, textures:[], materials:[] };
-  const studio = openStudio(SHELF_STUDIO, host, { padding:1.14, rig,
-    size:model => rig.size ||= new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()) });
+  const studio = openStudio(SHELF_STUDIO, host, { padding:1.14, rig });
   const { state, shelf } = studio;
   return studioControls(studio, ({ shelfType }) => shelf.studio_update_shelf(state, normalizeShelfType(shelfType)));
 }

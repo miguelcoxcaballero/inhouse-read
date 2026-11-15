@@ -99,7 +99,10 @@ pub fn studio_build(state: &JsValue, prepare: JsValue) -> R<()> {
     put(state, "pending", JsValue::NULL)?;
     if plant {
         // The new plant waits, hidden, for its programs; the shown one stays until then.
-        let next = method(&host(state), "make", &[&selection, &JsValue::UNDEFINED, &JsValue::NULL, &get(state, "invalidate")])?;
+        // The plant studio hands over its builder and the plant is made here (`plant` is its record).
+        let own = get(state, "plant");
+        let next = if absent(&own) { method(&host(state), "make", &[&selection, &JsValue::UNDEFINED, &JsValue::NULL, &get(state, "invalidate")])? }
+            else { plant_make(&own, &selection, &get(state, "invalidate"))? };
         put(state, "incoming", next.clone())?;
         put(state, "linking", selection)?;
         put(state, "cancelLink", method(&host(state), "link", &[&next, &get(state, "swap")])?)?;
@@ -135,7 +138,9 @@ pub fn studio_swap(state: &JsValue) -> R<()> {
     put(state, "cancelLink", JsValue::NULL)?;
     let next = get(state, "incoming");
     put(state, "incoming", JsValue::NULL)?;
-    method(&host(state), "swap", &[&get(state, "model"), &next, &get(state, "linking")])?;
+    let own = get(state, "plant");
+    if absent(&own) { method(&host(state), "swap", &[&get(state, "model"), &next, &get(state, "linking")])?; }
+    else { plant_swap(&own, &get(state, "model"), &next, &get(state, "linking"))?; }
     put(state, "model", next)?;
     studio_invalidate(state)
 }
@@ -474,9 +479,9 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
         ("lights", Object::new().into()), ("framing", framing), ("observer", JsValue::NULL)])?;
     // The lamp studio hands over what its model is made with (`lamp`) and is set up here.
     let lamp = read(&adapter, "lamp")?;
-    if absent(&lamp) { crate::host::method_opt(&adapter, "prepareScene", &[&parts])?; } else { crate::catalog_lamp::scene(&lamp, &scene)?; }
+    if absent(&lamp) { crate::host::method_opt(&adapter, "prepareScene", &[&parts])?; } else { crate::catalog_lamp::scene(&lamp, &three, &scene)?; }
     let record = field_object(&[("host", host.clone()), ("adapter", adapter.clone()), ("hooks", hooks.clone()), ("parts", parts.clone()),
-        ("scene", scene.clone()), ("camera", camera), ("renderer", JsValue::NULL), ("state", JsValue::UNDEFINED)])?;
+        ("scene", scene.clone()), ("camera", camera), ("renderer", JsValue::NULL), ("state", JsValue::UNDEFINED), ("three", three.clone())])?;
     if studio_build_renderer(&three, &room_environment, &hooks, &exports, &plan, &parts, &scene, &host, &record).is_err() {
         present_call(&read(&parts, "renderer")?, "dispose")?;
         set(&parts, "renderer", &JsValue::NULL)?;
@@ -489,10 +494,13 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     let studio: JsValue = Object::new().into();
     for name in ["make", "swap", "retint", "tintSet"] { set(&studio, name, &read(&adapter, name)?)?; }
     let rig = read(&adapter, "rig")?;
-    if !absent(&rig) { set(&studio, "rig", &rig)?; set(&studio, "parts", &parts)?; }
+    if !absent(&rig) { set(&studio, "rig", &rig)?; set(&studio, "parts", &parts)?; set(&record, "rig", &rig)?; }
+    // A studio that hands over what its model is made with has no functions of its own to ask: the lamp's
+    // record (1), the plant's builder (2), the cabinet's rig (3).
+    let plant = read(&adapter, "createShelfPlant")?;
+    let own = if !absent(&lamp) { 1.0 } else if !absent(&plant) { 2.0 } else if !absent(&rig) { 3.0 } else { 0.0 };
     for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
-        // A picture is told whether it is the lamp studio's (its measure and filament lights are on the record).
-        let bound = if name == "draw" { method(&read(&exports, export)?, "bind", &[&JsValue::UNDEFINED, &record, &(!absent(&lamp)).into()])? }
+        let bound = if name == "draw" { method(&read(&exports, export)?, "bind", &[&JsValue::UNDEFINED, &record, &own.into()])? }
             else { bind_export(&exports, export, &record)? };
         set(&studio, name, &bound)?;
     }
@@ -502,6 +510,7 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     let state = studio_open(kind, studio, host.clone(), truthy(&renderer), callbacks)?;
     set(&record, "state", &state)?;
     if !absent(&lamp) { set(&record, "lamp", &lamp)?; crate::catalog_lamp::opened(&record, &lamp, &state)?; }
+    if own == 2.0 { set(&record, "plant", &plant)?; set(&state, "plant", &record)?; }
     if truthy(&renderer) {
         set(&parts, "observer", &crate::host::construct("ResizeObserver", &[&read(&state, "invalidate")?])?)?;
         method(&read(&parts, "observer")?, "observe", &[&host])?;
@@ -530,7 +539,7 @@ pub fn studio_three_link(record: &JsValue, model: JsValue, done: JsValue) -> R<J
 /// Draw a model at the preview's layout size (the page may be scaled mid-flight, its drawing buffer not),
 /// keep its linked programs for a return to an earlier selection, and count the frame on the node.
 #[wasm_bindgen]
-pub fn studio_three_draw(record: &JsValue, lamp: bool, model: JsValue) -> R<()> {
+pub fn studio_three_draw(record: &JsValue, own: u32, model: JsValue) -> R<()> {
     let (host, adapter, renderer, camera) = (get(record, "host"), get(record, "adapter"), get(record, "renderer"), get(record, "camera"));
     let rect = if truthy(&read(&host, "clientWidth")?) {
         field_object(&[("width", read(&host, "clientWidth")?), ("height", read(&host, "clientHeight")?)])?
@@ -538,11 +547,28 @@ pub fn studio_three_draw(record: &JsValue, lamp: bool, model: JsValue) -> R<()> 
     let framing = read(&get(record, "parts"), "framing")?;
     let apply: js_sys::Function = read(&framing, "apply")?.dyn_into()
         .map_err(|_| JsValue::from(js_sys::TypeError::new("apply is not a function")))?;
-    // The lamp studio's record holds its measure and its filament lights (null without them).
-    let size = if lamp { get(record, "size") } else { method(&adapter, "size", &[&model])? };
+    // The lamp studio's record holds its measure and its filament lights (null without them); a plant or a
+    // cabinet is measured once, when it is first drawn (texture completion changes the surface, never this
+    // stationary geometry).
+    let size = match own {
+        0 => method(&adapter, "size", &[&model])?,
+        1 => get(record, "size"),
+        _ => {
+            let keeper = if own == 2 { record.clone() } else { get(record, "rig") };
+            let known = get(&keeper, "size");
+            if truthy(&known) { known } else {
+                let three = get(record, "three");
+                let bounds = method(&three_new(&three, "Box3", &[])?, "setFromObject", &[&model])?;
+                let size = method(&bounds, "getSize", &[&three_new(&three, "Vector3", &[])?])?;
+                set(&keeper, "size", &size)?;
+                size
+            }
+        }
+    };
     let padding = read(&adapter, "padding")?;
     apply.apply(&framing, &[camera.clone(), renderer.clone(), rect, size, padding].into_iter().collect::<Array>())?;
-    if lamp { crate::catalog_lamp::light_filaments(&get(record, "lighting"), record)?; } else { crate::host::method_opt(&adapter, "beforeDraw", &[&model])?; }
+    if own == 1 { crate::catalog_lamp::light_filaments(&get(record, "lighting"), record)?; }
+    else if own == 0 { crate::host::method_opt(&adapter, "beforeDraw", &[&model])?; }
     method(&renderer, "render", &[&get(record, "scene"), &camera])?;
     // Going back to an earlier selection reuses its linked shaders.
     if truthy(&read(&renderer, "info")?) { method(&get(record, "hooks"), "retainPrograms", &[&renderer])?; }
@@ -565,6 +591,7 @@ pub fn studio_three_finish(record: &JsValue, model: JsValue) -> R<()> {
     let rig = read(&get(record, "adapter"), "rig")?;
     if !absent(&rig) { shelf_release(&rig, &parts, &model)?; }
     else if !absent(&get(record, "lamp")) { crate::catalog_lamp::release(record, &model)?; }
+    else if !absent(&get(record, "plant")) { if !absent(&model) { method(&read(&model, "userData")?, "dispose", &[])?; } }
     else { method(&get(record, "adapter"), "release", &[&model, &parts])?; }
     present_call(&read(&parts, "environment")?, "dispose")?;
     let renderer = get(record, "renderer");
@@ -572,6 +599,32 @@ pub fn studio_three_finish(record: &JsValue, model: JsValue) -> R<()> {
     if !absent(&renderer) { method(&renderer, "forceContextLoss", &[])?; }
     method(&get(record, "host"), "replaceChildren", &[])?;
     Ok(())
+}
+
+// ---- The plant studio's model (formerly `make`, `swap`, `size` and `release` of src/js/plant-catalog-preview.js).
+// `record` is the studio's own; its `plant` is the builder (`createShelfPlant`), which stays JavaScript.
+
+/// The chosen plant, hidden in the scene until its programs are linked.
+fn plant_make(record: &JsValue, selection: &JsValue, invalidate: &JsValue) -> R<JsValue> {
+    use wasm_bindgen::JsCast;
+    let options: JsValue = Object::assign(&Object::new(), selection.unchecked_ref()).into();
+    set(&options, "seed", &format!("catalog:{}", crate::host::text_of(&read(selection, "catalogId")?)).into())?;
+    let next = crate::host::function_of(record, "plant", &[&options])?;
+    set(&read(&next, "userData")?, "invalidate", invalidate)?;
+    set(&next, "visible", &JsValue::FALSE)?;
+    method(&get(record, "scene"), "add", &[&next])?;
+    Ok(next)
+}
+
+/// The linked plant takes the place of the one shown, which goes; it is measured when it is first drawn.
+fn plant_swap(record: &JsValue, previous: &JsValue, next: &JsValue, selection: &JsValue) -> R<()> {
+    if truthy(previous) {
+        method(&get(record, "scene"), "remove", &[previous])?;
+        method(&read(previous, "userData")?, "dispose", &[])?;
+    }
+    set(next, "visible", &JsValue::TRUE)?;
+    set(record, "size", &JsValue::NULL)?;
+    set(&read(&get(record, "host"), "dataset")?, "modelCatalogId", &read(selection, "catalogId")?)
 }
 
 // ---- The cabinet studio's model (formerly `make`, `walnutMaterials`, `removeModel` and `release` of
