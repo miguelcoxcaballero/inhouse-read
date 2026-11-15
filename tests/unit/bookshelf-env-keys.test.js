@@ -35,26 +35,35 @@ function replace(env,name,descriptor){
 
 describe('the names the shelf\'s parts call other modules by',()=>{
  it('are read from the table at every call: an entry replaced after the shelf was built is the one called',()=>{
-  const env=mount(),original=env.normalizeBookAuthor,authors=[];
+  const env=mount(),original=env.bookmarkFor,authors=[];
   expect(typeof original).toBe('function');
-  replace(env,'normalizeBookAuthor',{writable:true,value:(...args)=>{authors.push(args[0]);return original(...args);}});
+  replace(env,'bookmarkFor',{writable:true,value:(...args)=>{authors.push(args[0]?.author);return original(...args);}});
   shelf.refresh(books(5));
   expect(authors.length).toBeGreaterThan(0);expect(authors).toContain('Autora 4');
   const calls=authors.length;
-  replace(env,'normalizeBookAuthor',{writable:true,value:original});
+  replace(env,'bookmarkFor',{writable:true,value:original});
   shelf.refresh(books(6));
   expect(authors.length).toBe(calls);
  });
  it('still run a getter of the table at each call',()=>{
-  const env=mount(),original=env.normalizeBookAuthor;let reads=0;const authors=[];
-  replace(env,'normalizeBookAuthor',{get(){reads++;return(...args)=>{authors.push(args[0]);return original(...args);};}});
+  const env=mount(),original=env.bookmarkFor;let reads=0;const authors=[];
+  replace(env,'bookmarkFor',{get(){reads++;return(...args)=>{authors.push(args[0]?.author);return original(...args);};}});
   shelf.refresh(books(4));
   expect(reads).toBeGreaterThan(0);expect(authors).toContain('Autora 3');expect(reads).toBe(authors.length);
  });
  it('report an entry that is gone as the call that failed, by its name',()=>{
   const env=mount();
-  replace(env,'normalizeBookAuthor',{writable:true,value:undefined});
-  expect(()=>shelf.refresh(books(5))).toThrow(/normalizeBookAuthor is not a function/);
+  replace(env,'bookmarkFor',{writable:true,value:undefined});
+  expect(()=>shelf.refresh(books(5))).toThrow(/bookmarkFor is not a function/);
+ });
+ it('do not include what the shelf module has itself: titles, authors, finishes, saved positions and return keys are called inside it',()=>{
+  const env=mount(4);
+  for(const name of ['displayBookTitle','normalizeBookAuthor','spineFinish','persistablePosition','bookReturnSignature','bookReturnCompatibility','minimumBookCellWidth'])expect(name in env,name).toBe(false);
+  // The spines still carry the cleaned author and the title's label.
+  const authors=[...container.querySelectorAll('.ihr-spine__author')].map(node=>node.textContent);
+  expect(authors).toEqual(expect.arrayContaining(['Autora 0','Autora 3']));
+  shelf.refresh(books(4).map(book=>({...book,author:'  ana   maría  '})));
+  expect([...container.querySelectorAll('.ihr-spine__author')].map(node=>node.textContent)).toContain(module.book_normalize_author('  ana   maría  '));
  });
  it('are freed with the shelf: mounting and destroying shelves leaves no handle in the module',async()=>{
   // A shelf's own late work (fonts, covers, idle tasks) lets go of its handles a little after it is destroyed.
