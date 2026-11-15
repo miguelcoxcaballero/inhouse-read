@@ -1,3 +1,10 @@
+# 1.7.335 — regla de decoración con el toque corregido y cuatro unidades más (tanda integ-bar-14)
+
+- Unitarias: cuatro tandas; 9324 pasan, 5 omitidas, 1 fallo en bookshelf-scene-solver-columns (referencia de prueba sin el tipo .5), corregido y repetido en verde solo ese archivo, no la tanda entera.
+- Capturas frente a la 1.7.333: 26 estados, 16 idénticos bit a bit, máximo 1/255. PASA.
+- Navegador, en local: 117 pasan de 124 ejecutadas (38 omitidas). Pasan animation-continuity:194, smoke:540, shelf-decor-free-slots y las cuatro pruebas de portadas editadas a ciegas. Fallan lamp-switches:136 (ya roja en CI), cinco de voces reales por faltar los modelos en esta máquina (se comprueban en CI) y live-room-sync:11 una vez; repetida, pasa 2 de 2.
+- Sin verificar: teléfono real y WebView de Android; lector de pantalla; todas las cifras de velocidad son de Node/WASM.
+
 # 1.7.334 — retirada de la regla de decoración y siete bloques de migración (tanda integ-bar-13)
 
 - Unitarias: cuatro tandas, 668 archivos pasan y 2 omitidos; 9268 pruebas pasan, 5 omitidas, 0 fallos.

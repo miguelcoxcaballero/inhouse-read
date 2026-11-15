@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.7.335 — Vuelve la regla de macetas y lámparas, con el toque arreglado
+
+Vuelve la regla de la 1.7.333: un libro que nunca has colocado a mano no cae
+contra una maceta o una lámpara. El fallo que obligó a retirarla no era de la
+regla, sino del toque: un deslizamiento que empezaba sobre un libro podía
+hacer que el siguiente toque sobre ese libro se perdiera. Está corregido. Por
+dentro, más código de la escena, las portadas, el arranque y los lectores pasa
+a Rust (estimación local: 75,9 % Rust).
+
 ## 1.7.334 — Se retira la regla de macetas y lámparas
 
 La 1.7.333 hacía que un libro no colocado a mano no cayera contra una maceta o

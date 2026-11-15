@@ -1,3 +1,15 @@
+# Entrega 1.7.335 (tanda integ-bar-14): regla de decoración con el toque corregido y cuatro unidades más
+
+Ramas: ready/shelf-physics-1 (692eb09b), ready/scene-frame-27 (990db639), ready/book-model-19 (53d50ffe), ready/decor-shell-15 (e81fad50), ready/readers-voice-19 (105e318c).
+Barra estimada en local (bytes al estilo de GitHub): 75,91 % Rust; quedan unos 847 KB de JavaScript (1.7.334: 75,44 %, 863 KB).
+
+- Física y toque: se reaplican sin cambios a9a7b6c3 y 4d9d2dc1. La causa de animation-continuity:194 estaba en rust-ui/src/bookshelf/screen_nodes.rs: la marca «ignora el clic de compatibilidad de este toque» no caducaba si el toque acababa en deslizamiento sin clic, y se tragaba el clic siguiente redirigido a ese libro. Ahora la marca solo vale dentro del gesto que la puso. El libro tumbado al final de una fila con un lado abierto ya ocurría sin la regla y no cambia.
+- scene-frame (−3,2 KB): scene_census.rs still/settleLifts, scene_layout.rs, scene_begin.rs; las nueve columnas del solver por entrada se escriben al cambiar tamaño, registro o agarre y no en cada fotograma. Medido en Node: primer bucle con cuerpos rígidos 9,86 → 4,42 µs con 300 entradas; números de disposición del fotograma 3,29 → 1,35 µs. hasOngoingMotion queda igual dentro del ruido (0,03 µs más lento con 40 entradas).
+- book-model (−3,7 KB): se borra font-glyph-wasm.js; font_planes.rs llama a los núcleos de forma nativa. Los enlaces generados crecen 4,1 KB y el wasm 7,9 KB: crece más lo generado que lo que baja el JavaScript propio. Dos comprobaciones se relajan: cover-font-readiness y el recuento de font_prepare_pixels en cover-glyph-production.
+- decor-shell (−2,5 KB): 1,7 KB son exportaciones que solo usaban las pruebas (no es código portado); app_report.rs y title_memo.rs. El refresco con títulos nunca vistos en una página ya caliente es un 4-12 % más lento; el refresco habitual, unas 9 veces más rápido (Node).
+- readers-voice (−6,4 KB): experience_shell.rs, picker_shell.rs, voice_shell.rs, client_prepare.rs.
+- Integración: la referencia de tests/unit/bookshelf-scene-solver-columns.test.js incorpora el tipo .5 de la regla.
+
 # Entrega 1.7.334 (tanda integ-bar-13): retirada de la regla de decoración y siete bloques de migración
 
 Ramas: ready/scene-frame-24 (6ae7bb3f), ready/book-model-18 (f2868ab2), ready/readers-voice-16 (fb95e3a6), ready/decor-shell-12 (3fb164cf).
