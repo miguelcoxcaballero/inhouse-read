@@ -27,6 +27,12 @@ test('a synced desktop room accepts local drag, interrupted capture and opening'
   const a=await aContext.newPage();await seedShelf(a,{single:true});await drive.connect(aContext);await a.reload();
   await expect.poll(()=>drive.manifests().some(m=>m.books.length===1),{timeout:30000}).toBe(true);
   const bContext=await browser.newContext({viewport:{width:1240,height:900}});contexts.push(bContext);await drive.connect(bContext);
+  // The second client opens in the view the room is kept in, as the first one does (seedShelf). Left on the default front
+  // view it first turns its camera to the synced diagonal one and shows the synced book only when that turn ends; the
+  // turn advances at most 50 ms per rendered frame, so it is fourteen or more frames whatever they cost: 0.7 s on a GPU,
+  // 18 s of this 1240x900 canvas in software WebGL (first spine at 27-31 s, against 10-13 s without the turn; 1.7.328
+  // and 1.7.339 alike). This case is about pointer input in the synced room, not about that turn.
+  await bContext.addInitScript(()=>{if(/^https?:$/.test(location.protocol))localStorage.setItem('inhouse-read-shelf-view','isometric')});
   const b=await bContext.newPage();b.on('pageerror',e=>errors.push(e.message));
   await b.goto(process.env.IHR_TEST_URL||'/inhouse-read/');await expect(b.locator('.ihr-spine')).toHaveCount(1,{timeout:SYNCED_FIRST_SHELF});
   await quietShelf(b.locator('.ihr-bookshelf-scene'));
