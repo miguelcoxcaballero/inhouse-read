@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { getCatalogLamp } from '../../../src/js/lamp-catalog-data.js';
-import { lampTint, normalizeLampKelvin, tintColor } from '../../../src/js/lamp-kelvin.js';
+import { lampTint, normalizeLampKelvin } from '../../../src/js/lamp-kelvin.js';
+import { tintColor } from './reference-lamp-tint.js';
 import { addShelfBakeSource, savedSurface, scheduleShelfBakeWrite } from '../../../src/js/shelf-bake-cache.js';
 
 const UP = new THREE.Vector3(0,1,0);

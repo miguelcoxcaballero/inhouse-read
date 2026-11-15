@@ -7,7 +7,7 @@
 // announces a change to the next update, and with `preparedEntries` the entries are those of the last `prepare` (the
 // shelf scene scans its entries when the layout changes, not on every frame).
 import * as THREE from 'three';
-import { tintColor } from '../../../src/js/lamp-kelvin.js';
+import { tintColor } from './reference-lamp-tint.js';
 import { getCatalogLamp } from '../../../src/js/lamp-catalog-data.js';
 
 // Every lamp a library holds gets its own light up to this many: a lamp

@@ -1,5 +1,6 @@
 mod room_motion;
 mod progress_queue;
+mod refresh_queue;
 mod profile_view;
 // The live shelf's pointer controllers. Everything here runs from the first frame on, so
 // the module is fetched and compiled with the page head and awaited before the shelf is drawn.
@@ -12,6 +13,7 @@ mod shelf_models;
 mod shelf_catalog;
 mod catalog_studio;
 mod catalog_lamp;
+mod studio_tint;
 mod studio_environment;
 mod shelf_light_rig;
 mod bookshelf_return;

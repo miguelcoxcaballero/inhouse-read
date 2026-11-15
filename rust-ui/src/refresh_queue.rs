@@ -42,14 +42,32 @@ impl State{
   let promise=Promise::new(&mut|yes,no|self.pending.borrow_mut().push(Waiter{yes,no}));
   if urgent{self.immediate.set(true);self.ready.set(true);self.clear_timer()?;}
   else if !self.ready.get()&&self.timer.borrow().is_none(){
-   let state=self.clone();let callback=Closure::wrap(Box::new(move||{
-    state.timer.borrow_mut().take();state.timer_callback.borrow_mut().take();state.ready.set(true);
-    if let Err(error)=state.start(){wasm_bindgen::throw_val(error)}
-   })as Box<dyn FnMut()>);
-   let id=self.set.call2(&JsValue::UNDEFINED,callback.as_ref(),&self.delay)?;
-   *self.timer.borrow_mut()=Some(id);*self.timer_callback.borrow_mut()=Some(callback);
+   self.arm(&self.delay)?;
   }
   self.start()?;Ok(promise)
+ }
+ // The timer of a background request, `wait` after now: what the request has not waited yet.
+ fn arm(self:&Rc<Self>,wait:&JsValue)->Result<(),JsValue>{
+  let state=self.clone();let callback=Closure::wrap(Box::new(move||{
+   state.timer.borrow_mut().take();state.timer_callback.borrow_mut().take();state.ready.set(true);
+   if let Err(error)=state.start(){wasm_bindgen::throw_val(error)}
+  })as Box<dyn FnMut()>);
+  let id=self.set.call2(&JsValue::UNDEFINED,callback.as_ref(),wait)?;
+  *self.timer.borrow_mut()=Some(id);*self.timer_callback.borrow_mut()=Some(callback);Ok(())
+ }
+ // What the page asked before this module was in (`{yes,no,urgent,at}` each, in order) and whether its first
+ // read is still running: every request is taken as when it was made, its deadline included.
+ fn adopt(self:&Rc<Self>,running:bool,early:&js_sys::Array,now:f64)->Result<(),JsValue>{
+  let delay=self.delay.as_f64();
+  for request in early.iter(){
+   self.pending.borrow_mut().push(Waiter{yes:crate::host::get(&request,"yes").unchecked_into(),no:crate::host::get(&request,"no").unchecked_into()});
+   if crate::host::get(&request,"urgent").is_truthy(){self.immediate.set(true);self.ready.set(true);self.clear_timer()?;}
+   else if !self.ready.get()&&self.timer.borrow().is_none(){
+    let waited=now-crate::host::get(&request,"at").as_f64().unwrap_or(now);
+    match delay{Some(delay) if waited>=delay=>self.ready.set(true),Some(delay) if waited>0.0=>self.arm(&(delay-waited).into())?,_=>self.arm(&self.delay)?}
+   }
+  }
+  self.running.set(running);self.start()
  }
  fn dispose(&self)->Result<(),JsValue>{
   if self.disposed.replace(true){return Ok(())}
@@ -65,5 +83,8 @@ impl RustShelfRefreshQueue{
  pub fn new(perform:Function,delay:JsValue,set:Function,clear:Function)->Self{Self{state:Rc::new(State{perform,delay,set,clear,timer:RefCell::new(None),timer_callback:RefCell::new(None),callbacks:RefCell::new(None),pending:RefCell::new(Vec::new()),running:Cell::new(false),disposed:Cell::new(false),ready:Cell::new(false),immediate:Cell::new(false)})}}
  pub fn request(&self,urgent:bool)->Result<Promise,JsValue>{self.state.request(urgent)}
  pub fn idle(&self)->bool{!self.state.running.get()&&self.state.pending.borrow().is_empty()&&self.state.timer.borrow().is_none()}
+ pub fn adopt(&self,running:bool,early:&js_sys::Array,now:f64)->Result<(),JsValue>{self.state.adopt(running,early,now)}
+ /// The read this queue took over while it ran has finished.
+ pub fn resume(&self)->Result<(),JsValue>{self.state.running.set(false);self.state.start()}
  pub fn dispose(&self)->Result<(),JsValue>{self.state.dispose()}
 }

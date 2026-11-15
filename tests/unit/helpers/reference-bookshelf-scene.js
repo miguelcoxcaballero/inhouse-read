@@ -15,7 +15,8 @@ import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from '../../.
 import { createShelfFurniture, createShelfOcclusion } from '../../../src/js/shelf-furniture.js';
 import { createShelfPlant } from '../../../src/js/shelf-plants.js';
 import { createShelfLamp } from '../../../src/js/shelf-lamps.js';
-import { createTintTransition, lampTint } from '../../../src/js/lamp-kelvin.js';
+import { lampTint } from '../../../src/js/lamp-kelvin.js';
+import { createTintTransition } from './reference-lamp-tint.js';
 import { createShelfLighting, widePenumbra } from '../../../src/js/shelf-lighting.js';
 import { createShelfLampLighting } from '../../../src/js/shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from '../../../src/js/shelf-trash.js';

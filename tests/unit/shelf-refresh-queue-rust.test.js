@@ -1,13 +1,13 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import {readFileSync} from 'node:fs'
-import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
+import {rustShelf as ui} from './helpers/rust-shelf-ready.js'
 const queues=[]
-beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+let baseline=0
+beforeAll(()=>{baseline=ui.shelf_live_handles()})
 function createShelfRefreshQueue({perform,delay=80,setTimer=(callback,ms)=>setTimeout(callback,ms),clearTimer=id=>clearTimeout(id)}){
  const native=new ui.RustShelfRefreshQueue(perform,delay,setTimer,clearTimer);queues.push(native)
  return {request({immediate=false}={}){const p=native.request(!!immediate);p.catch(()=>{});return p},dispose(){native.dispose()}}
 }
-afterEach(async()=>{for(const queue of queues.splice(0)){queue.dispose();queue.free()}await tick();expect(ui.ui_live_handles()).toBe(0)})
+afterEach(async()=>{for(const queue of queues.splice(0)){queue.dispose();queue.free()}await tick();expect(ui.shelf_live_handles()).toBe(baseline)})
 
 const deferred = () => {
   let resolve, reject;

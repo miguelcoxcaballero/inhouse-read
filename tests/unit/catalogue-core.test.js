@@ -17,6 +17,8 @@ import * as referenceCatalog from './helpers/reference-plant-catalog-data.js';
 import * as referenceRecords from './helpers/reference-plant-records.js';
 import * as referenceLamps from './helpers/reference-lamp-catalog-data.js';
 import * as referenceKelvin from './helpers/reference-lamp-kelvin.js';
+import * as frozenTint from './helpers/reference-lamp-tint.js';
+import { rustShelf } from './helpers/rust-shelf-ready.js';
 
 const seeded = seed => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 const rng = seeded(7777);
@@ -166,29 +168,51 @@ describe('lamp colour temperature', () => {
     const base = [.3, 1.2, 0.7], target = [1, .1, 2.4];
     for (let n = 0; n < 5000; n++) {
       const amount = n % 50 === 0 ? [0, 1, .5, -1, 2, NaN][n % 6] : rng() * 1.4 - .2;
-      const actual = kelvin.mixTint(base, target, amount), expected = referenceKelvin.mixTint(base, target, amount);
+      const actual = frozenTint.mixTint(base, target, amount), expected = referenceKelvin.mixTint(base, target, amount);
       for (let channel = 0; channel < 3; channel++) sameNumber(actual[channel], expected[channel]);
     }
     const color = { r: .5, g: .25, b: 2 }, again = { ...color };
-    expect(kelvin.tintColor(color, [1, 2, 3])).toStrictEqual(referenceKelvin.tintColor(again, [1, 2, 3]));
+    expect(frozenTint.tintColor(color, [1, 2, 3])).toStrictEqual(referenceKelvin.tintColor(again, [1, 2, 3]));
   });
 
   it('runs a temperature change in flight exactly like the original', () => {
+    // The studio's transition is rust-ui/src/studio_tint.rs; the original is the JavaScript one, with the
+    // studio's own "is this the tint already applied" text comparison around it.
+    const table = [kelvin.DEFAULT_LAMP_KELVIN, ...kelvin.LAMP_KELVINS.flatMap(value => [value, ...kelvin.lampTint(value)])];
+    let sets = 0, eased = 0, applied = 0, rebuilt = 0, rests = 0;
     for (let round = 0; round < 400; round++) {
-      const first = pick(), actual = kelvin.createTintTransition(first), expected = referenceKelvin.createTintTransition(first);
-      let now = rng() * 1000;
+      const actual = new Float64Array(18), expected = referenceKelvin.createTintTransition(kelvin.DEFAULT_LAMP_KELVIN);
+      const set = (next, at, animate) => rustShelf.studio_tint_set(actual, table, kelvin.LAMP_KELVIN_MS, Number(next), at, animate);
+      expect(set(kelvin.DEFAULT_LAMP_KELVIN, 0, false)).toBe(false);
+      let now = rng() * 1000, shown = '';
+      // What the studio does when it applies a tint (src/js/lamp-catalog-preview.js applyTint).
+      const apply = () => {
+        shown = expected.state.value.join(); applied++;
+        actual.copyWithin(12, 7, 10); actual[15] = 0;
+      };
+      const same = () => {
+        for (const [key, at] of [['from', 1], ['to', 4], ['value', 7]]) for (let channel = 0; channel < 3; channel++) sameNumber(actual[at + channel], expected.state[key][channel]);
+        expect(actual[0]).toBe(expected.state.kelvin);
+      };
+      same(); apply();
       for (let step = 0; step < 40; step++) {
         if (rng() < .25) {
           const next = pick(), animate = rng() < .7;
-          expect(actual.set(next, now, animate)).toBe(expected.set(next, now, animate));
+          expect(set(next, now, animate)).toBe(expected.set(next, now, animate)); sets++; same();
         }
+        // A new model of the same lamp: nothing is shown on it yet.
+        if (rng() < .05) { actual[15] = actual[17] = 1; shown = ''; rebuilt++; if (rng() < .5) apply(); }
         now += rng() < .1 ? 0 : rng() * 140;
-        expect(actual.advance(now)).toBe(expected.advance(now));
-        expect(actual.moving()).toBe(expected.moving());
-        for (const key of ['from', 'to', 'value']) for (let channel = 0; channel < 3; channel++) sameNumber(actual.state[key][channel], expected.state[key][channel]);
-        expect(actual.state.kelvin).toBe(expected.state.kelvin);
+        const tinting = expected.advance(now), changed = expected.state.value.join() !== shown;
+        // The studio asks for a frame only while the transition says it has something to do.
+        const idle = actual[17] === 0; if (idle) rests++;
+        expect(idle ? 0 : rustShelf.studio_tint_step(actual, now)).toBe((tinting ? 1 : 0) | (changed ? 2 : 0));
+        same();
+        if (tinting) eased++;
+        if (changed) apply();
       }
     }
+    expect(sets).toBeGreaterThan(3000); expect(eased).toBeGreaterThan(1000); expect(applied).toBeGreaterThan(2000); expect(rebuilt).toBeGreaterThan(400); expect(rests).toBeGreaterThan(2000);
     function pick() { return [1800, 2200, 2700, 4000, '4000', 3000, undefined][Math.floor(rng() * 7)]; }
   }, 60000);
 });
@@ -235,7 +259,7 @@ describe('catalogue kernels', () => {
   it('keeps memory and the scratch arena stable over many calls', () => {
     for (let n = 0; n < 200; n++) { kelvin.lampTint(1800); kelvin.kelvinToLinearRgb(3000 + n); dimensions.bookSpineOptions(300 + n); }
     const size = decor.core.memory.buffer.byteLength;
-    for (let n = 0; n < 50000; n++) { kelvin.kelvinToLinearRgb(2000 + n % 9000); dimensions.bookSpineOptions(300 + n % 400); kelvin.mixTint([0, 0, 0], [1, 1, 1], n / 50000); }
+    for (let n = 0; n < 50000; n++) { kelvin.kelvinToLinearRgb(2000 + n % 9000); dimensions.bookSpineOptions(300 + n % 400); frozenTint.mixTint([0, 0, 0], [1, 1, 1], n / 50000); }
     expect(decor.core.memory.buffer.byteLength).toBe(size);
   });
 });
