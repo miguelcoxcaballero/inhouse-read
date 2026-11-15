@@ -3,7 +3,8 @@
 // (helpers/reference-book-view-wasm.js): every answer, the write-backs and the lazy measurement, number for number.
 import { describe, expect, it } from 'vitest';
 import './helpers/rust-core-ready.js';
-import * as production from '../../src/js/book-view-wasm.js';
+import * as planner from '../../src/js/book-view-wasm.js';
+import { planBookView, planPageBounds, planPageZoom } from './helpers/book-view-plans.js';
 import * as frozen from './helpers/reference-book-view-wasm.js';
 
 let seed = 20261113;
@@ -24,6 +25,8 @@ const exact = (actual, expected, label) => {
     for (const key of keys) exact(actual[key], expected[key], label + '.' + key);
   } else if (!Object.is(actual, expected)) expect.fail(`${label}: ${actual} vs ${expected}`);
 };
+// The three plans the module asks of itself are reached through its arena (helpers/book-view-plans.js).
+const production = { ...planner, planBookView, planPageBounds, planPageZoom };
 const both = (label, run) => exact(run(production), run(frozen), label);
 
 describe('the view planner of the shelf module against the frozen bridge to the numeric core', () => {

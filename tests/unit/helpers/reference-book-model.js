@@ -4,8 +4,8 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from '../../../src/js/book-projection.js';
 import {createBookMotionSampler} from '../../../src/js/book-motion.js';
 import { paddedBookFrameSize } from '../../../src/js/book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle, planPageBounds,
-  planPageZoom, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { planBookView, planPageBounds, planPageZoom } from './reference-book-view-wasm.js';
 import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';
 
@@ -29,7 +29,8 @@ import { pageRaster } from '../../../src/js/page-raster.js';
 import { bookmarkFor } from '../../../src/js/bookshelf-layout.js';
 import { applyBookReflectionSurface, rememberedPatch } from './reference-book-reflection-host.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from '../../../src/js/gpu-programs.js';
-import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from '../../../src/js/cover-relief.js';
+import { buildReliefMaps, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from '../../../src/js/cover-relief.js';
+import { composeMaterialMap } from './relief-passes.js';
 import { runInSlices } from '../../../src/js/cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from '../../../src/js/native-renderer-presentation.js';

@@ -1,7 +1,9 @@
 // @vitest-environment node
 import {expect,it} from 'vitest';
 import {rustShelf} from './helpers/rust-shelf-ready.js';
-import {normalizeCoverRelief,coverReliefLayers,fitDimensions,buildMapsFromPixels,drain} from '../../src/js/cover-relief.js';
+import { normalizeCoverRelief, coverReliefLayers } from '../../src/js/cover-relief.js';
+import { fitDimensions } from './helpers/relief-facts.js';
+import { buildMapsFromPixels, drain } from './helpers/relief-passes.js';
 import * as old from './helpers/reference-relief-policy.js';
 const result=fn=>{try{return{value:fn()}}catch(error){return{error:{name:error.name,message:error.message}}}};
 const compare=(value)=>{expect(result(()=>normalizeCoverRelief(value))).toEqual(result(()=>old.normalizeCoverRelief(value)));expect(result(()=>coverReliefLayers(value))).toEqual(result(()=>old.coverReliefLayers(value)));};

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { analyzeCoverRelief, analyzePixels, buildMapsFromPixels, composeMaterialMap, drain,
-  fitDimensions, heightToNormals, MAX_RELIEF_MM, normalizeCoverRelief } from '../../src/js/cover-relief.js';
+import { analyzeCoverRelief, normalizeCoverRelief } from '../../src/js/cover-relief.js';
+import { fitDimensions, MAX_RELIEF_MM } from './helpers/relief-facts.js';
+import { analyzePixels, buildMapsFromPixels, composeMaterialMap, drain, heightToNormals } from './helpers/relief-passes.js';
 // The family detectors and the JavaScript seed have no production caller any more: these
 // fixtures run the frozen originals (tests/unit/helpers/reference-relief-color.js).
 import { internals, seedOf } from './helpers/reference-relief-color.js';

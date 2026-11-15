@@ -46,3 +46,29 @@ pub fn fit(image_width: f64, image_height: f64, width: f64, height: f64) -> [f64
     unsafe { book_view::book_fit_image(io.as_mut_ptr()); }
     [io[4], io[5], io[6], io[7]]
 }
+
+/// A view's sizes (`planBookView`): from shelf flag, device pixel ratio, window width, viewport width and
+/// height, book width, height and thickness, the pixel ratio, the canvas width and height, the open spread's
+/// window width, the closed book's, and their height.
+pub fn sizes(input: [f64; 8]) -> [f64; 6] {
+    let mut io = [0.0; 14];
+    io[..8].copy_from_slice(&input);
+    unsafe { book_view::book_view_plan(io.as_mut_ptr()); }
+    [io[8], io[9], io[10], io[11], io[12], io[13]]
+}
+
+/// Screen bounds of a plane (`planPageBounds`): `io` holds width, height, viewport width and height, offset left
+/// and top, then the world, inverse camera and projection matrices; answers left, top, width, height.
+pub fn page_bounds(io: &mut [f64; 58]) -> [f64; 4] {
+    unsafe { book_view::book_page_bounds(io.as_mut_ptr()); }
+    [io[54], io[55], io[56], io[57]]
+}
+
+/// The pose that lays the page over a target (`planPageZoom`): page bounds, target, offset left and top, centre x
+/// and y, origin x, y and scale; x, y and scale, or nothing when either rectangle has no area.
+pub fn page_zoom(input: [f64; 15]) -> Option<[f64; 3]> {
+    let mut io = [0.0; 19];
+    io[..15].copy_from_slice(&input);
+    if unsafe { book_view::book_page_zoom(io.as_mut_ptr()) } != 1 { return None; }
+    Some([io[16], io[17], io[18]])
+}

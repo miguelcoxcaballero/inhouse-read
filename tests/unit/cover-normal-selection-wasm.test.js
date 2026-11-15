@@ -2,7 +2,7 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { loadRustCore } from '../../src/js/rust-core.js';
-import { heightToNormals } from '../../src/js/cover-relief.js';
+import { heightToNormals } from './helpers/relief-passes.js';
 import { wasmHeightToNormals } from './helpers/reference-cover-relief-wasm.js';
 import { mapsFor, referenceNormals } from '../helpers/cover-relief-reference.mjs';
 const drain = task => { let step; do { step=task.next(); } while(!step.done); return step.value; };

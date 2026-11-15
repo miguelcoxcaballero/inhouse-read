@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const runtime=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>runtime.core,loadRustCore:async()=>runtime.core,loadedRustCore:()=>runtime.core,requireRustCore:async()=>runtime.core}));
-import {analyzePixels} from '../../src/js/cover-relief.js';
+import { analyzePixels } from './helpers/relief-passes.js';
 import {needRustShelf} from '../../src/js/rust-shelf.js';
 import {analyzePixels as original} from './helpers/reference-relief-palette.js';
 import {reliefPaletteCases,makeReliefPaletteImage,drainPalette} from '../helpers/relief-palette-cases.mjs';

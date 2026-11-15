@@ -7,7 +7,7 @@ vi.mock('../../src/js/rust-core.js',async original=>{
 });
 import { loadRustCore } from '../../src/js/rust-core.js';
 import { prepareColorMaskJob } from './helpers/reference-color-mask-bridge.js';
-import * as production from '../../src/js/cover-relief.js';
+import * as production from './helpers/relief-passes.js';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
 const shelf=needRustShelf();
 import * as frozen from './helpers/reference-relief-color.js';

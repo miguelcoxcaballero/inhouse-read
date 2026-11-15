@@ -9,7 +9,7 @@ import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
 import {prepareColorMaskJob} from '/inhouse-read/tests/unit/helpers/reference-color-mask-bridge.js';
 import * as original from '/inhouse-read/tests/unit/helpers/reference-relief-color.js';
 import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
-import * as production from '/inhouse-read/src/js/cover-relief.js';
+import * as production from '/inhouse-read/tests/unit/helpers/relief-passes.js';
 import {needRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {makeColorMaskImage,colorMaskSelection} from '/inhouse-read/tests/helpers/color-mask-cases.mjs';
 const core=await loadRustCore();if(!core?.relief_color_mask_pixels)throw new Error('Actual compiled color-mask kernel required');

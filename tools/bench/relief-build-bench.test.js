@@ -6,7 +6,7 @@
 //   cp tools/bench/relief-build-bench.test.js tests/unit/zz-relief-build-bench.test.js
 //   npx vitest run tests/unit/zz-relief-build-bench.test.js && rm tests/unit/zz-relief-build-bench.test.js
 import { it } from 'vitest';
-import * as production from '../../src/js/cover-relief.js';
+import * as production from './helpers/relief-passes.js';
 import * as frozen from './helpers/reference-cover-relief-flow.js';
 import { makeColorMaskImage, colorMaskSelection } from '../helpers/color-mask-cases.mjs';
 

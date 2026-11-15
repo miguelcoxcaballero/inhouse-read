@@ -5,24 +5,15 @@ import { needRustShelf } from './rust-shelf.js';
 // rust-ui/src/book_view_plan.rs). The host measures (matrices, bounds, objects); the numbers and decisions come
 // back from Rust. One arena of the module's memory is used for the life of the page: every kernel has its own
 // region, so a measurement taken in the middle of a plan cannot overwrite the plan's inputs. The view over the
-// arena is remade only when the module's memory has grown.
-const REGION = { plan: 0, frame: 16, copy: 50, pose: 70, fit: 94, corners: 102, page: 213, zoom: 271, reading: 290 };
+// arena is remade only when the module's memory has grown. A view's sizes, its page's bounds and the zoom onto
+// the reader's page are asked for by the module itself (rust-ui/src/book_view_host.rs) and have no wrapper here.
+const REGION = { frame: 16, copy: 50, pose: 70, fit: 94, corners: 102, reading: 290 };
 let rust, memory, buffer, numbers;
 /** The arena as it is now. */
 function view() {
   if (!rust) { rust = needRustShelf(); memory = rust.book_mesh_memory(); }
   if (buffer !== memory.buffer) { buffer = memory.buffer; numbers = new Float64Array(buffer, rust.book_view_arena(), 304); }
   return numbers;
-}
-
-/** Pixel ratio and the sizes of a view's canvas and compact windows. */
-export function planBookView({ shelf, devicePixelRatio, innerWidth, viewportWidth, viewportHeight, width, height, thickness }) {
-  view().set([shelf ? 1 : 0, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, innerWidth, viewportWidth, viewportHeight,
-    width, height, thickness], REGION.plan);
-  rust.book_view_run(REGION.plan);
-  const out = view();
-  return { pixelRatio: out[REGION.plan + 8], canvasWidth: out[REGION.plan + 9], canvasHeight: out[REGION.plan + 10],
-    compactWidth: out[REGION.plan + 11], closedCompactWidth: out[REGION.plan + 12], compactHeight: out[REGION.plan + 13] };
 }
 
 /** Whether the viewport, the frame and the pixel ratio all fall on whole physical pixels. Seven numbers in, one flag
@@ -101,26 +92,6 @@ export function fitImage(imageWidth, imageHeight, width, height) {
   rust.book_view_run(base);
   const out = view();
   return { x: out[base + 4], y: out[base + 5], width: out[base + 6], height: out[base + 7] };
-}
-
-/** Screen bounds of a plane, as { left, top, width, height }. */
-export function planPageBounds(width, height, viewportWidth, viewportHeight, offset, world, camera) {
-  const v = view(), base = REGION.page;
-  v.set([width, height, viewportWidth, viewportHeight, offset.left, offset.top], base);
-  v.set(world, base + 6); v.set(camera.matrixWorldInverse.elements, base + 22); v.set(camera.projectionMatrix.elements, base + 38);
-  rust.book_view_run(base);
-  const out = view();
-  return { left: out[base + 54], top: out[base + 55], width: out[base + 56], height: out[base + 57] };
-}
-
-/** The pose that lays the page over `target` in the reader, or null when either has no area. */
-export function planPageZoom(bounds, target, offset, centerX, centerY, origin) {
-  const base = REGION.zoom;
-  view().set([bounds.left, bounds.top, bounds.width, bounds.height, target?.left, target?.top, target?.width, target?.height,
-    offset.left, offset.top, centerX, centerY, origin.x, origin.y, origin.scale], base);
-  if (rust.book_view_run(base) !== 1) return null;
-  const out = view();
-  return { x: out[base + 16], y: out[base + 17], scale: out[base + 18] };
 }
 
 /** The pose of a book opened flat with its whole spread in view. */

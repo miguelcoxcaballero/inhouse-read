@@ -4,7 +4,7 @@ import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 import {wasmReliefRgbaPlanes} from './helpers/reference-cover-relief-wasm.js';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core,loadedRustCore:()=>state.core,requireRustCore:async()=>state.core}));
-import {reliefPlanesToRgba} from '../../src/js/cover-relief.js';
+import { reliefPlanesToRgba } from './helpers/relief-facts.js';
 let core;
 afterEach(()=>{state.core=core;});
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.relief_rgba_planes).toBe('function');});

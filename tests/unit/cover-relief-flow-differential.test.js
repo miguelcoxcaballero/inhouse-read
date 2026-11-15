@@ -8,6 +8,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 //
 // The slice driver is replaced by one that pauses every second step on a microtask, so a run is the same
 // sequence of promise jobs every time; the clock is a counter.
+//
+// The passes too: production makes and steps each job of rust-ui/src/relief_job.rs itself and hands the slice
+// driver a task (`{ next }`), where the frozen copy drives its generators `run` and `abortable`. Each look at
+// the signal after a step is in the log, and so are the numbers the driver's slices leave in the report.
 vi.mock('../../src/js/cover-appearance.js', async original => ({ ...(await original()),
   runInSlices: async (task, _budget, onSlice) => {
     let steps = 0
@@ -18,6 +22,7 @@ vi.mock('../../src/js/cover-appearance.js', async original => ({ ...(await origi
   } }))
 
 const production = await import('../../src/js/cover-relief.js')
+const { needRustShelf } = await import('../../src/js/rust-shelf.js')
 const frozen = await import('./helpers/reference-cover-relief-flow.js')
 
 const hash = view => { let value = 2166136261; const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength); for (let i = 0; i < bytes.length; i++) value = Math.imul(value ^ bytes[i], 16777619); return value >>> 0 }
@@ -124,7 +129,8 @@ async function play(module, script, act) {
     if (outcome) quiet++
     await null
   }
-  const left = { timers:world.timers.size, listeners:world.lastSignal?.listeners.size ?? 0 }
+  // A pass's job is freed when it ends, fails or is cancelled: none outlives its flow.
+  const left = { timers:world.timers.size, listeners:world.lastSignal?.listeners.size ?? 0, jobs:needRustShelf().relief_jobs_live() }
   vi.unstubAllGlobals(); vi.restoreAllMocks()
   return { log:world.log, outcome, left }
 }
@@ -199,7 +205,7 @@ describe('buildReliefMaps', () => {
     const { outcome, left } = await compare({ decode:generation < 3 ? 'never' : undefined, at:{ [generation]:world => world.lastSignal.abort() } },
       (module, world) => module.buildReliefMaps('cover.jpg', layered, { maxSize:64, signal:world.signal() }))
     if (generation < 9) expect(outcome[0]).toBe('rejected')
-    expect(left).toEqual({ timers:0, listeners:0 })
+    expect(left).toEqual({ timers:0, listeners:0, jobs:0 })
   })
   it('keeps two concurrent builds in the same order', async () => {
     const { outcome } = await compare({}, module => Promise.all([module.buildReliefMaps('a.jpg', single, { maxSize:64 }),

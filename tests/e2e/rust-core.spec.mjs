@@ -12,7 +12,7 @@ import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
 import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers } from '/inhouse-read/tests/unit/helpers/reference-cover-relief-wasm.js';
 import { wasmInsideDistance, wasmBoxBlur } from '/inhouse-read/tests/unit/helpers/reference-relief-bridge.js';
 import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
-import { heightToNormals, composeMaterialMap, composeReliefLayerPixels } from '/inhouse-read/src/js/cover-relief.js';
+import { heightToNormals, composeMaterialMap, composeReliefLayerPixels } from '/inhouse-read/tests/unit/helpers/relief-passes.js';
 import { referenceDistance, referenceBlur, referenceNormals, referenceMaterial, referenceCompose,
   materialCoefficients, layers, mapsFor } from '/inhouse-read/tests/helpers/cover-relief-reference.mjs';
 const started = performance.now();

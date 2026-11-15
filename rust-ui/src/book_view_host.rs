@@ -129,13 +129,13 @@ pub fn book_view_create(environment:&JsValue,node:&JsValue,book:&JsValue,style:&
  // Shelf books are static snapshots. Keep their framebuffer modest on phones
  // so a long library does not retain a pile of high-DPI canvases in memory.
  let global=crate::host::global();
- let sizes=call(environment,"plan",&[&object(&[("shelf",shelf.clone()),("devicePixelRatio",get(&global,"devicePixelRatio")),
-  ("innerWidth",read(&read(&global,"window")?,"innerWidth")?),("viewportWidth",viewport_width.clone()),("viewportHeight",viewport_height.clone()),
-  ("width",width.clone()),("height",height.clone()),("thickness",thickness.clone())])?])?;
- let pixel_ratio=read(&sizes,"pixelRatio")?;
+ // `typeof devicePixelRatio === 'number' ? devicePixelRatio : 1`; the sizes are the numeric core's.
+ let sizes=crate::book_view_plan::sizes([if truthy(&shelf){1.0}else{0.0},get(&global,"devicePixelRatio").as_f64().unwrap_or(1.0),
+  num(&read(&read(&global,"window")?,"innerWidth")?),num(&viewport_width),num(&viewport_height),num(&width),num(&height),num(&thickness)]);
+ let pixel_ratio=n(sizes[0]);
  let canvas=call(&read(&global,"document")?,"createElement",&[&word("canvas")])?;
  put(&canvas,"className",&word("ihr-book-canvas"))?;call(&canvas,"setAttribute",&[&word("aria-hidden"),&word("true")])?;
- put(&canvas,"width",&read(&sizes,"canvasWidth")?)?;put(&canvas,"height",&read(&sizes,"canvasHeight")?)?;
+ put(&canvas,"width",&n(sizes[1]))?;put(&canvas,"height",&n(sizes[2]))?;
  call(node,"append",&[&canvas])?;let context=call(&canvas,"getContext",&[&word("2d")])?;
  let three=read(environment,"three")?;
  let scene=call(environment,"light",&[&Reflect::construct(read(&three,"Scene")?.unchecked_ref(),&Array::new())?,&gpu])?;
@@ -164,7 +164,7 @@ pub fn book_view_create(environment:&JsValue,node:&JsValue,book:&JsValue,style:&
  put(&v,"compactBox",&Reflect::construct(read(&three,"Box3")?.unchecked_ref(),&Array::new())?)?;
  put(&v,"compactPoint",&Reflect::construct(read(&three,"Vector3")?.unchecked_ref(),&Array::new())?)?;
  put(&v,"projectionPacket",&call(environment,"packet",&[])?)?;
- for key in["compactWidth","closedCompactWidth","compactHeight"]{put(&v,key,&read(&sizes,key)?)?;}
+ for(key,value)in[("compactWidth",sizes[3]),("closedCompactWidth",sizes[4]),("compactHeight",sizes[5])]{put(&v,key,&n(value))?;}
  for(key,value)in[("copiedRectangle",JsValue::NULL),("displayedFrame",JsValue::NULL),("snapshotDirty",JsValue::FALSE),("live",JsValue::FALSE),
   ("suspendedHost",JsValue::NULL),("displayedPose",JsValue::NULL),("visualRevision",n(0.0)),("displayedRevision",n(-1.0))]{put(&v,key,&value)?;}
  let invalidate=own(&v,"book_view_invalidate_presentation",&[])?;put(&v,"invalidatePresentation",&invalidate)?;
@@ -557,7 +557,7 @@ pub fn book_view_set_relief(v:&JsValue,relief:&JsValue)->JsValue{
  let (mut resolve,mut reject)=(JsValue::UNDEFINED,JsValue::UNDEFINED);
  let promise=Promise::new(&mut |yes,no|{resolve=yes.into();reject=no.into();});
  let start=||->R<()>{
-  let normalized=call(&env(v),"normalizeRelief",&[relief])?;
+  let normalized=crate::cover_relief_portable::normalize_cover_relief(relief)?;
   put(v,"currentBook",&spread(v,&state(v,"currentBook"),&object(&[("coverRelief",normalized)])?,&JsValue::UNDEFINED)?)?;
   let pending=state(v,"pendingModel");
   let first=if absent(&pending){JsValue::UNDEFINED}else{user_opt(&pending,"setCoverRelief",&[relief])?};
@@ -770,10 +770,36 @@ pub fn book_view_upload_texture(v:&JsValue,texture:&JsValue)->R<bool>{
  Ok(true)
 }
 #[wasm_bindgen]
+extern "C"{
+ /// A three.js matrix: its sixteen numbers in one crossing, written where they are wanted.
+ type Matrix;
+ #[wasm_bindgen(method,catch,js_name=toArray)]fn numbers(this:&Matrix,into:&mut [f64])->R<JsValue>;
+}
+/// The sixteen numbers of a matrix (`matrix.elements`).
+fn elements(matrix:&JsValue,into:&mut [f64])->R<()>{matrix.unchecked_ref::<Matrix>().numbers(into).map(|_|())}
+/// `projectBookPageBounds(page, camera, viewportWidth, viewportHeight, offset)`: the fitted page image itself,
+/// rather than the book's outer board, on screen: left, top, width and height (nothing for a hidden page).
+fn project_page(page:&JsValue,camera:&JsValue,viewport_width:&JsValue,viewport_height:&JsValue,offset:&JsValue)->R<Option<[f64;4]>>{
+ if absent(page)||!truthy(&read(page,"visible")?){return Ok(None);}
+ let geometry=read(page,"geometry")?;
+ if absent(&geometry)||!truthy(&read(&geometry,"parameters")?){return Ok(None);}
+ call(page,"updateWorldMatrix",&[&JsValue::TRUE,&JsValue::FALSE])?;call(camera,"updateMatrixWorld",&[])?;
+ let parameters=read(&read(page,"geometry")?,"parameters")?;
+ let mut io=[0.0;58];
+ io[0]=num(&read(&parameters,"width")?);io[1]=num(&read(&parameters,"height")?);
+ elements(&read(page,"matrixWorld")?,&mut io[6..22])?;
+ io[2]=num(viewport_width);io[3]=num(viewport_height);io[4]=num(&read(offset,"left")?);io[5]=num(&read(offset,"top")?);
+ elements(&read(camera,"matrixWorldInverse")?,&mut io[22..38])?;elements(&read(camera,"projectionMatrix")?,&mut io[38..54])?;
+ Ok(Some(crate::book_view_plan::page_bounds(&mut io)))
+}
+#[wasm_bindgen]
 pub fn book_view_page_bounds(v:&JsValue)->R<JsValue>{
  let rect=call(&state(v,"canvas"),"getBoundingClientRect",&[])?;
  let offset=object(&[("left",read(&rect,"left")?),("top",read(&rect,"top")?)])?;
- call(&env(v),"projectPage",&[&read(&user(&state(v,"model"))?,"pageSurface")?,&state(v,"camera"),&state(v,"viewportWidth"),&state(v,"viewportHeight"),&offset])
+ match project_page(&read(&user(&state(v,"model"))?,"pageSurface")?,&state(v,"camera"),&state(v,"viewportWidth"),&state(v,"viewportHeight"),&offset)?{
+  Some([left,top,width,height])=>object(&[("left",n(left)),("top",n(top)),("width",n(width)),("height",n(height))]),
+  None=>Ok(JsValue::NULL),
+ }
 }
 /// The pose that lays the page over `{ left, top, width, height }` (null before a first pose).
 fn page_pose(v:&JsValue,target:&JsValue)->R<JsValue>{
@@ -797,16 +823,18 @@ pub fn book_view_page_zoom(environment:&JsValue,model:&JsValue,camera:&JsValue,o
  let offset=or_default(field("offset")?,object(&[("left",n(0.0)),("top",n(0.0))])?);
  let target=field("target")?;
  let rotation=read(model,"rotation")?;let saved=call(&rotation,"clone",&[])?;
- let measured=(||->R<JsValue>{
+ let measured=(||->R<Option<[f64;4]>>{
   call(&read(model,"rotation")?,"set",&[&n(0.0),&n(0.0),&n(0.0)])?;
-  call(environment,"projectPage",&[&read(&user(model)?,"pageSurface")?,camera,&viewport_width,&viewport_height,&offset])
+  project_page(&read(&user(model)?,"pageSurface")?,camera,&viewport_width,&viewport_height,&offset)
  })();
  call(&read(model,"rotation")?,"copy",&[&saved])?;call(model,"updateMatrixWorld",&[&JsValue::TRUE])?;
- let bounds=measured?;
- if !truthy(&bounds){return Ok(JsValue::NULL);}
- let zoom=call(environment,"planZoom",&[&bounds,&target,&offset,&center_x,&center_y,&origin])?;
- if !truthy(&zoom){return Ok(JsValue::NULL);}
- let pose=object(&[("x",read(&zoom,"x")?),("y",read(&zoom,"y")?),("scale",read(&zoom,"scale")?),("angle",n(0.0)),("pitch",n(0.0)),
+ let Some(bounds)=measured? else{return Ok(JsValue::NULL);};
+ // `target?.left`: a missing target has no area.
+ let side=|key:&'static str|->R<f64>{if absent(&target){Ok(f64::NAN)}else{Ok(num(&read(&target,key)?))}};
+ let Some([x,y,scale])=crate::book_view_plan::page_zoom([bounds[0],bounds[1],bounds[2],bounds[3],side("left")?,side("top")?,side("width")?,side("height")?,
+  num(&read(&offset,"left")?),num(&read(&offset,"top")?),num(&center_x),num(&center_y),num(&read(&origin,"x")?),num(&read(&origin,"y")?),num(&read(&origin,"scale")?)])
+  else{return Ok(JsValue::NULL);};
+ let pose=object(&[("x",n(x)),("y",n(y)),("scale",n(scale)),("angle",n(0.0)),("pitch",n(0.0)),
   ("roll",n(0.0)),("coverOpen",n(1.0)),("bookmarkWithdraw",n(1.0))])?;
  call(environment,"spread",&[&origin,&pose,&JsValue::UNDEFINED])
 }
