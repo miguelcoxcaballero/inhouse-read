@@ -3,7 +3,9 @@ import {installEmptyUpdateChannels} from './helpers/empty-update-channels.mjs'
 import {openCompiledReaderApp} from './helpers/compiled-reader.mjs'
 installEmptyUpdateChannels()
 test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true})
-for(const delayed of [false,true])test('Rust account menu preserves updater focus and live DOM'+(delayed?' after a pending module':''),async({page},info)=>{
+// The account view is in the shelf module (rust-ui/src/profile_view.rs), so it does not wait for the reader's
+// module: with that one held back the menu already answers, through Rust.
+for(const delayed of [false,true])test('Rust account menu preserves updater focus and live DOM'+(delayed?' while the reader module is pending':''),async({page},info)=>{
  const url=process.env.IHR_TEST_URL?new URL(process.env.IHR_TEST_URL):null;if(url)url.searchParams.set('inhouse_app','1');const target=url?.href||'./?inhouse_app=1';
  test.setTimeout(60_000);const errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.addInitScript(()=>{
@@ -19,7 +21,7 @@ for(const delayed of [false,true])test('Rust account menu preserves updater focu
   const menu=page.locator('#drive-profile-menu'),profile=page.locator('#drive-profile-btn'),entry=page.getByRole('button',{name:'Actualizaciones',exact:true});
   await expect(profile).toBeVisible();await profile.click();await expect(menu).toBeVisible();await expect(page.locator('#drive-theme-toggle')).toBeFocused();
   await page.evaluate(()=>{window.profileOriginal=document.querySelector('#drive-profile');window.profileMenuOriginal=document.querySelector('#drive-profile-menu')});
-  if(delayed){expect(await page.evaluate(()=>window.profileProof.available)).toBe(false);release()}
+  if(delayed){expect(await page.evaluate(()=>window.profileProof.available)).toBe(true);release()}
   await page.waitForFunction(()=>window.profileProof.calls.rustprofileview_connect>0);
   expect(await page.evaluate(()=>window.profileOriginal===document.querySelector('#drive-profile')&&window.profileMenuOriginal===document.querySelector('#drive-profile-menu'))).toBe(true);await expect(menu).toBeVisible();
   await entry.click();const panel=page.locator('#drive-update-settings');await expect(panel.locator('.isu-inline')).toBeVisible();await page.getByRole('button',{name:'Check for updates',exact:true}).click();await expect(panel).toContainText('No releases on version B.');await expect(menu).toBeVisible();

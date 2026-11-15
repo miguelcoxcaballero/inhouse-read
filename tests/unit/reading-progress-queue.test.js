@@ -20,13 +20,13 @@ describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
   const create = (...args) => (engine === 'Rust' ? createReadingProgressQueue : createLegacyReadingProgressQueue)(...args)
   it('commits the latest synchronous position without a debounce timer', async () => {
     const library = { updateProgress:vi.fn(async (id, fraction, locator) => ({ id, fraction, locator })) }
-    const made = vi.spyOn(rustShelf.RustReadingProgressQueue, 'forLibrary')
+    const made = vi.spyOn(rustShelf.RustReadingProgressQueue.prototype, 'updateProgress')
     const queue = create(library), promises = []
     for (let page = 1; page <= 100; page++) promises.push(queue.updateProgress('book', page / 100, location(page)))
     expect(library.updateProgress).not.toHaveBeenCalled()
     expect(new Set(promises).size).toBe(1)
     expect(queue.get('book')).toBe(promises.at(-1))
-    expect(made).toHaveBeenCalledTimes(engine === 'Rust' ? 1 : 0)
+    expect(made).toHaveBeenCalledTimes(engine === 'Rust' ? 100 : 0)
     expect(await promises.at(-1)).toEqual({ id:'book', fraction:1, locator:location(100) })
     expect(library.updateProgress).toHaveBeenCalledExactlyOnceWith('book', 1, location(100))
     expect(queue.get('book')).toBeUndefined()

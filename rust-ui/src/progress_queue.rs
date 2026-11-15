@@ -1,11 +1,11 @@
 //! Per-book persistence queues: pending positions coalesce, settings are barriers.
 //! JavaScript retains database operations and records; no serialized book copies.
 use std::{cell::RefCell,collections::VecDeque,rc::Rc};
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*,JsCast};
 use wasm_bindgen_futures::{spawn_local,JsFuture};
 use js_sys::{Array,Function,Map,Object,Promise,Reflect};
 use crate::host;
-/// Who writes: three functions of the caller, or the app's library itself (`forLibrary`).
+/// Who writes: three functions of the caller, or the library itself (see the constructor).
 enum Store{Functions(Function,Function),Library(JsValue)}
 /// `{...fields}` onto `target`: every own enumerable property, string keys then symbols, each read
 /// once and written as plain data. The engine's own copy does exactly that except for an own
@@ -93,12 +93,15 @@ impl Core{
 }
 #[wasm_bindgen]
 impl RustReadingProgressQueue{
+ /// `new RustReadingProgressQueue(library, onSaved)` is the app's queue: positions go to
+ /// `library.updateProgress`, settings to `library.patch` with their stamp, and the caller's fields are
+ /// copied when they are queued. `new RustReadingProgressQueue(position, settings, onSaved)`, with
+ /// three functions, leaves the writing and the copying to the caller.
  #[wasm_bindgen(constructor)]
- pub fn new(position:Function,settings:Function,saved:Function)->Self{Self::over(Store::Functions(position,settings),saved)}
- /// The app's queue: positions go to `library.updateProgress`, settings to `library.patch` with
- /// their stamp, and the caller's fields are copied when they are queued.
- #[wasm_bindgen(js_name=forLibrary)]
- pub fn for_library(library:JsValue,saved:Function)->Self{Self::over(Store::Library(library),saved)}
+ pub fn new(first:JsValue,second:JsValue,third:JsValue)->Result<RustReadingProgressQueue,JsValue>{
+  let function=|value:JsValue|value.dyn_into::<Function>().map_err(|_|JsValue::from(js_sys::TypeError::new("Reading progress needs its callbacks")));
+  Ok(if first.is_function(){Self::over(Store::Functions(function(first)?,function(second)?),function(third)?)}else{Self::over(Store::Library(first),function(second)?)})
+ }
  #[wasm_bindgen(js_name=updateProgress)]
  pub fn update_progress(&self,id:JsValue,fraction:JsValue,locator:JsValue)->Promise{self.core.enqueue(id,Update::Position(fraction,locator))}
  pub fn patch(&self,id:JsValue,fields:JsValue)->Result<Promise,JsValue>{

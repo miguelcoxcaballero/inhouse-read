@@ -4,7 +4,7 @@ import {bookDataModule} from './book-data-native.js'
 // Every caller is a flow of a module that is in, so the queue is made on first use.
 export function createReadingProgressQueue(library,{onSaved=()=>{}}={}){
  let queue
- const use=()=>queue||=bookDataModule().RustReadingProgressQueue.forLibrary(library,onSaved)
+ const use=()=>queue||=new(bookDataModule().RustReadingProgressQueue)(library,onSaved)
  return{
   updateProgress:(id,fraction,locator)=>use().updateProgress(id,fraction,locator),
   patch:(id,fields)=>use().patch(id,fields),

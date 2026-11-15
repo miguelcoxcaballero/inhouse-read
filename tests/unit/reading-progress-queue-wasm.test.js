@@ -120,13 +120,14 @@ async function session(create,seed,totals){
 }
 it('gives every book the same calls, promises and settlements as the frozen JavaScript queue',async()=>{
  const reference={positions:0,settings:0,saved:0,getters:0},production={positions:0,settings:0,saved:0,getters:0}
- const made=vi.spyOn(rustShelf.RustReadingProgressQueue,'forLibrary')
+ const asked=vi.spyOn(rustShelf.RustReadingProgressQueue.prototype,'patch')
  for(let seed=1;seed<=120;seed++){
   const expected=await session(createLegacyReadingProgressQueue,seed,reference)
   const actual=await session(createReadingProgressQueue,seed,production)
   expect(actual,`seed ${seed}`).toEqual(expected)
  }
- expect(made).toHaveBeenCalledTimes(120)
+ // Every settings request of the app's sessions went to the module's queue.
+ expect(asked.mock.calls.length).toBeGreaterThan(400)
  expect(production).toEqual(reference)
  expect(reference.positions).toBeGreaterThan(600);expect(reference.settings).toBeGreaterThan(400);expect(reference.saved).toBeGreaterThan(500);expect(reference.getters).toBeGreaterThan(40)
 },60000)
@@ -135,4 +136,7 @@ it('keeps no handle of the module per save',async()=>{
  const round=async count=>{for(let i=0;i<count;i++){await queue.updateProgress('book'+i%5,i,{});await queue.patch('book'+i%5,{readingTheme:i,spineColor:i})}}
  await round(5);const before=rustShelf.shelf_live_handles();await round(400)
  expect(rustShelf.shelf_live_handles()).toBe(before)
+})
+it('refuses to be made without its callbacks',()=>{
+ expect(()=>new rustShelf.RustReadingProgressQueue({},undefined)).toThrow(TypeError);expect(()=>new rustShelf.RustReadingProgressQueue(()=>{},()=>{},7)).toThrow(TypeError)
 })

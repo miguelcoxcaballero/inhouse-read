@@ -5,7 +5,7 @@
 //    app used until the reader's module was in;
 //  - what the app used from then on, i.e. for every book that was read: the previous
 //    src/js/reading-progress-queue.js (copied below) over RustReadingProgressQueue of the UI build;
-//  - the app's queue now: RustReadingProgressQueue.forLibrary of the shelf build.
+//  - the app's queue now: RustReadingProgressQueue over the library itself, of the shelf build.
 // node scripts/benchmark-progress-queue.mjs <dir of the UI build before> [dir of the shelf build]
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
@@ -13,7 +13,7 @@ import {pathToFileURL} from 'node:url';
 import {createLegacyReadingProgressQueue} from '../tests/unit/helpers/reference-reading-progress-queue.js';
 const load=async(dir,name)=>{const module=await import(pathToFileURL(resolve(dir)+`/inhouse_read_${name}.js`).href);module.initSync({module:readFileSync(resolve(dir)+`/inhouse_read_${name}_bg.wasm`)});return module;};
 const ui=await load(process.argv[2],'ui'),rust=await load(process.argv[3]||'src/wasm/shelf','shelf');
-const production=(library,{onSaved=()=>{}}={})=>{let queue;const use=()=>queue||=rust.RustReadingProgressQueue.forLibrary(library,onSaved);
+const production=(library,{onSaved=()=>{}}={})=>{let queue;const use=()=>queue||=new rust.RustReadingProgressQueue(library,onSaved);
  return{updateProgress:(id,fraction,locator)=>use().updateProgress(id,fraction,locator),patch:(id,fields)=>use().patch(id,fields),get:id=>use().get(id)};};
 // src/js/reading-progress-queue.js as it was, with the module's queue adopted (the legacy owner never used).
 function previous(library,{onSaved=()=>{}}={}){
