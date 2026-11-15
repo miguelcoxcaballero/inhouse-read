@@ -1,28 +1,44 @@
-import {getRustUI} from './rust-ui.js'
-import {createLegacyShelfRefreshQueue} from './shelf-refresh-queue-legacy.js'
+import {getRustShelf,whenRustShelf} from './rust-shelf.js'
 const setDefaultTimer=(callback,ms)=>setTimeout(callback,ms)
 const clearDefaultTimer=id=>clearTimeout(id)
 
-// An in-flight read keeps its owner until its trailing batch drains. Native
-// adoption never waits for WASM or lets a newer change join an older snapshot.
+// Background notifications coalesce and reads never overlap: rust-ui/src/refresh_queue.rs, in the shelf
+// module. A page's first read cannot wait for that module (it is what starts the library read), so an
+// urgent request made before it is in is read from here; the module's queue then takes over the read still
+// running and everything asked meanwhile, each request with the time it has already waited.
 export function createShelfRefreshQueue({perform,delay=80,setTimer=setDefaultTimer,clearTimer=clearDefaultTimer}={}){
  if(typeof perform!=='function')throw new TypeError('Shelf refresh needs a perform callback')
- const legacy=createLegacyShelfRefreshQueue({perform,delay,setTimer,clearTimer})
- let native=null,disposed=false
- const eligible=setTimer===setDefaultTimer&&clearTimer===clearDefaultTimer
+ let native=null,disposed=false,running=false,early=null
+ const adopt=shelf=>{
+  if(disposed||native)return
+  native=new shelf.RustShelfRefreshQueue(perform,delay,setTimer,clearTimer)
+  if(early){const asked=early;early=null;native.adopt(running,asked,Date.now())}
+ }
+ const read=()=>{
+  const batch=early;early=[];running=true
+  const done=(value,failed)=>{
+   running=false
+   for(const waiter of batch)failed?waiter.no(value):waiter.yes(value)
+   if(native)native.resume();else if(early?.some(waiter=>waiter.urgent))read()
+  }
+  Promise.resolve().then(()=>disposed?undefined:perform({immediate:true})).then(value=>done(value),error=>done(error,true))
+ }
  return{
   request({immediate:urgent=false}={}){
    if(disposed)return Promise.resolve()
-   if(!native&&eligible&&legacy.idle()){
-    const Native=getRustUI()?.RustShelfRefreshQueue
-    if(Native&&['request','dispose','idle'].every(key=>typeof Native.prototype[key]==='function')){
-     try{native=new Native(perform,delay,setTimer,clearTimer)}catch{}
-     if(native)legacy.dispose()
-    }
-   }
-   if(!native)return legacy.request({immediate:urgent})
-   const promise=native.request(!!urgent);promise.catch(()=>{});return promise
+   if(!native&&!early){const shelf=getRustShelf();if(shelf)adopt(shelf);else{early=[];whenRustShelf(adopt)}}
+   const promise=native?native.request(!!urgent):new Promise((yes,no)=>early.push({yes,no,urgent:!!urgent,at:Date.now()}))
+   // Notifications such as CloudSync.onChange need not await this promise.
+   promise.catch(()=>{})
+   if(!native&&urgent&&!running)read()
+   return promise
   },
-  dispose(){if(disposed)return;disposed=true;if(native){native.dispose();native.free();native=null}else legacy.dispose()}
+  dispose(){
+   if(disposed)return
+   disposed=true
+   if(native){native.dispose();native.free();native=null}
+   for(const waiter of early||[])waiter.yes()
+   early=null
+  }
  }
 }

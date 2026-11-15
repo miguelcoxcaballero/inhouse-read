@@ -12,7 +12,6 @@ mod folder_store;
 mod import_gate;
 mod stage_gate;
 mod prepared_page;
-mod refresh_queue;
 mod foliage;
 mod catalog_art;
 mod catalog_view;

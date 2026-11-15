@@ -2,7 +2,9 @@ import {test,expect} from '@playwright/test'
 import {openCompiledReaderApp} from './helpers/compiled-reader.mjs'
 import {waitForFinalBookGeometry} from './helpers/final-book-geometry.mjs'
 test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1})
-for(const delayed of [false,true])test('compiled shelf refresh keeps imported bytes and one native queue'+(delayed?' after a pending module':''),async({page},info)=>{
+// The refresh queue is in the shelf module (rust-ui/src/refresh_queue.rs), so it does not wait for the reader's
+// module: with that one held back the queue already exists.
+for(const delayed of [false,true])test('compiled shelf refresh keeps imported bytes and one native queue'+(delayed?' while the reader module is pending':''),async({page},info)=>{
  test.setTimeout(90_000);const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.emulateMedia({reducedMotion:'reduce'});
  await page.addInitScript(()=>{
   localStorage.setItem('inhouse-read-shelf-plants','[]');window.refreshProof={available:false,instances:0,calls:{}};
@@ -14,7 +16,7 @@ for(const delayed of [false,true])test('compiled shelf refresh keeps imported by
   const target=process.env.IHR_TEST_URL||'./';if(delayed)await page.goto(target);else await openCompiledReaderApp(page,target);
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');
   // The reader has no JavaScript twin: the import waits for the held module (the shelf and its refresh queue are already running on their own).
-  if(delayed){await page.waitForTimeout(2500);expect(await page.evaluate(()=>window.refreshProof.available)).toBe(false);release();await page.waitForFunction(()=>window.refreshProof.available)}
+  if(delayed){await page.waitForTimeout(2500);expect(await page.evaluate(()=>window.refreshProof.available)).toBe(true);release();await page.waitForFunction(()=>window.refreshProof.available)}
   await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'tiny.pdf');
   await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('.ihr-spine')).toHaveCount(1);
   await page.locator('#file-picker').setInputFiles({name:'refresh-second.pdf',mimeType:'application/pdf',buffer:await (await import('node:fs/promises')).readFile('tests/e2e/fixtures/tiny.pdf')});await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'refresh-second.pdf');await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('.ihr-spine')).toHaveCount(2);
