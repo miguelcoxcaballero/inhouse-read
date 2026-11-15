@@ -88,6 +88,11 @@ async function seed(page, { bookShelf = 1 } = {}) {
 }
 
 test('pots fit close under a wide canopy without moving other objects or separating on reload', async ({ page }, testInfo) => {
+  // Three loads of the room, a drag of twelve pointer steps with eight awaited frames and two waits for rest, all in
+  // software WebGL: 36-40 s on an idle development machine with 1.7.328 and 1.7.339 alike (seeded at 12-14 s, dragged
+  // at 26-28 s, at rest at 30-32 s, reloaded at 36-38 s), so the default 30 s ended the case wherever it happened to be
+  // (the rest wait or the drag itself on CI). Every wait inside keeps its own limit.
+  test.setTimeout(120_000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   // Read the same compiled catalogue used by the app, after discovery/build.
   // Pot proportions must not silently diverge from an updated catalogue.
