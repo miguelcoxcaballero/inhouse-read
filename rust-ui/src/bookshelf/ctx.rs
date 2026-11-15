@@ -81,9 +81,20 @@ impl Ctx{
  pub fn legacy_value(&self,name:&str)->JsValue{get(&self.legacy,name)}
  /// The opening callback captured once by the host constructor, called without a receiver.
  pub fn initial_on_open(&self)->JsValue{get(&self.parts,"onOpen")}
- /// `env[name](...args)`.
+ /// `env[name](...args)`. Six functions the table used to hold were one-line calls from JavaScript
+ /// back into this module (book-title.js, book-colors.js, readers/persistable-position.js,
+ /// bookshelf-return.js); they are called here, without leaving it.
  pub fn env(&self,name:&str,args:&[&JsValue])->R<JsValue>{
-  crate::host::function_of(&self.env,name,args)
+  let at=|index:usize|args.get(index).map_or(JsValue::UNDEFINED,|value|(*value).clone());
+  match name{
+   "normalizeBookAuthor"=>crate::book_title::book_normalize_author(at(0)),
+   "displayBookTitle"=>crate::book_title::book_display_title(at(0)),
+   "spineFinish"=>Ok(crate::book_customization::book_spine_finish(at(0))),
+   "persistablePosition"=>crate::reader_position::reader_persistable_position(at(0)),
+   "bookReturnSignature"=>crate::bookshelf_return::book_return_signature(&at(0),&at(1),&at(2),&at(3)),
+   "bookReturnCompatibility"=>crate::bookshelf_return::book_return_compatibility(&at(0),&at(1),&at(2)),
+   _=>crate::host::function_of(&self.env,name,args)
+  }
  }
  pub fn env_value(&self,name:&str)->JsValue{get(&self.env,name)}
  /// Optional cosmetic transport: unavailable audio must never cancel a book action.

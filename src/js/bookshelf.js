@@ -40,7 +40,7 @@ import { batchSpineStyles } from './spine-styles.js';
 import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './bookshelf-layout.js';
 import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
-import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
+import { bookColorOptions, spineColorStyle, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from './cover-relief.js';
@@ -51,7 +51,7 @@ import { createBookshelfScene } from './bookshelf-scene.js';
 import {warmShelfCover,loadedShelfCover} from './book-cover-images.js';
 import {prepareShelfFonts} from './shelf-startup-resources.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
-import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
+import { createBookReturnCache } from './bookshelf-return.js';
 import { readerReturnCanvas } from './reader-return-canvas.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { getRustCore } from './rust-core.js';
@@ -63,11 +63,10 @@ import { measuredShelfModelLayout as shelfModelLayout } from './shelf-model-layo
 import { placeRooftopPlants } from './plant-rooftop-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
-import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from './plant-dimensions.js';
+import { shelfScale, plantDimensions, bookSpineOptions } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 import { readerBookTiming } from './reader-book-timing.js';
-import { persistablePosition } from './readers/persistable-position.js';
 import { needRustShelf } from './rust-shelf.js';
 
 
@@ -90,7 +89,8 @@ export const DEFAULT_TEXTS = Object.freeze({
 
 
 // The functions of other modules the shelf module's parts call, looked up when they are called (a module
-// replaced after the shelf was built is still the one called).
+// replaced after the shelf was built is still the one called). What the module has itself (a book's title
+// and author, a spine's finish, a position to save, the keys of a returning book) it calls directly.
 const shelfEnv = {
   physicalPlacement: createBookshelfScene.physicalPlacement === true,
   playShelfSound:(...args)=>playShelfSound(...args),
@@ -102,19 +102,15 @@ const shelfEnv = {
   createShelfZoom: (...args) => createShelfZoom(...args),
   createLazyPlantCatalog: (...args) => createLazyPlantCatalog(...args),
   refreshCanvasFontsAfterPaint: (...args) => refreshCanvasFontsAfterPaint(...args),
-  displayBookTitle: (...args) => displayBookTitle(...args),
   getBookRenderer: (...args) => getBookRenderer(...args),
   canAdoptShelfMetadata: (...args) => canAdoptShelfMetadata(...args),
   planBookshelf: (...args) => planBookshelf(...args),
   batchSpineStyles: (...args) => batchSpineStyles(...args),
   bookSpineOptions: (...args) => bookSpineOptions(...args),
-  minimumBookCellWidth: (...args) => minimumBookCellWidth(...args),
   createBookshelfScene: (...args) => createBookshelfScene(...args),
   get DEFAULT_LAYOUT() { return DEFAULT_LAYOUT; },
-  normalizeBookAuthor: (...args) => normalizeBookAuthor(...args),
   bookColorOptions: (...args) => bookColorOptions(...args),
   spineColorStyle: (...args) => spineColorStyle(...args),
-  spineFinish: (...args) => spineFinish(...args),
   surfaceFinish: (...args) => surfaceFinish(...args),
   withCoverAppearance: (...args) => withCoverAppearance(...args),
   fitCoverImage: (...args) => fitCoverImage(...args),
@@ -125,9 +121,6 @@ const shelfEnv = {
   markTiming: (...args) => markTiming(...args),
   resetTimeline: (...args) => resetTimeline(...args),
   readerBookTiming: (...args) => readerBookTiming(...args),
-  persistablePosition: (...args) => persistablePosition(...args),
-  bookReturnSignature: (...args) => bookReturnSignature(...args),
-  bookReturnCompatibility: (...args) => bookReturnCompatibility(...args),
   readerReturnCanvas: (...args) => readerReturnCanvas(...args),
   coverAspectRatio: (...args) => coverAspectRatio(...args),
   analyzeCoverAppearance: (url,title,options) => {

@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Array,Map,Object,Promise,Set};
 use std::collections::BTreeMap;
 #[path="library_backup_live.rs"]mod live;
+#[path="backup_state.rs"]mod state;
 use crate::cloud_host::*;
 
 const META:[&str;23]=["name","title","author","format","mimeType","size","sizeBytes","pageCount","shelfOrder","addedAt","lastOpenedAt","shelfVisualId",

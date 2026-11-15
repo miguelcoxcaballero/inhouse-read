@@ -267,12 +267,12 @@ thread_local!{
 }
 /// Event handlers live here until their request or transaction settles; a handler may release
 /// itself (wasm-bindgen defers dropping the running closure).
-fn handler(body:impl FnMut(JsValue)+'static)->(u64,JsValue){
+pub(crate) fn handler(body:impl FnMut(JsValue)+'static)->(u64,JsValue){
  let key=NEXT.with(|next|{next.set(next.get()+1);next.get()});
  let closure:Handler=Closure::wrap(Box::new(body) as Box<dyn FnMut(JsValue)>);let function=closure.as_ref().clone();
  HANDLERS.with(|live|live.borrow_mut().push((key,closure)));(key,function)
 }
-fn release_now(keys:&[u64]){
+pub(crate) fn release_now(keys:&[u64]){
  let found:Vec<(u64,Handler)>=HANDLERS.with(|live|{let mut live=live.borrow_mut();let mut found=Vec::new();let mut index=0;
   while index<live.len(){if keys.contains(&live[index].0){found.push(live.remove(index));}else{index+=1;}}found});drop(found);
 }
