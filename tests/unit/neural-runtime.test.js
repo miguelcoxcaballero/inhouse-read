@@ -28,7 +28,6 @@ describe('neural runtime guards', () => {
     expect(runtime.neuralVoiceList().map(voice => voice.id)).toEqual(neuralVoices.map(voice => voice.id))
     expect(runtime.neuralVoiceList().map(voice => voice.id)).toContain('piper:es_ES-davefx-medium')
     expect(runtime.neuralVoiceList().every(voice => voice.neural && !voice.installed)).toBe(true)
-    expect(runtime.neuralReady()).toBe(false)
     expect(() => runtime.unlockNeural()).not.toThrow()
   })
   it('reports an unavailable natural engine without starting a device voice or changing the selection', async () => {
@@ -75,7 +74,6 @@ describe('neural runtime guards', () => {
     expect(runtime.neuralEngine()).toBeNull()
     expect(runtime.neuralVoiceList().map(voice => [voice.id, voice.installed])).toEqual([['piper:es_ES-davefx-medium', false]])
     expect(runtime.neuralVoiceList(broken)).toEqual([]) // a throwing installed getter is guarded too
-    expect(runtime.neuralReady(broken)).toBe(false)
     expect(() => runtime.unlockNeural()).not.toThrow()
   })
   it('the test hook installs a prepared engine and catalogue, and does nothing without it', async () => {

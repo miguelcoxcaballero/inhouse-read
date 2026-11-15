@@ -1,6 +1,6 @@
 import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { compositePageSnapshots, rasterizeInlineSVG, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from '../../src/js/readers/page-snapshot.js'
+import { compositePageSnapshots, rasterizeInlineSVG, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './helpers/live-page-snapshot.js'
 
 const rect = (left, top, width, height) => ({ left, top, width, height, right:left+width, bottom:top+height })
 let contexts

@@ -4,7 +4,6 @@ import * as audio from './neural-voice/audio.js'
 import * as catalog from './voice-catalog.js'
 import * as speech from './speech-text.js'
 
-export { speechChunks } from './speech-text.js'
 // The audiobook's session: what is spoken next, prepared ahead, presented, joined across pages, navigated, paused
 // and stopped is rust-ui (voice_*.rs; its methods are answered by voice_methods.rs). The kit holds the engine, audio,
 // catalogue and text modules Rust calls back (read when a method needs them) and the doorways reached while a

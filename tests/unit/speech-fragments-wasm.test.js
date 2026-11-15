@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
 import {loadRustCore} from '../../src/js/rust-core.js';
 import {rustSpeechFragments} from './helpers/speech-kernels.js';
-import {speechSentences,planSpeech} from '../../src/js/readers/speech-text.js';
+import {speechSentences,planSpeech} from './helpers/live-speech-text.js';
 import * as reference from './helpers/reference-speech-text.js';
 let core;
 beforeAll(async()=>{core=await loadRustCore({bytes:readFileSync('src/wasm/inhouse_read_core.wasm')});expect(typeof core?.speech_fragments).toBe('function');});

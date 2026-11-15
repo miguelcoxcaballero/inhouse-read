@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
-import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from '../../src/js/readers/speech-text.js'
+import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from './helpers/live-speech-text.js'
 
 const split = text => speechSentences(text).map(sentence => text.slice(sentence.start, sentence.end))
 
