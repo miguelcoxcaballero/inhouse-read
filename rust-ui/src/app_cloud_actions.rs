@@ -141,7 +141,12 @@ pub fn app_drive_report_error(host:JsValue,failure:JsValue)->Promise{start(async
   notice(&host,"Actualiza la app para conectar Drive.",object(&[("retry",JsValue::TRUE)]))?;
  }else{
   let message=read(&failure,"message")?;
-  let message=if message==JsValue::from_str("Conexión cancelada."){String::new()}else{format!("No se pudo conectar. {}",string(&message))};
+  // The shared sign-in reports Google's popup failures by their code; the person reads a sentence.
+  let message=match string(&message).as_str(){
+   "Conexión cancelada."=>String::new(),
+   "popup_closed"=>"Se cerró la ventana de Google. Pulsa Conectar.".to_owned(),
+   "popup_failed_to_open"=>"Ventana de Google bloqueada. Permite las ventanas emergentes.".to_owned(),
+   other=>format!("No se pudo conectar. {other}")};
   notice(&host,message,object(&[("retry",JsValue::TRUE)]))?;
  }
  Ok(JsValue::UNDEFINED)

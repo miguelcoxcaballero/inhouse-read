@@ -90,6 +90,8 @@ const cases=[
  ['silent Android cancellation',{session:false,android:true,remembered:{id:'account'},accessError:Error('cancel')},'syncLibraryToDrive',[{silent:true}]],
  ['connect success',{session:false},'connectGoogleAccount'],
  ['connect cancelled',{session:false,accessError:Error('Conexión cancelada.')},'connectGoogleAccount'],
+ ['connect popup closed',{session:false,accessError:Error('popup_closed')},'connectGoogleAccount'],
+ ['connect popup blocked',{session:false,accessError:Error('popup_failed_to_open')},'connectGoogleAccount'],
  ['connect backup failure',{syncError:Error('offline')},'connectGoogleAccount'],
  ['update offered',{updateAvailable:true},'reportDriveConnectionError',[Object.assign(Error('old'),{code:'ANDROID_SHELL_OUTDATED'})]],
  ['update unavailable',{},'reportDriveConnectionError',[Object.assign(Error('old'),{code:'ANDROID_SHELL_OUTDATED'})]],

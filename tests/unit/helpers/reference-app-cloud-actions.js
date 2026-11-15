@@ -158,7 +158,8 @@ async function reportDriveConnectionError(error) {
     showAuthNotice('Actualiza la app para conectar Drive.', { retry: true })
     return
   }
-  showAuthNotice(error.message === 'Conexión cancelada.' ? '' : `No se pudo conectar. ${error.message}`, { retry: true })
+  const popup = { popup_closed: 'Se cerró la ventana de Google. Pulsa Conectar.', popup_failed_to_open: 'Ventana de Google bloqueada. Permite las ventanas emergentes.' }
+  showAuthNotice(error.message === 'Conexión cancelada.' ? '' : popup[error.message] || `No se pudo conectar. ${error.message}`, { retry: true })
 }
 
  return {handleCoverAction,uploadBookToDrive,loadDriveAccountProfile,syncLibraryToDrive,connectGoogleAccount,reportDriveConnectionError}
