@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import { ReaderExperience } from '../../src/js/readers/reader-experience.js'
 import { DEFAULT_READING_PREFERENCES, RATE_STEPS, READING_THEMES, nearestRate, rateLabel, normalizeReadingPreferences, readingCSS } from '../../src/js/readers/reading-preferences.js'
-import { normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
+import { normalizeNeuralVoice } from './helpers/live-voice-catalog.js'
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 
 vi.mock('../../src/js/readers/reading-voice.js', () => ({

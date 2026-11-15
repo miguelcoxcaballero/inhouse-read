@@ -25,7 +25,8 @@ pub fn voice_for(host:JsValue,text:JsValue,catalog:Function,is_neural:Function,d
   let override_=get(&host,"languageOverride")?;
   if override_.is_truthy(){override_}else{let reader=get(&get(&host,"reader")?,"language")?;if reader.is_truthy(){reader}else{let device=device.call0(&JsValue::UNDEFINED)?;if device.is_truthy(){device}else{"es-ES".into()}}}
  };
- let list:Array=catalog.call0(&JsValue::UNDEFINED)?.dyn_into()?;let voices=Array::new();
+ // Only the downloaded voices can speak: the catalogue is asked for those alone (its second argument).
+ let list:Array=catalog.call2(&JsValue::UNDEFINED,&JsValue::UNDEFINED,&JsValue::TRUE)?.dyn_into()?;let voices=Array::new();
  for index in 0..list.length(){if !Reflect::has(&list,&index.into())?{continue;}let voice=list.get(index);
   if get(&voice,"installed")?.is_truthy()&&!one(&get(&host,"missing")?,"has",&get(&voice,"id")?)?.is_truthy(){voices.push(&voice);}
  }

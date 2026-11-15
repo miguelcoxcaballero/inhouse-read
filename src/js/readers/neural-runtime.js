@@ -1,7 +1,8 @@
 // The reader's single doorway to the on-device neural voice engine (neural-voice/index.js).
 // The engine is imported lazily and every call here is guarded: if the module cannot load (offline chunk, old WebView) or
 // misbehaves, reading reports the failure and can retry. Nothing downloads from here.
-import { normalizeNeuralVoice } from './voice-catalog.js'
+import { normalizeLang } from './voice-catalog.js'
+import { readerUI } from './rust-ui-required.js'
 import { neuralVoices } from './neural-voice/catalog.js'
 import { unlockAudio } from './neural-voice/audio.js'
 
@@ -33,11 +34,11 @@ export function neuralEngine() {
   } catch { return null }
 }
 
-/** The natural catalogue is available before the heavy engine loads; only its installed state depends on that engine. */
-export function neuralVoiceList(engine = neuralEngine()) {
+/** The natural catalogue is available before the heavy engine loads; only its installed state depends on that engine. `only`: the installed voices alone. */
+export function neuralVoiceList(engine = neuralEngine(), only = false) {
   try {
     const installed = engine?.installed || []
-    return (engineModule?.neuralVoices || neuralVoices).map(entry => normalizeNeuralVoice(entry, installed)).filter(Boolean)
+    return readerUI().catalog_neural_voices(engineModule?.neuralVoices || neuralVoices, installed, normalizeLang, only)
   } catch { return [] }
 }
 

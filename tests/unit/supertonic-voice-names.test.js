@@ -2,7 +2,7 @@ import './helpers/rust-ui-ready.js'
 import { describe, expect, it } from 'vitest';
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_VOICE_NAMES, supertonicVoicesFor } from '../../src/js/readers/neural-voice/supertonic-catalog.js';
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js';
-import { languageName, normalizeNeuralVoice, orderNeuralVoices } from '../../src/js/readers/voice-catalog.js';
+import { languageName, normalizeNeuralVoice, orderNeuralVoices } from './helpers/live-voice-catalog.js';
 
 describe('Supertonic voice names', () => {
   it('names every profile of every language, with no "Supertonic" label and no repeats in a language', () => {

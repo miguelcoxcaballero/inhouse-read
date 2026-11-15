@@ -62,40 +62,87 @@ fn is_neural_id(value:&JsValue)->bool{
 /// not one of ours. `installed` is a Set (or any iterable) of the ids downloaded so far.
 #[wasm_bindgen]
 pub fn catalog_neural_voice(entry:JsValue,installed:JsValue,normalize:Function)->Result<JsValue,JsValue>{
- if !truthy(&entry)||!entry.is_object(){return Ok(JsValue::NULL)}
- let id=get(&entry,"id")?;
+ if !entry.is_object(){return Ok(JsValue::NULL)}
+ record(&entry,&mut ||installed_set(&installed),&normalize,None)
+}
+// The record itself is one object literal of the host, so a voice costs one visit instead of twenty-four writes.
+#[wasm_bindgen(inline_js="export function ihr_voice(id,name,lang,base,region,installed,high,sizeMB,speaker,recommended,sharedPack,upgradeBytes,modelKey,runtime,licenseUrl,licenseName){return{id,name,lang,base,region,quality:null,latency:null,network:false,installed,features:[],isDefault:false,native:false,label:'',neural:true,tier:high?'high':'medium',sizeMB,speaker,recommended,sharedPack,upgradeBytes,modelKey,runtime,licenseUrl,licenseName}}")]
+extern "C"{
+ #[allow(clippy::too_many_arguments)]
+ fn ihr_voice(id:&JsValue,name:&JsValue,lang:&JsValue,base:&JsValue,region:&JsValue,installed:bool,high:bool,size:f64,speaker:f64,recommended:bool,shared:bool,upgrade:f64,
+  model:&JsValue,runtime:&JsValue,license_url:&JsValue,license_name:&JsValue)->JsValue;
+}
+/// The ids downloaded so far: the caller's Set, or one made of whatever it handed over.
+fn installed_set(installed:&JsValue)->Result<Set,JsValue>{
+ Ok(if installed.is_instance_of::<Set>(){installed.clone().unchecked_into()}else{Set::new(&or(installed.clone(),||Ok(Array::new().into()))?)})
+}
+/// A normalised tag with its base and its region, as the strings a record carries.
+#[derive(Clone)]
+struct Tag{lang:JsValue,base:JsValue,region:JsValue}
+fn tag_of(normalize:&Function,wanted:&JsValue)->Result<Option<Tag>,JsValue>{
+ let lang=normalize.call1(&JsValue::UNDEFINED,wanted)?;
+ let Some(text)=lang.as_string()else{return Ok(None)};
+ if text.is_empty(){return Ok(None)}
+ let (base,region)=(base_of(&text),region_of(&text));
+ let base=if base.len()==text.len(){lang.clone()}else{base.into()};
+ Ok(Some(Tag{lang,base,region:region.into()}))
+}
+/// `Number(value) || 0`.
+fn amount(value:JsValue)->Result<f64,JsValue>{
+ let value=match value.as_f64(){Some(value)=>value,None=>number(&value)?};
+ Ok(if value.is_nan()||value==0.0{0.0}else{value})
+}
+/// The tags one list has already normalised (a catalogue repeats a few dozen tags over hundreds of voices).
+type Tags=Vec<(String,Option<Tag>)>;
+/// The record of `entry`, an object; null when it is not one of ours. `have` is asked for only once the entry is ours.
+fn record(entry:&JsValue,have:&mut dyn FnMut()->Result<Set,JsValue>,normalize:&Function,tags:Option<&mut Tags>)->Result<JsValue,JsValue>{
+ use crate::host::read;
+ let id=read(entry,"id")?;
  if !is_neural_id(&id){return Ok(JsValue::NULL)}
  // A shared multilingual model names the accent it speaks in `dialect`.
- let wanted=or(get(&entry,"dialect")?,||get(&entry,"lang"))?;
- let lang=tag(&normalize,&wanted)?;
- if lang.is_empty(){return Ok(JsValue::NULL)}
- let have:Set=if installed.is_instance_of::<Set>(){installed.unchecked_into()}else{Set::new(&or(installed,||Ok(Array::new().into()))?)};
- let result=Object::new();
- let id=get(&entry,"id")?;
- set(&result,"id",&id)?;
- let name=or(get(&entry,"name")?,||or(get(&entry,"piperId")?,||get(&entry,"id")))?;
- set(&result,"name",&string(&name)?.into())?;
- set(&result,"lang",&lang.as_str().into())?;
- set(&result,"base",&base_of(&lang).into())?;
- set(&result,"region",&region_of(&lang).into())?;
- set(&result,"quality",&JsValue::NULL)?;set(&result,"latency",&JsValue::NULL)?;set(&result,"network",&JsValue::FALSE)?;
- set(&result,"installed",&have.has(&get(&entry,"id")?).into())?;
- set(&result,"features",&Array::new())?;set(&result,"isDefault",&JsValue::FALSE)?;set(&result,"native",&JsValue::FALSE)?;set(&result,"label",&"".into())?;
- set(&result,"neural",&JsValue::TRUE)?;
- set(&result,"tier",&(if get(&entry,"quality")?==JsValue::from_str("high"){"high"}else{"medium"}).into())?;
- for (key,source) in [("sizeMB","sizeMB"),("speaker","speaker")]{
-  let value=number(&get(&entry,source)?)?;
-  set(&result,key,&(if value.is_nan()||value==0.0{0.0}else{value}).into())?;
+ let wanted=or(read(entry,"dialect")?,||read(entry,"lang"))?;
+ let tag=match (tags,wanted.as_string()){
+  (Some(tags),Some(text))=>match tags.iter().find(|(known,_)|*known==text){
+   Some((_,tag))=>tag.clone(),
+   None=>{let tag=tag_of(normalize,&wanted)?;tags.push((text,tag.clone()));tag}
+  },
+  _=>tag_of(normalize,&wanted)?
+ };
+ let Some(tag)=tag else{return Ok(JsValue::NULL)};
+ let have=have()?;
+ let id=read(entry,"id")?;
+ let name=or(read(entry,"name")?,||or(read(entry,"piperId")?,||read(entry,"id")))?;
+ let name=if name.is_string(){name}else{string(&name)?.into()};
+ let installed=have.has(&read(entry,"id")?);
+ let high=read(entry,"quality")?.as_string().is_some_and(|quality|quality=="high");
+ let size=amount(read(entry,"sizeMB")?)?;
+ let speaker=amount(read(entry,"speaker")?)?;
+ let recommended=read(entry,"recommended")?.as_bool()==Some(true);
+ let shared=read(entry,"sharedPack")?.as_bool()==Some(true);
+ let upgrade=amount(read(entry,"upgradeBytes")?)?;
+ let model=or(read(entry,"modelKey")?,||or(read(entry,"piperId")?,||read(entry,"id")))?;
+ let runtime=read(entry,"runtime")?;
+ let license_url=read(entry,"licenseUrl")?;
+ let license_name=read(entry,"licenseName")?;
+ Ok(ihr_voice(&id,&name,&tag.lang,&tag.base,&tag.region,installed,high,size,speaker,recommended,shared,upgrade,&model,&runtime,&license_url,&license_name))
+}
+/// Every entry of a catalogue as a voice, in its order, the ones that are not ours left out: what the reader's
+/// `neuralVoiceList` answers, in one visit. With `installed_only` (the audiobook asks before every fragment it speaks
+/// or prepares) an entry that is not downloaded is passed over after reading its id alone: the same voices as the
+/// whole list filtered by `installed`.
+#[wasm_bindgen]
+pub fn catalog_neural_voices(entries:JsValue,installed:JsValue,normalize:Function,installed_only:bool)->Result<Array,JsValue>{
+ let list:Array=entries.dyn_into().map_err(|_|JsValue::from(js_sys::TypeError::new("The voice catalogue is not a list")))?;
+ let have=installed_set(&installed)?;
+ let (voices,mut tags)=(Array::new(),Tags::new());
+ for index in 0..list.length(){
+  let entry=list.get(index);
+  if !entry.is_object(){continue}
+  if installed_only&&!have.has(&crate::host::read(&entry,"id")?){continue}
+  let voice=record(&entry,&mut ||Ok(have.clone()),&normalize,Some(&mut tags))?;
+  if !voice.is_null(){voices.push(&voice);}
  }
- set(&result,"recommended",&(get(&entry,"recommended")?==JsValue::TRUE).into())?;
- set(&result,"sharedPack",&(get(&entry,"sharedPack")?==JsValue::TRUE).into())?;
- let upgrade=number(&get(&entry,"upgradeBytes")?)?;
- set(&result,"upgradeBytes",&(if upgrade.is_nan()||upgrade==0.0{0.0}else{upgrade}).into())?;
- set(&result,"modelKey",&or(get(&entry,"modelKey")?,||or(get(&entry,"piperId")?,||get(&entry,"id")))?)?;
- set(&result,"runtime",&get(&entry,"runtime")?)?;
- set(&result,"licenseUrl",&get(&entry,"licenseUrl")?)?;
- set(&result,"licenseName",&get(&entry,"licenseName")?)?;
- Ok(result.into())
+ Ok(voices)
 }
 
 fn installed_voices(list:&Array)->Result<Vec<JsValue>,JsValue>{

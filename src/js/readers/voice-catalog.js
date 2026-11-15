@@ -35,16 +35,10 @@ export const langBase = tag => normalizeLang(tag).split('-')[0]
 const langRegion = tag => normalizeLang(tag).split('-')[1] || ''
 
 /**
- * A catalogue entry of neural-voice/index.js ({id,lang,name,quality:'medium'|'high',sizeMB,speaker,recommended}) as a voice.
- * `installed` is a Set (or array) of the ids downloaded so far. Null for anything that is not one of ours.
- */
-export const normalizeNeuralVoice = (entry, installed = []) => readerUI().catalog_neural_voice(entry, installed, normalizeLang)
-
-/**
  * The voice and language for one utterance. An explicit choice always wins, except with 'Voz multilingüe' on and a
  * chunk in another language: then that language gets ITS best voice. Without an explicit choice the best natural
  * voice for the language is used. `voiceId` is '' when the system default should decide (no matching voice).
- * The catalogue only holds records produced by normalizeNeuralVoice: Rust leaves anything else unanswered.
+ * The catalogue only holds records made by rust-ui (catalog_neural_voices): Rust leaves anything else unanswered.
  */
 export function resolveVoice(voices, options) {
   const answer = readerUI().catalog_resolve_voice(voices, options, normalizeLang, (a, b) => a.localeCompare(b))

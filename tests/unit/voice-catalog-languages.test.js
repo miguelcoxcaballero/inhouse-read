@@ -6,7 +6,7 @@ import { neuralVoices, piperVoices, supertonicVoices, modelsOf, DEFAULT_VOICE_BA
 import { voiceUrls } from '../../src/js/readers/neural-voice/store.js'
 import { piperPath, recommendedVoice } from './helpers/reference-voice-urls.js'
 import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
-import { detectLanguage, normalizeNeuralVoice, resolveVoice, languageName, langBase, orderNeuralVoices, recommendedNeuralFor } from '../../src/js/readers/voice-catalog.js'
+import { detectLanguage, normalizeNeuralVoice, resolveVoice, languageName, langBase, orderNeuralVoices, recommendedNeuralFor } from './helpers/live-voice-catalog.js'
 
 // The languages added after es/en/fr/de/it/pt/ca: the Piper voice picked for each, and a few sentences of ordinary prose.
 const ADDED = {
