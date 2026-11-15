@@ -85,6 +85,7 @@ const cases=[
  ['sync poll',{known:{id:'account'}},'syncLibraryToDrive',[{poll:true}]],
  ['sync legacy failure',{known:{id:'account'},legacyError:Error('legacy')},'syncLibraryToDrive'],
  ['silent web without account',{session:false},'syncLibraryToDrive',[{silent:true}]],
+ ['silent Android first installation',{session:false,android:true},'syncLibraryToDrive',[{silent:true}]],
  ['silent Android remembered',{session:false,android:true,remembered:{id:'account'}},'syncLibraryToDrive',[{silent:true}]],
  ['silent Android cancellation',{session:false,android:true,remembered:{id:'account'},accessError:Error('cancel')},'syncLibraryToDrive',[{silent:true}]],
  ['connect success',{session:false},'connectGoogleAccount'],

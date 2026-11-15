@@ -1,4 +1,4 @@
-//! Google Drive access: the web sign-in and the Android authorization-code/PKCE flow, the
+//! Google Drive access: OAuth is delegated to the canonical services host; the
 //! per-request account guard, folder lookup and the per-device library manifests, reading state
 //! and uploads. The stored session, localStorage, fetch and the app's book helpers are host
 //! callbacks; crypto, Google Identity Services, the Android bridge, the user agent, navigation,
@@ -7,7 +7,7 @@
 //! fetch, remembered, spineCustomization, cleanQuotes, normalizeDriveBookLength}`.
 use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::{prelude::*,JsCast};
-use js_sys::{Array,Function,Object,Promise,RegExp,Uint8Array};
+use js_sys::{Array,Promise,RegExp,Uint8Array};
 use crate::cloud_host::*;
 #[path="drive_live.rs"]mod live;
 
@@ -16,31 +16,19 @@ extern "C"{
  #[wasm_bindgen(js_name=encodeURIComponent)]fn encode_uri_component(value:&JsValue)->String;
 }
 
-const DRIVE_SCOPE:&str="https://www.googleapis.com/auth/drive.file";
 const DRIVE_FILES_URL:&str="https://www.googleapis.com/drive/v3/files";
 const UPLOAD_URL:&str="https://www.googleapis.com/upload/drive/v3/files";
 const ABOUT_URL:&str="https://www.googleapis.com/drive/v3/about";
 const PROFILE_KEY:&str="ihr_drive_profile_v2";
-const DEFAULT_CLIENT_ID:&str="435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com";
-const ANDROID_PKCE_REDIRECT_URI:&str="com.inhousesoftware.read:/oauth2redirect";
-const REFRESH_TOKEN_KEY:&str="ihr_drive_refresh_token_v1";
-const PKCE_VERIFIER_KEY:&str="ihr_drive_pkce_verifier_v1";
-const PKCE_TRANSACTION_KEY:&str="ihr_drive_pkce_transaction_v1";
-const AUTH_TIMEOUT_MS:f64=10.0*60_000.0;
 const FOLDER_NAME:&str="inhouse read";
 const STATE_FOLDER_NAME:&str=".inhouse-read-state";
 const FOLDER_MIME:&str="application/vnd.google-apps.folder";
 const FILE_FIELDS:&str="fields=id,name,mimeType,size,md5Checksum";
 
-/// A web sign-in waiting for Google's popup.
-struct WebRequest{resolve:Function,reject:Function}
-/// An Android sign-in waiting for the custom-scheme callback.
-struct NativeRequest{resolve:Function,reject:Function,generation:f64,timer:u32}
 struct Core{
- host:JsValue,generation:Cell<f64>,timers:Rc<Timers>,
- auth:RefCell<Option<Promise>>,folder:RefCell<Option<Promise>>,state_folder:RefCell<Option<Promise>>,
+ host:JsValue,generation:Cell<f64>,
+ folder:RefCell<Option<Promise>>,state_folder:RefCell<Option<Promise>>,
  revision_task:RefCell<Option<(f64,Promise)>>,revision_sequence:Cell<u64>,
- native:RefCell<Option<Rc<NativeRequest>>>,exchange:RefCell<Option<Promise>>,web:RefCell<Vec<Rc<WebRequest>>>,
 }
 
 /// URL-safe base64 without padding, as `btoa(...).replace(+,-).replace(/,_).replace(=+$,'')`.
@@ -58,12 +46,6 @@ fn base64_url(bytes:&[u8])->String{
 fn escape_drive_query(value:&JsValue)->String{string(value).replace('\\',"\\\\").replace('\'',"\\'")}
 fn params(entries:&[(&str,JsValue)])->Result<JsValue,JsValue>{construct("URLSearchParams",&[&object(entries)])}
 fn text(value:&JsValue)->Result<String,JsValue>{Ok(string(&call(value,"toString",&[])?))}
-fn is_function_property(target:&JsValue,key:&str)->bool{get(target,key).is_function()}
-/// `scope.split(/\s+/).includes(DRIVE_SCOPE)`.
-fn grants_drive(scope:&JsValue)->Result<bool,JsValue>{
- let parts=Array::from(&call(scope,"split",&[&RegExp::new(r"\s+","")])?);
- Ok(parts.iter().any(|part|part.as_string().as_deref()==Some(DRIVE_SCOPE)))
-}
 fn generation_changed()->JsValue{error("La conexión de Google ha cambiado.")}
 fn parse_date(value:&JsValue)->f64{js_sys::Date::parse(&string(value))}
 
@@ -104,290 +86,27 @@ impl Core{
  fn stored(&self,key:&str)->Result<JsValue,JsValue>{self.storage("getItem",&[&key.into()])}
  fn remove(&self,key:&str)->Result<(),JsValue>{self.storage("removeItem",&[&key.into()])?;Ok(())}
  fn require(&self,generation:f64)->Result<(),JsValue>{if generation!=self.generation.get(){Err(generation_changed())}else{Ok(())}}
- fn client_id(&self)->JsValue{get(&self.host,"androidClientId")}
- fn native_shell(&self)->Result<bool,JsValue>{
-  let agent=or(self.platform("userAgent",&[])?,"".into());
-  Ok(RegExp::new(r"\bInhouseReadApp\/\d","i").test(&string(&agent)))
- }
- fn native_bridge(&self)->Result<bool,JsValue>{Ok(is_function_property(&self.platform("bridge",&[])?,"openAuthUrl"))}
-
- /// Remember a token for as long as Google says it lives (at least a minute, an hour if unsaid).
- fn save_token(&self,token:&JsValue,lifetime_seconds:&JsValue)->Result<JsValue,JsValue>{
-  if !token.is_truthy(){return Err(error("Google no devolvió un token de acceso."));}
-  let lifetime=number_or_zero(lifetime_seconds);let seconds=js_sys::Math::max(60.0,if lifetime!=0.0{lifetime}else{3600.0});
-  self.session("save",&[token,&(js_sys::Date::now()+seconds*1000.0).into()])?;Ok(token.clone())
- }
-
- // ---- web sign-in ----
- fn request_web(self:&Rc<Self>)->Result<Promise,JsValue>{
-  let oauth=self.platform("google",&[])?;
-  let init=get(&oauth,"initTokenClient");
-  if !oauth.is_truthy()||!init.is_truthy(){
-   return Err(error(if self.platform("offline",&[])?.is_truthy(){"Sin conexión a Internet."}else{"Google está cargando. Pulsa Conectar otra vez."}));
-  }
-  let core=self.clone();let generation=self.generation.get();
-  let promise=Promise::new(&mut|resolve,reject|{
-   let request=Rc::new(WebRequest{resolve,reject});
-   core.web.borrow_mut().push(request.clone());
-   let finish={let (core,request)=(core.clone(),request.clone());Rc::new(move|value:Result<JsValue,JsValue>|{
-    core.web.borrow_mut().retain(|known|!Rc::ptr_eq(known,&request));
-    let _=match value{Ok(value)=>request.resolve.call1(&JsValue::UNDEFINED,&value),Err(error)=>request.reject.call1(&JsValue::UNDEFINED,&error)};
-   })};
-   let attempt=||->Result<(),JsValue>{
-    let callback={let (core,finish)=(core.clone(),finish.clone());Closure::wrap(Box::new(move|response:JsValue|{
-     if generation!=core.generation.get(){return finish(Err(error("Sesión cerrada.")));}
-     let failure=get(&response,"error");
-     if failure.is_truthy(){return finish(Err(error(&string(&or(get(&response,"error_description"),failure)))));}
-     let scope=get(&response,"scope");
-     if scope.is_truthy()&&!grants_drive(&scope).unwrap_or(false){return finish(Err(error("No se concedió acceso a los libros de Drive.")));}
-     finish(core.save_token(&get(&response,"access_token"),&get(&response,"expires_in")));
-    })as Box<dyn FnMut(JsValue)>)};
-    let failed={let finish=finish.clone();Closure::wrap(Box::new(move|failure:JsValue|{
-     let kind=get(&failure,"type").as_string().unwrap_or_default();
-     finish(Err(error(match kind.as_str(){
-      "popup_closed"=>"Se cerró la ventana de Google. Pulsa Conectar.",
-      "popup_failed_to_open"=>"Ventana de Google bloqueada. Permite las ventanas emergentes.",
-      _=>"No se pudo abrir Google. Reintenta."
-     })));
-    })as Box<dyn FnMut(JsValue)>)};
-    let client=call(&oauth,"initTokenClient",&[&object(&[("client_id",DEFAULT_CLIENT_ID.into()),("scope",DRIVE_SCOPE.into()),
-     ("include_granted_scopes",JsValue::TRUE),("callback",callback.as_ref().clone()),("error_callback",failed.as_ref().clone())])])?;
-    // Google keeps both callbacks for the life of the token client.
-    callback.forget();failed.forget();
-    // This runs in the original button click, before an await can lose the browser's user gesture
-    // and cause the Google popup to be blocked.
-    let prompt=if call(&self.host,"remembered",&[])?.is_truthy(){""}else{"consent"};
-    call(&client,"requestAccessToken",&[&object(&[("prompt",prompt.into())])])?;Ok(())
-   };
-   if let Err(failure)=attempt(){finish(Err(failure));}
-  });
-  Ok(promise)
- }
-
- // ---- PKCE (ported from Notes: verifier, challenge, authorization URL, code exchange, refresh) ----
- fn random_token(&self)->Result<String,JsValue>{
-  let bytes=Uint8Array::new(&self.platform("randomBytes",&[&32.into()])?);
-  Ok(base64_url(&bytes.to_vec()))
- }
- async fn challenge(&self,verifier:&str)->Result<String,JsValue>{
-  let digest=settle(self.platform("sha256",&[&Uint8Array::from(verifier.as_bytes())])).await?;
-  Ok(base64_url(&Uint8Array::new(&digest).to_vec()))
- }
- async fn token_request(self:Rc<Self>,body:JsValue,generation:f64)->Result<JsValue,JsValue>{
-  // Same deadline and sign-out guard as Notes' refresh-token request.
-  let controller=construct("AbortController",&[])?;
-  let abort=controller.clone();
-  let seq=self.timers.start(20_000.0,move||{let _=call(&abort,"abort",&[]);});
-  let fetched=async{
-   let response=settle(call(&self.host,"fetch",&[&"https://oauth2.googleapis.com/token".into(),&object(&[
-    ("method","POST".into()),("headers",object(&[("Content-Type","application/x-www-form-urlencoded".into())])),
-    ("body",text(&body)?.into()),("signal",get(&controller,"signal"))])])).await?;
-   let data=settle(call(&response,"json",&[])).await?;Ok::<(JsValue,JsValue),JsValue>((response,data))
-  }.await;
-  let outcome=match fetched{
-   Ok(pair)=>Ok(pair),
-   Err(failure)=>Err(if get(&get(&controller,"signal"),"aborted").is_truthy(){error("Google tardó demasiado. Reintenta.")}else{failure}),
-  };
-  self.timers.clear(seq);
-  let (response,data)=outcome?;
-  if generation!=self.generation.get(){return Err(error("Sesión cerrada."));}
-  if !get(&response,"ok").is_truthy()||!get(&data,"access_token").is_truthy(){
-   let failure=error(&string(&or(or(get(&data,"error_description"),get(&data,"error")),"Google no devolvió un token de acceso.".into())));
-   set(&failure,"status",&get(&response,"status"));return Err(failure);
-  }
-  let scope=get(&data,"scope");
-  if scope.is_truthy()&&!grants_drive(&scope)?{return Err(error("No se concedió acceso a los libros de Drive."));}
-  let refresh=get(&data,"refresh_token");
-  if refresh.is_truthy(){self.storage("setItem",&[&REFRESH_TOKEN_KEY.into(),&refresh])?;}
-  self.save_token(&get(&data,"access_token"),&get(&data,"expires_in"))
- }
- async fn refresh(self:Rc<Self>)->Result<JsValue,JsValue>{
-  let refresh=self.stored(REFRESH_TOKEN_KEY)?;
-  if !refresh.is_truthy(){return Err(error("Sesión caducada. Pulsa Conectar."));}
-  let body=params(&[("client_id",self.client_id()),("grant_type","refresh_token".into()),("refresh_token",refresh)])?;
-  let generation=self.generation.get();
-  match self.clone().token_request(body,generation).await{
-   Ok(token)=>Ok(token),
-   Err(failure)=>{
-    let status=get(&failure,"status");
-    if status==JsValue::from_f64(400.0)||status==JsValue::from_f64(401.0){self.remove(REFRESH_TOKEN_KEY)?;}
-    Err(failure)
-   }
-  }
- }
- async fn start_pkce(self:Rc<Self>,generation:f64)->Result<(),JsValue>{
-  let verifier=self.random_token()?;
-  let challenge=self.challenge(&verifier).await?;
-  if generation!=self.generation.get(){return Err(error("Conexión cancelada."));}
-  let state=self.random_token()?;
-  self.storage("setItem",&[&PKCE_VERIFIER_KEY.into(),&verifier.into()])?;
-  self.storage("setItem",&[&PKCE_TRANSACTION_KEY.into(),&json(&object(&[("state",state.clone().into()),("createdAt",js_sys::Date::now().into())]))?.into()])?;
-  let url=construct("URL",&[&"https://accounts.google.com/o/oauth2/v2/auth".into()])?;
-  let query=get(&url,"searchParams");
-  for (key,value) in [("client_id",self.client_id()),("redirect_uri",ANDROID_PKCE_REDIRECT_URI.into()),("response_type","code".into()),
-   ("scope",DRIVE_SCOPE.into()),("access_type","offline".into()),("include_granted_scopes","true".into()),
-   ("code_challenge",challenge.into()),("code_challenge_method","S256".into()),("state",state.into())]{call(&query,"set",&[&key.into(),&value])?;}
-  if !self.stored(REFRESH_TOKEN_KEY)?.is_truthy(){call(&query,"set",&[&"prompt".into(),&"consent".into()])?;}
-  let address=text(&url)?;
-  // If the native bridge does not really answer the call (checked before, but that only looks that the
-  // function exists), the tab itself is sent to Google's page instead of doing nothing.
-  let bridge=self.platform("bridge",&[])?;
-  if !is_function_property(&bridge,"openAuthUrl"){
-   self.platform("warn",&[&"PKCE sign-in: puente Android no disponible, se usa el flujo web como respaldo.".into()])?;
-   self.platform("assign",&[&address.into()])?;return Ok(());
-  }
-  call(&bridge,"openAuthUrl",&[&address.into()])?;Ok(())
- }
- async fn request_native(self:Rc<Self>,interactive:bool)->Result<JsValue,JsValue>{
-  let generation=self.generation.get();
-  if !self.client_id().is_truthy(){return Err(error("Falta configurar el cliente OAuth Android de Inhouse Read."));}
-  if self.stored(REFRESH_TOKEN_KEY)?.is_truthy(){
-   match self.clone().refresh().await{
-    Ok(token)=>return Ok(token),
-    Err(failure)=>{if !interactive||generation!=self.generation.get(){return Err(failure);}}
-   }
-  }
-  if !interactive{return Err(error("Sesión caducada. Pulsa Conectar."));}
-  let core=self.clone();
-  let mut pending_slot=None;
-  let promise=Promise::new(&mut|resolve,reject|{
-   let owner=core.clone();
-   let seq=core.timers.start(AUTH_TIMEOUT_MS,move||{
-    if owner.native.borrow().as_ref().map(|pending|pending.generation)!=Some(generation){return;}
-    owner.cancel("La conexión con Google caducó. Reintenta.");
-   });
-   let pending=Rc::new(NativeRequest{resolve,reject,generation,timer:seq});
-   *core.native.borrow_mut()=Some(pending.clone());pending_slot=Some(pending);
-  });
-  let pending=pending_slot.expect("Promise executors run synchronously");
-  let (owner,watched)=(self.clone(),pending.clone());
-  let started=start(async move{owner.start_pkce(generation).await.map(|_|JsValue::UNDEFINED)});
-  let (owner,watched_request)=(self.clone(),watched.clone());
-  let report=Closure::once_into_js(move|failure:JsValue|{
-   let current=owner.native.borrow().as_ref().is_some_and(|known|Rc::ptr_eq(known,&watched_request));
-   if current{*owner.native.borrow_mut()=None;}
-   owner.timers.clear(watched_request.timer);
-   let _=watched_request.reject.call1(&JsValue::UNDEFINED,&failure);
-  });
-  call(&started,"catch",&[&report])?;
-  settle(Ok(promise.into())).await
- }
- /// Settles a native request: its timer stops first, then the outcome goes to the waiting caller.
- fn finish_native(&self,pending:&NativeRequest,value:Result<JsValue,JsValue>){
-  self.timers.clear(pending.timer);
-  let _=match value{Ok(value)=>pending.resolve.call1(&JsValue::UNDEFINED,&value),Err(failure)=>pending.reject.call1(&JsValue::UNDEFINED,&failure)};
- }
-
- /// MainActivity relays the custom-scheme callback exactly as Notes does.
- fn native_callback(self:&Rc<Self>,payload:&JsValue)->Result<bool,JsValue>{
-  if self.exchange.borrow().is_some(){return Ok(true);} // Native delivery can be retried after a reload.
-  let pending=self.native.borrow().clone();
-  let generation=self.generation.get();
-  let transaction=self.stored(PKCE_TRANSACTION_KEY).and_then(|raw|parse(&or(raw,"null".into()))).unwrap_or(JsValue::UNDEFINED);
-  let text_payload=string(&or(payload.clone(),"".into()));
-  let query=text_payload.strip_prefix(['#','?']).unwrap_or(&text_payload).to_owned();
-  let query=construct("URLSearchParams",&[&query.into()])?;
-  // Persisted transaction, as with Notes' verifier, survives Android destroying the WebView while the
-  // account chooser is in front. No in-memory promise required.
-  if !transaction.is_truthy()||get(&transaction,"state")!=call(&query,"get",&[&"state".into()])?{return Ok(true);}
-  let fail=|failure:JsValue|{
-   match &pending{
-    Some(pending)=>self.finish_native(pending,Err(failure)),
-    None=>if generation==self.generation.get(){let _=self.platform("emit",&[&"inhouse-drive-auth".into(),&object(&[("error",get(&failure,"message"))])]);}
-   }
-  };
-  *self.native.borrow_mut()=None;
-  self.remove(PKCE_TRANSACTION_KEY)?;
-  let verifier=self.stored(PKCE_VERIFIER_KEY)?;
-  self.remove(PKCE_VERIFIER_KEY)?;
-  if js_sys::Date::now()-number(&get(&transaction,"createdAt"))>AUTH_TIMEOUT_MS{fail(error("La conexión con Google caducó. Reintenta."));return Ok(true);}
-  let denied=call(&query,"get",&[&"error".into()])?;
-  if denied.is_truthy(){
-   fail(error(if denied.as_string().as_deref()==Some("access_denied"){"No se ha autorizado la conexión con Google."}else{"No se pudo conectar con Google. Reintenta."}));
-   return Ok(true);
-  }
-  let code=call(&query,"get",&[&"code".into()])?;
-  if !code.is_truthy()||!verifier.is_truthy(){fail(error("Google no devolvió un código de autorización válido."));return Ok(true);}
-  let body=params(&[("client_id",self.client_id()),("code",code),("code_verifier",verifier),
-   ("grant_type","authorization_code".into()),("redirect_uri",ANDROID_PKCE_REDIRECT_URI.into())])?;
-  let core=self.clone();
-  let exchange=start(async move{
-   let outcome=core.clone().token_request(body,generation).await;
-   match outcome{
-    Ok(token)=>{
-     match &pending{
-      Some(pending)=>core.finish_native(pending,Ok(token.clone())),
-      None=>{let _=core.platform("emit",&[&"inhouse-drive-auth".into(),&object(&[("connected",JsValue::TRUE)])]);}
-     }
-     Ok(token)
-    },
-    Err(failure)=>{
-     match &pending{
-      Some(pending)=>core.finish_native(pending,Err(failure)),
-      None=>if generation==core.generation.get(){let _=core.platform("emit",&[&"inhouse-drive-auth".into(),&object(&[("error",get(&failure,"message"))])]);}
-     }
-     Ok(JsValue::UNDEFINED)
-    }
-   }
-  });
-  let owner=self.clone();let mine=exchange.clone();
-  let release=Closure::once_into_js(move||{
-   let current=owner.exchange.borrow().clone();
-   if current.is_some_and(|current|JsValue::from(current)==JsValue::from(mine)){*owner.exchange.borrow_mut()=None;}
-  });
-  let _=call(&exchange,"finally",&[&release]);
-  *self.exchange.borrow_mut()=Some(exchange);
-  Ok(true)
- }
-
+ // Google OAuth is supplied by the canonical services module. Rust owns Drive I/O only.
  fn cancel(&self,message:&str){
   self.generation.set(self.generation.get()+1.0);
   *self.folder.borrow_mut()=None;*self.state_folder.borrow_mut()=None;
   *self.revision_task.borrow_mut()=None;self.revision_sequence.set(self.revision_sequence.get().wrapping_add(1));
-  let waiting:Vec<Rc<WebRequest>>=self.web.borrow().clone();
-  for request in waiting{
-   self.web.borrow_mut().retain(|known|!Rc::ptr_eq(known,&request));
-   let _=request.reject.call1(&JsValue::UNDEFINED,&error(message));
-  }
-  let pending=self.native.borrow_mut().take();
-  if let Some(pending)=pending{
-   // Rejects through the request's own finisher: its timer stops with it.
-   self.finish_native(&pending,Err(error(message)));
-  }
-  let _=self.remove(PKCE_TRANSACTION_KEY);let _=self.remove(PKCE_VERIFIER_KEY);
-  *self.auth.borrow_mut()=None;*self.exchange.borrow_mut()=None;
+  let _=call(&get(&self.host,"oauth"),"cancel",&[&message.into()]);
  }
  fn sign_out(&self)->Result<(),JsValue>{
   self.cancel("Sesión cerrada.");
-  self.session("clear",&[])?;
-  for key in [REFRESH_TOKEN_KEY,PKCE_VERIFIER_KEY,PROFILE_KEY]{self.remove(key)?;}
-  *self.folder.borrow_mut()=None;*self.state_folder.borrow_mut()=None;Ok(())
+  call(&get(&self.host,"oauth"),"signOut",&[])?;
+  self.session("clear",&[])?;self.remove(PROFILE_KEY)?;Ok(())
  }
-
+ fn native_callback(self:&Rc<Self>,payload:&JsValue)->Result<bool,JsValue>{
+  call(&get(&self.host,"oauth"),"handleCallback",&[payload])?;Ok(true)
+ }
  fn request_access(self:&Rc<Self>,options:&JsValue)->Promise{
-  let restored=match self.session("restore",&[]){Ok(token)=>token,Err(failure)=>return Promise::reject(&failure)};
-  if restored.is_truthy(){return Promise::resolve(&self.session("token",&[]).unwrap_or(JsValue::UNDEFINED));}
-  if let Some(auth)=self.auth.borrow().clone(){return auth;}
-  let interactive=get(options,"interactive");let interactive=if interactive.is_undefined(){true}else{interactive.is_truthy()};
-  let outcome=(||->Result<Result<Promise,JsValue>,JsValue>{
-   let bridge=self.native_bridge()?;
-   if self.native_shell()?&&!bridge{
-    return Ok(Err(error_with_code("Esta versión de Android no admite Drive.","ANDROID_SHELL_OUTDATED")));
-   }
-   if !interactive&&!bridge{return Ok(Err(error("Sesión caducada. Pulsa Conectar.")));}
-   Ok(Ok(if bridge{let core=self.clone();start(async move{core.request_native(interactive).await})}else{self.request_web()?}))
-  })();
-  let request=match outcome{Ok(Ok(request))=>request,Ok(Err(failure))|Err(failure)=>return Promise::reject(&failure)};
-  *self.auth.borrow_mut()=Some(request.clone());
-  let owner=self.clone();let mine=request.clone();
-  let release=Closure::once_into_js(move||{
-   let current=owner.auth.borrow().clone();
-   if current.is_some_and(|current|JsValue::from(current)==JsValue::from(mine)){*owner.auth.borrow_mut()=None;}
-  });
-  call(&request,"finally",&[&release]).expect("Promise.prototype.finally exists").into()
+  match call(&get(&self.host,"oauth"),"requestDriveAccess",&[options]){
+   Ok(value)=>Promise::resolve(&value),Err(error)=>Promise::reject(&error)
+  }
  }
  async fn access_token(self:Rc<Self>)->Result<JsValue,JsValue>{
-  if self.session("restore",&[])?.is_truthy(){return self.session("token",&[]);}
   settle(Ok(self.request_access(&object(&[("interactive",JsValue::FALSE)])).into())).await
  }
 
@@ -701,8 +420,8 @@ pub struct RustDriveClient{core:Rc<Core>}
 impl RustDriveClient{
  #[wasm_bindgen(constructor)]
  pub fn new(host:JsValue)->RustDriveClient{
-  RustDriveClient{core:Rc::new(Core{host,generation:Cell::new(0.0),timers:Rc::new(Timers::default()),auth:RefCell::new(None),folder:RefCell::new(None),
-   state_folder:RefCell::new(None),revision_task:RefCell::new(None),revision_sequence:Cell::new(0),native:RefCell::new(None),exchange:RefCell::new(None),web:RefCell::new(Vec::new())})}
+  RustDriveClient{core:Rc::new(Core{host,generation:Cell::new(0.0),folder:RefCell::new(None),
+   state_folder:RefCell::new(None),revision_task:RefCell::new(None),revision_sequence:Cell::new(0)})}
  }
  #[wasm_bindgen(js_name=requestDriveAccess)]
  pub fn request_drive_access(&self,options:JsValue)->Promise{self.core.request_access(&options)}

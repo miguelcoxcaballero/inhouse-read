@@ -126,7 +126,7 @@ async function syncLibraryToDrive({ silent = false, poll = false } = {}) {
     if (silent) {
       // Android uses the same PKCE refresh-token flow as Inhouse Notes.
       const nativeShell = isAndroidShell()
-      if (!nativeShell || !getRememberedDriveProfile()) return
+      if (!nativeShell) return
       try { await requestDriveAccess({ interactive: false }) } catch { return }
     } else await requestDriveAccess()
   }

@@ -3,12 +3,11 @@ import { readFileSync } from 'node:fs'
 import { webcrypto } from 'node:crypto'
 import { Blob as NodeBlob, File as NodeFile } from 'node:buffer'
 
-// The Rust Drive client against the frozen JavaScript original. A simulated Drive server answers the
-// real REST calls; seeded sequences of API calls, Google sign-ins (web and Android PKCE with every
-// kind of callback), sign-outs, cancellations, expiries and server failures run once per
-// implementation with the same fake clock and random bytes. The HTTP traffic (URL, method, headers
-// and body of every request), every result and error, the storage, the events and the
-// window calls must be identical, in the same order.
+// Differential coverage for Drive data operations against the frozen original.
+// OAuth now has a deliberately different contract (shared sessions, strict scopes,
+// bounded requests). Its protocol/race cases live in services tests and drive-client.test.js.
+// Supply the same valid session to both implementations, then compare real REST
+// traffic, results, errors and account-independent storage through seeded scenarios.
 vi.mock('../../src/js/rust-ui.js', async () => {
   const ui = await import('../../src/wasm/ui/inhouse_read_ui.js')
   ui.initSync({ module: (process.__ihrDriveUiModule ??= new WebAssembly.Module(readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm'))) })
@@ -149,10 +148,9 @@ function scenario(seed) {
   const count = 18 + Math.floor(rng() * 10)
   for (let i = 0; i < count; i++) {
     steps.push({ kind: pick(rng, ['listAll', 'listAll', 'list', 'folder', 'upload', 'upload', 'big', 'snapshots', 'writeSnapshot', 'cover', 'download', 'profile',
-      'readProgress', 'writeProgress', 'writeProgress', 'webLogin', 'androidLogin', 'androidLogin', 'callback', 'callback', 'signOut', 'cancel',
-      'jump', 'session', 'fault', 'fault', 'seed', 'tokenMode', 'access']), r: rng(), q: rng(), progress: randomProgress(rng), n: Math.floor(rng() * 5) })
+      'readProgress', 'writeProgress', 'writeProgress', 'fault', 'fault', 'seed']), r: rng(), q: rng(), progress: randomProgress(rng), n: Math.floor(rng() * 5) })
   }
-  return { android: rng() < .5, steps, session: rng() < .8, refresh: rng() < .4 }
+  return { android: false, steps, session: true, refresh: false }
 }
 
 async function run(importModule, seed) {
@@ -193,6 +191,7 @@ async function run(importModule, seed) {
   let index = 0
   try {
     for (const step of plan.steps) {
+      localStorage.setItem('ihr_drive_session_v2', JSON.stringify({accessToken:'seed-token', expiresAt:Date.now()+7_200_000}));
       const label = `${index++}:${step.kind}`
       switch (step.kind) {
         case 'listAll': track(label, drive.listAllDriveBooks()); break
@@ -208,42 +207,8 @@ async function run(importModule, seed) {
         case 'profile': world.server.noUser = step.q < .15; track(label, drive.getDriveProfile()); break
         case 'readProgress': track(label, drive.readDriveProgress(step.q < .5 ? bookId : 'other')); break
         case 'writeProgress': track(label, drive.writeDriveProgress(bookId, step.progress, step.q < .5 ? undefined : [...world.server.items.keys()][step.n])); break
-        case 'webLogin': {
-          const flavour = step.q < .3 ? 'error' : step.q < .4 ? 'scope' : step.q < .5 ? 'popup_closed' : step.q < .55 ? 'popup_failed_to_open' : step.q < .6 ? 'other' : step.q < .65 ? 'late' : 'ok'
-          globalThis.google = step.r < .1 ? undefined : { accounts: { oauth2: { initTokenClient: options => {
-            trace.push(['gis', options.client_id, options.scope, options.include_granted_scopes, Object.keys(options).sort()])
-            return { requestAccessToken: request => {
-              trace.push(['gis-request', request])
-              const respond = () => {
-                if (flavour === 'popup_closed' || flavour === 'popup_failed_to_open' || flavour === 'other') options.error_callback(flavour === 'other' ? { type: 'x' } : { type: flavour })
-                else if (flavour === 'error') options.callback({ error: 'access_denied', error_description: step.n % 2 ? 'Denied' : undefined })
-                else if (flavour === 'scope') options.callback({ access_token: 'web-token', expires_in: 3600, scope: 'email profile' })
-                else options.callback({ access_token: step.n === 4 ? '' : `web-${step.n}`, expires_in: step.n === 3 ? 'x' : step.n === 2 ? 5 : 3600, scope: `${SCOPE} email` })
-              }
-              if (flavour === 'late') { world.busy++; setTimeout(() => { world.busy--; respond() }, 5) } else respond()
-            } }
-          } } } }
-          track(label, drive.requestDriveAccess(step.q < .2 ? { interactive: false } : undefined)); break
-        }
-        case 'androidLogin':
-          globalThis.InhouseNative = step.r < .12 ? {} : { openAuthUrl: url => { authUrls.push(url); trace.push(['openAuthUrl', url]) } }
-          track(label, drive.requestDriveAccess(step.q < .3 ? { interactive: false } : undefined)); break
-        case 'callback': {
-          const url = authUrls.at(-1) && new URL(authUrls.at(-1))
-          const state = url?.searchParams.get('state') || 'none'
-          const variants = [`code=code-1&state=${state}`, `#code=code-2&state=${state}`, `state=${state}&error=access_denied`, `state=${state}&error=server_error`,
-            `state=wrong&code=c`, `state=${state}`, `?state=${state}&code=code-3`, '', undefined]
-          track(label, Promise.resolve(globalThis.handleInhouseNativeOAuth?.(variants[step.n % variants.length]))); break
-        }
-        case 'signOut': drive.signOutDrive(); break
-        case 'cancel': drive.cancelDriveConnection(step.q < .5 ? undefined : 'Parada'); break
-        case 'jump': world.jump(pick(() => step.r, [1000, 60_000, 11 * 60_000, 3_700_000])); break
-        case 'session': localStorage.setItem(step.q < .5 ? 'ihr_drive_session_v2' : 'ihn_drive_tokens', JSON.stringify({ accessToken: `stored-${step.n}`, expiresAt: Date.now() + (step.r < .3 ? 30_000 : 3_600_000) }))
-          if (step.r > .7) localStorage.setItem('ihr_drive_refresh_token_v1', 'stored-refresh'); break
         case 'fault': world.server.faults.push(pick(() => step.r, ['network', '401', '403', '500', 'text', { status: 200, body: '{invalid' }, '401'])); break
         case 'seed': { const folder = parent(); world.server.seed(pick(() => step.r, ['one.pdf', 'two.EPUB', 'note.txt', 'three.cbz']), folder); world.server.seed('progress-book.json', undefined); break }
-        case 'tokenMode': world.server.tokenMode = pick(() => step.r, ['ok', 'ok', 'bad', 'noscope', 'plain', 'short']); break
-        case 'access': track(label, drive.requestDriveAccess({ interactive: step.q < .5 })); break
       }
       await flush(); publish()
       trace.push(['after', label, snapshot(), tasks.map(task => task.state).join(',')])
@@ -264,17 +229,15 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 const SCENARIOS = Number(process.env.DRIVE_DIFFERENTIAL_SCENARIOS || 120)
 describe('Drive client (Rust) against the original', () => {
   it(`makes the same requests, results, storage and events through ${SCENARIOS} seeded scenarios`, async () => {
-    let requests = 0, errors = 0, tokens = 0
+    let requests = 0, errors = 0
     for (let seed = 1; seed <= SCENARIOS; seed++) {
       const expected = await run(() => import('./helpers/reference-drive-client.js'), seed)
       const actual = await run(() => import('../../src/js/drive-client.js'), seed)
       expect(actual, `scenario ${seed}`).toEqual(expected)
       requests += expected.filter(entry => entry[0] === 'fetch').length
       errors += expected.filter(entry => entry[0] === 'settled' && entry[2] === 'error').length
-      tokens += expected.filter(entry => entry[0] === 'fetch' && entry[1].includes('oauth2.googleapis.com')).length
     }
     expect(requests).toBeGreaterThan(SCENARIOS * 8)
     expect(errors).toBeGreaterThan(SCENARIOS)
-    expect(tokens).toBeGreaterThan(SCENARIOS / 8)
   }, 280_000)
 })

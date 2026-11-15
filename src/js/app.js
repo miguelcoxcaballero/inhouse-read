@@ -521,7 +521,7 @@ initAndroidFileImports({
   onFile: file => withShell(shell => shell.app_import_file(shellHost, file)),
   onError: error => alert(`No se pudo importar el libro: ${error.message}`)
 })
-if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
+if (hasDriveSession() || isAndroidShell()) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
 function resumeDriveSync(options = {}) {

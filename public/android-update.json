@@ -1,9 +1,9 @@
 {
-  "version": "1.1.25",
-  "versionCode": 38,
+  "version": "1.1.26",
+  "versionCode": 39,
   "required": true,
-  "apkSizeBytes": 78579298,
-  "apkSha256": "b7705e72b92dce041e09c3a241b33b636c349ef0fde23d36ff04c102a49b7abb",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.25/inhouse-read-release-v1.1.25.apk",
-  "releaseNotes": "Share books to other apps."
+  "apkSizeBytes": 78579614,
+  "apkSha256": "9d5fb4cb177a6c7ef98e70f66d7e5f4efffe86ae314ef63a4c23efd382a9c03d",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.26/inhouse-read-release-v1.1.26.apk",
+  "releaseNotes": "Shared Google login across apps."
 }

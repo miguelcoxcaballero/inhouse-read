@@ -6,7 +6,7 @@ import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 let drive
 const token = 'test-access-token'
 const session = () => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({ accessToken: token, expiresAt: Date.now() + 3600_000 }))
-const json = value => new Response(JSON.stringify(value), { status: 200 })
+const json = value => new Response(JSON.stringify(value.access_token ? { expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file', ...value } : value), { status: 200 })
 
 beforeEach(async () => {
   vi.resetModules()
@@ -45,8 +45,8 @@ describe('autorización de Google Drive', () => {
   })
 
   it('pide conexión explícita cuando falta la sesión', async () => {
-    await expect(drive.listDriveBooks()).rejects.toThrow(/Pulsa Conectar/)
-    await expect(drive.requestDriveAccess()).rejects.toThrow(/Google está cargando/)
+    await expect(drive.listDriveBooks()).rejects.toThrow(/Google sign-in/)
+    await expect(drive.requestDriveAccess()).rejects.toThrow(/Google sign-in/)
   })
 
   it('usa el mismo Custom Tab y PKCE de Notes en Android', async () => {
@@ -115,7 +115,7 @@ describe('autorización de Google Drive', () => {
     const pending = drive.requestDriveAccess({ interactive: false })
     drive.signOutDrive()
     complete(json({ access_token: token, refresh_token: 'late-refresh' }))
-    await expect(pending).rejects.toThrow('Sesión cerrada')
+    await expect(pending).rejects.toThrow('cancelled')
     expect(drive.hasDriveSession()).toBe(false)
     expect(localStorage.getItem('ihr_drive_refresh_token_v1')).toBeNull()
   })
@@ -124,12 +124,12 @@ describe('autorización de Google Drive', () => {
     globalThis.InhouseNative = { openAuthUrl: vi.fn() }
     const first = drive.requestDriveAccess()
     await vi.waitFor(() => expect(globalThis.InhouseNative.openAuthUrl).toHaveBeenCalledOnce())
-    const rejected = expect(first).rejects.toThrow('Conexión cancelada')
+    const rejected = expect(first).rejects.toThrow('cancelled')
     drive.cancelDriveConnection()
     await rejected
     const second = drive.requestDriveAccess()
     await vi.waitFor(() => expect(globalThis.InhouseNative.openAuthUrl).toHaveBeenCalledTimes(2))
-    const rejectedAgain = expect(second).rejects.toThrow('Conexión cancelada')
+    const rejectedAgain = expect(second).rejects.toThrow('cancelled')
     drive.cancelDriveConnection()
     await rejectedAgain
   })
@@ -241,7 +241,7 @@ it('checks room revisions with one metadata request after lookup and never downl
  const first=await drive.readDriveLibraryRevision();expect(JSON.parse(first)).toEqual([['a','first'],['b','before']]);expect(fetch).toHaveBeenCalledTimes(3)
  expect(await drive.readDriveLibraryRevision()).toBe(first);expect(fetch).toHaveBeenCalledTimes(4)
  changed=true;expect(await drive.readDriveLibraryRevision()).not.toBe(first);expect(fetch).toHaveBeenCalledTimes(5)
- drive.signOutDrive();await expect(drive.readDriveLibraryRevision()).rejects.toThrow(/Conectar|sesión/i)
+ drive.signOutDrive();await expect(drive.readDriveLibraryRevision()).rejects.toThrow(/cancelled/i)
 })
 
 it('shares in-flight revision metadata but requests fresh data after settlement',async()=>{
@@ -315,7 +315,7 @@ it('confirms the shared live key after creation and returns no OAuth token',asyn
  })
  expect(await drive.getDriveLiveContext()).toEqual({folderId:'state',key:winner,confirm:true});expect(patches).toBe(1);expect(reads).toBe(2)
  expect(await drive.getDriveLiveContext()).toEqual({folderId:'state',key:winner,confirm:false});expect(patches).toBe(1)
- drive.signOutDrive();await expect(drive.getDriveLiveContext()).rejects.toThrow(/Conectar|sesión/i)
+ drive.signOutDrive();await expect(drive.getDriveLiveContext()).rejects.toThrow(/cancelled/i)
 })
 
 it('discovers Android/web mailboxes even when private OAuth appProperties are absent',async()=>{
