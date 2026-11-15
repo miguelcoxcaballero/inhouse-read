@@ -4,7 +4,7 @@ import {rustShelf} from './helpers/rust-shelf-ready.js'
 import {rustReadingNumbers} from '../../src/js/readers/reading-preferences-wasm.js'
 import {READING_THEMES,READING_FONTS,normalizeReadingPreferences,readingCSS,nearestRate,rateLabel} from '../../src/js/readers/reading-preferences.js'
 import {isNeuralVoiceId,neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
-import {langBase} from '../../src/js/readers/voice-catalog.js'
+import {langBase} from './helpers/live-voice-catalog.js'
 import * as reference from './helpers/reference-reading-preferences.js'
 import * as previous from './helpers/reference-reading-preferences-runtime.js'
 

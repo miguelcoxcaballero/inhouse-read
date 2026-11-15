@@ -28,6 +28,7 @@ mod speech_plan;
 mod sentence_ends;
 mod voice_order;
 mod voice_catalog;
+mod catalog_doors;
 mod picker_owned;
 mod language_detect;
 mod language_data;

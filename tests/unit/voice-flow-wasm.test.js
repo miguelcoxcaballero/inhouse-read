@@ -6,7 +6,7 @@ import {LegacyVoiceFlow} from './helpers/reference-voice-flow.js'
 const fixture=vi.hoisted(()=>({voices:[],ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralVoiceList:()=>fixture.voices}))
-import * as catalog from '../../src/js/readers/voice-catalog.js'
+import * as catalog from './helpers/live-voice-catalog.js'
 const {langBase,declaredLanguage}=catalog
 import {languageOptions,voiceOptions} from './helpers/reference-voice-menus.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})

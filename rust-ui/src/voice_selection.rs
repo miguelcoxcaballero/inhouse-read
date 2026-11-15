@@ -21,6 +21,12 @@ fn terminal(value:&JsValue)->Result<bool,JsValue>{
 }
 #[wasm_bindgen]
 pub fn voice_for(host:JsValue,text:JsValue,catalog:Function,is_neural:Function,declared:Function,base:Function,resolve:Function,device:Function)->Result<JsValue,JsValue>{
+ choose(host,text,&catalog,&|id|invoke(&is_neural,id),&|reader|invoke(&declared,reader),&base,&|voices,options|resolve.call2(&JsValue::UNDEFINED,voices,options),&device)
+}
+/// A door of the voice catalogue: the page's function, or this module's own (catalog_doors.rs).
+pub(crate) type Door<'a>=&'a dyn Fn(&JsValue)->Result<JsValue,JsValue>;
+#[inline(never)]
+pub(crate) fn choose(host:JsValue,text:JsValue,catalog:&Function,is_neural:Door,declared:Door,base:&Function,resolve:&dyn Fn(&JsValue,&JsValue)->Result<JsValue,JsValue>,device:&Function)->Result<JsValue,JsValue>{
  let language=if get(&get(&host,"options")?,"multilingual")?.is_truthy(){one(&host,"detectLanguage",&text)?}else{
   let override_=get(&host,"languageOverride")?;
   if override_.is_truthy(){override_}else{let reader=get(&get(&host,"reader")?,"language")?;if reader.is_truthy(){reader}else{let device=device.call0(&JsValue::UNDEFINED)?;if device.is_truthy(){device}else{"es-ES".into()}}}
@@ -30,16 +36,16 @@ pub fn voice_for(host:JsValue,text:JsValue,catalog:Function,is_neural:Function,d
  for index in 0..list.length(){if !Reflect::has(&list,&index.into())?{continue;}let voice=list.get(index);
   if get(&voice,"installed")?.is_truthy()&&!one(&get(&host,"missing")?,"has",&get(&voice,"id")?)?.is_truthy(){voices.push(&voice);}
  }
- let mut id=if invoke(&is_neural,&get(&host,"voice")?)?.is_truthy(){get(&host,"voice")?}else{"".into()};
- let declared=invoke(&declared,&get(&host,"reader")?)?;
- if invoke(&is_neural,&id)?.is_truthy()&&!get(&get(&host,"options")?,"multilingual")?.is_truthy()&&declared.is_truthy()&&!get(&host,"languageOverride")?.is_truthy(){
-  for voice in voices.iter(){if get(&voice,"id")?==id{if get(&voice,"base")?!=invoke(&base,&declared)?{id="".into();}break;}}
+ let mut id=if is_neural(&get(&host,"voice")?)?.is_truthy(){get(&host,"voice")?}else{"".into()};
+ let declared=declared(&get(&host,"reader")?)?;
+ if is_neural(&id)?.is_truthy()&&!get(&get(&host,"options")?,"multilingual")?.is_truthy()&&declared.is_truthy()&&!get(&host,"languageOverride")?.is_truthy(){
+  for voice in voices.iter(){if get(&voice,"id")?==id{if get(&voice,"base")?!=invoke(base,&declared)?{id="".into();}break;}}
  }
  if id.is_truthy(){let mut present=false;for voice in voices.iter(){if get(&voice,"id")?==id{present=true;break;}}
   if !present{let result=Object::new();set(&result,"voice",&JsValue::NULL)?;set(&result,"voiceId",&id)?;set(&result,"language",&language)?;return Ok(result.into());}
  }
  let options=Object::new();set(&options,"voiceId",&id)?;set(&options,"language",&language)?;set(&options,"multilingual",&get(&get(&host,"options")?,"multilingual")?)?;set(&options,"deviceLang",&device.call0(&JsValue::UNDEFINED)?)?;
- resolve.call2(&JsValue::UNDEFINED,&voices,&options)
+ resolve(&voices,&options)
 }
 #[wasm_bindgen]
 pub fn voice_audio_item(item:JsValue)->Result<JsValue,JsValue>{

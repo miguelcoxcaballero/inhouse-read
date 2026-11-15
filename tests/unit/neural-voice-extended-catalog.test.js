@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest'
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 import { voiceUrls } from '../../src/js/readers/neural-voice/store.js'
 import { recommendedVoice, NAKDIMON } from './helpers/reference-voice-urls.js'
-import { detectLanguage, normalizeLang, languageName } from '../../src/js/readers/voice-catalog.js'
+import { detectLanguage, normalizeLang, languageName } from './helpers/live-voice-catalog.js'
 
 describe('remaining natural voice languages', () => {
   it.each([

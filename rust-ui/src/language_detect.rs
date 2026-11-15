@@ -87,6 +87,7 @@ fn regional(lang:&str,known:&str)->String{if known.split('-').next()==Some(lang)
 thread_local!{static DETECTOR:RefCell<Option<Detector>>=const{RefCell::new(None)};}
 #[wasm_bindgen]extern "C"{#[wasm_bindgen(catch,js_name=String)]fn string(value:&JsValue)->Result<JsString,JsValue>;}
 #[wasm_bindgen]
+#[inline(never)]
 pub fn detect_voice_language(text:JsValue,fallback:JsValue,normalize:Function)->Result<JsValue,JsValue>{
  let sample=string(&if text.is_truthy(){text}else{"".into()})?.to_locale_lower_case(None);
  DETECTOR.with(|slot|{let mut slot=slot.borrow_mut();let detector=slot.get_or_insert_with(Detector::new);detector.detect(&sample,fallback,&normalize)})

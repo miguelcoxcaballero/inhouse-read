@@ -115,8 +115,8 @@ pub fn flow_method(part: JsValue, name: &str, which: &str, kit: JsValue, ui: JsV
         ("preferences", "apply") => asynchronous(|| crate::preference_flow::reader_apply_preferences(host, int32_flag(&a), kit_value(&kit, "preferences.READING_THEMES")?, bound(&ui, "reader_part_store", &[])?).map(Into::into)),
         ("voices", "bookLanguage") => crate::voice_flow::reader_book_language(host, device()?),
         ("voices", "chooseLanguage") => done(crate::voice_flow::reader_choose_language(host, a, d("catalog.langBase")?)),
-        ("voices", "voiceBase") => crate::voice_flow::reader_voice_base(host, a.unchecked_into(), d("catalog.langBase")?, d("catalog.declaredLanguage")?),
-        ("voices", "populateVoices") => done(crate::voice_flow::reader_populate_voices_catalog(host, d("runtime.neuralVoiceList")?, device()?, kit_value(&kit, "catalog")?)),
+        ("voices", "voiceBase") => crate::voice_flow::reader_voice_base(host, a.unchecked_into(), d("catalog.langBase")?, crate::catalog_doors::door(&kit, &ui, "declaredLanguage")?),
+        ("voices", "populateVoices") => done(crate::voice_flow::reader_populate_voices_catalog(host, d("runtime.neuralVoiceList")?, device()?, crate::catalog_doors::menus(&kit, &ui)?)),
         ("chrome", "voiceState") => done(crate::reader_chrome::reader_voice_state(host, a, b, read(&global(), "document")?.unchecked_into())),
         _ => Err(js_sys::TypeError::new(&format!("The reader's {which} part has no method {name}")).into()),
     }

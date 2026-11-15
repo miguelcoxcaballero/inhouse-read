@@ -22,15 +22,12 @@ export class ReadingVoice {
   get supported() { return Boolean(runtime.neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }
   useTransport(name) { this.transport = name }
-  detectLanguage(text) {
-    return catalog.detectLanguage(text, this.reader.language || navigator.language || 'en-US')
-  }
 }
 // voiceFor ranks the installed natural voices (an explicit choice stays even when its files are missing, so the
 // reader can say which voice to download again); speakNeural hands the engine the next few fragments too;
 // prepareAhead prepares one detached page near the current page's end, never shown before advance adopts it;
 // present/engineStarted/engineEnded paint and follow what is being heard.
-rustMethods(ReadingVoice,'voice_method',`getDiagnosticState restartFromVisiblePage ~play speakCurrent voiceFor speakNeural upcomingFor
+rustMethods(ReadingVoice,'voice_method',`getDiagnosticState restartFromVisiblePage ~play speakCurrent detectLanguage voiceFor speakNeural upcomingFor
  audioItem needsPageJoin joinPageSentence prepareAhead clearAhead engineFailed retryNeural voiceRemoved ~advance jumpToPoint
  ~continueFromPage browse ~returnToAudio ~seekToPoint ~refreshPageBreaks ~prepare ~prepareOpening ~preparePlayback ~prepareNext
  pagePlanValid ~revalidateNext adopt engineStarted engineEnded present unpaint restart cancelUtterance prepareText pause stop fail setSleep`,kit)

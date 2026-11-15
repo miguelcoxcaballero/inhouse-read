@@ -18,7 +18,7 @@ import {FoliateReader} from '../../src/js/readers/foliate-reader.js'
 import {FoliateSpeechCursor} from '../../src/js/readers/foliate-speech-cursor.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 afterEach(()=>{fixture.ui=null})
-const classes=[[ReadingVoice,'voice_method',40],[NeuralVoicePicker,'picker_method',20],[ReaderController,'controller_method',27],[PdfReader,'pdf_method',17],[ReaderExperience,'experience_method',38],
+const classes=[[ReadingVoice,'voice_method',41],[NeuralVoicePicker,'picker_method',20],[ReaderController,'controller_method',27],[PdfReader,'pdf_method',17],[ReaderExperience,'experience_method',38],
  [FoliateReader,'foliate_method',4],[FoliateSpeechCursor,'foliate_method',3]]
 it('dispatches only members its Rust dispatcher knows',async()=>{
  // Timers a member might start on the fixture host never run.

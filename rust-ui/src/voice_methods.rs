@@ -17,7 +17,7 @@ use crate::voice_join::voice_join_sentence;
 use crate::voice_navigation::{voice_browse, voice_continue_page, voice_jump_point, voice_return_audio, voice_seek_point};
 use crate::voice_preparation::{voice_prepare, voice_prepare_next, voice_prepare_opening, voice_prepare_playback, voice_refresh_breaks};
 use crate::voice_presentation::{voice_engine_ended, voice_engine_started, voice_present, voice_unpaint};
-use crate::voice_selection::{voice_audio_item, voice_for, voice_needs_join, voice_upcoming};
+use crate::voice_selection::{voice_audio_item, voice_needs_join, voice_upcoming};
 use crate::voice_session::{voice_diagnostic, voice_prepare_text};
 use crate::voice_start::{voice_play, voice_restart_visible};
 use crate::voice_stop::{voice_cancel, voice_fail, voice_pause, voice_restart, voice_retry, voice_stop};
@@ -67,8 +67,9 @@ pub fn voice_method(host: JsValue, name: &str, args: Array, kit: JsValue, ui: Js
         "getDiagnosticState" => voice_diagnostic(host, a(0), d("audio.nativeAudio")?, d("runtime.neuralEngine")?, read(&global(), "document")?),
         "restartFromVisiblePage" => voice_restart_visible(host),
         "play" => voice_play(host, d("runtime.loadNeural")?, d("runtime.neuralEngine")?, d("runtime.unlockNeural")?, d("audio.nativeAudio")?).map(Into::into),
-        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, d("catalog.isNeuralId")?, d("now")?, bound(&ui, "voice_join_wait", &[&ui])?)),
-        "voiceFor" => voice_for(host, a(0), d("runtime.neuralVoiceList")?, d("catalog.isNeuralId")?, d("catalog.declaredLanguage")?, d("catalog.langBase")?, d("catalog.resolveVoice")?, door(&ui, "voice_device_language")?),
+        "speakCurrent" => done(voice_speak_current(host, d("runtime.neuralVoiceList")?, d("catalog.langBase")?, crate::catalog_doors::door(&kit, &ui, "isNeuralId")?, d("now")?, bound(&ui, "voice_join_wait", &[&ui])?)),
+        "voiceFor" => crate::catalog_doors::voice_for(host, a(0), &d("runtime.neuralVoiceList")?, &d("catalog.langBase")?, &door(&ui, "voice_device_language")?, &kit),
+        "detectLanguage" => crate::catalog_doors::detect(&host, a(0), &kit),
         "speakNeural" => voice_speak_neural(host, a(0), a(1), a(2), d("runtime.neuralEngine")?, d("audio.nativeAudio")?, d("clearTimeout")?,
             bound(&ui, "voice_wait_timer", &[&ui])?, bound(&ui, "voice_synth_failed", &[&ui])?).map(Into::into),
         "upcomingFor" => voice_upcoming(host, a(0)),

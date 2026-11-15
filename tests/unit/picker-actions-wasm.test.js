@@ -6,6 +6,8 @@ import {LegacyActions,DOWNLOAD_ERRORS} from './helpers/reference-picker-actions.
 const runtime=vi.hoisted(()=>({engine:null,list:null,declared:null,base:null,valid:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>runtime.engine(),neuralVoiceList:()=>runtime.list()}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({declaredLanguage:r=>runtime.declared(r),langBase:s=>runtime.base(s),isNeuralId:s=>runtime.valid(s)}))
+// The frozen references import the same names from the test harness of the catalogue: they get the same stand-ins.
+vi.mock('./helpers/live-voice-catalog.js',()=>({declaredLanguage:r=>runtime.declared(r),langBase:s=>runtime.base(s),isNeuralId:s=>runtime.valid(s)}))
 function dependencies(engine,list,declared,base,valid){Object.assign(runtime,{engine,list,declared,base,valid})}
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 let engine,voices,declared

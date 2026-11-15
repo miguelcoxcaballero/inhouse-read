@@ -12,6 +12,8 @@ vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine,neuralVoiceList:()=>fixture.voices}))
 vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.native}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({langBase:language=>language.split('-')[0],isNeuralId:id=>id.startsWith('piper:')}))
+// The frozen references import the same names from the test harness of the catalogue: they get the same stand-ins.
+vi.mock('./helpers/live-voice-catalog.js',()=>({langBase:language=>language.split('-')[0],isNeuralId:id=>id.startsWith('piper:')}))
 function dependencies(engine,native,voices){fixture.engine=engine;fixture.native=native;fixture.voices=voices}
 import {LegacyDispatch} from './helpers/reference-voice-dispatch.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})

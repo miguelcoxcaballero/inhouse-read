@@ -16,7 +16,7 @@ impl Context {
   Ok(Some(Self{book:parts.next().unwrap_or("").into(),region:parts.next().unwrap_or("").into(),device:device.split('-').next().unwrap_or("").into()}))
  }
 }
-fn records(list:JsValue,context:&Context,label:&Function,labels_needed:bool)->Result<Option<Vec<Voice>>,JsValue>{
+fn records(list:JsValue,context:&Context,label:Label,labels_needed:bool)->Result<Option<Vec<Voice>>,JsValue>{
  if !Array::is_array(&list){return Ok(None)}
  let mut labels=HashMap::<String,JsValue>::new();let mut voices=Vec::new();
  for value in Array::from(&list).iter(){
@@ -32,7 +32,7 @@ fn records(list:JsValue,context:&Context,label:&Function,labels_needed:bool)->Re
   if !base.is_ascii()||!region.is_ascii()||!name.is_string()||!id.is_string(){return Ok(None)}
   let rank=if base==context.book{0}else if base==context.device{1}else{2+PRIORITIES.iter().position(|v|*v==base).unwrap_or(PRIORITIES.len())as u8};
   let near=if base==context.book&&!context.region.is_empty()&&region==context.region{0}else{1};
-  let display=if labels_needed&&rank>2{if let Some(cached)=labels.get(&base){cached.clone()}else{let display=label.call1(&JsValue::UNDEFINED,&base.clone().into())?;labels.insert(base.clone(),display.clone());display}}else{JsValue::UNDEFINED};
+  let display=if labels_needed&&rank>2{if let Some(cached)=labels.get(&base){cached.clone()}else{let display=label(&base.clone().into())?;labels.insert(base.clone(),display.clone());display}}else{JsValue::UNDEFINED};
   let high=get(&value,"tier")?==JsValue::from_str("high");
   voices.push(Voice{value,base,rank,near,recommended,high,name,id,label:display});
  }Ok(Some(voices))
@@ -51,18 +51,28 @@ fn compare(a:&Voice,b:&Voice,collator:&Function)->Result<Ordering,JsValue>{
 }
 #[wasm_bindgen]
 pub fn voice_order(list:JsValue,book:JsValue,device:JsValue,normalize:Function,label:Function,collator:Function)->Result<JsValue,JsValue>{
- let Some(context)=Context::new(book,device,&normalize)?else{return Ok(JsValue::UNDEFINED)};
- let Some(mut voices)=records(list,&context,&label,true)?else{return Ok(JsValue::UNDEFINED)};
+ order(list,book,device,&normalize,&|base|label.call1(&JsValue::UNDEFINED,base),&collator)
+}
+/// The display name of a base language (`languageName`): the page's function, or this module's own.
+pub(crate) type Label<'a>=&'a dyn Fn(&JsValue)->Result<JsValue,JsValue>;
+#[inline(never)]
+pub(crate) fn order(list:JsValue,book:JsValue,device:JsValue,normalize:&Function,label:Label,collator:&Function)->Result<JsValue,JsValue>{
+ let Some(context)=Context::new(book,device,normalize)?else{return Ok(JsValue::UNDEFINED)};
+ let Some(mut voices)=records(list,&context,label,true)?else{return Ok(JsValue::UNDEFINED)};
  let mut error=None;
- voices.sort_by(|a,b|{if error.is_some(){return Ordering::Equal}match compare(a,b,&collator){Ok(order)=>order,Err(value)=>{error=Some(value);Ordering::Equal}}});
+ voices.sort_by(|a,b|{if error.is_some(){return Ordering::Equal}match compare(a,b,collator){Ok(order)=>order,Err(value)=>{error=Some(value);Ordering::Equal}}});
  if let Some(error)=error{return Err(error)}
  let result=Array::new();for voice in voices{result.push(&voice.value);}Ok(result.into())
 }
 #[wasm_bindgen]
 pub fn voice_recommended(list:JsValue,book:JsValue,device:JsValue,normalize:Function,label:Function,collator:Function)->Result<JsValue,JsValue>{
- let Some(context)=Context::new(book,device,&normalize)?else{return Ok(JsValue::UNDEFINED)};
- let Some(voices)=records(list,&context,&label,false)?else{return Ok(JsValue::UNDEFINED)};
+ recommended(list,book,device,&normalize,&|base|label.call1(&JsValue::UNDEFINED,base),&collator)
+}
+#[inline(never)]
+pub(crate) fn recommended(list:JsValue,book:JsValue,device:JsValue,normalize:&Function,label:Label,collator:&Function)->Result<JsValue,JsValue>{
+ let Some(context)=Context::new(book,device,normalize)?else{return Ok(JsValue::UNDEFINED)};
+ let Some(voices)=records(list,&context,label,false)?else{return Ok(JsValue::UNDEFINED)};
  let mut best:Option<&Voice>=None;
- for voice in &voices{if voice.base!=context.book{continue}if let Some(current)=best{if compare(voice,current,&collator)?==Ordering::Less{best=Some(voice)}}else{best=Some(voice)}}
+ for voice in &voices{if voice.base!=context.book{continue}if let Some(current)=best{if compare(voice,current,collator)?==Ordering::Less{best=Some(voice)}}else{best=Some(voice)}}
  Ok(best.map(|voice|voice.value.clone()).unwrap_or(JsValue::NULL))
 }

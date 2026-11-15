@@ -10,8 +10,8 @@
 import { readerUI, rustMethods } from '../../../src/js/readers/rust-ui-required.js'
 import * as runtime from '../../../src/js/readers/neural-runtime.js'
 import {loadNeural,neuralEngine,neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
-import * as catalog from '../../../src/js/readers/voice-catalog.js'
-import {langBase,languageName,orderNeuralVoices,recommendedNeuralFor} from '../../../src/js/readers/voice-catalog.js'
+import * as catalog from './live-voice-catalog.js'
+import {langBase,languageName,orderNeuralVoices,recommendedNeuralFor} from './live-voice-catalog.js'
 
 // Texts of the natural-voice list that the Rust picker receives as plain data.
 const DOWNLOAD_ERRORS={offline:'Sin conexión.',storage:'Sin espacio en el dispositivo.',default:'No se pudo descargar.'}

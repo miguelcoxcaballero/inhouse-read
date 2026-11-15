@@ -19,17 +19,23 @@ const REGIONS:&[(&str,&str)]=&[("ES","España"),("US","EE. UU."),("GB","Reino Un
 
 /// `'Español'` for the base `es`, from the table or else from the browser's own names.
 #[wasm_bindgen]
-pub fn catalog_base_language_name(base:&str,host:&Function)->Result<String,JsValue>{
+pub fn catalog_base_language_name(base:&str,host:&Function)->Result<String,JsValue>{base_language_name(base,&asked(host))}
+/// The page's `hostName(code, type)` as the tables' fallback.
+fn asked(host:&Function)->impl Fn(&str,&str)->Result<String,JsValue>+'_{move|code,kind|Ok(host.call2(&JsValue::UNDEFINED,&code.into(),&kind.into())?.as_string().unwrap_or_default())}
+#[inline(never)]
+pub(crate) fn base_language_name(base:&str,host:&dyn Fn(&str,&str)->Result<String,JsValue>)->Result<String,JsValue>{
  if base.is_empty(){return Ok(String::new())}
  if let Some((_,name))=LANGUAGES.iter().find(|(key,_)|*key==base){return Ok((*name).into())}
- Ok(host.call2(&JsValue::UNDEFINED,&base.into(),&"language".into())?.as_string().unwrap_or_default())
+ host(base,"language")
 }
 /// `'México'` for the region `MX`; empty when the tag has no region.
 #[wasm_bindgen]
-pub fn catalog_region_name(region:&str,host:&Function)->Result<String,JsValue>{
+pub fn catalog_region_name(region:&str,host:&Function)->Result<String,JsValue>{region_name(region,&asked(host))}
+#[inline(never)]
+pub(crate) fn region_name(region:&str,host:&dyn Fn(&str,&str)->Result<String,JsValue>)->Result<String,JsValue>{
  if region.is_empty(){return Ok(String::new())}
  if let Some((_,name))=REGIONS.iter().find(|(key,_)|*key==region){return Ok((*name).into())}
- Ok(host.call2(&JsValue::UNDEFINED,&region.into(),&"region".into())?.as_string().unwrap_or_default())
+ host(region,"region")
 }
 /// `'Español (México)'`.
 #[wasm_bindgen]
@@ -46,7 +52,7 @@ fn or(value:JsValue,fallback:impl FnOnce()->Result<JsValue,JsValue>)->Result<JsV
 fn tag(normalize:&Function,value:&JsValue)->Result<String,JsValue>{Ok(normalize.call1(&JsValue::UNDEFINED,value)?.as_string().unwrap_or_default())}
 fn base_of(tag:&str)->&str{tag.split('-').next().unwrap_or("")}
 fn region_of(tag:&str)->&str{tag.split('-').nth(1).unwrap_or("")}
-fn is_neural_id(value:&JsValue)->bool{
+pub(crate) fn is_neural_id(value:&JsValue)->bool{
  let Some(id)=value.as_string()else{return false};
  if id.starts_with("piper:"){return true}
  let b=id.as_bytes();
@@ -159,6 +165,7 @@ fn answer(voice:&JsValue,id:&JsValue,language:&JsValue)->Result<JsValue,JsValue>
 /// option on and a chunk in another language: then that language gets its best voice (own region first). `voiceId` is ''
 /// when nothing matches. Undefined when the list holds a voice that is not a neural record (the catalogue never does).
 #[wasm_bindgen]
+#[inline(never)]
 pub fn catalog_resolve_voice(voices:JsValue,options:JsValue,normalize:Function,compare:Function)->Result<JsValue,JsValue>{
  let option=|key:&str,fallback:JsValue|->Result<JsValue,JsValue>{if options.is_undefined(){return Ok(fallback)}let value=read(&options,key)?;Ok(if value.is_undefined(){fallback}else{value})};
  let voice_id=option("voiceId","".into())?;let language=option("language","".into())?;

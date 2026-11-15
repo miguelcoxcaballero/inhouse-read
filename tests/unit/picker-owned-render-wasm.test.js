@@ -12,6 +12,8 @@ const runtime=vi.hoisted(()=>({engine:null,list:null,order:null,language:null,ba
 Object.assign(runtime,{engine:getEngine,list:getList,order,language,base,recommend})
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>runtime.engine(),neuralVoiceList:()=>runtime.list()}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({langBase:(...a)=>runtime.base(...a),recommendedNeuralFor:(...a)=>runtime.recommend(...a),orderNeuralVoices:(...a)=>runtime.order(...a),languageName:(...a)=>runtime.language(...a)}))
+// The frozen references import the same names from the test harness of the catalogue: they get the same stand-ins.
+vi.mock('./helpers/live-voice-catalog.js',()=>({langBase:(...a)=>runtime.base(...a),recommendedNeuralFor:(...a)=>runtime.recommend(...a),orderNeuralVoices:(...a)=>runtime.order(...a),languageName:(...a)=>runtime.language(...a)}))
 const services={engine:getEngine,list:getList,order:(v,b,d)=>order(v,{bookLang:b,deviceLang:d}),language,url:path=>new URL(path,new URL(import.meta.env?.BASE_URL||'/',location.href)).href,base,recommend,cancel:()=>{},device:()=>navigator.language,messages:DOWNLOAD_ERRORS,warnings:WARNINGS}
 const policy=LegacyPolicy.prototype,render=LegacyRender.prototype
 class Host {

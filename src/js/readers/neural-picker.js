@@ -8,7 +8,7 @@ import { readerUI, rustMethods } from './rust-ui-required.js'
 import * as runtime from './neural-runtime.js'
 import {neuralEngine,neuralVoiceList} from './neural-runtime.js'
 import * as catalog from './voice-catalog.js'
-import {langBase,languageName,orderNeuralVoices,recommendedNeuralFor} from './voice-catalog.js'
+import {langBase,normalizeLang} from './voice-catalog.js'
 
 // Texts of the natural-voice list that the Rust picker receives as plain data.
 const DOWNLOAD_ERRORS={offline:'Sin conexión.',storage:'Sin espacio en el dispositivo.',default:'No se pudo descargar.'}
@@ -19,9 +19,9 @@ const WARNINGS={
 // The engine and catalogue modules and the texts of a failed download; the schedulers, the engine's listeners and
 // the storage of 'Ahora no' and of the first use are rust-ui picker_shell.rs.
 const kit={runtime,catalog,messages:DOWNLOAD_ERRORS}
-const services={engine:neuralEngine,list:neuralVoiceList,order:(list,bookLang,deviceLang)=>orderNeuralVoices(list,{bookLang,deviceLang}),language:languageName,
- url:path=>new URL(path,new URL(import.meta.env?.BASE_URL||'/',location.href)).href,base:langBase,recommend:recommendedNeuralFor,
- cancel:handle=>cancelAnimationFrame(handle),device:()=>navigator.language,messages:DOWNLOAD_ERRORS,warnings:WARNINGS}
+// The order of the list, the name of a language and the recommended voice are rust-ui's own (catalog_doors.rs), over `normalize`.
+const services={engine:neuralEngine,list:neuralVoiceList,url:path=>new URL(path,new URL(import.meta.env?.BASE_URL||'/',location.href)).href,
+ base:langBase,normalize:normalizeLang,ui:readerUI,cancel:handle=>cancelAnimationFrame(handle),device:()=>navigator.language,messages:DOWNLOAD_ERRORS,warnings:WARNINGS}
 // The view owns no event listeners; the picker created it from the panel and hands it these services once.
 const configured=new WeakSet()
 function pickerView(host){
