@@ -22,12 +22,14 @@ impl RustScene{
  #[wasm_bindgen(getter,js_name=turnScroll)]pub fn turn_scroll(&self)->f64{self.begun[0]}
  #[wasm_bindgen(getter,js_name=reorderLeft)]pub fn reorder_left(&self)->f64{self.begun[1]}
  /// The bin's frame begins: a view that does not show it closes it (1), then its lid's ease
- /// advances (2 while it still moves). The lid's opening is `trashOpenness`.
+ /// advances (2 while it still moves). The lid's opening is `trashOpenness`. 4: the box on screen
+ /// of the bin the view holds has to be taken again (`scene_bin.rs`).
  #[wasm_bindgen(js_name=trashBegin)]
  pub fn trash_begin(&mut self,now:f64,reduced:bool)->u32{
   let hidden=self.trash_view_hidden();
   if hidden{self.trash_reset();}
-  u32::from(hidden)|u32::from(self.trash_step(now,reduced))<<1
+  let moving=self.trash_step(now,reduced);
+  u32::from(hidden)|u32::from(moving)<<1|u32::from(self.bin_moved())<<2
  }
  /// Whether this frame fits the shadow again: asked for and the fingers have left the view,
  /// which then asks for it no longer.

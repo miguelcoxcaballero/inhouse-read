@@ -126,7 +126,9 @@ impl RustScene{
  pub fn shadow_bounds(&self,trash:&[f64],transform:&[f64],out:&mut [f64]){
   let mut b=self.full;
   if let Some(bin)=self.bin_box(trash){b.union(&bin);}
+  // Under the given matrix, or under the room's of the view's last fit when none is given.
   if transform.len()>=16{let mut e=[0.0;16];e.copy_from_slice(&transform[..16]);b.apply(&Mat4(e));}
+  else if let Some(room)=self.room{b.apply(&Mat4(room));}
   put(out,&[b.min[0],b.min[1],b.min[2],b.max[0],b.max[1],b.max[2]]);
  }
 

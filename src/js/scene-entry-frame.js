@@ -71,20 +71,21 @@ export function createSceneEntryFrame(rust) {
     native.step(motionFrame, scene, motion, transition, now, arranging); refresh();
   }
   // The results of the three calls below: moving | shelf moving << 1 | previewing << 2 | previewed << 3.
+  // Without a `roomMatrix` the room's world matrix is the one of the view's last fit (`scene`).
   function poses(motionFrame, scene, motion, transition, now, arranging, roomMatrix) {
-    refresh(); room.set(roomMatrix.elements);
-    const summary = native.poses(motionFrame, scene, motion, transition, now, arranging); refresh();
+    refresh(); if (roomMatrix) room.set(roomMatrix.elements);
+    const summary = native.poses(motionFrame, scene, motion, transition, now, arranging, !roomMatrix); refresh();
     return summary;
   }
   function settle(gravityFrame, gravity, scene, now, reduced) { native.settle(gravityFrame, gravity, scene, now, reduced); refresh(); }
   function place(physics, motionFrame, scene, motion, transition, now, arranging, roomMatrix) {
-    refresh(); room.set(roomMatrix.elements);
-    const summary = native.place(physics, motionFrame, scene, motion, transition, now, arranging); refresh();
+    refresh(); if (roomMatrix) room.set(roomMatrix.elements);
+    const summary = native.place(physics, motionFrame, scene, motion, transition, now, arranging, !roomMatrix); refresh();
     return summary;
   }
   function settled(gravityFrame, gravity, motionFrame, scene, motion, transition, now, reduced, arranging, roomMatrix) {
-    refresh(); room.set(roomMatrix.elements);
-    const summary = native.settled(gravityFrame, gravity, motionFrame, scene, motion, transition, now, reduced, arranging); refresh();
+    refresh(); if (roomMatrix) room.set(roomMatrix.elements);
+    const summary = native.settled(gravityFrame, gravity, motionFrame, scene, motion, transition, now, reduced, arranging, !roomMatrix); refresh();
     return summary;
   }
   // The shared room's local motion (the entries' local poses stay in the state arena): the poses

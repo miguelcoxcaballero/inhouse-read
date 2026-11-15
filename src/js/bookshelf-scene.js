@@ -272,7 +272,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     lift:null, state:'', rect:null, insertion:null, posed:null,
     overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
     // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
-    classText:null, bits:0, dragX:'', dragY:'', stateText:'', box:null, fallback:null,
+    classText:null, bits:0, dragX:'', dragY:'', stateText:'',
     written:null, seen:0, domDirty:true, walked:null, rested:0 };
     fresh.lift = { get value() { return cell(fresh, 5); }, get from() { return cell(fresh, 6); }, get target() { return cell(fresh, 7); }, get started() { return cell(fresh, 8); } };
     return fresh;
@@ -599,9 +599,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let inspectionDirtyCount = 0;
   let compositorFrames = 0;
   let trashWritten = null, catalogWritten = null;
-  // How many entries are falling into the bin, and the numbers its box on screen was last taken from (see updateTrash).
-  const binNow = new Float64Array(27), binHeld = new Float64Array(27);
-  const binNowBits = new Uint32Array(binNow.buffer), binHeldBits = new Uint32Array(binHeld.buffer);
+  // How many entries are falling into the bin, and whether its box on screen is to be taken whatever the view says (see updateTrash).
   let trashDrops = 0, binStale = true;
   const trashBox = new THREE.Box3();
   const trashOriginalStates = new Map();
@@ -646,14 +644,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     out.width = cornerRect[4]; out.height = cornerRect[5]; out.closest = cornerRect[6];
     return out;
   };
-  // The slot's box and the stand-in hit box of a culled model come from Rust, once per change of size.
-  const boxScratch = new Float64Array(12);
-  function placeBoxes(entry) {
-    rust.scene_entry_boxes(entry.kind === 'plant' ? 1 : entry.kind === 'lamp' ? 2 : 0, entry.mount === 'undershelf',
-      entry.width, entry.height, entry.thickness, entry.depth, boxScratch);
-    entry.box = boxScratch.slice(0, 6); entry.fallback = boxScratch.slice(6, 12); entry.stale = true;
-  }
-  for (const entry of bookEntries) placeBoxes(entry);
   bindEntries();
   // The semantic button's centre lies on one solid mesh of its model. Look that
   // mesh up by name once per model rather than walking the tree every frame.
@@ -707,8 +697,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (held !== null) { held.surface = surface; held.places = places; held.epoch = epoch; } else entry.walked = { surface, places, epoch };
     return false;
   }
-  // The stand-in hit box of a culled model only changes with its slot box.
-  const fallbackBox = (entry, lamp) => lamp ? entry.box : entry.fallback;
   const insertedIds = [];
   let exclusionsReady = false, staticStale = true;
   // What the entries hold (model, visibility, quality, return, drop) may have changed: the entry arena is told again.
@@ -878,38 +866,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const dropStep = new Float64Array(5), overflow = new Float64Array(2), trashPacked = new Float64Array(6), trashOut = new Float64Array(6);
   const trashRect0 = {};
   let viewTexts = null;
-  // What the bin's box on screen was last taken from: its lid's opening, the room's world matrix
-  // and its own place, turn and size (`binHeld`).
-  function binStands(openness) {
-    const now = binNow, room = furniture.matrixWorld.elements, { position, quaternion, scale } = trash;
-    now[0] = openness;
-    for (let index = 0; index < 16; index++) now[index + 1] = room[index];
-    now[17] = position.x; now[18] = position.y; now[19] = position.z;
-    now[20] = quaternion.x; now[21] = quaternion.y; now[22] = quaternion.z; now[23] = quaternion.w;
-    now[24] = scale.x; now[25] = scale.y; now[26] = scale.z;
-    // Bit for bit (a zero that changed its sign is a change).
-    let same = !binStale;
-    for (let index = 0; same && index < 54; index++) same = binNowBits[index] === binHeldBits[index];
-    if (same) return true;
-    binHeld.set(now); binStale = false;
-    return false;
-  }
   function updateTrash(now, finishedDrops) {
     if (!trash || !trashNode) { sceneView.trashUnshown(); return false; }
-    // A view that does not show the bin closes it (1); its lid's ease advances (2 while it moves).
+    // A view that does not show the bin closes it (1); its lid's ease advances (2 while it moves); 4: its lid's
+    // opening, the room's world matrix or its place is not what it was at its last frame (rust-ui/src/scene_bin.rs).
     const begun = sceneView.trashBegin(now, reducedMotion.matches);
     if (begun & 1 && trashNode.classList.contains('is-over')) trashNode.classList.remove('is-over');
     let dropEntry = null;
     if (trashDrops) for (const entry of bookEntries) if (entry.trashDrop) { dropEntry = entry; break; }
     const drop = dropEntry?.trashDrop;
-    let moving = begun > 1;
-    let openness = sceneView.trashOpenness, bounce = 0;
+    let moving = Boolean(begun & 2);
     if (drop) {
       rust.scene_trash_drop(drop.elapsed, drop.lastFrame, drop.complete, drop.duration, drop.initialOpenness, now, dropStep);
       drop.elapsed = dropStep[0]; drop.lastFrame = dropStep[1];
       const t = dropStep[2];
-      openness = dropStep[3]; bounce = dropStep[4];
-      trash.userData.setState({ openness, bounce });
+      trash.userData.setState({ openness:dropStep[3], bounce:dropStep[4] });
       trash.updateMatrixWorld(true);
       if (dropEntry.model && !drop.complete) {
         const worldScale = trash.getWorldScale(new THREE.Vector3()).x;
@@ -921,7 +892,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         trash.getWorldQuaternion(drop.endQuaternion).multiply(drop.bookQuaternion);
         dropEntry.model.quaternion.copy(drop.startQuaternion).slerp(drop.endQuaternion, motion.turn);
         dropEntry.model.updateMatrixWorld(true);
-        const flightBounds = corners(dropEntry.box, dropEntry.model.matrixWorld);
+        // Its slot box, copied out of the arena (the call may move the memory under a view).
+        entryFrame.refresh();
+        const box = dropEntry.row * ENTRY_STATE + 50, flightBounds = corners(entryFrame.state.slice(box, box + 6), dropEntry.model.matrixWorld);
         rust.scene_trash_overflow(flightBounds.right, sceneWidth, t, overflow);
         // The pointer may leave a broad book partly outside the canvas at
         // release. Bend its first few frames inward instead of snapping its
@@ -947,8 +920,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     // A bin whose lid, room and place stand as they were keeps its lid's pose, its world matrices
     // and its box on screen: they are functions of exactly those numbers.
-    if (drop || !binStands(openness)) {
-      if (!drop) { trash.userData.setState({ openness }); trash.updateMatrixWorld(true); }
+    if (drop || begun & 4 || binStale) {
+      if (!drop) { binStale = false; trash.userData.setState({ openness:sceneView.trashOpenness }); trash.updateMatrixWorld(true); }
       const trashRect = corners(trashBox.setFromObject(trash), IDENTITY, trashRect0);
       trashPacked[0] = trashRect.left; trashPacked[1] = trashRect.right; trashPacked[2] = trashRect.top; trashPacked[3] = trashRect.bottom;
       trashPacked[4] = trashRect.width; trashPacked[5] = trashRect.height;
@@ -1074,7 +1047,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const identityChanged = entry.book?.driveFileId !== book?.driveFileId;
     entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
     if (identityChanged) { sceneMotionFrame.invalidate(); acknowledgeRoom(roomCheckpoint); }
-    placeBoxes(entry);
+    entry.stale = true;
     if (entry.model) {
       const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
       if (changedShape || entry.replacement) replaceWhenReady(entry);
@@ -1299,7 +1272,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         state[at] = kind; state[at + 1] = undershelf ? 1 : 0;
         state[at + 23] = entry.x; state[at + 24] = entry.y; state[at + 25] = entry.width; state[at + 26] = entry.height;
         state[at + 27] = entry.depth; state[at + 28] = entry.depthInset;
-        state.set(entry.box, at + 50);
+        // Its slot box (and the stand-in hit box of a culled model) follows from these in the pose call.
+        state[at + 49] = 1;
         // The rigid bodies' geometry and bay (and the grip: setObjectGrip).
         const row = rows[entry.shelf || 0] || rows[0] || {};
         state[at + 40] = kind ? entry.width : entry.thickness;
@@ -1320,7 +1294,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // (scene-entry-frame.js). Its results are applied below, in order.
     tellHeld();
     let summary;
-    if (!usePhysics) summary = entryFrame.poses(sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging, furniture.matrixWorld);
+    if (!usePhysics) summary = entryFrame.poses(sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging);
     else {
       bookGravity.sound_enabled(shelfSoundsEnabled());
       const reduced = reducedMotion.matches;
@@ -1328,8 +1302,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         // A room the solver restores in this step is acknowledged before the shared motion is sampled.
         entryFrame.settle(gravityFrame, bookGravity, sceneView, now, reduced);
         if (bookGravity.restored_room()) { acknowledgeRoom(installedRoom); installedRoom = null; }
-        summary = entryFrame.place(true, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging, furniture.matrixWorld);
-      } else summary = entryFrame.settled(gravityFrame, bookGravity, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, reduced, arranging, furniture.matrixWorld);
+        summary = entryFrame.place(true, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, arranging);
+      } else summary = entryFrame.settled(gravityFrame, bookGravity, sceneMotionFrame.native, sceneView, roomMotion, roomTransition, now, reduced, arranging);
       const sounds=bookGravity.take_sounds();
       // [material, strength, pan, kind]; a module without kinds reports book impacts in threes.
       if(sounds){const stride=bookGravity.sound_stride?.()||3;for(let at=0;at+2<sounds.length;at+=stride)playShelfSound(stride>3?sounds[at+3]:3,sounds[at],sounds[at+1],sounds[at+2]);}
@@ -1444,7 +1418,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const surface = hitSurface(entry, plant ? 'ceramic-pot' : lamp
           ? undershelf ? 'warm-opal-diffuser' : entry.lampId === 'tripod' ? 'woven-linen-drum-shade' : 'lamp-base'
           : 'binding');
-        let placed = 32;
+        // Without a surface the row's own stand-in box goes under the entry's placed matrix.
+        let placed = 160;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
           // A model the frame has just moved, or that has stood for fewer than three frames, is not
@@ -1465,10 +1440,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           const { min, max } = surface.geometry.boundingBox;
           hits[h + 2] = min.x; hits[h + 3] = min.y; hits[h + 4] = min.z; hits[h + 5] = max.x; hits[h + 6] = max.y; hits[h + 7] = max.z;
           placed = 0;
-        } else { hits.set(fallbackBox(entry, lamp), h + 2); entry.rested = 0; }
+        } else entry.rested = 0;
         const resetHit = entry.written?.node !== node;
         if (resetHit) entry.written = { node };
-        // Without a surface the stand-in box goes under the entry's own placed matrix (32).
         // 64: the room shows its model, as set above (a plant's foliage takes no taps over it).
         hits[h] = 1 | (undershelf ? 2 : 0) | (node.disabled || node.inert ? 4 : 0) | (resetHit ? 8 : 0) |
           (!plant && !semanticCovers.has(node) ? 16 : 0) | placed | (entry.model && modelVisible ? 64 : 0);
@@ -2113,7 +2087,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (batchQuality) hideInspectionSnapshot();
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
-    sceneView.shadowBounds(NO_NUMBERS, furniture.matrixWorld.elements, shadowOut);
+    sceneView.shadowBounds(NO_NUMBERS, NO_NUMBERS, shadowOut);
     shadowBounds.min.set(shadowOut[0], shadowOut[1], shadowOut[2]); shadowBounds.max.set(shadowOut[3], shadowOut[4], shadowOut[5]);
     // Scrolling creates and releases culled models: those change the casters.
     const shadowMotion = furnitureMoving || shelfMoving || trashMoving;
@@ -2883,9 +2857,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
               }
             }
             if (entry.node !== data.node) clearPlantDiagnostics(entry.node);
-            Object.assign(entry, data); placeBoxes(entry);
+            Object.assign(entry, data); entry.stale = true;
           } else { entry.node = data.node; updateRecord(entry, data.book, data.style, data.coverUrl, data); }
-        } else { entry = freshEntry(data, index); placeBoxes(entry); }
+        } else entry = freshEntry(data, index);
         // The new layout has already committed the preview's destination.
         // Retaining that offset would apply it twice; captured projected rects
         // are handed to animateFromRects for the remaining release movement

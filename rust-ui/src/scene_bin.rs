@@ -18,6 +18,21 @@ impl RustScene{
   Some(bin)
  }
 }
+impl RustScene{
+ /// Whether the bin's box on screen has to be taken again: its lid's opening, the room's world
+ /// matrix or the bin's place is not, bit for bit, what it was at the previous frame of the bin
+ /// (the host compared these, with the bin's constant turn and scale, in every frame:
+ /// bookshelf-scene.js `binStands`, 1.7.339). A view that holds no bin never says so.
+ pub(crate) fn bin_moved(&mut self)->bool{
+  let Some(bin)=self.bin else{return false};
+  let (seen,mut moved)=(&mut self.bin_seen,false);
+  let mut see=|at:usize,value:f64|{let bits=value.to_bits();if seen[at]!=bits{seen[at]=bits;moved=true;}};
+  see(0,self.trash_openness);
+  if let Some(room)=&self.room{for (at,value) in room.iter().enumerate(){see(1+at,*value);}}
+  for at in 0..3{see(17+at,bin[6+at]);}
+  moved
+ }
+}
 #[wasm_bindgen]
 impl RustScene{
  // `trashShown` for the bin the view holds, in the room of its last fit: the bin's place, its
@@ -26,7 +41,7 @@ impl RustScene{
  #[wasm_bindgen(js_name=binShown)]
  pub fn bin_shown(&mut self,visible:bool,in_frame:bool){
   let Some(bin)=self.bin else{return};
-  let (x,y,z,floor_y,room)=(bin[6],bin[7],bin[8],bin[9],Mat4(self.room));
+  let (x,y,z,floor_y,room)=(bin[6],bin[7],bin[8],bin[9],Mat4(self.room.unwrap_or([f64::NAN;16])));
   let foot_y=y+bin[1]*1.0;
   let (foot,floor)=(room.apply([x,foot_y,z]),room.apply([x,floor_y,z]));
   self.trash_shown(&[x,y,z,1.0,0.0,0.0,0.0,foot_y,floor_y,foot[0],foot[1],foot[2],floor[0],floor[1],floor[2],bin[10],bin[11]],visible,in_frame);
