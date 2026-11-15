@@ -777,7 +777,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const fontsPending = () => document.fonts?.status === 'loading';
   function settledInvalidate(preserveInspectionOverview, source, caller = null) {
     const gate = startupSettle;
-    if (!gate || !shelfSnapshotRenders || sceneView.moving || sceneView.turning || disposed) {
+    if (!gate || !shelfSnapshotRenders || sceneView.busy & 9 || disposed) {
       invalidate(true, preserveInspectionOverview, source);
       return;
     }
@@ -1983,7 +1983,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const snapshot = inspectionSnapshot || inspectionOverview;
     const miss = rust.scene_cache_miss((!inspectionContext ? 1 : 0) | (!snapshot ? 2 : 0) | (shelfSnapshotDirty ? 4 : 0) | (shadowDirty ? 8 : 0) |
       (lastSceneMoving ? 16 : 0) | (lighting.settling && !sceneView.shadowRefit ? 32 : 0) |
-      (sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.progress !== 1 ? 64 : 0) | (sceneView.hasDrop ? 128 : 0));
+      (sceneView.busy & 7 || sceneView.progress !== 1 ? 64 : 0) | (sceneView.busy & 16 ? 128 : 0));
     if (miss) {
       showData('inspectionCacheMissReason', miss);
       showData('inspectionCacheMissSource', canvas.dataset.inspectionDirtySource || '');
@@ -2400,7 +2400,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (!selected || !bookEntries.includes(selected) || !cell(selected, 88) ||
       !selected.node?.classList.contains('is-away') || !selected.model || selected.model.visible ||
       heldStill(1) || programsReady !== true || paintHeld || unpainted.length ||
-      lighting.settling || sceneView.turning || sceneView.reordering || sceneView.trashEasing || sceneView.moving || sceneView.hasDrop ||
+      lighting.settling || sceneView.busy ||
       !sceneView.paintedSame() || modalViewportChanged()) return false;
     if (entryFrame.lamp.lampsBusy(performance.now(), true)) return false;
     for (const entry of bookEntries) {
@@ -2435,7 +2435,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Pointer classes change before the next scene frame updates its motion
     // flags. Idle work must yield immediately, including a held book that has
     // finished lifting and a compositor-only inspection gesture.
-    return !disposed && canPresent() && !paintHeld && !sceneView.moving && !sceneView.hasDrop &&
+    return !disposed && canPresent() && !paintHeld && !(sceneView.busy & 24) &&
       !hasOngoingMotion() && !canDeferModalPaint() &&
       !bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging'));
   }
@@ -2444,7 +2444,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // owns the screen completely: retain poses/resources and resume on return,
   // without advancing physics or painting an invisible room.
   function hasOngoingMotion() {
-    return Boolean(sceneView.turning || sceneView.reordering || sceneView.trashEasing || lastSceneMoving || lighting.settling || heldStill(2));
+    return Boolean(sceneView.busy & 7 || lastSceneMoving || lighting.settling || heldStill(2));
   }
 
   function presentationChanged() {
@@ -2603,12 +2603,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (roomMotion.changed) invalidate(true, false, 'remote-motion'); return true;
     },
     clearLiveRoomMotion:clearRoomMotion,
-    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || roomTransition.moving(performance.now()) || lastLocalSceneMoving || sceneView.moving || sceneView.turning || sceneView.reordering),
+    isMoving:()=>Boolean(roomMotion.gesturing(performance.now()) || roomTransition.moving(performance.now()) || lastLocalSceneMoving || sceneView.busy & 11),
     getInspectionZoom:()=>sceneView.zoom,
     beginInspectionGesture() {
       if (disposed || !sceneView.canInspect()) return;
       sceneView.beginGesture();
-      if (!inspectionOverview || sceneView.reordering || sceneView.trashEasing || sceneView.hasDrop) return;
+      if (!inspectionOverview || sceneView.busy & 22) return;
       const now = performance.now();
       // A second finger changes a tentative book tap into navigation. Cancel
       // only the tiny pressure feedback; held books, returns, previews and
@@ -2813,7 +2813,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (changed) invalidate();
     },
     adoptMetadataRecords(previous, records) {
-      if (disposed || !canPresent() || paintHeld || sceneView.moving || hasOngoingMotion() ||
+      if (disposed || !canPresent() || paintHeld || sceneView.busy & 8 || hasOngoingMotion() ||
           drawPending || raf || programsPoll || inspectionQualityDirty || inspectionEntryUpdates.size || unpainted.length)
         return false;
       if (renderer.getContext?.()?.isContextLost?.()) return false;
