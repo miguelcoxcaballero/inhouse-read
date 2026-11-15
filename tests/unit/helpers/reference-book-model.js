@@ -4,8 +4,8 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from '../../../src/js/book-projection.js';
 import {createBookMotionSampler} from '../../../src/js/book-motion.js';
 import { paddedBookFrameSize } from '../../../src/js/book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle, planPageBounds,
-  planPageZoom, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { planBookView, planPageBounds, planPageZoom } from './reference-book-view-wasm.js';
 import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';
 

@@ -1,8 +1,7 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from './book-projection.js';
 import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle, planPageBounds,
-  planPageZoom, planReadingPose, planReturnFrame } from './book-view-wasm.js';
+import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from './book-view-wasm.js';
 import { needRustShelf } from './rust-shelf.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
@@ -614,14 +613,6 @@ export async function prepareBookDetailPresentation(build, idle, current = () =>
   return needRustShelf().book_presentation_prepare(preparationHost(), build, idle, current, true);
 }
 
-/** Project the actual fitted page image, rather than the book's outer board. */
-export function projectBookPageBounds(page, camera, viewportWidth, viewportHeight, offset = { left:0, top:0 }) {
-  if (!page?.visible || !page.geometry?.parameters) return null;
-  page.updateWorldMatrix(true, false); camera.updateMatrixWorld();
-  const { width, height } = page.geometry.parameters;
-  return planPageBounds(width, height, viewportWidth, viewportHeight, offset, page.matrixWorld.elements, camera);
-}
-
 /** Plan the handoff in the reader's flat plane without repainting the book (rust-ui/src/book_view_host.rs). */
 export function planBookPageZoom(model, camera, options) {
   return needRustShelf().book_view_page_zoom(viewHost(), model, camera, options);
@@ -865,10 +856,10 @@ let viewHostObject;
 function viewHost() {
   return viewHostObject ||= {
     three:THREE, rust:needRustShelf(), presentation, noop:() => {}, always:() => true,
-    renderer:getBookRenderer, presentationRenderer:getPresentationBookRenderer, plan:planBookView,
+    renderer:getBookRenderer, presentationRenderer:getPresentationBookRenderer,
     light:lightBookScene, model:createBookModel, packet:createBookProjectionPacket, sampler:createBookMotionSampler,
     compilePrograms:compilePagePrograms, prepareUniforms:prepareProgramUniforms, compatibility:bookReturnCompatibility,
-    bookmarkFor, normalizeRelief:normalizeCoverRelief, projectPage:projectBookPageBounds, planZoom:planPageZoom,
+    bookmarkFor,
     spread:(a, b, c) => ({ ...a, ...b, ...c }),
     lease:(gpu, callbacks, canvas, context) => createNativeRendererPresentation(gpu, { ...callbacks, canvas, context }),
     lazyExports, draw, capture:captureSnapshot, position:positionPresentation, compactBounds, positionModel, measure:measureModel,

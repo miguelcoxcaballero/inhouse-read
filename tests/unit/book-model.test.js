@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
-import { bindingGeometry, boardGeometry, bookmarkGeometry, pageBlockGeometry, leafStackGeometry, ribbonSilk, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
+import { bindingGeometry, boardGeometry, bookmarkGeometry, pageBlockGeometry, leafStackGeometry, ribbonSilk, sampleBookMotion, fitCoverImage, createBookModel, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
+import { projectBookPageBounds } from './helpers/book-view-plans.js';
 import { spineLayout, spineSurface, releaseSurface } from '../../src/js/spine-surface.js';
 import { registerPageRaster } from '../../src/js/page-raster.js';
 

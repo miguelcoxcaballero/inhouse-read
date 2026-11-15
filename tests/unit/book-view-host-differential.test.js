@@ -305,6 +305,30 @@ it('hands a presented book over to a shelf insertion like the original', async (
   }
 }, 120_000);
 
+// A view's sizes, its page's bounds and the zoom onto the reader's page are computed by the shelf module from
+// what it reads off the page itself (formerly planBookView, projectBookPageBounds and planPageZoom in JavaScript).
+it('sizes its canvas and its windows, and finds and zooms its page, like the original on any screen', async () => {
+  const screens = [[1, 360], [2.625, 412], [3, 1400], [undefined, 599], ['2', 600], [1.5, 2000]];
+  const books = [{ width:132, height:200, thickness:40 }, { width:310.5, height:471.25, thickness:9, viewportWidth:1280, viewportHeight:900, centerX:640, centerY:400 },
+    { shelf:true, width:58, height:88, thickness:14, viewportWidth:120.5, viewportHeight:160 }];
+  let n = 0;
+  for (const [ratio, inner] of screens) {
+    const options = { ...books[n++ % books.length], initialPose:pose, compactReturnFrame:n % 2 === 0 };
+    vi.stubGlobal('devicePixelRatio', ratio); vi.stubGlobal('innerWidth', inner);
+    await compare(options, async (view, step) => {
+      await step('sizes', [view.canvas.width, view.canvas.height]);
+      await step('draw', view.draw(pose));
+      await step('bounds', view.getPageBounds());
+      await step('align', view.alignToPage({ left:20.5, top:31, width:300, height:455.25 }));
+      await step('bounds after', view.getPageBounds());
+      await step('no target', view.alignToPage({ left:0, top:0, width:0, height:10 }));
+      await step('tilted', view.draw({ ...pose, angle:35, pitch:.2, coverOpen:.6 }));
+      await step('tilted bounds', view.getPageBounds());
+      await step('dispose', view.dispose());
+    }, `ratio ${ratio}, window ${inner}`);
+  }
+}, 120_000);
+
 it('rejects missing options like the original', async () => {
   const reference = await import('./helpers/reference-book-model.js');
   vi.resetModules();
