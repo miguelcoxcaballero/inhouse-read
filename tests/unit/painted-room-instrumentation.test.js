@@ -36,6 +36,31 @@ it('handles minified dollar identifiers and nested coordinate expressions withou
  const body='$f.prepare(es,rows,w,(u/(spec[t].width+fn(1,2)))*1e3);e$.localMotionPose=[$f.key(i),out[0]];e$.pose.updateMatrix();';
  expect(instrumentPaintedRoom(body)).toContain('globalThis.__captureRoomPaint(e$,((u/(spec[t].width+fn(1,2)))*1e3),(w),(rows))');
 });
+it('captures the arena pose of a scene that tells its motion frame once per layout, with the keys it registered',()=>{
+ // The shape of the published loop since the keys and bays are told when stale: no preparation in every frame.
+ const scene=(changed,tell='da&&fb(oe$)')=>'const cr={native:{register(){},identify(){},bays(){}}},lamp={prepare(){}},U_=h=>h.name,pack=x=>x.length,r=[{left:4},{left:9}],o=390,y=600;'
+  +'let Pe=[0,1,2].map(i=>({name:["book:drive:one","lamp:a",null][i],shelf:i%2,pose:{position:{x:i},matrix:{fromArray(){globalThis.calls.push("copy:"+i)}}}})),da=!0;'
+  +'function sr(h){return h}function fb(h){da=!1;const k=Pe.map(U_),S=cr.native;S.register(k,Float64Array.from(Pe,R=>R.shelf||0)),S.identify(k),S.bays(pack(r),o,h)}'
+  +'function frame(){lamp.prepare(Pe);const oe$=y/60*1e3;'+tell+';for(let Ye=0;Ye<Pe.length;Ye++){const z=Pe[Ye],De=z.pose;const ce=Ye*74,Qt='+changed+',Ie=[];Qt&1&&(De.position.x=17+Ye),Qt&2&&(De.matrix.fromArray(Ie,ce+26),De.matrixWorldNeedsUpdate=!0);}}'
+  +'frame();Pe[0].name="book:drive:renamed";frame();';
+ const run=changed=>{
+  const observed={calls:[],__captureRoomPaint(e,ppm,width,rows,key){this.calls.push([key,e.pose.position.x,e.shelf,ppm,width,rows.length].join('|'));}};
+  new Function('globalThis',instrumentPaintedRoom(scene(changed)))(observed);return observed.calls;
+ };
+ // The second frame tells nothing: the key is still the one the motion frame holds, not the entry's new name.
+ const still=['book:drive:one|0|0|10000|390|2','lamp:a|1|1|10000|390|2','|2|0|10000|390|2'];
+ expect(run(0)).toEqual([...still,...still]);
+ const moved=['book:drive:one|17|0|10000|390|2','copy:0','lamp:a|18|1|10000|390|2','copy:1','|19|0|10000|390|2','copy:2'];
+ expect(run(3)).toEqual([...moved,...moved]);
+ const stale=(from,to,message)=>expect(()=>instrumentPaintedRoom(scene(2).replace(from,to))).toThrow(message);
+ stale('S.bays(pack(r),o,h)','S.bays(pack(r),o)','motion-frame preparation');
+ stale('S.bays(pack(r),o,h)','S.bays(pack(r),o,h),S.bays(pack(r),o,h)','ambiguous telling');
+ stale('S.bays(pack(r),o,h)','S.bays(r,o,h)','unexpected bays');
+ stale('S.bays(pack(r),o,h)','S.bays(pack(r),o,q)','function that tells');
+ stale('S.register(k,','S.register(K,','shared keys told');
+ stale('da&&fb(oe$)','0','exactly one telling');
+ stale('da&&fb(oe$)','da&&fb(oe$),da&&fb(oe$)','exactly one telling');
+});
 it('keeps legacy releases measurable and rejects missing or ambiguous instrumentation',()=>{
  const legacy='const bay=rs[e.shelf||0];e.localMotionPose=[key,e.shelf||0,(p.x+w/2-(bay.left||0))/ppm,0];e.pose.updateMatrix();';
  expect(instrumentPaintedRoom(legacy)).toContain('__captureRoomPaint(e,(ppm),(w),(rs))');

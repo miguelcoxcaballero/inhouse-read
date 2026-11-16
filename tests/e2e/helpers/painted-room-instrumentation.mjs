@@ -39,10 +39,39 @@ export function instrumentPaintedRoom(body){
   const prepared=[...before.matchAll(new RegExp(`(${identifier})\\.prepare\\(`,'g'))]
    .map(match=>({frame:match[1],args:argumentsAt(body,match.index+match[0].length-1)}))
    .filter(call=>call.args.length===4&&call.args.every(arg=>arg.trim())).at(-1);
-  if(!prepared)throw Error('Painted room probe: missing native motion-frame preparation');
-  [,rows,width,ppm]=prepared.args;
-  const capture=`globalThis.__captureRoomPaint(${entry},(${ppm}),(${width}),(${rows}),${prepared.frame}.key(${index}))`;
-  return before+`(${capture},${changed})`+body.slice(arena[0].index+changed.length);
+  if(prepared){
+   [,rows,width,ppm]=prepared.args;
+   const capture=`globalThis.__captureRoomPaint(${entry},(${ppm}),(${width}),(${rows}),${prepared.frame}.key(${index}))`;
+   return before+`(${capture},${changed})`+body.slice(arena[0].index+changed.length);
+  }
+  // No motion frame is prepared in every frame any more: the scene tells its native the keys, the bays, the width
+  // and the pixels per metre in one function, when a layout or a record's identity changed. The probe reads there
+  // the scene's own rows and width, keeps the very keys that were registered (the array handed to `register`, left on the entries' array), and
+  // takes the pixels per metre from the frame's own call of that function, as the per-frame preparation received it.
+  const told=[...before.matchAll(new RegExp(`(${identifier})\\.bays\\(`,'g'))]
+   .map(match=>({at:match.index,args:argumentsAt(body,match.index+match[0].length-1)}))
+   .filter(call=>call.args.length===3&&call.args.every(arg=>arg.trim()));
+  if(!told.length)throw Error('Painted room probe: missing native motion-frame preparation');
+  if(told.length!==1)throw Error('Painted room probe: ambiguous telling of the motion frame');
+  const [packed,toldWidth,toldPpm]=told[0].args.map(arg=>arg.trim());
+  const packing=packed.match(new RegExp(`^${identifier}\\(`));
+  const packedRows=packing&&packed.endsWith(')')?argumentsAt(packed,packing[0].length-1):[];
+  if(packedRows.length!==1||!packedRows[0].trim())throw Error('Painted room probe: unexpected bays of the motion frame');
+  const telling=[...before.slice(0,told[0].at).matchAll(new RegExp(`function (${identifier})\\((${identifier})\\)\\{`,'g'))].at(-1);
+  if(!telling||telling[2]!==toldPpm)throw Error('Painted room probe: missing the function that tells the motion frame');
+  const tellingBody=before.slice(telling.index,told[0].at);
+  const keys=[...tellingBody.matchAll(new RegExp(`([,; ])(${identifier})=((${identifier})\\.map\\(${identifier}\\))(?=[,;])`,'g'))]
+   .filter(match=>new RegExp(`\\.register\\(${literal(match[2])},`).test(tellingBody));
+  if(keys.length!==1)throw Error('Painted room probe: missing the shared keys told to the motion frame');
+  const keysAt=telling.index+keys[0].index;
+  const calls=[...before.slice(told[0].at).matchAll(new RegExp(`(?<![\\w$.])${literal(telling[1])}\\(`,'g'))]
+   .map(match=>argumentsAt(body,told[0].at+match.index+match[0].length-1))
+   .filter(args=>args.length===1&&args[0].trim());
+  if(calls.length!==1)throw Error('Painted room probe: expected exactly one telling of the motion frame before the paint');
+  rows=packedRows[0];width=toldWidth;[ppm]=calls[0];
+  const capture=`globalThis.__captureRoomPaint(${entry},(${ppm}),(${width}),(${rows}),${keys[0][4]}.__roomPaintKeys?.[${index}])`;
+  return body.slice(0,keysAt)+`${keys[0][1]}${keys[0][2]}=${keys[0][4]}.__roomPaintKeys=${keys[0][3]}`+body.slice(keysAt+keys[0][0].length,arena[0].index)
+   +`(${capture},${changed})`+body.slice(arena[0].index+changed.length);
  }else{
   // Keep baseline releases observable while comparisons straddle the migration.
   const legacy=[...body.matchAll(new RegExp(`(${identifier})\\.localMotionPose=\\[${identifier},${identifier}\\.shelf\\|\\|0,\\(${identifier}\\.x\\+(${identifier})\\/2-\\(${identifier}\\.left\\|\\|0\\)\\)\\/(${identifier})`,'g'))];
