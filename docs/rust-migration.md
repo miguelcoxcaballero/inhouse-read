@@ -1,3 +1,15 @@
+# Entrega 1.8.3 (tanda integ-bar-18): vuelo a la papelera, estudios del catálogo y puertas del lector
+
+Ramas sobre la 1.8.2: ready/scene-frame-37 (c5cf52f8, incluye 35 y 36), ready/book-model-27 (877dff96), ready/decor-shell-26 (5ce5a70d), ready/readers-voice-30 (8ed35728, incluye 27-29), ready/ci-reds-5 (d147990a).
+Barra estimada en local: 77,77 % Rust; quedan unos 769 KB de JavaScript (1.8.2: 77,31 %, 787 KB).
+
+- Escena: el vuelo de una entrada a la papelera es una llamada nativa por fotograma (rust-ui/src/scene_flight.rs; 2,3 -> 1,3 us en Node); salen shelf-pixel-origin.js, scene-motion-frame.js y foliage-frame.js; las claves y huecos de la sala compartida se cuentan una vez por diseño y no en cada fotograma (el primer fotograma de un diseño es ~1 us más lento). -4.817 B de JS.
+- Libro: la colocación en la estantería mueve el registro fijado en el núcleo.
+- Decoración: los adaptadores de los estudios de lámpara, planta y mueble viven en Rust (-2.878 B de JS). Coste: el wasm de la estantería crece 16,4 KB, 5,7 veces lo que quita, por encima del límite de 3x que se pedía; se acepta esta vez y se anota. Frente al JS original estos estudios siguen siendo más lentos por toque (lámpara ~0,5 -> ~0,7 ms), igual que ya lo eran en main.
+- Lector: instantánea de página, mapa de texto, gesto de mantener, puertas del catálogo de voces y puertas de audio (-8,6 KB de JS, siete módulos borrados; unos 5 KB de ellos siguen como ayudantes de prueba).
+- Arreglo de la app (ci-reds-5, rust-ui/src/bookshelf/drag.rs y screen_nodes.rs): tras un arrastre interrumpido la marca que impide abrir el libro se borraba un turno después; si el botón se soltaba más tarde sobre el libro, se abría. Ahora la marca dura hasta ese clic o la siguiente pulsación; un clic de teclado abre siempre.
+- Pruebas: la sonda de la sala pintada se reancla en la nueva llamada bays (solo el ayudante); reader-controls-layout espera 45 s al primer lector (en el CI apareció a los 10,8 s, WebGL por software a 2560x1600).
+
 # Entrega 1.8.2: sesión válida antes que «actualiza la app»
 
 Sin bloques de migración. src/js/drive-client.js (requestDriveAccess): desde la 1.8.0 una carcasa Android sin InhouseNative.openAuthUrl recibía ANDROID_SHELL_OUTDATED aunque tuviera una sesión guardada y vigente, así que la copia automática a Drive no arrancaba. Ahora se mira primero la sesión, como hasta la 1.7.339; solo un inicio de sesión nuevo pide actualizar. vendor/ no se toca.

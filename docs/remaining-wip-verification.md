@@ -1,3 +1,13 @@
+# 1.8.3 — tanda integ-bar-18
+
+- Unitarias: 0 fallos. Capturas: 24 estados contra la 1.8.1, 13 idénticos bit a bit, máximo 1/255; los dos estados 15-lamps4 no se capturaron (se agotó el tiempo de la captura).
+- Navegador en local, por primera vez con los specs que antes quedaban fuera (todo menos neural-voice* y supertonic): parte 1, 60 pasan y 6 fallan; parte 2, 369 y 1; parte 3, 115 y 4, con 15 sin ejecutar.
+- De esos fallos: tres eran la sonda de la sala (reanclada; live-room-authority y stability:75 pasan 2 de 2). lamp-switches:80 y cover-editor:206 pasan al repetir a solas (2 de 2). live-room-stability:27: candidato 3 de 3, 1.8.2 2 de 3. live-room-sync:11 falla 1 de 2 (inestable de siempre). native-aligned-shelf-return-contract:10, rojo habitual aquí. Los cuatro de la parte 3 piden modelos de voz reales que esta máquina no tiene.
+- Tras integrar ci-reds-5 y scene-frame-37 no se repitieron las 600 pruebas, solo las afectadas y las unitarias.
+- CI de la 1.8.2: rojo por shelf-input-responsiveness:22 (fallo real de la app, arreglado aquí; la prueba reescrita falla sin el arreglo) y por una máquina lenta. Sin confirmar en el CI.
+- Sin investigar: en el segundo cliente de una sala sincronizada el libro empieza tumbado y queda de pie tras arrastrarlo.
+- Sin verificar: teléfono real, WebView de Android, lector de pantalla, sala compartida entre dos dispositivos reales.
+
 # 1.8.2 — arreglo tras el CI de la 1.8.1
 
 - CI de la 1.8.1 (run 43742204288): rojo por critical-regressions:28 (rojo también en la 1.8.0, verde en la 1.7.339) y shelf-input-responsiveness:22 (ya pasa la línea del segundo cliente; fallaba después, el punto del libro era null tras soltarlo). Pasan en el CI lamp-switches:136, shelf-close-placement:90, shelf-placement y smoke:80.

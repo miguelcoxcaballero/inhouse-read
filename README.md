@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.8.3 — Más Rust y un libro que ya no se abre solo
+
+Si un arrastre se interrumpía al perder el foco la ventana y el botón se
+soltaba segundos después sobre el libro, el libro se abría sin querer; ya no.
+Pasan a Rust el vuelo a la papelera, tres adaptadores de la escena, los
+estudios del catálogo y siete módulos del lector. No cambia el aspecto
+(estimación local: 77,8 % Rust).
+
+
 ## 1.8.2 — La copia a Drive vuelve a funcionar en apps Android antiguas
 
 Una sesión de Google todavía válida se rechazaba desde la 1.8.0 en las APK
