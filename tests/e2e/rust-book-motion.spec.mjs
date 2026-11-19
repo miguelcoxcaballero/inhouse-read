@@ -2,10 +2,14 @@ import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {createRustBookMotion,MOTION_KEYS} from '/inhouse-read/src/js/book-motion-wasm.js';
+import {requireRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
+import {motionPose} from '/inhouse-read/src/js/book-view-wasm.js';
 import {sampleBookMotion} from '/inhouse-read/tests/unit/helpers/reference-book-motion.js';
-const core=await loadRustCore();if(!core?.book_motion_prepare)throw Error('Compiled motion required');
+// The shelf module samples a book's motion itself (rust-ui/src/book_sampler.rs); the host only makes the pose object.
+const rust=await requireRustShelf(),memory=rust.book_mesh_memory(),host={pose:motionPose};
+if(typeof rust.book_sampler_open!=='function')throw Error('Compiled motion required');
+const MOTION_KEYS=['x','y','scale','angle','pitch','roll','coverOpen','bookmarkWithdraw','pageTheme'];
+const createRustBookMotion=frames=>{const id=rust.book_sampler_open(frames);return{sample:t=>rust.book_sampler_pose(id,t,host),dispose:()=>rust.book_sampler_close(id)};};
 window.checkBookMotion=()=>{
  const results=[];
  for(const count of [2,4,8,16]){
@@ -14,7 +18,7 @@ window.checkBookMotion=()=>{
   try{
    for(let i=0;i<=100;i++)if(JSON.stringify(motion.sample(i/100))!==JSON.stringify(sampleBookMotion(frames,i/100)))throw Error('Motion differs at '+i);
    for(let i=0;i<200;i++){motion.sample(i%101/100);sampleBookMotion(frames,i%101/100);}
-   const before=core.memory.buffer.byteLength,timings={js:[],rust:[]};
+   const before=memory.buffer.byteLength,timings={js:[],rust:[]};
    for(let round=0;round<9;round++)for(const kind of round%2?['rust','js']:['js','rust']){
     const run=kind==='rust'?t=>motion.sample(t):t=>sampleBookMotion(frames,t),start=performance.now();
     for(let i=0;i<2000;i++)run(i%101/100);timings[kind].push((performance.now()-start)/2000);
@@ -29,7 +33,7 @@ window.checkBookMotion=()=>{
     }
     complete[kind].push((performance.now()-start)/100);
    }
-   const median=a=>[...a].sort((a,b)=>a-b)[4];results.push({count,js:median(timings.js),rust:median(timings.rust),completeJS:median(complete.js),completeRust:median(complete.rust),timings,complete,capacityBefore:before,capacityAfter:core.memory.buffer.byteLength});
+   const median=a=>[...a].sort((a,b)=>a-b)[4];results.push({count,js:median(timings.js),rust:median(timings.rust),completeJS:median(complete.js),completeRust:median(complete.rust),timings,complete,capacityBefore:before,capacityAfter:memory.buffer.byteLength});
   }finally{motion.dispose();}
  }
  return results;

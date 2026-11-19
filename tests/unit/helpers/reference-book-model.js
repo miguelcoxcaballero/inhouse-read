@@ -2,7 +2,7 @@
 // JavaScript). Only its import paths differ (and its shared-texture builders are exported at the end). The differential tests build models with this and with the
 // production module (whose construction now runs in rust-ui/src/book_model_build.rs) and compare them.
 import {createBookProjectionPacket,projectVisibleBookBounds} from '../../../src/js/book-projection.js';
-import {createBookMotionSampler} from '../../../src/js/book-motion.js';
+import {createBookMotionSampler} from './reference-book-motion-bridge.js';
 import { paddedBookFrameSize } from '../../../src/js/book-frame-padding.js';
 import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
 import { planBookView, planPageBounds, planPageZoom } from './reference-book-view-wasm.js';
@@ -1762,6 +1762,6 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
 
-export { sampleBookMotion } from '../../../src/js/book-motion.js';
+export { sampleBookMotion } from './reference-book-motion-bridge.js';
 // Exported for tests/unit/book-model-textures-wasm.test.js only (the shared textures are now built by the shelf module).
 export { tileNormals as referenceTileNormals, ribbonNotch as referenceRibbonNotch, pageEdgeAtlas as referencePageEdgeAtlas, endpaperTexture as referenceEndpaperTexture };

@@ -125,7 +125,7 @@ describe('direct book presentation and actual lazy snapshots', () => {
     vi.stubGlobal('requestAnimationFrame',callback=>{const id=++serial;scheduled.set(id,callback);return id;});
     vi.stubGlobal('cancelAnimationFrame',id=>scheduled.delete(id));
     const frames=[{transform:origin},{transform:{...origin,angle:0,scale:1,x:0,y:0}}];
-    const {sampleBookMotion}=await import('../../src/js/book-model.js');
+    const {sampleBookMotion}=await import('./helpers/book-motion.js');
     const animation=view.animate(frames,{duration:240});
     expect(gpu.renders).toHaveLength(0); // reservation never paints geometry probes
     const sizes=[];

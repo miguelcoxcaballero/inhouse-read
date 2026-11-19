@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from '../../src/js/cover-editor.js'
-import { sampleBookMotion } from '../../src/js/book-model.js'
+import { sampleBookMotion } from './helpers/book-motion.js'
 
 describe('pestañas del editor', () => {
   it('ofrece Lomo y Portada, en ese orden, y valida el id', () => {

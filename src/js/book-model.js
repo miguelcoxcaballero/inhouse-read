@@ -1,7 +1,6 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from './book-projection.js';
-import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from './book-view-wasm.js';
+import { boxScreenBounds, fitImage, frameAligned, motionPose, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from './book-view-wasm.js';
 import { needRustShelf } from './rust-shelf.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
@@ -868,7 +867,7 @@ function viewHost() {
   return viewHostObject ||= {
     three:THREE, rust:needRustShelf(), presentation, noop:() => {}, always:() => true,
     renderer:getBookRenderer, presentationRenderer:getPresentationBookRenderer,
-    light:lightBookScene, model:createBookModel, packet:createBookProjectionPacket, sampler:createBookMotionSampler,
+    light:lightBookScene, model:createBookModel, packet:createBookProjectionPacket, pose:motionPose,
     compilePrograms:compilePagePrograms, prepareUniforms:prepareProgramUniforms, compatibility:bookReturnCompatibility,
     bookmarkFor,
     spread:(a, b, c) => ({ ...a, ...b, ...c }),
@@ -891,5 +890,3 @@ const viewState = () => ({ env:undefined, canvas:undefined, model:undefined, nod
   snapshotDirty:undefined, live:undefined, suspendedHost:undefined, displayedPose:undefined, visualRevision:undefined,
   displayedRevision:undefined, invalidatePresentation:undefined, externalPresentation:undefined, unregisterSnapshot:undefined,
   owner:undefined, compactBounds:undefined, bookmarkFrame:undefined, motionState:undefined });
-
-export { sampleBookMotion } from './book-motion.js';

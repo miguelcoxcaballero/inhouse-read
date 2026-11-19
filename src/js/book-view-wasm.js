@@ -102,3 +102,11 @@ export function planReadingPose(width, height, thickness, viewportWidth, viewpor
   const out = view();
   return { x: out[base + 7], y: out[base + 8], scale: out[base + 9] };
 }
+
+/** The pose of one frame of a motion, from the numbers the shelf module sampled (rust-ui/src/book_sampler.rs): the
+ * page's theme only moves when every keyframe says where it goes. */
+export function motionPose(themed, x, y, scale, angle, pitch, roll, coverOpen, bookmarkWithdraw, pageTheme) {
+  const pose = { x, y, scale, angle, pitch, roll, coverOpen, bookmarkWithdraw };
+  if (themed) pose.pageTheme = pageTheme;
+  return pose;
+}

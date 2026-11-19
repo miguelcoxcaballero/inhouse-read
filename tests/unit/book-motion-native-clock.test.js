@@ -1,16 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import {readFileSync} from 'node:fs';
-const motionCore=vi.hoisted(()=>({core:null,active:new Set(),samples:0}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>motionCore.core,loadRustCore:async()=>motionCore.core??(await globalThis.__inhouseRustReady).exports,loadedRustCore:()=>motionCore.core,requireRustCore:async()=>motionCore.core??(await globalThis.__inhouseRustReady).exports}));
-beforeAll(async()=>{
- const core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;
- motionCore.core={...core,
-  book_motion_prepare(pointer,...args){const ok=core.book_motion_prepare(pointer,...args);if(ok)motionCore.active.add(pointer);return ok;},
-  book_motion_sample(...args){motionCore.samples++;return core.book_motion_sample(...args);},
-  free_f64(pointer,length){motionCore.active.delete(pointer);return core.free_f64(pointer,length);}
- };
-});
-import { bookView, sampleBookMotion } from '../../src/js/book-model.js';
+import { bookView } from '../../src/js/book-model.js';
+import { sampleBookMotion } from './helpers/book-motion.js';
+import { rustShelf } from './helpers/rust-shelf-ready.js';
+// The motions the shelf module has open (rust-ui/src/book_sampler.rs): a view opens one per animation and closes
+// it when the animation ends, is replaced or the view is disposed.
+const motions={before:0,peak:0};
+
 
 // Exercise the real bookView animation and pose sampler. Only the GPU driver
 // is replaced: its geometry, materials, ribbon and motion frames stay real.
@@ -39,7 +34,7 @@ vi.mock('three', async importOriginal => {
 
 let view, frames, clock, serial;
 beforeEach(() => {
-  motionCore.samples=0;clock = 1000; serial = 0; frames = new Map();
+  motions.before=rustShelf.book_samplers_open();motions.peak=0;clock = 1000; serial = 0; frames = new Map();
   vi.stubGlobal('WebGLRenderingContext', function WebGLRenderingContext() {});
   vi.stubGlobal('requestAnimationFrame', callback => { const id=++serial;frames.set(id,callback);return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
@@ -58,12 +53,12 @@ beforeEach(() => {
   expect(view).not.toBeNull();
 });
 afterEach(() => {
-  view?.dispose();expect(motionCore.samples).toBeGreaterThan(0);expect(motionCore.active.size).toBe(0);document.body.replaceChildren();vi.restoreAllMocks();vi.unstubAllGlobals();
+  view?.dispose();expect(motions.peak).toBeGreaterThan(0);expect(rustShelf.book_samplers_open()).toBe(motions.before);document.body.replaceChildren();vi.restoreAllMocks();vi.unstubAllGlobals();
 });
 const motionFrames = angle => [{ transform:{ x:0,y:0,scale:1,angle,pitch:0,roll:0 } },
   { transform:{ x:0,y:0,scale:1,angle:0,pitch:0,roll:0 } }];
 function deliver(observed, rafTimestamp) {
-  expect(frames.size).toBe(1);
+  expect(frames.size).toBe(1);motions.peak=Math.max(motions.peak,rustShelf.book_samplers_open()-motions.before);
   const [id,callback]=frames.entries().next().value;frames.delete(id);
   clock=observed;callback(rafTimestamp);
   return view.getPose();

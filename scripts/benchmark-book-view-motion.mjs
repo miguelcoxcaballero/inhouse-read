@@ -1,11 +1,13 @@
-// CPU-only scheduler comparison; no Three, draw, pose computation or GPU work.
+// CPU-only scheduler comparison; no Three, draw or GPU work. The original scheduler is handed a sampler that
+// computes nothing; the shelf module samples its own motion (two keyframes) and asks the host only for the pose
+// object. scripts/benchmark-book-motion-sampler.mjs compares the sampling itself.
 import{readFileSync}from'node:fs';
 import * as native from'../src/wasm/shelf/inhouse_read_shelf.js';
 import{referenceBookViewMotion}from'../tests/unit/helpers/reference-book-view-motion.js';
 native.initSync({module:readFileSync(new URL('../src/wasm/shelf/inhouse_read_shelf_bg.wasm',import.meta.url))});
 let next,id=0;globalThis.requestAnimationFrame=fn=>{next=fn;return++id;};globalThis.cancelAnimationFrame=()=>{};
 const pose={x:0,y:0,scale:1,angle:0},frames=[{transform:pose},{transform:pose}],options={direct:false};
-const host={createSampler:()=>({start(){},step:()=>.5,sample:()=>pose,dispose(){}}),draw(){},noop(){},position(){},measure(){},
+const host={createSampler:()=>({start(){},step:()=>.5,sample:()=>pose,dispose(){}}),pose:()=>pose,draw(){},noop(){},position(){},measure(){},
  tick:native.book_view_motion_tick,cancel:native.book_view_motion_cancel,release:native.book_view_motion_release};
 function run(isNative){
  const state=isNative?native.book_view_motion_state(host):referenceBookViewMotion(host);

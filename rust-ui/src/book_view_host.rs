@@ -181,7 +181,7 @@ pub fn book_view_create(environment:&JsValue,node:&JsValue,book:&JsValue,style:&
  // One shared state object: reading frame capacities never crosses WASM.
  // Rust owns RAF jobs, cancellation and native frame reservation tokens.
  let rust=read(environment,"rust")?;
- let motion=crate::book_view_motion::book_view_motion_state(object(&[("createSampler",read(environment,"sampler")?),("draw",hosted(&v,"draw")?),
+ let motion=crate::book_view_motion::book_view_motion_state(object(&[("pose",read(environment,"pose")?),("draw",hosted(&v,"draw")?),
   ("position",hosted(&v,"positionModel")?),("measure",hosted(&v,"measure")?),("noop",read(environment,"noop")?),
   ("tick",read(&rust,"book_view_motion_tick")?),("cancel",read(&rust,"book_view_motion_cancel")?),("release",read(&rust,"book_view_motion_release")?)])?)?;
  put(&v,"motionState",&motion)?;

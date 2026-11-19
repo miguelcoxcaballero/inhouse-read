@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bookView, sampleBookMotion } from '../../src/js/book-model.js';
+import { bookView } from '../../src/js/book-model.js';
+import { sampleBookMotion } from './helpers/book-motion.js';
 
 // Exercise the real bookView animation and pose sampler. Only the GPU driver
 // is replaced: its geometry, materials, ribbon and motion frames stay real.

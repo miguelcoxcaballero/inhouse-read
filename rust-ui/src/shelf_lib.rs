@@ -100,6 +100,10 @@ mod book_mesh;
 #[path="../../rust-core/src/book_view.rs"]
 mod book_view;
 mod book_view_plan;
+// A motion's poses and clock: the core's kernel, run in place by the views' motions (book_view_motion.rs).
+#[path="../../rust-core/src/book_motion.rs"]
+mod book_motion;
+mod book_sampler;
 // The rasters every book shares (cloth and paper tooth, ribbon cut, weave): the core's kernels, run natively.
 #[path="../../rust-core/src/book_surface.rs"]
 mod book_surface;
