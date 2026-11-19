@@ -529,7 +529,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if(!nativeFrameCache?.releaseUnusedSlots)return;
     // Identity, not descriptor equality: fine and overview may share one
     // texture while exports or the current presenter still need its pixels.
-    nativeFrameCache.releaseUnusedSlots([nativeRoomSlot,...nativeFineSlots,nativeComposedRoomSlot],[
+    nativeFrameCache.releaseUnusedSlots([nativeRoomSlot,...nativeFineSlots,nativeComposedRoomSlot,nativeMovingSlot],[
       nativeBaseFrame,nativeRoomDisplay?.frame,inspectionSnapshot?.nativeFrame,
       inspectionOverview?.nativeFrame,nativeInspectionExportFrame,nativeOverviewExportFrame
     ]);
