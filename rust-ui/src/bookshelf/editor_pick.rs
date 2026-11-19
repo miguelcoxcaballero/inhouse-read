@@ -27,8 +27,8 @@ impl Editor{
   let context=method(&canvas,"getContext",&[&s("2d"),&obj(&[("willReadFrequently",&JsValue::TRUE)])])?;
   put(&context,"fillStyle",&get(&self.style.borrow().clone(),"color"));
   method(&context,"fillRect",&[&f(0.0),&f(0.0),&f(width),&f(height)])?;
-  let fit=self.ctx.env("fitCoverImage",&[&f(natural_w),&f(natural_h),&f(width),&f(height)])?;
-  method(&context,"drawImage",&[&image,&f(gn(&fit,"x")*scale),&f(gn(&fit,"y")*scale),&f(gn(&fit,"width")*scale),&f(gn(&fit,"height")*scale)])?;
+  let [x,y,fit_w,fit_h]=crate::book_view_plan::fit(natural_w,natural_h,width,height);
+  method(&context,"drawImage",&[&image,&f(x*scale),&f(y*scale),&f(fit_w*scale),&f(fit_h*scale)])?;
   // Force a read now so tainted/cross-origin covers fail before the user starts dragging.
   method(&context,"getImageData",&[&f(0.0),&f(0.0),&f(1.0),&f(1.0)])?;
   *self.sample_canvas.borrow_mut()=canvas.clone();

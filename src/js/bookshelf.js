@@ -42,7 +42,7 @@ import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
-import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
+import { bookView, getBookRenderer } from './book-model.js';
 import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from './cover-relief.js';
 import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
@@ -113,11 +113,9 @@ const shelfEnv = {
   spineColorStyle: (...args) => spineColorStyle(...args),
   surfaceFinish: (...args) => surfaceFinish(...args),
   withCoverAppearance: (...args) => withCoverAppearance(...args),
-  fitCoverImage: (...args) => fitCoverImage(...args),
   bookView: (...args) => bookView(...args),
   bookmarkFor: (...args) => bookmarkFor(...args),
   readCoverAspectRatio: (...args) => readCoverAspectRatio(...args),
-  planReadingBookPose: (...args) => planReadingBookPose(...args),
   markTiming: (...args) => markTiming(...args),
   resetTimeline: (...args) => resetTimeline(...args),
   readerBookTiming: (...args) => readerBookTiming(...args),

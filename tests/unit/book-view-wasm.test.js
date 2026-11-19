@@ -5,11 +5,11 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { needRustShelf } from '../../src/js/rust-shelf.js';
-import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../src/js/book-view-wasm.js';
-import { fitCoverImage, planBookPageZoom, planReadingBookPose, projectBookBoardBounds } from '../../src/js/book-model.js';
+import { boxScreenBounds, frameAligned, planBookPose, planCopyRectangle, planReturnFrame } from '../../src/js/book-view-wasm.js';
+import { planBookPageZoom, projectBookBoardBounds } from '../../src/js/book-model.js';
 // A view's sizes, its page's bounds and the zoom have no wrapper in the page any more: the kernels through the
 // module's arena, and the page projection through the production export of a view.
-import { planBookView, planPageBounds, planPageZoom, projectBookPageBounds } from './helpers/book-view-plans.js';
+import { fitCoverImage, fitImage, planBookView, planPageBounds, planPageZoom, planReadingBookPose, planReadingPose, projectBookPageBounds } from './helpers/book-view-plans.js';
 import { referenceBookView, referenceFitCoverImage, referencePlanBookPageZoom, referencePlanReadingBookPose,
   referenceProjectBookBoardBounds, referenceProjectBookPageBounds, referenceViewSizes } from './helpers/reference-book-view.js';
 

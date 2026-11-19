@@ -107,7 +107,9 @@ import { canAdoptShelfMetadata } from '../../../src/js/shelf-metadata-records.js
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from '../../../src/js/cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from '../../../src/js/book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from '../../../src/js/book-title.js';
-import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from '../../../src/js/book-model.js';
+import { bookView, getBookRenderer } from '../../../src/js/book-model.js';
+// The page's planReadingBookPose and fitCoverImage, over the same kernels (the shelf module now asks them itself).
+import { fitCoverImage, planReadingBookPose } from './book-view-plans.js';
 import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from '../../../src/js/cover-relief.js';
 import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from '../../../src/js/cover-editor.js';
 import { setEditorTabHeading } from './reference-editor-tab-heading.js';

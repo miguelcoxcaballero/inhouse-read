@@ -3,7 +3,8 @@
 // production module (whose construction now runs in rust-ui/src/book_model_build.rs) and compare them.
 import {createBookProjectionPacket,projectVisibleBookBounds} from '../../../src/js/book-projection.js';
 import { paddedBookFrameSize } from '../../../src/js/book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, motionPose, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { boxScreenBounds, frameAligned, motionPose, planBookPose, planCopyRectangle, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { fitImage, planReadingPose } from './book-view-plans.js';
 import { planBookView, planPageBounds, planPageZoom } from './reference-book-view-wasm.js';
 import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';

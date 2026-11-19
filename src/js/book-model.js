@@ -1,6 +1,6 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from './book-projection.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, motionPose, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from './book-view-wasm.js';
+import { boxScreenBounds, frameAligned, motionPose, planBookPose, planCopyRectangle, planReturnFrame } from './book-view-wasm.js';
 import { needRustShelf } from './rust-shelf.js';
 import { reuseCoverRaster } from './cover-raster-cache.js';
 import {acquireCoverImage} from './book-cover-images.js';
@@ -233,8 +233,6 @@ export function mixPaperTone(target, stock, theme, mix) {
   const a = stock.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
   return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
 }
-
-export const fitCoverImage = fitImage;
 
 function shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution = 0) {
   return spineSurface(book, style, height, thickness, needRustShelf().book_spine_options(height,
@@ -615,13 +613,6 @@ export async function prepareBookDetailPresentation(build, idle, current = () =>
 /** Plan the handoff in the reader's flat plane without repainting the book (rust-ui/src/book_view_host.rs). */
 export function planBookPageZoom(model, camera, options) {
   return needRustShelf().book_view_page_zoom(viewHost(), model, camera, options);
-}
-
-/** Fit the whole open spread, rather than cropping its left board on phones. */
-export function planReadingBookPose({ width, height, thickness = 0,
-  viewportWidth, viewportHeight, centerX, centerY }) {
-  const { x, y, scale } = planReadingPose(width, height, thickness, viewportWidth, viewportHeight, centerX, centerY);
-  return { x, y, scale, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:0 };
 }
 
 export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight) {

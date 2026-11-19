@@ -190,8 +190,7 @@ impl Flyout{
   cls_add(&self.flyout,&["is-opening-book"]);
   putb(&self.close_button,"hidden",true);
   self.fade_meta()?;
-  let reading=self.ctx.env("planReadingBookPose",&[&obj(&[("width",&f(g.cover_w)),("height",&f(g.cover_h)),("thickness",&f(g.thickness)),
-   ("viewportWidth",&f(g.vw)),("viewportHeight",&f(g.vh)),("centerX",&f(g.center_x)),("centerY",&f(g.center_y))])])?;
+  let reading=crate::book_view_plan::reading_pose(g.cover_w,g.cover_h,g.thickness,g.vw,g.vh,g.center_x,g.center_y);
   put(&self.session,"readingPose",&reading);
   let cover_duration=get(durations,"cover");
   put(&self.session,"coverOpeningDuration",&cover_duration);

@@ -198,7 +198,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  let thickness=if has_pose{gn(&source_pose,"thickness")*cover_h/gn(&source_pose,"height")}else{max(6.0,rect_w/start_scale)};
  let center_x=vw*(if landscape{0.26}else{0.5})+thickness*0.19;
  let center_y=vh*(if landscape{0.5}else{0.42});
- let reading_pose=ctx.env("planReadingBookPose",&[&obj(&[("width",&f(cover_w)),("height",&f(cover_h)),("thickness",&f(thickness)),("viewportWidth",&f(vw)),("viewportHeight",&f(vh)),("centerX",&f(center_x)),("centerY",&f(center_y))])])?;
+ let reading_pose=crate::book_view_plan::reading_pose(cover_w,cover_h,thickness,vw,vh,center_x,center_y);
  let dx=(if has_pose&&!nullish(&get(&source_pose,"centerX")){gn(&source_pose,"centerX")}else{gn(&rect_value,"left")+rect_w/2.0})-center_x;
  let dy=(if has_pose&&!nullish(&get(&source_pose,"centerY")){gn(&source_pose,"centerY")}else{gn(&rect_value,"top")+rect_h/2.0})-center_y;
  let lift=min(40.0,rect_h*0.2);

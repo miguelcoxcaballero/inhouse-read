@@ -6,8 +6,9 @@ import { needRustShelf } from './rust-shelf.js';
 // back from Rust. One arena of the module's memory is used for the life of the page: every kernel has its own
 // region, so a measurement taken in the middle of a plan cannot overwrite the plan's inputs. The view over the
 // arena is remade only when the module's memory has grown. A view's sizes, its page's bounds and the zoom onto
-// the reader's page are asked for by the module itself (rust-ui/src/book_view_host.rs) and have no wrapper here.
-const REGION = { frame: 16, copy: 50, pose: 70, fit: 94, corners: 102, reading: 290 };
+// the reader's page, the cover's fit and the reading pose are asked for by the module itself (rust-ui/src/book_view_host.rs,
+// book_view_plan.rs) and have no wrapper here.
+const REGION = { frame: 16, copy: 50, pose: 70, corners: 102 };
 let rust, memory, buffer, numbers;
 /** The arena as it is now. */
 function view() {
@@ -84,23 +85,6 @@ export function planBookPose(pose, current, centerX, centerY, viewportWidth, vie
   const out = view();
   return { opening: out[base + 15], withdrawal: out[base + 16], x: out[base + 17], y: out[base + 18],
     rotationX: out[base + 19], rotationY: out[base + 20], rotationZ: out[base + 21], scale: out[base + 22], pageTheme: out[base + 23] };
-}
-
-export function fitImage(imageWidth, imageHeight, width, height) {
-  const base = REGION.fit;
-  view().set([imageWidth, imageHeight, width, height], base);
-  rust.book_view_run(base);
-  const out = view();
-  return { x: out[base + 4], y: out[base + 5], width: out[base + 6], height: out[base + 7] };
-}
-
-/** The pose of a book opened flat with its whole spread in view. */
-export function planReadingPose(width, height, thickness, viewportWidth, viewportHeight, centerX, centerY) {
-  const base = REGION.reading;
-  view().set([width, height, thickness, viewportWidth, viewportHeight, centerX, centerY], base);
-  rust.book_view_run(base);
-  const out = view();
-  return { x: out[base + 7], y: out[base + 8], scale: out[base + 9] };
 }
 
 /** The pose of one frame of a motion, from the numbers the shelf module sampled (rust-ui/src/book_sampler.rs): the

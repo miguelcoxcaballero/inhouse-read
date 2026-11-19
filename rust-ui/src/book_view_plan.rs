@@ -47,6 +47,20 @@ pub fn fit(image_width: f64, image_height: f64, width: f64, height: f64) -> [f64
     [io[4], io[5], io[6], io[7]]
 }
 
+/// The pose of a book opened flat with its whole spread in view (`planReadingBookPose`), for the shelf's opening
+/// and return: x, y and scale from the core, then the open, unturned pose around them.
+pub fn reading_pose(width: f64, height: f64, thickness: f64, viewport_width: f64, viewport_height: f64, center_x: f64,
+    center_y: f64) -> JsValue {
+    let mut io = [width, height, thickness, viewport_width, viewport_height, center_x, center_y, 0.0, 0.0, 0.0];
+    unsafe { book_view::book_reading_pose(io.as_mut_ptr()); }
+    let pose = js_sys::Object::new();
+    for (key, value) in [("x", io[7]), ("y", io[8]), ("scale", io[9]), ("angle", 0.0), ("pitch", 0.0), ("roll", 0.0),
+        ("coverOpen", 1.0), ("bookmarkWithdraw", 0.0)] {
+        let _ = js_sys::Reflect::set(&pose, &JsValue::from_str(key), &JsValue::from_f64(value));
+    }
+    pose.into()
+}
+
 /// A view's sizes (`planBookView`): from shelf flag, device pixel ratio, window width, viewport width and
 /// height, book width, height and thickness, the pixel ratio, the canvas width and height, the open spread's
 /// window width, the closed book's, and their height.

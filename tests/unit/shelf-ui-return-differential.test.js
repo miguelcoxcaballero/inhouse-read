@@ -154,7 +154,7 @@ const handed = () => [['lift', lift], ['hand the book to the reader', toReader],
 describe('the way back from the reader against the frozen original', () => {
   it('plays the closing with a 3D view and a saved page, without the shelf scene', async () => {
     const text = await same(() => [...handed(), ['come back', back()]])
-    for (const marker of ['returned true', 'view.setPageSnapshot', 'view.animateBookmark', 'view.animateCoverClose', 'onPageReady', 'planReadingBookPose']) expect(text).toContain(marker)
+    for (const marker of ['returned true', 'view.setPageSnapshot', 'view.animateBookmark', 'view.animateCoverClose', 'onPageReady']) expect(text).toContain(marker)
   }, 60_000)
 
   it('plays the closing with the shelf scene, its poses and the insertion', async () => {
