@@ -61,7 +61,7 @@ export function rememberLaunchFrames(root, { books, idle, isIdle, shelfModule })
   let timer = 0;
   // Saving (is the canvas settled and unused, the key, the PNG, the checks after every wait) is
   // rust-ui/src/launch_frames.rs; this keeps the observer, its timer and the store.
-  const host = { root, generation:0, stopped:false, isIdle, books, launchState, launchKey, validLaunchFrame, writeLaunchFrame };
+  const host = { root, generation:0, stopped:false, isIdle, books, launchState, launchKey, validLaunchFrame, readLaunchFrame, writeLaunchFrame };
   const save = revision => shelfModule().shelf_save_launch_frame(host, revision);
   const schedule = () => {
     const revision = ++host.generation; clearTimeout(timer);

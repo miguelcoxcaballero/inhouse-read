@@ -72,6 +72,10 @@ export function rememberLaunchFrames(root, { books, idle, isIdle }) {
       const count = node.dataset.renderCount;
       const records = await books(), state = launchState(records), key = await launchKey(state);
       if (!usable(node) || revision !== generation || node.dataset.renderCount !== count) return;
+      // The same room is already stored: no GPU readback, PNG or write (re-anchored with launch_frames.rs).
+      const stored = await readLaunchFrame().catch(() => null);
+      if (validLaunchFrame(stored, key, innerWidth, innerHeight)) return;
+      if (!usable(node) || revision !== generation || node.dataset.renderCount !== count) return;
       const rect = node.getBoundingClientRect();
       // The canvas snapshot API materializes the already resolved native GPU
       // frame. PNG preserves every pixel; it does not re-render scene geometry.

@@ -139,3 +139,46 @@ describe('saving the settled shelf for the next launch, Rust against the frozen 
     expect(all.filter(entry => entry[0] === 'isIdle').length).toBeGreaterThan(all.filter(entry => entry[0] === 'toBlob').length)
   })
 })
+
+describe('an unchanged room already stored for the next launch', () => {
+  async function launch(stored) {
+    const log = []
+    document.body.innerHTML = ''
+    localStorage.clear()
+    const root = document.createElement('div'), canvas = document.createElement('canvas')
+    canvas.className = 'ihr-bookshelf-scene'; root.append(canvas); document.body.append(root)
+    Object.assign(canvas.dataset, { renderCount:'3', animating:'false', bookQualityPending:'0' })
+    canvas.width = 300; canvas.height = 200
+    canvas.getBoundingClientRect = () => ({ x:0, y:40, width:300, height:200 })
+    canvas.toBlob = callback => { log.push('toBlob'); setTimeout(() => callback(new Blob(['pixels'], { type:'image/png' })), 0) }
+    vi.stubGlobal('crypto', { subtle:{ digest:(algorithm, bytes) => Promise.resolve(Uint8Array.from(createHash('sha256').update(bytes).digest()).buffer) } })
+    const books = [{ id:'a', title:'Uno' }]
+    const key = stored === 'same' ? await production.launchKey(production.launchState(books)) : 'an older room'
+    const frame = { key, image:new Blob(['png'], { type:'image/png' }), x:0, y:40, width:300, height:200 }
+    vi.stubGlobal('indexedDB', { open() {
+      const request = {}
+      queueMicrotask(() => {
+        request.result = { close() {}, transaction() {
+          const tx = {}
+          tx.objectStore = () => ({
+            get() { const get = { result:frame }; queueMicrotask(() => tx.oncomplete?.()); return get },
+            put() { log.push('put'); const put = {}; queueMicrotask(() => tx.oncomplete?.()); return put } })
+          return tx
+        } }
+        request.onsuccess?.()
+      })
+      return request
+    } })
+    const stop = production.rememberLaunchFrames(root, { books:() => books, idle:callback => setTimeout(callback, 5), isIdle:() => true,
+      shelfModule:() => rustShelf })
+    await settle(); await vi.advanceTimersByTimeAsync(1200); await settle(); await vi.advanceTimersByTimeAsync(50); await settle()
+    stop()
+    return log
+  }
+  it('is not read back, encoded or written again', async () => {
+    expect(await launch('same')).toEqual([])
+  })
+  it('is replaced when the stored room is another one', async () => {
+    expect(await launch('other')).toEqual(['toBlob', 'put'])
+  })
+})
