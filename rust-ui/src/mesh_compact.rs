@@ -26,12 +26,14 @@ pub fn compact(geo: &Geo, order: &[&'static str]) -> Packed {
         _ => (name, 3, &geo.color),
     }).collect();
     let count = geo.count();
-    // comparison words: raw f32 bits, or the rounded integers for normals and colours
+    // comparison words: the rounded integers for normals and colours; positions and UVs compare their
+    // raw f32 bits in place (no copy of them, which only raised the module's never-shrinking memory)
     let words: Vec<Vec<u32>> = sources.iter().map(|&(name, _, a)| match name {
         "normal" => a.iter().map(|&v| js_to_u32(js_round(f64::from(v) * 32767.0))).collect(),
         "color" => a.iter().map(|&v| js_to_u32(js_round(f64::from(v) * 255.0))).collect(),
-        _ => a.iter().map(|v| v.to_bits()).collect(),
+        _ => Vec::new(),
     }).collect();
+    let word = |k: usize, i: usize| -> u32 { if words[k].is_empty() { sources[k].2[i].to_bits() } else { words[k][i] } };
     let mut original = vec![0u32; count];
     let mut index = vec![0u32; count];
     let (mut unique, mut first_in_pair) = (0usize, 0usize);
@@ -43,7 +45,7 @@ pub fn compact(geo: &Geo, order: &[&'static str]) -> Packed {
             let mut equal = true;
             'attributes: for (k, &(_, size, _)) in sources.iter().enumerate() {
                 for component in 0..size {
-                    if words[k][vertex * size + component] != words[k][original[matched] as usize * size + component] { equal = false; break 'attributes; }
+                    if word(k, vertex * size + component) != word(k, original[matched] as usize * size + component) { equal = false; break 'attributes; }
                 }
             }
             if equal { break; }
@@ -53,35 +55,20 @@ pub fn compact(geo: &Geo, order: &[&'static str]) -> Packed {
         index[vertex] = matched as u32;
     }
     let attributes = sources.iter().enumerate().map(|(k, &(name, size, a))| {
-        let pick = |f: &dyn Fn(usize) -> usize| -> Vec<usize> { (0..unique).flat_map(|v| (0..size).map(move |c| (v, c))).map(|(v, c)| f(v) * size + c).collect() };
-        let at = pick(&|v| original[v] as usize);
+        // each kept vertex's components, read where they are (exactly sized, no list of positions)
+        fn pick<T>(unique: usize, size: usize, original: &[u32], f: impl Fn(usize) -> T) -> Vec<T> {
+            let mut out = Vec::with_capacity(unique * size);
+            for &v in &original[..unique] { for c in 0..size { out.push(f(v as usize * size + c)); } }
+            out
+        }
         let attr = match name {
-            "normal" => Attr::I16(at.iter().map(|&i| words[k][i] as i16).collect()),
-            "color" => Attr::U8(at.iter().map(|&i| words[k][i] as u8).collect()),
-            _ => Attr::F32(at.iter().map(|&i| a[i]).collect()),
+            "normal" => Attr::I16(pick(unique, size, &original, |i| words[k][i] as i16)),
+            "color" => Attr::U8(pick(unique, size, &original, |i| words[k][i] as u8)),
+            _ => Attr::F32(pick(unique, size, &original, |i| a[i])),
         };
         (name, size, attr)
     }).collect();
     Packed { attributes, index: index.into_iter().take(count).collect() }
-}
-
-/// `mergeGeometries` of packed geometries: attributes appended in order, indices offset.
-pub fn merge(list: Vec<Packed>) -> Packed {
-    let mut iter = list.into_iter();
-    let mut out = iter.next().expect("at least one geometry");
-    for next in iter {
-        let offset = (out.attributes[0].2.len() / out.attributes[0].1) as u32;
-        for (target, source) in out.attributes.iter_mut().zip(next.attributes) {
-            match (&mut target.2, source.2) {
-                (Attr::F32(a), Attr::F32(b)) => a.extend(b),
-                (Attr::I16(a), Attr::I16(b)) => a.extend(b),
-                (Attr::U8(a), Attr::U8(b)) => a.extend(b),
-                _ => unreachable!("merged geometries share their attribute types"),
-            }
-        }
-        out.index.extend(next.index.into_iter().map(|i| i + offset));
-    }
-    out
 }
 
 impl Packed {
