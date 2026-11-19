@@ -554,7 +554,11 @@ function modelHost() {
     rebake:needRustShelf().book_model_rebake_relief,
     ribbonGeometry:updateRibbonGeometry,
     preparePresentation:(s, idle, current = () => true) => prepareBookPresentation(s.group, idle, () => !s.disposed && current()),
-    prepareDetailPresentation:(s, idle, current = () => true) => prepareBookDetailPresentation(() => createBookModel(s.book, s.style,
+    // A book not yet opened has no ribbon until its page is located, which happens while it is lifted: the
+    // lifted ribbon's program (sheen, anisotropy and its notch mask) would link mid pull-out. The temporary
+    // model is built as a located book so that program is linked here, in idle time, too.
+    prepareDetailPresentation:(s, idle, current = () => true) => prepareBookDetailPresentation(() => createBookModel(
+      bookmarkFor(s.book) ? s.book : { ...s.book, locator:s.book?.locator || 'prepare' }, s.style,
       s.width, s.height, s.thickness, s.coverUrl, { eagerRelief:false }), idle, () => !s.disposed && current())
   };
 }

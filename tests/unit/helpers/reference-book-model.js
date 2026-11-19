@@ -1032,7 +1032,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   if (shelf && !overview) group.userData.preparePresentation = (idle, current = () => true) =>
     prepareBookPresentation(group, idle, () => !disposed && current());
   if (shelf && !overview) group.userData.prepareDetailPresentation = (idle, current = () => true) =>
-    prepareBookDetailPresentation(() => createBookModel(book, style, width, height, thickness,
+    // Amended on purpose in 1.8.5: a book without a ribbon yet is prepared as a located one, so the lifted
+    // ribbon's program links in idle time rather than during the pull-out.
+    prepareBookDetailPresentation(() => createBookModel(bookmarkFor(book) ? book : { ...book, locator:book?.locator || 'prepare' }, style, width, height, thickness,
       coverUrl, { eagerRelief:false }), idle, () => !disposed && current());
   return group;
 }
