@@ -60,3 +60,10 @@ receives independent buffers and part bounds, so disposing or updating a
 preview cannot invalidate the bookshelf scene. A local Node benchmark of
 repeated creation measured a median of 1.8 ms versus 37.9 ms before caching;
 this measures construction CPU time, not device frame rate.
+
+The shelf module's memory never shrinks, so the template's peak stays for the
+whole session. The packet's data is reserved once at its exact size, the
+expanded sheets are written straight from their pieces (no merged copy), the
+header goes in front of the data in place, and compaction compares positions
+and UVs where they are. The packet is byte-identical; building it now raises
+the module from 0.6 MB to 11.9 MB instead of 29.1 MB.

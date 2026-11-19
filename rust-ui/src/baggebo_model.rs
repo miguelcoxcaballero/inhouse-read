@@ -241,29 +241,38 @@ fn clone_packed(p: &Packed) -> Packed {
 /// Merge each material's pieces, finish them (paint UVs, compaction) and write the packet.
 fn finish(builder: Builder) -> Vec<u8> {
     let Builder { batches, parts } = builder;
+    // The parts' JSON comes first so the packet knows its header's size when it reserves its data.
+    let mut listed = String::from("],\"parts\":[");
+    for (n, part) in parts.iter().enumerate() {
+        if n > 0 { listed.push(','); }
+        listed.push_str(&format!("{{\"name\":\"{}\",\"box\":{}", part.name, nums(&[part.bounds.min[0], part.bounds.min[1], part.bounds.min[2], part.bounds.max[0], part.bounds.max[1], part.bounds.max[2]])));
+        if !part.meta.is_empty() { listed.push(','); listed.push_str(&part.meta); }
+        listed.push('}');
+    }
+    listed.push_str("]}");
+    drop(parts);
     let mut packet = Packet::new();
     packet.json.push_str("{\"batches\":[");
-    for (n, (material, pieces)) in batches.into_iter().enumerate() {
-        let packed = match pieces {
-            Pieces::Solid(mut list) => {
-                if material == PAINT { for g in list.iter_mut() { mesh_finish::physical_paint_uvs(g); } }
-                let order: &[&'static str] = if list[0].color.is_empty() { if material == PAINT { &["position", "uv", "normal"] } else { &["position", "normal", "uv"] } } else { &["position", "normal", "uv", "color"] };
-                mesh_compact::compact(&three_geo::merge(&list), order)
-            }
-            Pieces::Sheets(list) => mesh_compact::merge(list),
-        };
+    // Every batch is finished first so the packet's data can be reserved once, at its exact size; the sheets are
+    // written straight from their pieces, without building their merged copy.
+    let finished: Vec<(usize, Vec<Packed>)> = batches.into_iter().map(|(material, pieces)| (material, match pieces {
+        Pieces::Solid(mut list) => {
+            if material == PAINT { for g in list.iter_mut() { mesh_finish::physical_paint_uvs(g); } }
+            let order: &[&'static str] = if list[0].color.is_empty() { if material == PAINT { &["position", "uv", "normal"] } else { &["position", "normal", "uv"] } } else { &["position", "normal", "uv", "color"] };
+            let merged = three_geo::merge(&list);
+            drop(list);
+            vec![mesh_compact::compact(&merged, order)]
+        }
+        Pieces::Sheets(list) => list,
+    })).collect();
+    // A batch's own header (material, arrays and index) is far below 512 bytes.
+    packet.reserve(finished.iter().map(|(_, parts)| Packet::packed_size(parts)).sum(), listed.len() + 512 * finished.len());
+    for (n, (material, parts)) in finished.into_iter().enumerate() {
         if n > 0 { packet.json.push(','); }
         packet.json.push_str(&format!("{{\"material\":{material},"));
-        packet.packed(&packed);
+        packet.packed_parts(&parts);
         packet.json.push('}');
     }
-    packet.json.push_str("],\"parts\":[");
-    for (n, part) in parts.iter().enumerate() {
-        if n > 0 { packet.json.push(','); }
-        packet.json.push_str(&format!("{{\"name\":\"{}\",\"box\":{}", part.name, nums(&[part.bounds.min[0], part.bounds.min[1], part.bounds.min[2], part.bounds.max[0], part.bounds.max[1], part.bounds.max[2]])));
-        if !part.meta.is_empty() { packet.json.push(','); packet.json.push_str(&part.meta); }
-        packet.json.push('}');
-    }
-    packet.json.push_str("]}");
+    packet.json.push_str(&listed);
     packet.seal()
 }

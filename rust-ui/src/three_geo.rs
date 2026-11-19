@@ -148,6 +148,13 @@ pub fn quaternion_normalize(q: [f64; 4]) -> [f64; 4] {
 pub fn merge(list: &[Geo]) -> Geo {
     let indexed = list[0].index.is_some();
     let mut out = Geo { index: if indexed { Some(Vec::new()) } else { None }, ..Default::default() };
+    // Each merged array is allocated once at its final size.
+    let total = |f: &dyn Fn(&Geo) -> usize| list.iter().map(f).sum::<usize>();
+    out.position.reserve_exact(total(&|g| g.position.len()));
+    out.normal.reserve_exact(total(&|g| g.normal.len()));
+    out.uv.reserve_exact(total(&|g| g.uv.len()));
+    out.color.reserve_exact(total(&|g| g.color.len()));
+    if let Some(index) = &mut out.index { index.reserve_exact(total(&|g| g.index.as_ref().map_or(0, Vec::len))); }
     let mut offset = 0u32;
     for g in list {
         out.position.extend_from_slice(&g.position);

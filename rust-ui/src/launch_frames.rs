@@ -44,6 +44,11 @@ pub fn shelf_save_launch_frame(host:JsValue,revision:f64)->Promise{start(async m
   let state=method(&host,"launchState",&[&records])?;
   let key=settle(method(&host,"launchKey",&[&state])).await?;
   if !usable(&host,&node)?||!current(&host,revision)?||data(&node,"renderCount")?!=count{return Ok(())}
+  // The same room is already stored (every launch into an unchanged library): no GPU readback, PNG or write.
+  let stored=settle(method(&host,"readLaunchFrame",&[])).await.unwrap_or(JsValue::NULL);
+  let window=global();
+  if truthy(&method(&host,"validLaunchFrame",&[&stored,&key,&get(&window,"innerWidth"),&get(&window,"innerHeight")])?){return Ok(())}
+  if !usable(&host,&node)?||!current(&host,revision)?||data(&node,"renderCount")?!=count{return Ok(())}
   let rect=method(&node,"getBoundingClientRect",&[])?;
   // The canvas snapshot API materializes the already resolved native GPU frame. PNG preserves every
   // pixel; it does not re-render scene geometry.

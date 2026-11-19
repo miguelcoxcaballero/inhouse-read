@@ -884,3 +884,16 @@ pub fn book_view_dispose(v:&JsValue,remove:&JsValue)->R<()>{
  if remove_canvas{call(&state(v,"canvas"),"remove",&[])?;}
  Ok(())
 }
+
+/// The presentation slot (src/js/book-model.js) has had no owner for a while: if its renderer's canvas is still off
+/// the page, its frame-sized drawing buffer (antialiased: several full-size buffers) is released by shrinking it to
+/// one pixel. Every draw, repaint and capture configures the frame's size before rendering, so the next view
+/// allocates it again before anything is shown. Whether it shrank.
+#[wasm_bindgen]
+pub fn book_presentation_release_idle(slot:&JsValue,renderer:&JsValue)->R<bool>{
+ if absent(renderer)||truthy(&read(slot,"owner")?){return Ok(false);}
+ let element=read(renderer,"domElement")?;
+ if truthy(&read(&element,"isConnected")?)||num(&read(&element,"width")?)*num(&read(&element,"height")?)<=4.0{return Ok(false);}
+ call(renderer,"setSize",&[&n(1.0),&n(1.0),&JsValue::FALSE])?;
+ Ok(true)
+}

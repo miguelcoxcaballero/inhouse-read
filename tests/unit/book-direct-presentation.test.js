@@ -445,3 +445,35 @@ describe('direct book presentation and actual lazy snapshots', () => {
     expect(output(view).frame.angle).toBeCloseTo(12);
   });
 });
+
+describe('the idle flyout context', () => {
+  const dispose = view => { view.dispose(); views.splice(views.indexOf(view), 1); };
+  it('frees its frame-sized buffer a while after the last view lets go, and the next view sizes it before drawing', () => {
+    vi.useFakeTimers({ toFake:['setTimeout', 'clearTimeout'] });
+    try {
+      const { view } = make(); view.draw(pose);
+      const renderer = presentation(), sized = renderer.size.toArray(), rendered = gpu.renders.at(-1).frame;
+      expect(renderer.domElement.isConnected).toBe(true); expect(sized[0] * sized[1]).toBeGreaterThan(4);
+      dispose(view);
+      expect(renderer.domElement.isConnected).toBe(false);
+      vi.advanceTimersByTime(7999); expect(renderer.size.toArray()).toEqual(sized);
+      vi.advanceTimersByTime(1); expect(renderer.size.toArray()).toEqual([1, 1]);
+      expect(renderer.domElement.width * renderer.domElement.height).toBeLessThanOrEqual(4);
+      const { view:next } = make(); next.draw(pose);
+      expect(gpu.renders.at(-1).renderer).toBe(renderer);
+      expect(gpu.renders.at(-1).frame.dimensions).toEqual(rendered.dimensions);
+      expect(gpu.renders.at(-1).frame.ratio).toBe(rendered.ratio);
+    } finally { vi.useRealTimers(); }
+  });
+  it('keeps it while another view presents', () => {
+    vi.useFakeTimers({ toFake:['setTimeout', 'clearTimeout'] });
+    try {
+      const { view } = make(); view.draw(pose);
+      const renderer = presentation(), sized = renderer.size.toArray();
+      dispose(view); vi.advanceTimersByTime(4000);
+      const { view:next } = make(); next.draw(pose);
+      vi.advanceTimersByTime(20000);
+      expect(renderer.domElement.isConnected).toBe(true); expect(renderer.size.toArray()).toEqual(sized);
+    } finally { vi.useRealTimers(); }
+  });
+});
