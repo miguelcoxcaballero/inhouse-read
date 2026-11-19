@@ -11,6 +11,10 @@ use crate::scene_view::{cl,or,RustScene};
 #[path="scene_projection.rs"] mod projection;
 #[path="scene_entry_frame.rs"] mod entry_frame;
 
+/// The pixel ratio a compact screen draws its moving room frames at (`movingPaint`): a fraction of the
+/// device pixels the settled frame shades, while nothing on screen holds still to be read.
+const MOVING_RATIO:f64=1.0;
+
 fn put(out:&mut [f64],values:&[f64]){for (slot,value) in out.iter_mut().zip(values){*slot=*value;}}
 fn is_integer(value:f64)->bool{value.is_finite()&&value.floor()==value}
 
@@ -160,6 +164,37 @@ impl RustScene{
   let overview=cache&&eligible&2!=0&&self.zoom==1.0&&self.pan_x()==0.0&&self.pan_y()==0.0;
   self.capture_plan(cache,ratio,canvas_left,canvas_top,out);
   if let Some(grid)=out.get_mut(3){*grid+=f64::from(u32::from(cache)<<3|u32::from(overview)<<4);}
+ }
+
+ /// Where a moving frame of the room (a turn, a dragged or settling book, the bin) is drawn: inside the
+ /// framebuffer the room already has, never resizing it (each resize reallocates the canvas' buffers, tens of
+ /// milliseconds on a phone, at the start and the end of every gesture), and on a compact screen at
+ /// `MOVING_RATIO`, scaled up by the replay. The settled frame that follows is drawn as before, at the full
+ /// ratio. In: the full ratio, the buffer's logical size (three's `getSize`) and its device pixels. Out: `[ratio
+ /// drawn, viewport x, y, width, height]` in the logical units three's `setViewport` takes, then the region's
+ /// `source x, y` in device pixels from GL's bottom-left corner, and 1 when the region has to be replayed
+ /// (scaled up, or moved to the buffer's top-left corner, where the canvas is shown): a frame drawn at the
+ /// full ratio is drawn in that corner when its pixels allow. False when the buffer cannot hold the frame
+ /// on exact device pixels.
+ #[wasm_bindgen(js_name=movingPaint)]
+ pub fn moving_paint(&self,ratio:f64,buffer_width:f64,buffer_height:f64,pixel_width:f64,pixel_height:f64,out:&mut [f64])->bool{
+  let (width,height)=(self.scene_width,self.viewport_height);
+  if !(ratio>0.0)||!is_integer(pixel_width)||!is_integer(pixel_height)
+   ||(buffer_width*ratio).floor()!=pixel_width||(buffer_height*ratio).floor()!=pixel_height{return false;}
+  // three multiplies a viewport by the ratio and rounds it (setViewport), then floors it again after a
+  // shadow pass (setRenderTarget): both must land on the region's own pixels.
+  let lands=|pixels:f64|{let logical=pixels/ratio;js_round(logical*ratio)==pixels&&(logical*ratio).floor()==pixels};
+  let fits=|drawn:f64|{
+   let (w,h)=(width*drawn,height*drawn);
+   is_integer(w)&&is_integer(h)&&w>0.0&&h>0.0&&w<=pixel_width&&h<=pixel_height&&lands(w)&&lands(h)
+  };
+  let reduced=if self.width<600.0&&ratio>MOVING_RATIO{MOVING_RATIO}else{ratio};
+  let drawn=if fits(reduced){reduced}else if fits(ratio){ratio}else{return false};
+  let (w,h)=(width*drawn,height*drawn);
+  let corner=drawn==ratio&&lands(pixel_height-h);
+  let y=if corner{pixel_height-h}else{0.0};
+  put(out,&[drawn,0.0,y/ratio,w/ratio,h/ratio,0.0,y,if corner{0.0}else{1.0}]);
+  true
  }
 
  /// The furniture's layout: `[unit scale, gap, floor width, floor depth, floor x, floor y, floor z, room span,

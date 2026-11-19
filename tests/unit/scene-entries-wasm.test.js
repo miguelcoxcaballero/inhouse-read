@@ -310,6 +310,37 @@ describe('compiled scene plans against the frozen JavaScript', () => {
     } finally { scene.free() }
   })
 
+  it('draws a moving room inside the buffer it has, on exact pixels, at a lower ratio on a phone', () => {
+    const plan = (width, clientHeight, ratio, buffer) => {
+      const scene = new rustShelf.RustScene(width, 700, width, 150, true, true, 0), sizes = new Float64Array(6), out = new Float64Array(8)
+      try {
+        scene.measureFit(900, 0, 800, 60, 0, false); scene.sizeViewport(clientHeight, 844, ratio, sizes)
+        const [bufferWidth, bufferHeight] = buffer || [width, sizes[0]]
+        const ok = scene.movingPaint(ratio, bufferWidth, bufferHeight, Math.floor(bufferWidth * ratio), Math.floor(bufferHeight * ratio), out)
+        return { ok, out:[...out], height:sizes[0] }
+      } finally { scene.free() }
+    }
+    // A phone's overscanned settled buffer (390+2*128 by 783+2*128 at 1.5): the frame is drawn at 1 in its
+    // bottom-left corner and replayed (scaled up) into the whole buffer.
+    const phone = plan(390, 783, 1.5, [646, 1039])
+    expect(phone.ok).toBe(true)
+    expect(phone.out).toEqual([1, 0, 0, 260, 522, 0, 0, 1])
+    // A wide screen keeps its ratio, drawn straight into the buffer's top-left corner, with no replay.
+    const wide = plan(800, 700, 2, [800 + 256, 700 + 256])
+    expect(wide.ok).toBe(true)
+    expect(wide.out).toEqual([2, 0, 256 * 2 / 2, 800, 700, 0, 512, 0])
+    // A ratio of 1 is already the moving one.
+    expect(plan(390, 783, 1).out[0]).toBe(1)
+    // A buffer smaller than the frame, or inconsistent with its pixels, is left to the ordinary paint.
+    const scene = new rustShelf.RustScene(390, 700, 390, 150, true, true, 0), sizes = new Float64Array(6), out = new Float64Array(8)
+    try {
+      scene.measureFit(900, 0, 800, 60, 0, false); scene.sizeViewport(783, 844, 1.5, sizes)
+      expect(scene.movingPaint(1.5, 200, 300, 300, 450, out)).toBe(false)
+      expect(scene.movingPaint(1.5, 646, 1039, 900, 1558, out)).toBe(false)
+      expect(scene.movingPaint(0, 646, 1039, 0, 0, out)).toBe(false)
+    } finally { scene.free() }
+  })
+
   it('bounds the furniture loop by the output buffer even for enormous counts', () => {
     const scene=new rustShelf.RustScene(700,900,740,250,false,false,0)
     try {

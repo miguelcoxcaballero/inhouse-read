@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
 import { needRustShelf } from './rust-shelf.js';
+import { prepareProgramUniforms } from './gpu-programs.js';
 
 // Parameter and result lengths of the Rust rig (rust-core/src/shelf_lighting.rs). The fit itself (penumbra
 // width, slack of a screen beyond each edge, the aspect limit that keeps the blur round on tall phone screens),
@@ -12,6 +13,30 @@ function firmVarianceShadows() {
   const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
   const patched = chunk ? needRustShelf().shelf_firm_bleed(chunk) : undefined;
   if (patched !== undefined) THREE.ShaderChunk.shadowmap_pars_fragment = patched;
+}
+
+// three keeps its variance-shadow blur material to itself, and its built shader text is not exported.
+// The first map a renderer blurs hands that material to `renderBufferDirect`, where it is seen once and
+// the hook removed; the shelf links its moving-frame blur from a copy (createShelfLighting).
+let blurTemplate = null;
+const watchedRenderers = new WeakSet();
+function seeBlur(renderer) {
+  const direct = renderer?.renderBufferDirect;
+  if (blurTemplate || typeof direct !== 'function' || watchedRenderers.has(renderer)) return;
+  watchedRenderers.add(renderer);
+  const watch = function(camera, scene, geometry, material, object, group) {
+    if (!blurTemplate && material?.isShaderMaterial && material.defines && 'VSM_SAMPLES' in material.defines &&
+      !('HORIZONTAL_PASS' in material.defines)) {
+      // Its map is a render target's texture, which three refuses to clone: the copy reads none.
+      const pass = material.uniforms?.shadow_pass;
+      const map = pass?.value;
+      if (pass) pass.value = null;
+      try { blurTemplate = material.clone(); } finally { if (pass) pass.value = map; }
+    }
+    if (blurTemplate && renderer.renderBufferDirect === watch) renderer.renderBufferDirect = direct;
+    return direct.call(this, camera, scene, geometry, material, object, group);
+  };
+  renderer.renderBufferDirect = watch;
 }
 
 /** Soft, wide shelf shadows and dimmer room bounce for the cabinet's back
@@ -35,7 +60,7 @@ export function widePenumbra(material) {
  * view scrolled beyond the fitted window's slack. */
 export function createShelfLighting(scene, renderer) {
   const key = scene.userData.readerLight;
-  if (!key) return { update:() => false, settling:false, dispose() {} };
+  if (!key) return { update:() => false, prepareMotion:async () => false, settling:false, dispose() {} };
   const core = getRustCore();
   if (typeof core?.shelf_light_update !== 'function') throw new Error('Shelf lighting needs the Rust core');
   if (core.shelf_light_params() !== PARAMS || core.shelf_light_output() !== OUTPUT) throw new Error('Incompatible Rust shelf lighting');
@@ -110,11 +135,45 @@ export function createShelfLighting(scene, renderer) {
     }
     return assigned ? true : dirtyValue;
   };
-  return { update,
+  // The coarser blur a moving frame draws (half the samples) is a pair of programs of its own, otherwise
+  // linked by the first frame of the first turn or drag. Link them ahead, idle, from copies of three's
+  // blur material (same text, same defines in the same order; see seeBlur) compiled while a render target
+  // is bound, as the shadow pass binds one: three finds them in its program cache when the motion begins.
+  // The copies stay alive, so their programs stay linked.
+  if (movingSamples !== restSamples) seeBlur(renderer);
+  let motionBlur = null;
+  async function prepareMotion(room, view, idle, current = () => true) {
+    if (released || motionBlur || movingSamples === restSamples || typeof renderer.compileAsync !== 'function') return false;
+    // The first paint (which blurs the first map) follows the call; a few idle slices at most.
+    for (let slice = 0; !blurTemplate && slice < 8; slice++) {
+      await idle();
+      if (released || motionBlur || !current()) return false;
+    }
+    if (!blurTemplate) return false;
+    const vertical = blurTemplate.clone();
+    vertical.defines = { ...vertical.defines, VSM_SAMPLES:movingSamples };
+    const horizontal = vertical.clone(); horizontal.defines.HORIZONTAL_PASS = 1;
+    const triangle = new THREE.BufferGeometry();
+    triangle.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, .5, 3, -1, .5, -1, 3, .5]), 3));
+    const pair = new THREE.Group(), probe = new THREE.WebGLRenderTarget(1, 1);
+    for (const material of [vertical, horizontal]) { const mesh = new THREE.Mesh(triangle, material); mesh.frustumCulled = false; pair.add(mesh); }
+    motionBlur = { materials:[vertical, horizontal], triangle };
+    await idle();
+    if (released || !current()) return false;
+    const bound = renderer.getRenderTarget(), face = renderer.getActiveCubeFace(), level = renderer.getActiveMipmapLevel();
+    let linked;
+    renderer.setRenderTarget(probe);
+    try { linked = renderer.compileAsync(pair, view, room); } finally { renderer.setRenderTarget(bound, face, level); probe.dispose(); }
+    await linked;
+    if (released || !current()) return false;
+    return prepareProgramUniforms(renderer, motionBlur.materials, { idle, current:() => !released && current() });
+  }
+  return { update, prepareMotion,
     /** A map drawn in motion still awaits its full-quality redraw. */
     get settling() { return coarse; },
     dispose() {
       key.shadow.map?.dispose(); key.shadow.mapPass?.dispose();
+      if (motionBlur) { for (const material of motionBlur.materials) material.dispose(); motionBlur.triangle.dispose(); }
       if (!released) { released = true; core.free_f64(arena, length); core.shelf_light_free(rig); }
     } };
 }

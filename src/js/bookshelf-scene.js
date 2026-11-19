@@ -539,6 +539,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function repaintNativeRoom() {
     if(!nativeRoomDisplay)return false;
     const {frame,margin}=nativeRoomDisplay;
+    // A moving frame drawn inside a larger or denser buffer is replayed into that buffer, as it was shown.
+    if(nativeRoomDisplay.output)return nativeFrameCache.compose(nativeRoomDisplay.output,[{frame,x:0,y:0,scale:1}]);
     // The whole frame, overscan included, is presented and clipped in CSS:
     // composing only the visible room resized the shared canvas twice per
     // paint (to the visible size, then back to the overscan size for the next
@@ -553,8 +555,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function positionNativeRoom(node) {
     if(!nativeRoomDisplay || !frameLayout.canvas || !frameLayout.stage)return false;
     const logical=frameLayout.canvas,bounds=frameLayout.stage,margin=nativeRoomDisplay.margin;
-    const frame=nativeRoomDisplay.frame;
-    if(frame.physical && !nativeFrameCache.validFrame(frame))return false;
+    // A moving frame is shown as the buffer it was replayed into (paintMoving).
+    const frame=nativeRoomDisplay.output || nativeRoomDisplay.frame;
+    if(nativeRoomDisplay.output && !nativeFrameCache.validFrame(nativeRoomDisplay.frame))return false;
+    if(frame.physical && !nativeRoomDisplay.output && !nativeFrameCache.validFrame(frame))return false;
     if(![logical.left,logical.top].every(value=>Number.isFinite(value) && (frame.physical || Number.isInteger(value*frame.ratio))))return false;
     Object.assign(nativeRoomClip.style,{left:`${logical.left-bounds.left}px`,top:`${logical.top-bounds.top}px`,
       width:`${sceneWidth}px`,height:`${sceneView.viewportHeight}px`,display:'block'});
@@ -576,6 +580,43 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function physicalRoomFrame(width,height,ratio) {
     const frame={x:0,y:0,width,height,ratio,physical:true,pixelWidth:Math.floor(width*ratio),pixelHeight:Math.floor(height*ratio)};
     return nativeFrameCache?.exactFrame?.(frame)===true?frame:null;
+  }
+  // A moving room frame (a turn, a dragged or settling book, the bin): drawn inside the GL canvas'
+  // current buffer, so a gesture never reallocates it, and on a phone at a lower pixel ratio, scaled up
+  // by the replay (rust-ui/src/scene_plan.rs movingPaint). Its own small retained frame is shown through
+  // the buffer it was replayed into. False leaves the ordinary paint to the caller, nothing drawn.
+  const movingPlan = new Float64Array(8), nativeMovingSlot = {};
+  function paintMoving(width, height, ratio) {
+    if (typeof nativeFrameCache?.exactFrame !== 'function' || typeof nativeFrameCache.compose !== 'function' ||
+      renderer.getPixelRatio?.() !== ratio || renderer.getRenderTarget?.()) return false;
+    const owner = currentNativeRendererPresentation(renderer);
+    if (owner && owner !== nativeRoomLease) return false;
+    renderer.getSize(rendererSize);
+    const node = renderer.domElement, bufferWidth = rendererSize.x, bufferHeight = rendererSize.y;
+    if (!sceneView.movingPaint(ratio, bufferWidth, bufferHeight, node.width, node.height, movingPlan)) return false;
+    let output = { x:0, y:0, width:bufferWidth, height:bufferHeight, ratio };
+    if (!nativeFrameCache.exactFrame(output)) output = physicalRoomFrame(bufferWidth, bufferHeight, ratio);
+    if (!output) return false;
+    const drawn = movingPlan[0];
+    renderer.setViewport(movingPlan[1], movingPlan[2], movingPlan[3], movingPlan[4]);
+    renderer.render(scene, camera);
+    const frame = nativeFrameCache.capture(nativeMovingSlot,
+      { x:0, y:0, width, height, ratio:drawn, sourceX:movingPlan[5], sourceY:movingPlan[6] });
+    const shown = frame && (!movingPlan[7] || nativeFrameCache.compose(output, [{ frame, x:0, y:0, scale:1 }]));
+    // three's own viewport for the buffer, as its size set it.
+    renderer.setViewport(0, 0, bufferWidth, bufferHeight);
+    if (!shown) return false;
+    inspectionSnapshot = null;
+    nativeBaseFrame = frame; nativeBaseMargin = 0;
+    nativeRoomDisplay = { frame, margin:0, output };
+    nativeRoomLease.markDirty();
+    const presented = currentNativeRendererPresentation(renderer) === nativeRoomLease || !currentNativeRendererPresentation(renderer)
+      ? nativeRoomLease.present() : false;
+    if (!presented) throw new Error('Native room cannot preserve its viewport');
+    showData('nativeRoomPresentation', 'true');
+    showData('movingPaint', String(drawn));
+    completedLegacyInsertionLeases.clear();
+    return true;
   }
   function getNativeRoomBackground() {
     if(!nativeRoomDisplay || !nativeFrameCache.validFrame(nativeRoomDisplay.frame) || !nativeRoomLease || !frameLayout.canvas || !frameLayout.scroller)return null;
@@ -2057,6 +2098,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // before the return needs their first real draw.
       nativeFrameCache?.prepareUniforms?.({ idle:idleSlice, current:() => !disposed })
         .catch(error => console.warn('No se pudo preparar la composición de la sala:', error));
+      // The coarser shadow blur of a moving frame, before the first turn or drag needs it.
+      lighting.prepareMotion(scene, camera, idleSlice, () => !disposed)
+        .catch(error => console.warn('No se pudo preparar la sombra en movimiento:', error));
       prepareInsertionProgramState(renderer, scene, camera, [dropGuide, ...depthWriters], idleSlice, () => !disposed, () => {
         // Compilation changes the real program cache without painting. Report
         // it now so the next resize/gesture does not appear to create programs
@@ -2109,11 +2153,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Release it only when this transaction really paints the legacy room.
       if(!nativeCaptureAligned && !nativeCapturePhysical)releaseCompletedLegacyInsertions();
       withRendererPresentation(renderer,nativeRoomLease,()=>{
+      // A moving room is drawn inside the framebuffer it already has, on a phone at a lower ratio
+      // (rust-ui/src/scene_plan.rs movingPaint); the settled frame below is unchanged.
+      if ((nativeCaptureAligned || nativeCapturePhysical) && !cacheInspection && !overlayInsertion && !(held & 8) &&
+        (furnitureMoving || moving || shelfMoving || trashMoving) && paintMoving(renderWidth, renderHeight, ratio)) return;
       // DPR and size change together, without full intermediate buffers.
       configureNativeRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize, true, true, 'bounded');
       // Fractional legacy captures keep Three's original viewport rounding.
       // Reassert the retained framebuffer only when it has exact pixel bounds.
       if(nativeCaptureAligned)renderer.setViewport(0,0,renderWidth,renderHeight);
+      hideData('movingPaint');
       if (cacheInspection) {
         inspectionCamera.copy(camera);
         inspectionCamera.left -= margin; inspectionCamera.right += margin;
