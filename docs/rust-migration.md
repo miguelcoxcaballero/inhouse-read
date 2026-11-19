@@ -1,3 +1,15 @@
+# Entrega 1.8.4 (tanda integ-bar-19): rendimiento en el móvil
+
+Ramas sobre la 1.8.3: ready/perf-frame-1 (db40d813), ready/perf-memory-1 (ac3daec1), ready/ci-neural-1 (e4072e3a).
+Barra estimada en local: 77,67 % Rust; quedan unos 777 KB de JavaScript (sube un poco por el código de rendimiento).
+
+- Fotogramas en movimiento (rust-ui/src/scene_plan.rs movingPaint, src/js/bookshelf-scene.js paintMoving): en pantallas estrechas (<600 px) el giro, el arrastre y el asentado se dibujan a ratio 1 en una esquina del búfer existente y se escalan con la caché nativa de la sala; sin redimensionar el lienzo. Escena 0,69 → 0,31 Mpx por fotograma (390x844, dpr 3), una pasada de copia extra. Coste visible: en movimiento la imagen es más suave y la malla metálica centellea algo más; el fotograma quieto es idéntico.
+- Sombras: src/js/shelf-lighting.js enlaza en reposo los dos programas del desenfoque grueso de movimiento (antes, 4 compilaciones y 2 enlaces en el primer giro).
+- Memoria: la plantilla BAGGEBO se construye sin dejar 17 MB varados en el wasm (31,5 → 15,3 MB, paquete idéntico byte a byte); el marco de arranque no se vuelve a leer de la GPU ni a guardar si el guardado ya vale; el lienzo del libro presentado se reduce 8 s después de cerrarlo (27 MB).
+- Neural: neural-page-follow y neural-picker observan las puertas del catálogo de voces que ahora cruza la página.
+- Pruebas: shelf-trash espera a un lomo con caja; plant-catalog espera a que terminen los enlaces en reposo antes de medir un redimensionado.
+- Sin mejorar: sacar un libro (modelo detallado, 9 subidas de 14,7 MB, 1 enlace) y el primer fotograma de la portada (45-55 ms).
+
 # Entrega 1.8.3 (tanda integ-bar-18): vuelo a la papelera, estudios del catálogo y puertas del lector
 
 Ramas sobre la 1.8.2: ready/scene-frame-37 (c5cf52f8, incluye 35 y 36), ready/book-model-27 (877dff96), ready/decor-shell-26 (5ce5a70d), ready/readers-voice-30 (8ed35728, incluye 27-29), ready/ci-reds-5 (d147990a).

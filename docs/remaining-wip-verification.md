@@ -1,3 +1,10 @@
+# 1.8.4 — tanda integ-bar-19
+
+- Unitarias: 0 fallos (9.495). Capturas: 24 estados contra la 1.8.3, 12 idénticos bit a bit, máximo 1/255.
+- Navegador en local, todos los specs menos neural-voice* y supertonic: parte 1, 66 pasan; parte 2, 368 y 2 (bookshelf-polish:181 y reading-display:19, pasan a solas 9 de 9); parte 3, 114 y 5: cuatro piden modelos de voz reales que esta máquina no tiene y plant-catalog:587 era real (los enlaces del desenfoque en reposo caían dentro de su medida; corregido y 8 de 8).
+- Medidas con WebGL por software: cuentan píxeles, pasadas, enlaces y memoria, no milisegundos de GPU.
+- Sin verificar: teléfono real (cuánto se nota, si el paso a nitidez al pararse se ve como un salto), WebView de Android.
+
 # 1.8.3 — tanda integ-bar-18
 
 - Unitarias: 0 fallos. Capturas: 24 estados contra la 1.8.1, 13 idénticos bit a bit, máximo 1/255; los dos estados 15-lamps4 no se capturaron (se agotó el tiempo de la captura).

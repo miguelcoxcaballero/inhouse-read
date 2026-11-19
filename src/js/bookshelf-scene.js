@@ -2099,8 +2099,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       nativeFrameCache?.prepareUniforms?.({ idle:idleSlice, current:() => !disposed })
         .catch(error => console.warn('No se pudo preparar la composición de la sala:', error));
       // The coarser shadow blur of a moving frame, before the first turn or drag needs it.
+      // Its links land in idle time; report them like the insertion state below.
       lighting.prepareMotion(scene, camera, idleSlice, () => !disposed)
-        .catch(error => console.warn('No se pudo preparar la sombra en movimiento:', error));
+        .catch(error => console.warn('No se pudo preparar la sombra en movimiento:', error))
+        .finally(() => {
+          if (!disposed) showData('scenePrograms', String(renderer.info?.programs?.length || 0));
+        });
       prepareInsertionProgramState(renderer, scene, camera, [dropGuide, ...depthWriters], idleSlice, () => !disposed, () => {
         // Compilation changes the real program cache without painting. Report
         // it now so the next resize/gesture does not appear to create programs

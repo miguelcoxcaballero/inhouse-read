@@ -599,6 +599,9 @@ test('una MONSTERA alta encaja dentro de su leja en ambos tipos de estantería',
     await expect(plant).toHaveAttribute('data-scene-projected','true');
     expect((await savedPlants(page))[0]).toMatchObject({seed:'preserved',potColorId:'seafoam',width:260,height:350,shelf:1,x:.5});
     await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
+    // The moving-frame shadow blur links in idle time after the first paint; a resize must not link anything else.
+    let settled=-1;
+    await expect.poll(async()=>{ const links=await page.evaluate(()=>window.__plantGpu.links); const same=links===settled; settled=links; return same; },{intervals:[1500],timeout:30_000}).toBe(true);
     const before=await page.evaluate(()=>({links:window.__plantGpu.links,programs:+document.querySelector('.ihr-bookshelf-scene').dataset.scenePrograms,
       calls:+document.querySelector('.ihr-bookshelf-scene').dataset.sceneDrawCalls,renderCount:+document.querySelector('.ihr-bookshelf-scene').dataset.renderCount,start:performance.now()}));
     await page.setViewportSize({width:391,height:844});

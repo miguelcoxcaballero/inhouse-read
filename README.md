@@ -1,5 +1,14 @@
 # inhouse read
 
+## 1.8.4 — Estantería más fluida en el móvil y menos memoria
+
+Al girar la estantería o arrastrar un libro en el móvil, cada fotograma en
+movimiento dibuja un 56 % menos de píxeles, ya no cambia el tamaño del lienzo
+y el primer giro no se para a compilar sombras. Al pararse, la imagen es la
+misma de siempre. La estantería ocupa la mitad de memoria (32 → 15 MB), cerrar
+un libro libera 27 MB y reabrir la app sin cambios ya no trabaja en segundo
+plano.
+
 ## 1.8.3 — Más Rust y un libro que ya no se abre solo
 
 Si un arrastre se interrumpía al perder el foco la ventana y el botón se
