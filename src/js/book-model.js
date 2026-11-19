@@ -647,7 +647,18 @@ const SAMPLED_MAPS = ['map', 'roughnessMap', 'metalnessMap', 'bumpMap'];
 // handoff, animations and disposal (rust-ui/src/book_view_host.rs) over one plain state object `v`
 // holding what were this function's variables. What runs on every frame of a flight stays below:
 // placing the model, the framebuffer window, the GPU draw and the copies to the export canvas.
-const presentation = { owner:null };
+// When the last presenting view lets go, the flyout's context keeps a frame-sized antialiased drawing buffer that
+// nothing shows. A while later the shelf module shrinks it; the next view sizes it again before it draws.
+const PRESENTATION_IDLE_MS = 8000;
+let presentationIdle = 0;
+const presentation = { current:null,
+  get owner() { return this.current; },
+  set owner(next) {
+    this.current = next; clearTimeout(presentationIdle); presentationIdle = 0;
+    if (next === null && presentationRenderer) presentationIdle = setTimeout(() => {
+      presentationIdle = 0; needRustShelf().book_presentation_release_idle(presentation, presentationRenderer);
+    }, PRESENTATION_IDLE_MS);
+  } };
 export function bookView(host, book, style, options) {
   return needRustShelf().book_view_create(viewHost(), host, book, style, options);
 }
