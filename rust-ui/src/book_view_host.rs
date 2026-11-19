@@ -605,7 +605,34 @@ fn board_motion(v:&JsValue,options:&JsValue,default_duration:f64,opening:bool)->
  let x=if !absent(&x){x}else if opening{&get(&origin,"x")+&offset}else{&get(&origin,"x")-&offset};
  let tail=if opening{object(&[("x",x),("coverOpen",n(1.0))])?}else{object(&[("x",x),("coverOpen",n(0.0)),("bookmarkWithdraw",n(0.0))])?};
  let destination=spread(v,&origin,&target,&tail)?;
- animate_motion(v,two_frames(&origin,&destination)?,duration,JsValue::UNDEFINED)
+ let frames=if opening{board_swing(v,&origin,&destination)?}else{two_frames(&origin,&destination)?};
+ animate_motion(v,frames,duration,JsValue::UNDEFINED)
+}
+/// The pose keys a motion samples (src/js/book-motion-wasm.js `MOTION_KEYS`).
+const MOTION_KEYS:[&str;9]=["x","y","scale","angle","pitch","roll","coverOpen","bookmarkWithdraw","pageTheme"];
+/// `[time, how far the pose has gone, how far the board has opened]`: a board has weight. The hand lifts it
+/// to upright in a little over half the time; past upright it falls open, faster, lands flat and rebounds
+/// once by a couple of degrees before it settles. The book's slide follows the board and does not rebound.
+const BOARD_SWING:[[f64;3];3]=[[0.55,0.5,0.5],[0.84,1.0,1.0],[0.92,1.0,0.984]];
+/// The opening board's keyframes from `origin` to `destination` (`BOARD_SWING`). Every key both poses hold
+/// as a finite number is blended; any other keeps the destination's, so a pose without a page theme stays
+/// without one. The board's opening is blended from where it was, so an interrupted closing reopens smoothly.
+fn board_swing(v:&JsValue,origin:&JsValue,destination:&JsValue)->R<JsValue>{
+ let frames=Array::new();
+ frames.push(&object(&[("transform",origin.clone())])?);
+ for [time,travel,open] in BOARD_SWING{
+  let pose=copy(v,destination)?;
+  for key in MOTION_KEYS{
+   let board=key=="coverOpen";
+   // The sampler reads a missing opening as 0 (closed).
+   let (from,to)=(get(origin,key).as_f64().or(if board{Some(0.0)}else{None}),get(destination,key).as_f64());
+   let amount=if board{open}else{travel};
+   if let (Some(from),Some(to))=(from,to){if from.is_finite()&&to.is_finite(){put(&pose,key,&n(from+(to-from)*amount))?;}}
+  }
+  frames.push(&object(&[("offset",n(time)),("transform",pose)])?);
+ }
+ frames.push(&object(&[("transform",destination.clone())])?);
+ Ok(frames.into())
 }
 #[wasm_bindgen]
 pub fn book_view_open(v:&JsValue,options:&JsValue)->R<JsValue>{board_motion(v,options,520.0,true)}

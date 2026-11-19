@@ -22,6 +22,9 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
     uniforms[`rect${i}`] = {value:new THREE.Vector4()};
     uniforms[`clip${i}`] = {value:new THREE.Vector4()};
     uniforms[`enabled${i}`] = {value:0};
+    // A moving frame scaled up from a lower ratio (`soften` on its layer) is reconstructed with a cubic
+    // B-spline: its texel size; zero keeps the exact copy (rust-ui/src/native_room_shaders.rs).
+    uniforms[`soften${i}`] = {value:new THREE.Vector2()};
   }
   // The raw replay program's sources are rust-ui/src/native_room_shaders.rs (shelf module, which the
   // scene that owns this cache already uses).
@@ -103,6 +106,8 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
       const layer=layers[i], enabled=Boolean(layer);
       uniforms[`enabled${i}`].value=enabled?1:0;
       uniforms[`layer${i}`].value=enabled?layer.frame.texture:transparent;
+      const soften=enabled && layer.soften===true && layer.frame.ratio<outputFrame.ratio;
+      uniforms[`soften${i}`].value.set(soften?1/layer.frame.pixelWidth:0,soften?1/layer.frame.pixelHeight:0);
       if (!enabled) continue;
       const at = i * 8;
       uniforms[`rect${i}`].value.set(plan[at],plan[at+1],plan[at+2],plan[at+3]);

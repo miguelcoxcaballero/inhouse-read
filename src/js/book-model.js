@@ -473,6 +473,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
 }
 
 // ---- per frame: the board's opening, the ribbon and the page's paper ---------------------------------
+// The light the open page block returns to the inside of an upright board (linear radiance).
+const BOARD_BOUNCE = .2;
 function setCoverOpen(s, amount) {
   const next = Math.max(0, Math.min(1, amount));
   s.frontCover.rotation.y = -Math.PI * .94 * next;
@@ -482,6 +484,13 @@ function setCoverOpen(s, amount) {
   s.pagePaper.visible = s.pagePrint.visible = next > 0;
   s.insideCover.visible = s.pastedown.visible = next > 0;
   if (s.readLeaves) s.readLeaves.visible = next > 0;
+  // The rising board and the white page beneath face each other: light bounces between them, so the inside of
+  // the board is never the flat grey its grazing key light alone gives. Most while upright, none closed or flat.
+  // A uniform only: no program, pass or draw changes.
+  const bounce = BOARD_BOUNCE * Math.sin(Math.PI * next);
+  s.pastedown.material.emissive.setScalar(bounce);
+  s.leafPaper?.emissive.setScalar(bounce);
+  s.insideCover.emissive.copy(s.insideCover.color).multiplyScalar(bounce);
   if (Math.abs(next - s.coverOpening) > .00001) { s.coverOpening = next; updateRibbonGeometry(s); }
 }
 function updateRibbonGeometry(s) {

@@ -17,6 +17,11 @@ impl<T> Slot<T>{
  pub fn clear(&self){let old=self.0.borrow_mut().take();drop(old);}
 }
 
+/// Degrees of extra pitch a pulled book tips by as it clears the shelf (the pull-out's first key).
+const PULL_TIP:f64=8.0;
+/// Degrees its turn carries past facing the reader before it settles.
+const PULL_OVERSHOOT:f64=3.5;
+
 /// The pose a lifted book starts from, taken from where it sat on the shelf.
 #[derive(Clone)]
 pub(super) struct Start{pub dx:f64,pub dy:f64,pub scale:f64,pub angle:f64,pub pitch:f64,pub roll:f64,
@@ -582,10 +587,15 @@ impl Flyout{
   let duration=if reduce{1.0}else{revealed};
   let start=self.start.borrow().clone();
   let (dx,dy)=(start.dx,start.dy);
+  // A book pulled out by its head tips toward the hand as it clears the shelf (`PULL_TIP` more pitch), and
+  // its weight carries the turn a few degrees past facing (`PULL_OVERSHOOT`) before it settles.
+  let tipped=Flyout::tf(dx*0.9,dy*0.86-self.lift,self.scale_at(0.15),start.angle*0.89);
+  putf(&tipped,"pitch",gn(&tipped,"pitch")+PULL_TIP);
   let frames=arr(&[
    &obj(&[("transform",&start.pose()),("easing",&s("cubic-bezier(0.34, 0, 0.26, 1)"))]),
-   &obj(&[("offset",&f(0.26)),("transform",&Flyout::tf(dx*0.9,dy*0.86-self.lift,self.scale_at(0.15),start.angle*0.89)),("easing",&s(EASE))]),
+   &obj(&[("offset",&f(0.26)),("transform",&tipped),("easing",&s(EASE))]),
    &obj(&[("offset",&f(0.7)),("transform",&Flyout::tf(dx*0.18,dy*0.16,self.scale_at(0.85),16.0)),("easing",&s("cubic-bezier(0.3, 0, 0.2, 1)"))]),
+   &obj(&[("offset",&f(0.88)),("transform",&Flyout::tf(0.0,0.0,1.0,-PULL_OVERSHOOT))]),
    &obj(&[("transform",&Flyout::tf(0.0,0.0,1.0,0.0))]),
   ]);
   style_prop(&self.book_node,"willChange","transform");

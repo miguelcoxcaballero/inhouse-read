@@ -540,7 +540,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if(!nativeRoomDisplay)return false;
     const {frame,margin}=nativeRoomDisplay;
     // A moving frame drawn inside a larger or denser buffer is replayed into that buffer, as it was shown.
-    if(nativeRoomDisplay.output)return nativeFrameCache.compose(nativeRoomDisplay.output,[{frame,x:0,y:0,scale:1}]);
+    if(nativeRoomDisplay.output)return nativeFrameCache.compose(nativeRoomDisplay.output,[{frame,x:0,y:0,scale:1,soften:true}]);
     // The whole frame, overscan included, is presented and clipped in CSS:
     // composing only the visible room resized the shared canvas twice per
     // paint (to the visible size, then back to the overscan size for the next
@@ -602,7 +602,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     renderer.render(scene, camera);
     const frame = nativeFrameCache.capture(nativeMovingSlot,
       { x:0, y:0, width, height, ratio:drawn, sourceX:movingPlan[5], sourceY:movingPlan[6] });
-    const shown = frame && (!movingPlan[7] || nativeFrameCache.compose(output, [{ frame, x:0, y:0, scale:1 }]));
+    // A frame drawn below the full ratio is scaled up softened (native-room-cache.js `soften`).
+    const shown = frame && (!movingPlan[7] || nativeFrameCache.compose(output, [{ frame, x:0, y:0, scale:1, soften:true }]));
     // three's own viewport for the buffer, as its size set it.
     renderer.setViewport(0, 0, bufferWidth, bufferHeight);
     if (!shown) return false;

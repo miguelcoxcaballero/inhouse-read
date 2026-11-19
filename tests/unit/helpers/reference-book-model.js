@@ -965,6 +965,12 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     pagePaper.visible = pagePrint.visible = next > 0;
     insideCover.visible = pastedown.visible = next > 0;
     if (readLeaves) readLeaves.visible = next > 0;
+    // Amended on purpose in 1.8.5: light bounced between the opening board and the page lifts the inside of
+    // the board (emissive .2 at upright, none closed or flat), which the key light alone left a flat grey.
+    const bounce = .2 * Math.sin(Math.PI * next);
+    pastedown.material.emissive.setScalar(bounce);
+    leafPaper?.emissive.setScalar(bounce);
+    insideCover.emissive.copy(insideCover.color).multiplyScalar(bounce);
     if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
   };
   function updateRibbonGeometry() {
@@ -1611,10 +1617,24 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     }
     return true;
   }
+  // Amended on purpose in 1.8.5 (rust-ui/src/book_view_host.rs `board_swing`): the board has weight. It is
+  // lifted to upright in a little over half the time, falls open faster, lands and rebounds once by a
+  // couple of degrees. The two-frame original eased it as a weightless smoothstep.
+  const BOARD_SWING = [[.55, .5, .5], [.84, 1, 1], [.92, 1, .984]];
+  const MOTION_KEYS = ['x','y','scale','angle','pitch','roll','coverOpen','bookmarkWithdraw','pageTheme'];
   function animateCoverOpen({ duration = 520, offsetX = 0, targetPose } = {}) {
     const origin = { ...current };
-    return animateMotion([{ transform:origin }, { transform:{ ...origin, ...targetPose,
-      x:targetPose?.x ?? origin.x + offsetX, coverOpen:1 } }], { duration });
+    const destination = { ...origin, ...targetPose, x:targetPose?.x ?? origin.x + offsetX, coverOpen:1 };
+    const swing = BOARD_SWING.map(([offset, travel, open]) => {
+      const transform = { ...destination };
+      for (const key of MOTION_KEYS) {
+        const from = key === 'coverOpen' && typeof origin[key] !== 'number' ? 0 : origin[key], to = destination[key];
+        if (typeof from === 'number' && typeof to === 'number' && Number.isFinite(from) && Number.isFinite(to))
+          transform[key] = from + (to - from) * (key === 'coverOpen' ? open : travel);
+      }
+      return { offset, transform };
+    });
+    return animateMotion([{ transform:origin }, ...swing, { transform:destination }], { duration });
   }
   function animateCoverClose({ duration = 580, offsetX = 0, targetPose } = {}) {
     const origin = { ...current };

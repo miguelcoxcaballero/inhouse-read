@@ -3485,9 +3485,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         transform: { x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll },
         easing: 'cubic-bezier(0.34, 0, 0.26, 1)'
       },
+      // Amended on purpose in 1.8.5 (rust-ui/src/bookshelf/flyout.rs): the book tips 8 degrees toward the
+      // hand as it clears the shelf and its turn carries 3.5 degrees past facing before it settles.
       {
         offset: 0.26,
-        transform: tf(dx * 0.9, dy * 0.86 - lift, zStart * 0.55, scaleAt(0.15), sourceAngle * .89),
+        transform: (pose => ({ ...pose, pitch:pose.pitch + 8 }))(tf(dx * 0.9, dy * 0.86 - lift, zStart * 0.55, scaleAt(0.15), sourceAngle * .89)),
         easing: EASE
       },
       {
@@ -3495,6 +3497,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         transform: tf(dx * 0.18, dy * 0.16, 0, scaleAt(0.85), 16),
         easing: 'cubic-bezier(0.3, 0, 0.2, 1)'
       },
+      { offset: 0.88, transform: tf(0, 0, 0, 1, -3.5) },
       { transform: tf(0, 0, 0, 1, 0) }
     ];
 
