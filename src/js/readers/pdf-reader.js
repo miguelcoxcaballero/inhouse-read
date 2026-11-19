@@ -23,16 +23,23 @@ import { pdfImagePaths } from './pdf-images-wasm.js'
 import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js'
 import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
-import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
+import { extractPDFText } from './pdf-text.js'
 import { readerUI, rustMethods } from './rust-ui-required.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 // What the Rust reader calls: PDF.js and the page pipelines, passed in rather than imported there. The snapshot of a
-// page, the text map and the hold gesture are its own (rust-ui reader_doors.rs), reached through `ui`.
+// page, the text maps and the hold gesture are its own (rust-ui reader_doors.rs), reached through `ui`; so is the table
+// of gestures a document is opened with (pdf_reader.rs `pdf_open`), except what runs on every pointer move, scroll or
+// wheel tick, which stays arrows here. Enlarged PDFs must pan, rather than accidentally turn a page: the browser
+// supplies its touch momentum and long-press selection stays native.
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
-  pdfImagePaths, prepareSnapshotPaperTones, sharePaperTone, registerPageRaster, encodePdfCover, extractPDFText, mapPDFTextLayer, ui:readerUI
+  pdfImagePaths, prepareSnapshotPaperTones, sharePaperTone, registerPageRaster, encodePdfCover, extractPDFText, ui:readerUI, attach:attachSwipeNavigation,
+  canSwipe:s => () => s.preferences.pdfMode === 'text' || !s.zoomed && s.preferences.zoom <= 100,
+  surface:s => () => s.preferences.pdfMode === 'text' ? s.reflow : s.pageWrap,
+  scrolled:(ui, s) => () => ui.pdf_scrolled(s),
+  wheeled:onUserNavigation => event => { if (event.deltaX || event.deltaY) onUserNavigation?.() }
 }
 
 export class PdfReader {
@@ -44,38 +51,9 @@ export class PdfReader {
     imageLayouts:new WeakMap(), snapshotToneState:undefined, lengthMetadata:undefined, textOffset:0, textHeight:0, scrollTimer:undefined, detachScroll:() => {}
   }
 
-  open(container, arrayBuffer, options) {
-    const s = this.s, ui = readerUI(), onUserNavigation = options?.onUserNavigation, onToggleChrome = options?.onToggleChrome
-    return ui.pdf_open(s, container, arrayBuffer, options, {
-      scroll:() => {
-        const onScroll = () => ui.pdf_scrolled(s)
-        const onWheel = event => { if (event.deltaX || event.deltaY) onUserNavigation?.() }
-        container.addEventListener('scroll', onScroll, { passive:true })
-        container.addEventListener('wheel', onWheel, { passive:true })
-        return () => {
-          container.removeEventListener('scroll', onScroll)
-          container.removeEventListener('wheel', onWheel)
-        }
-      },
-      gestures:() => attachSwipeNavigation(container, {
-        ...ui.speech_hold(ui, container.ownerDocument),
-        onNext: () => { onUserNavigation?.(); return this.next() },
-        onPrev: () => { onUserNavigation?.(); return this.prev() },
-        onManualPan: () => onUserNavigation?.(),
-        onToggleZoom: (x, y) => this.toggleZoom(x, y),
-        onToggleChrome,
-        // Enlarged PDFs must pan, rather than accidentally turn a page. Let the
-        // browser supply its touch momentum and keep long-press selection native.
-        canSwipe: () => s.preferences.pdfMode === 'text' || !s.zoomed && s.preferences.zoom <= 100,
-        getMotionSurface: () => s.preferences.pdfMode === 'text' ? s.reflow : s.pageWrap
-      }),
-      resize:() => ui.pdf_resized(s)
-    })
-  }
-
   get pageCount() { return this.s.doc?.numPages ?? 0 }
   get currentPage() { return this.s.pageNum }
 }
 // Methods answered by rust-ui pdf_method (controller_methods.rs) over `this.s`; getCoverBlob is page 1's thumbnail.
-rustMethods(PdfReader,'pdf_method',`goToPage next prev getLengthMetadata toggleZoom getSpeechText getSpeechSource browseSpeech stopSpeech
+rustMethods(PdfReader,'pdf_method',`open goToPage next prev getLengthMetadata toggleZoom getSpeechText getSpeechSource browseSpeech stopSpeech
  returnToSpeech getNextSpeechSource getPageSnapshot search getSelection applyPreferences getCoverBlob close`)

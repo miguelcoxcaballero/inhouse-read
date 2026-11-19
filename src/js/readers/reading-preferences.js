@@ -3,6 +3,7 @@ import { langBase } from './voice-catalog.js'
 import {rustNearestRate,rustReadingNumbers,rustReadingCSS} from './reading-preferences-wasm.js'
 import {getRustUI} from '../rust-ui.js'
 import {getRustShelf} from '../rust-shelf.js'
+import {coreRequired} from './core-required.js'
 
 import {READING_THEMES,PDF_PAGE_FILTERS,READING_FONTS} from './reading-palette.js'
 export {READING_THEMES,PDF_PAGE_FILTERS,READING_FONTS}
@@ -14,14 +15,13 @@ export const RATE_STEPS = Object.freeze([0.75, 1, 1.25, 1.5, 2])
 const policy = () => getRustUI() || getRustShelf()
 const host = {themes:READING_THEMES,fonts:READING_FONTS,voices:neuralVoices,langBase,isVoice:isNeuralVoiceId,numbers:rustReadingNumbers}
 const nativeStyles = new WeakMap()
+const UNREADABLE = 'No se pudieron leer las preferencias de lectura.'
 export const nearestRate = value => {
   const native = policy()
   if (native?.reading_preferences_rate) return native.reading_preferences_rate(value)
   const rate = Number(value)
   if (!Number.isFinite(rate) || value === '' || value == null) return 1
-  const normalized=rustNearestRate(rate)
-  if(normalized!==undefined)return normalized
-  return RATE_STEPS.reduce((best, step) => Math.abs(step - rate) < Math.abs(best - rate) ? step : best)
+  return coreRequired(rustNearestRate(rate), UNREADABLE)
 }
 export const rateLabel = rate => {
   const native = policy()
@@ -64,17 +64,7 @@ export function readingCSS(preferences) {
     if (!cache) { cache = new Map(); nativeStyles.set(native, cache) }
     return native.reading_preferences_css(preferences, host, cache)
   }
-  const p = normalizeReadingPreferences(preferences)
-  const css=rustReadingCSS(p)
-  if(css!==null)return css
-  const theme = READING_THEMES[p.theme]
-  // --theme-bg-color lets foliate repaint its page backdrop when the theme
-  // changes; otherwise it kept the first section's colour (a paper frame
-  // around a night page on first open).
-  return `html { -webkit-text-size-adjust:100%; text-size-adjust:100%; color-scheme:${theme.scheme}; --theme-bg-color:${theme.background}; background:${theme.background} !important; }
-    body { background:${theme.background} !important; color:${theme.color} !important; }
-    body, p, li, blockquote, div { font-family:${READING_FONTS[p.font]} !important; font-size:${p.fontSize}px !important; font-weight:${p.fontWeight} !important; line-height:${p.lineHeight} !important; text-align:${p.align} !important; }
-    p, li, span, a, h1, h2, h3, h4, h5, h6, blockquote, div, section, article, main, table, td, th, em, strong, small, pre, code { color:inherit !important; }
-    ${p.theme === 'amoled' ? 'body :is(p, li, blockquote, div, section, article, main, table, td, th, h1, h2, h3, h4, h5, h6, span, a, em, strong, small, pre, code) { background-color:transparent !important; }' : ''}
-    a { text-decoration:underline; } img, svg { max-width:100%; height:auto; }`
+  // The sheet is the app core's (reader_css): --theme-bg-color lets foliate repaint its page backdrop when the theme
+  // changes; otherwise it kept the first section's colour (a paper frame around a night page on first open).
+  return coreRequired(rustReadingCSS(normalizeReadingPreferences(preferences)) ?? undefined, UNREADABLE)
 }

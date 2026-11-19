@@ -1,6 +1,7 @@
 import './helpers/rust-ui-ready.js'
 import { describe, expect, it } from 'vitest'
-import { extractPDFText, mapPDFTextLayer } from '../../src/js/readers/pdf-text.js'
+import { extractPDFText } from '../../src/js/readers/pdf-text.js'
+import { mapPDFTextLayer } from './helpers/live-pdf-layer.js'
 import { planSpeech } from '../../src/js/readers/speech-text.js'
 
 const view = { width:600, height:800, transform:[1, 0, 0, -1, 0, 800] }

@@ -29,7 +29,8 @@ const themes=['paper','sepia','night','amoled','sage'],fonts=['book','classic','
 const styles=new WeakMap()
 let decoder
 export function rustReadingCSS(p) {
-  const core=getRustCore(),theme=themes.indexOf(p.theme),font=fonts.indexOf(p.font)
+  // String(): a normalized theme or font may be an object that names one (its key in the palette).
+  const core=getRustCore(),theme=themes.indexOf(String(p.theme)),font=fonts.indexOf(String(p.font))
   if(!core?.reader_css||theme<0||font<0)return null
   let cache=styles.get(core)
   if(!cache){cache=new Map();styles.set(core,cache)}

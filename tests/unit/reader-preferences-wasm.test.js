@@ -51,11 +51,25 @@ it('bounds decoded style retention and includes every rendered field in the key'
  readingCSS({fontSize:14,lineHeight:1.8});expect(css).toHaveBeenCalledTimes(count+1)
  for(const input of [{theme:'sepia'},{font:'mono'},{fontSize:24},{fontWeight:600},{lineHeight:2},{align:'justify'}])expect(readingCSS(input)).toBe(reference.readingCSS(input))
 })
-it('preserves the original path on cold, old or failed modules',()=>{
+it('has no second sheet or rate: a cold, old or failed core is an error, and a conversion that throws keeps its own',()=>{
  for(const candidate of [null,{}, {...core,alloc_f64:()=>0}, {...core,reader_preferences:()=>0,reader_css:()=>0}]){
   state.core=candidate
-  expect(normalizeReadingPreferences({fontSize:28,rate:1.6})).toEqual(reference.normalizeReadingPreferences({fontSize:28,rate:1.6}))
-  expect(readingCSS({theme:'night',font:'mono'})).toBe(reference.readingCSS({theme:'night',font:'mono'}))
+  const words=candidate?/No se pudieron leer las preferencias de lectura/:/El módulo numérico no se pudo cargar/
+  // The numbers keep their own reading when the core declines them (a getter that failed once is read again), but the
+  // nearest rate and the sheet are the core's alone.
+  if(candidate?.reader_nearest_rate)expect(normalizeReadingPreferences({fontSize:28,rate:1.6})).toEqual(reference.normalizeReadingPreferences({fontSize:28,rate:1.6}))
+  else{expect(()=>normalizeReadingPreferences({fontSize:28,rate:1.6})).toThrow(words);expect(()=>nearestRate(1.6)).toThrow(words)}
+  expect(()=>readingCSS({theme:'night',font:'mono'})).toThrow(words)
+  expect(nearestRate('')).toBe(1);expect(nearestRate(null)).toBe(1);expect(nearestRate('x')).toBe(1)
+ }
+ state.core=core
+ const failure=Error('bad conversion')
+ expect(()=>normalizeReadingPreferences({fontSize:{valueOf(){throw failure}}})).toThrow(failure)
+ expect(()=>normalizeReadingPreferences({zoom:Symbol()})).toThrow(TypeError)
+ // An object that names a theme or a font keeps its identity and gets the sheet of that name.
+ for(const theme of [new String('paper'),{toString:()=>'night'}])for(const font of [new String('book'),{toString:()=>'mono'}]){
+  const input={theme,font,fontSize:21.5},result=normalizeReadingPreferences(input)
+  expect(result.theme).toBe(theme);expect(result.font).toBe(font);expect(readingCSS(input)).toBe(reference.readingCSS(input))
  }
  state.core=core;expect(rustReadingCSS({theme:'bad',font:'bad'})).toBe(null)
  expect(core.reader_preferences(0)).toBe(0);expect(core.reader_css(0,0,0,0,0,0)).toBe(0)

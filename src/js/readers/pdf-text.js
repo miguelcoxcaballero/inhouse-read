@@ -7,7 +7,6 @@
 // Math, pdf_text_geometry.rs) and then rows, reading order and the joined stream in a single call
 // (pdf_page_text.rs). What stays here is what only the engine has: the item objects, their strings
 // and the browser's Unicode properties of each item's first and last character.
-import { readerUI } from './rust-ui-required.js'
 import { coreRequired } from './core-required.js'
 import { getRustCore } from '../rust-core.js'
 import { resolveHostMath } from '../host-math.js'
@@ -143,12 +142,4 @@ export function extractPDFText(content, viewport) {
     return Object.defineProperty({ geometric:true, text, items:outItems, spans, lines, paragraphs }, 'pictures',
       { value:{ lines:out.slice(n * OUT_ENTRY), paths, dominant } })
   } finally { if (arena !== kept) core.free_f64(pointer, arena.cells) }
-}
-
-/** Maps the reordered PDF.js spans to the same joined text that reflow speaks. */
-export function mapPDFTextLayer(layer, layout) {
-  const ui = readerUI(), map = ui.pdf_layer_map(layer, layout)
-  return map && { text:map.text, spans:map.spans,
-    rangeFor:(start, end) => ui.pdf_layer_range(map.doc, map.spans, start, end),
-    offsetOf:(node, offset) => ui.pdf_layer_offset(map.spans, node, offset) }
 }
