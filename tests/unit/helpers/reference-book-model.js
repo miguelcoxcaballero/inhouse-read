@@ -2,9 +2,8 @@
 // JavaScript). Only its import paths differ (and its shared-texture builders are exported at the end). The differential tests build models with this and with the
 // production module (whose construction now runs in rust-ui/src/book_model_build.rs) and compare them.
 import {createBookProjectionPacket,projectVisibleBookBounds} from '../../../src/js/book-projection.js';
-import {createBookMotionSampler} from './reference-book-motion-bridge.js';
 import { paddedBookFrameSize } from '../../../src/js/book-frame-padding.js';
-import { boxScreenBounds, fitImage, frameAligned, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
+import { boxScreenBounds, fitImage, frameAligned, motionPose, planBookPose, planCopyRectangle, planReadingPose, planReturnFrame } from '../../../src/js/book-view-wasm.js';
 import { planBookView, planPageBounds, planPageZoom } from './reference-book-view-wasm.js';
 import { getRustCore, loadedRustCore } from '../../../src/js/rust-core.js';
 import { needRustShelf } from '../../../src/js/rust-shelf.js';
@@ -1342,7 +1341,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   // Rust owns RAF jobs, cancellation and native frame reservation tokens.
   const motionNative = needRustShelf();
   const motionState = motionNative.book_view_motion_state({
-    createSampler:createBookMotionSampler, draw,
+    // The motion's sampler is the shelf module's own now (rust-ui/src/book_sampler.rs); it hands each pose to `pose`.
+    pose:motionPose, draw,
     position:pose => positionModel(pose),
     measure:pose => { positionModel(pose); return returnFrame(pose,true); },
     noop:() => {}, tick:motionNative.book_view_motion_tick,
