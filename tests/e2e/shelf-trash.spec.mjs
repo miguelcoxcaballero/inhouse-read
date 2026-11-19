@@ -246,8 +246,10 @@ async function beginDrag(page, id) {
     current.y + current.height > Math.min(page.viewportSize().height,clip.y + clip.height))
     await source.evaluate(node => node.scrollIntoView({ block:'nearest' }))
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
-  const rect = await source.boundingBox()
-  expect(rect).not.toBeNull()
+  // A library sync can rebuild the shelf around this point; until its scene is back the off-screen
+  // rows skip layout (content-visibility) and the spine has no box. Wait for the laid-out spine.
+  let rect = null
+  await expect.poll(async () => (rect = await source.boundingBox()) !== null).toBe(true)
   const grab = await spinePointerPosition(source,rect)
   await page.mouse.move(rect.x + grab.x,rect.y + grab.y)
   await page.mouse.down()
