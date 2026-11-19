@@ -6,7 +6,8 @@ const runtime = vi.hoisted(() => ({ core:null }))
 vi.mock('../../src/js/rust-core.js', () => ({ getRustCore:() => runtime.core }))
 import { rustPDFRowLines, pdfRowLines } from './helpers/live-pdf-row-layout.js'
 import { legacyPDFRowLines } from './helpers/reference-pdf-pipeline.js'
-import { extractPDFText, mapPDFTextLayer } from '../../src/js/readers/pdf-text.js'
+import { extractPDFText } from '../../src/js/readers/pdf-text.js'
+import { mapPDFTextLayer } from './helpers/live-pdf-layer.js'
 import { extractPDFText as referencePDFText } from './helpers/reference-pdf-text.js'
 import { makePDFRowEntries, pdfContentFromEntries, PDF_ROW_VIEWPORT, assertExactPDFValue,
   assertPDFRowIdentities, assertPDFSourceIdentities } from '../helpers/pdf-row-cases.mjs'

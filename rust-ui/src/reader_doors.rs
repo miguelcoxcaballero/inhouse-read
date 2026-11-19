@@ -30,6 +30,21 @@ pub fn speech_mapped(ui: &JsValue, mode: u32, root: &JsValue) -> R {
     Ok(made)
 }
 
+/// `mapPDFTextLayer(layer, layout)`: the reordered PDF.js spans mapped onto the joined text that reflow speaks, in the
+/// shape of the other maps; null (what `pdf_layer_map` answers) when the layer does not hold the layout's items.
+#[wasm_bindgen]
+pub fn pdf_layer_mapped(ui: &JsValue, layer: &JsValue, layout: &JsValue) -> R {
+    let map = method(ui, "pdf_layer_map", &[layer, layout])?;
+    if !map.is_truthy() { return Ok(map); }
+    let (text, spans) = (read(&map, "text")?, read(&map, "spans")?);
+    let made: JsValue = Object::new().into();
+    set(&made, "text", &text)?;
+    set(&made, "spans", &spans)?;
+    set(&made, "rangeFor", &bound(ui, "pdf_layer_range", &[&read(&map, "doc")?, &spans])?.into())?;
+    set(&made, "offsetOf", &bound(ui, "pdf_layer_offset", &[&spans])?.into())?;
+    Ok(made)
+}
+
 /// `speechHold(doc)` of readers/speech-hold.js: the same hold gesture in the EPUB iframe and the PDF text layer.
 /// Short taps always retain their page/chrome action, including while narration plays.
 #[wasm_bindgen]
@@ -77,6 +92,7 @@ pub(crate) fn invoke(kit: &JsValue, name: &str, args: &[&JsValue]) -> R {
         "mapText" => map(0)?,
         "mapTextLayer" => map(1)?,
         "mapTextNodes" => map(3)?,
+        "mapPDFTextLayer" => pdf_layer_mapped(&module(kit)?, &arg(0), &arg(1))?,
         "hold" => speech_hold(&module(kit)?, &arg(0))?,
         _ => return call(&given, name, args),
     })

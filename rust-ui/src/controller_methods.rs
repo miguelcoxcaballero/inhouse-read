@@ -54,13 +54,14 @@ pub fn controller_method(host: JsValue, name: &str, args: Array, _kit: JsValue, 
 /// `PdfReader.prototype[name].apply(host, args)`: which page is drawn, fitted, adapted, re-themed,
 /// restored, spoken, searched and captured (pdf_reader.rs, pdf_speech.rs) over `host.s`.
 #[wasm_bindgen]
-pub fn pdf_method(host: JsValue, name: &str, args: Array, _kit: JsValue, _ui: JsValue) -> Result<JsValue, JsValue> {
+pub fn pdf_method(host: JsValue, name: &str, args: Array, _kit: JsValue, ui: JsValue) -> Result<JsValue, JsValue> {
     use crate::pdf_reader::*;
     use crate::pdf_speech::*;
     let s = read(&host, "s")?;
     let a = |index: u32| args.get(index);
     let done = |result: Result<(), JsValue>| result.map(|_| JsValue::UNDEFINED);
     Ok(match name {
+        "open" => pdf_open(s, a(0), a(1), a(2), ui).into(),
         "goToPage" => pdf_go_to_page(s, a(0), a(1)).into(),
         "next" => pdf_next(s, a(0)).into(),
         "prev" => pdf_prev(s).into(),

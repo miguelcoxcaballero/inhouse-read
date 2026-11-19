@@ -231,6 +231,26 @@ pub fn pdf_scrolled(s: &JsValue) -> Result<(), JsValue> {
 #[wasm_bindgen]
 pub fn pdf_resized(s: &JsValue) -> Result<(), JsValue> { on_resize(s) }
 
+/// `ui[name].bind(null, ...head)`: a listener the page owns, answered by this module.
+fn bound(ui: &JsValue, name: &str, head: &[&JsValue]) -> Result<JsValue, JsValue> { Ok(crate::reader_experience_policy::bound(ui, name, head)?.into()) }
+
+/// A gesture of the container: a swipe or an edge tap that turns the page (`next`, `prev`), a pan of an enlarged or
+/// adaptable page (`pan`), a double tap at a point (`toggleZoom`). All but the zoom tell the page the reader moved by hand.
+#[wasm_bindgen]
+pub fn pdf_gesture(owner: &JsValue, which: &str, on_user_navigation: &JsValue, x: JsValue, y: JsValue) -> Result<JsValue, JsValue> {
+    if which == "toggleZoom" { return method(owner, which, &[&x, &y]); }
+    let told = call_opt(on_user_navigation, "onUserNavigation", &[])?;
+    if which == "pan" { Ok(told) } else { method(owner, which, &[]) }
+}
+
+/// Removes the scroll and wheel listeners of a container.
+#[wasm_bindgen]
+pub fn pdf_detach_scroll(container: &JsValue, on_scroll: &JsValue, on_wheel: &JsValue) -> Result<(), JsValue> {
+    method(container, "removeEventListener", &[&"scroll".into(), on_scroll])?;
+    method(container, "removeEventListener", &[&"wheel".into(), on_wheel])?;
+    Ok(())
+}
+
 // ---- what is on the screen, and whether it is still right ------------------------------------
 
 fn render_preferences(s: &JsValue) -> Result<JsValue, JsValue> {
@@ -618,11 +638,16 @@ fn retheme(s: &JsValue, ready: JsValue, preferences: JsValue) -> Promise {
 // ---- the reader's public surface ---------------------------------------------------------------
 
 /// Open a document into the container: page, text layer, adaptable page, then the saved place.
-/// `hooks` carries the listeners the page owns: `scroll()` and `gestures()` return the function
-/// that removes them again, `resize` is the observer's callback.
+/// The listeners of the container are made here: the table of gestures answers through `pdf_gesture`, the observer of
+/// its size through `pdf_resized`; what runs on every pointer move, scroll or wheel tick is an arrow of the kit
+/// (`canSwipe`, `surface`, `scrolled`, `wheeled`), made once per document.
 #[wasm_bindgen]
-pub fn pdf_open(s: JsValue, container: JsValue, buffer: JsValue, options: JsValue, hooks: JsValue) -> Promise {
+pub fn pdf_open(s: JsValue, container: JsValue, buffer: JsValue, options: JsValue, ui: JsValue) -> Promise {
+    // `options?.onUserNavigation`, `options?.onToggleChrome`: read before anything else, as the method's first line did.
+    let given = |name: &str| if absent(&options) { Ok(JsValue::UNDEFINED) } else { read(&options, name) };
+    let handlers = given("onUserNavigation").and_then(|navigation| Ok((navigation, given("onToggleChrome")?)));
     eager(async move {
+        let (on_user_navigation, on_toggle_chrome) = handlers?;
         let options = destructure(&options)?;
         set(&s, "container", &container)?;
         let relocate = get(&options, "onRelocate");
@@ -658,8 +683,21 @@ pub fn pdf_open(s: JsValue, container: JsValue, buffer: JsValue, options: JsValu
         set(&reflow, "hidden", &JsValue::TRUE)?;
         method(&container, "append", &[&reflow])?;
         apply_text_styles(&s)?;
-        set(&s, "detachScroll", &method(&hooks, "scroll", &[])?)?;
-        set(&s, "detachGestures", &method(&hooks, "gestures", &[])?)?;
+        let passive = || plain(&[("passive", JsValue::TRUE)]);
+        let on_scroll = call(&dep(&s, "scrolled"), "scrolled", &[&ui, &s])?;
+        let on_wheel = call(&dep(&s, "wheeled"), "wheeled", &[&on_user_navigation])?;
+        method(&container, "addEventListener", &[&"scroll".into(), &on_scroll, &passive()?])?;
+        method(&container, "addEventListener", &[&"wheel".into(), &on_wheel, &passive()?])?;
+        set(&s, "detachScroll", &bound(&ui, "pdf_detach_scroll", &[&container, &on_scroll, &on_wheel])?)?;
+        let owner = get(&s, "owner");
+        let gestures = crate::reader_doors::speech_hold(&ui, &read(&container, "ownerDocument")?)?;
+        for (name, which) in [("onNext", "next"), ("onPrev", "prev"), ("onManualPan", "pan"), ("onToggleZoom", "toggleZoom")] {
+            set(&gestures, name, &bound(&ui, "pdf_gesture", &[&owner, &which.into(), &on_user_navigation])?)?;
+        }
+        set(&gestures, "onToggleChrome", &on_toggle_chrome)?;
+        set(&gestures, "canSwipe", &call(&dep(&s, "canSwipe"), "canSwipe", &[&s])?)?;
+        set(&gestures, "getMotionSurface", &call(&dep(&s, "surface"), "surface", &[&s])?)?;
+        set(&s, "detachGestures", &call(&dep(&s, "attach"), "attachSwipeNavigation", &[&container, &gestures])?)?;
 
         let locator = get(&options, "initialLocator");
         let first = get(&options, "initialPage");
@@ -678,7 +716,7 @@ pub fn pdf_open(s: JsValue, container: JsValue, buffer: JsValue, options: JsValu
         // split view or browser resize must refit both pixels and selection, without
         // treating that layout change as navigation or losing the saved page.
         if !get(&global(), "ResizeObserver").is_undefined() {
-            let observer = construct("ResizeObserver", &[&get(&hooks, "resize")])?;
+            let observer = construct("ResizeObserver", &[&bound(&ui, "pdf_resized", &[&s])?])?;
             set(&s, "resizeObserver", &observer)?;
             method(&observer, "observe", &[&container])?;
         }

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as rust from './helpers/live-pdf-reflow.js'
 import * as original from './helpers/reference-pdf-reflow.js'
 import { extractPDFText } from '../../src/js/readers/pdf-text.js'
-import { mapPDFTextLayer as rustMap } from '../../src/js/readers/pdf-text.js'
+import { mapPDFTextLayer as rustMap } from './helpers/live-pdf-layer.js'
 import { mapPDFTextLayer as originalMap } from './helpers/reference-pdf-text.js'
 
 // The adaptable page is built by the compiled module and by the frozen original from the same
