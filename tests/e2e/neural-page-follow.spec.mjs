@@ -169,7 +169,14 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
         }
         // These members reach their Rust implementations through the class dispatchers (rustMethods): read each
         // dispatched member's name from the call and count it as the implementation it runs.
-        const dispatched={"voice_method":{"speakCurrent":"dispatches","speakNeural":"synthesis","joinPageSentence":"calls","prepareAhead":"preparations","advance":"advances","prepare":"plans","prepareOpening":"opening","adopt":"adoptions","engineStarted":"starts","present":"presentations","prepareText":"textPlans"},"picker_method":{"attach":"attachments","warmContext":"warmContexts","warmUp":"warmUps","state":"availability","click":"pickerClicks","offerFor":"offers"},"picker_member":{"install":"installStarts"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)evidence.rustJoin[name]++;if(name==='installStarts')watchInstalled();return actual[dispatch](...args)}
+        const dispatched={"voice_method":{"speakCurrent":"dispatches","speakNeural":"synthesis","joinPageSentence":"calls","prepareAhead":"preparations","advance":"advances","prepare":"plans","prepareOpening":"opening","adopt":"adoptions","engineStarted":"starts","present":"presentations","prepareText":"textPlans","detectLanguage":"languages"},"picker_method":{"attach":"attachments","warmContext":"warmContexts","warmUp":"warmUps","state":"availability","click":"pickerClicks","offerFor":"offers"},"picker_member":{"install":"installStarts"}};for(const dispatch in dispatched)if(actual[dispatch])exports[dispatch]=(...args)=>{const name=dispatched[dispatch][new TextDecoder().decode(new Uint8Array(actual.memory.buffer,args[2],args[3]))];if(name)evidence.rustJoin[name]++;if(name==='installStarts')watchInstalled();return actual[dispatch](...args)}
+        // The order of the picker's list, its recommended voice and the language of a text are doors of one export,
+        // catalog_door(normalize, which, ...) (catalog_doors.rs: 3 detectLanguage, 7 orderNeuralVoices, 8
+        // recommendedNeuralFor). In the raw export the door's number follows the return slot and `normalize`. The page no
+        // longer crosses voice_order, voice_recommended or detect_voice_language, which the deleted JavaScript wrappers
+        // called; the audiobook's ReadingVoice.detectLanguage is the dispatched member counted above.
+        const doors={3:'languages',7:'voiceOrders',8:'voiceRecommendations'}
+        if(actual.catalog_door)exports.catalog_door=(...args)=>{const key=doors[args[2]];if(key)evidence.rustJoin[key]++;return actual.catalog_door(...args)}
         const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
         return result.instance?{...result,instance:proxy}:proxy
       }
