@@ -7,6 +7,7 @@ import { loadNeural } from '../../src/js/readers/neural-runtime.js'
 import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
 import { createFakeNeuralEngine, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
 import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
+import { orderNeuralVoices as frozenOrder, recommendedNeuralFor as frozenRecommended } from './helpers/reference-voice-catalog.js'
 
 // The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
@@ -26,6 +27,18 @@ observedUI.RustNeuralView=class extends rustUI.RustNeuralView {
 observedUI.picker_member=(host,name,...rest)=>{actionCalls[name]=(actionCalls[name]||0)+1;return rustUI.picker_member(host,name,...rest)}
 afterAll(()=>{for(const name of actionExports)expect(actionCalls[name],name).toBeGreaterThan(0)})
 afterAll(()=>{expect(viewCalls.render).toBeGreaterThan(0);expect(viewCalls.progress).toBeGreaterThan(0)})
+// The order of the list and the recommended voice are doors of one export the view binds to its number
+// (catalog_doors.rs `catalog_door`: 7 orderNeuralVoices, 8 recommendedNeuralFor); the page no longer crosses the
+// exports voice_order/voice_recommended. Each answer the picker gets is kept to compare with the frozen original.
+const doorCalls={},orderings=[],recommended=[]
+observedUI.catalog_door=(normalize,which,...rest)=>{
+  doorCalls[which]=(doorCalls[which]||0)+1
+  const answer=rustUI.catalog_door(normalize,which,...rest)
+  if(which===7)orderings.push({voices:[...rest[0]],book:rest[1],device:rest[2],answer})
+  if(which===8)recommended.push({voices:[...rest[0]],lang:rest[1],device:rest[2],answer})
+  return answer
+}
+afterAll(()=>{expect(doorCalls[7],'order').toBeGreaterThan(0);expect(doorCalls[8],'recommendation').toBeGreaterThan(0)})
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 let catalogue
@@ -136,6 +149,23 @@ describe('natural voices group', () => {
     expect(button.textContent).toBe('Descargar')
     expect(button.getAttribute('aria-label')).toBe('Descargar la voz Davefx, Español (España) (63 MB)')
     expect(row(panel, DAVEFX).dataset.state).toBe('idle')
+  })
+  it.each(['es-ES', 'es-MX', 'en-US', 'en-GB'])('paints its rows in the order the Rust door gives, which is the frozen original\'s (%s)', async language => {
+    orderings.length = 0; recommended.length = 0
+    const { panel, experience } = await setup({ language })
+    experience.neuralPicker.render()
+    expect(orderings.length).toBeGreaterThan(0)
+    for (const { voices, book, device, answer } of orderings) {
+      const expected = frozenOrder(voices, { bookLang:book, deviceLang:device })
+      expect(answer.length).toBe(expected.length)
+      answer.forEach((voice, index) => expect(voice === expected[index], `${index}: ${voice.id} vs ${expected[index].id}`).toBe(true))
+    }
+    for (const { voices, lang, device, answer } of recommended) expect(answer === frozenRecommended(voices, lang, device)).toBe(true)
+    // The rows are that order, narrowed to the language shown.
+    const last = orderings.at(-1), painted = rows(panel).map(item => item.dataset.neuralVoice)
+    expect(painted.length).toBeGreaterThan(1)
+    expect(painted).toEqual(last.answer.map(voice => voice.id).filter(id => painted.includes(id)))
+    expect(painted).toEqual(frozenOrder(last.voices, { bookLang:last.book, deviceLang:last.device }).map(voice => voice.id).filter(id => painted.includes(id)))
   })
   it('each row says its own size and the progress counts in the same decimal MB as the rows', async () => {
     const big = { id:'piper:es_ES-sharvard-medium', piperId:'es_ES-sharvard-medium', lang:'es-ES', name:'Sharvard', quality:'medium', sizeMB:77, speaker:0 }
