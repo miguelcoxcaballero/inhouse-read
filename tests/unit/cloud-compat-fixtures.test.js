@@ -8,6 +8,8 @@ import './helpers/rust-ui-ready.js'
 // exact reading-state file the old client uploaded for a given book. The formats must not move.
 // 1.7.290 adds two fake-clock reads before insertion and four before progress;
 // only those three synthetic timestamps in the expected fixture are updated.
+// The restore guard (library_backup.rs, removed_at_start) reads the removed books once more before the first
+// library read: two more fake-clock reads (fake-indexeddb event timestamps), so the same three move by two.
 vi.mock('../../src/js/drive-client.js', () => ({
   getDriveProfile: vi.fn(), listAllDriveBooks: vi.fn(), uploadDriveFile: vi.fn(), downloadDriveFile: vi.fn(),
   readDriveProgress: vi.fn(), writeDriveProgress: vi.fn(), readDriveLibrarySnapshots: vi.fn(),
@@ -43,8 +45,8 @@ const FIXTURE = {
    "driveFileId": "drive-1",
    "cloudAccountId": "account",
    "id": "drive:drive-1",
-   "addedAt": 9016,
-   "lastOpenedAt": 9016,
+   "addedAt": 9018,
+   "lastOpenedAt": 9018,
    "wordCount": null,
    "wordCountVersion": null,
    "wordCountComplete": false,
@@ -53,7 +55,7 @@ const FIXTURE = {
    "estimatedPageCount": null,
    "contentDriveChecksum": null,
    "progressDirty": false,
-   "progressUpdatedAt": 9043,
+   "progressUpdatedAt": 9045,
    "lengthDirty": false,
    "progressStateFileId": "state-1"
   }

@@ -115,7 +115,11 @@ pub fn library_remove_from_shelf(database:JsValue,env:JsValue,book:JsValue,optio
  let removed_at=read(&options,"removedAt")?;let id=if book.is_string(){book.clone()}else{optional(&book,"id")?};if !truthy(&id){return Ok(JsValue::NULL);}
  let transaction=transaction(&db(&database).await?)?;let completion=complete(&env,&transaction)?;
  let store=method(&transaction,"objectStore",&[&s(BOOKS)])?;let removed=method(&transaction,"objectStore",&[&s(REMOVED)])?;
- let record=request(&env,method(&store,"get",&[&id])).await?;let previous=request(&env,method(&removed,"get",&[&id])).await?;
+ let record=request(&env,method(&store,"get",&[&id])).await?;
+ // `ifAbsent`: the caller saw no copy on this shelf (a removal another device made, or one already applied
+ // here). A copy there now was added since, such as the user opening the book from Drive: leave it, resolve null.
+ if truthy(&opts(&options,"ifAbsent",JsValue::FALSE)?)&&truthy(&record){wait(Ok(completion)).await?;return Ok(JsValue::NULL);}
+ let previous=request(&env,method(&removed,"get",&[&id])).await?;
  let source=fields(&[&if book.is_object()&&!book.is_function(){book}else{Object::new().into()},&record,&object(&[("id",id.clone())])])?;
  let removal=removal_identity(&source,&previous)?;
  if removed_at.as_f64().is_some_and(|n|n.is_finite()&&n>0.0){crate::host::set(&removal,"removedAt",&removed_at)?;}

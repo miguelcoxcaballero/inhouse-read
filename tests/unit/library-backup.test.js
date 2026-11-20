@@ -193,6 +193,62 @@ describe('complete Drive library backup across independent devices', () => {
     expect(await a.library.listAll()).toEqual([])
     expect(await b.library.listAll()).toEqual([])
   })
+  it('keeps a book the user restores from Drive while a sync is applying its earlier removal', async () => {
+    const a=device(), kept=await add(a), book=await add(a,'restored.epub'); await a.sync()
+    const {driveFileId}=await a.library.get(book.id)
+    await a.cloud.removeFromShelf(await a.library.get(book.id)); await a.sync()
+    // The next sync reads the library (the book still removed), then holds on a cover upload while the user
+    // opens the book from the Drive list, which restores it (app_shell.rs open_drive_file).
+    await a.library.patch(kept.id,{cover:new Blob(['new cover']),coverUpdatedAt:900})
+    let finish
+    drive.uploadDriveCover.mockImplementationOnce(file => new Promise(resolve => {finish=()=>{
+      files.set('held-cover',{id:'held-cover',name:'held-cover',file});resolve({id:'held-cover'})
+    }}))
+    const task=a.sync();await vi.waitFor(()=>expect(finish).toBeTypeOf('function'))
+    const restored=await a.library.addOrTouch({sourceType:'drive',driveFileId,cloudAccountId:'account',name:'restored.epub',title:'The Book',size:8},{restoreRemoved:true})
+    finish();await task
+    expect(await a.library.get(restored.id)).toMatchObject({driveFileId})
+    expect(await a.library.listRemoved()).toEqual([])
+    const b=device();await b.sync()
+    expect((await b.library.listAll()).map(book=>book.driveFileId).sort()).toEqual([driveFileId,(await a.library.get(kept.id)).driveFileId].sort())
+  })
+  it('keeps a book the user restores between the sync reading the shelf and applying the removal', async () => {
+    const a=device(), kept=await add(a), book=await add(a,'restored.epub'); await a.sync()
+    const {driveFileId}=await a.library.get(book.id)
+    await a.cloud.removeFromShelf(await a.library.get(book.id)); await a.sync()
+    // The next sync still sees the removal and no copy on the shelf; the user's restore commits right before
+    // the sync's own removal write (the window CI's shelf-trash:497 hit).
+    let restored=null
+    const remove=a.library.removeFromShelf.bind(a.library)
+    a.library.removeFromShelf=async (target,options) => {
+      if (target?.driveFileId===driveFileId && !restored)
+        restored=await a.library.addOrTouch({sourceType:'drive',driveFileId,cloudAccountId:'account',name:'restored.epub',title:'The Book',size:8},{restoreRemoved:true})
+      return remove(target,options)
+    }
+    await a.sync()
+    expect(restored).toBeTruthy()
+    expect(await a.library.get(restored.id)).toMatchObject({driveFileId})
+    expect(await a.library.listRemoved()).toEqual([])
+    const b=device();await b.sync()
+    expect((await b.library.listAll()).map(book=>book.driveFileId).sort()).toEqual([driveFileId,(await a.library.get(kept.id)).driveFileId].sort())
+  })
+  it('keeps the removal when the library is cleared, not restored, while a sync is applying it', async () => {
+    const a=device(), kept=await add(a), book=await add(a,'removed.epub'); await a.sync()
+    const {driveFileId}=await a.library.get(book.id)
+    await a.cloud.removeFromShelf(await a.library.get(book.id)); await a.sync()
+    await a.library.patch(kept.id,{cover:new Blob(['new cover']),coverUpdatedAt:900})
+    let finish
+    drive.uploadDriveCover.mockImplementationOnce(file => new Promise(resolve => {finish=()=>{
+      files.set('held-cover',{id:'held-cover',name:'held-cover',file});resolve({id:'held-cover'})
+    }}))
+    const task=a.sync();await vi.waitFor(()=>expect(finish).toBeTypeOf('function'))
+    // Clearing empties the books and their removal marks together: the removal is gone, but nothing was restored.
+    await a.library.clear()
+    finish();await task
+    expect((await a.library.listAll()).some(book=>book.driveFileId===driveFileId)).toBe(false)
+    const b=device();await b.sync()
+    expect((await b.library.listAll()).some(book=>book.driveFileId===driveFileId)).toBe(false)
+  })
 })
 
 it('polls only lightweight revisions while the room is unchanged, and retries a locally dirty sync',async()=>{
