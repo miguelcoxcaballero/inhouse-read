@@ -1,3 +1,9 @@
+# 1.8.8 — tanda integ-bar-23
+
+- Unitarias: 0 fallos (9.497). Capturas: 24 estados contra la 1.8.4, 14 idénticos bit a bit, máximo 1/255.
+- Navegador en local (bookshelf-*, book-*, animation-continuity, plant-catalog, native-*): 64 pasan y 2 fallan, native-aligned/legacy-shelf-return-contract al arrancar (la estantería no aparece en 8 s). Con la máquina cargada fallan igual en la 1.8.7 (0 de 6) que aquí (1 de 6); sin carga, 4 de 4 en ambas. plant-catalog:433 6 de 6.
+- Sin verificar: teléfono real, WebView de Android.
+
 # 1.8.7 — tanda integ-bar-22
 
 - Unitarias: 0 fallos (9.497 pasan). Capturas: 26 estados contra la 1.8.4, 15 idénticos bit a bit, máximo 1/255.

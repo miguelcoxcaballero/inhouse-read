@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.8.8 — Portada que se abre sin carga extra
+
+Al abrir la portada de un libro sacado de la estantería, la textura de las
+guardas y las piezas interiores del libro ya están preparadas de antes, en
+un rato libre; el primer fotograma de la apertura no sube nada a la GPU. Se
+ve exactamente igual.
+
 ## 1.8.7 — Menos memoria en el catálogo y arreglo de Drive
 
 El catálogo de muebles suelta su memoria de dibujo 8 s después de cerrarlo

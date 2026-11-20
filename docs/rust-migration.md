@@ -1,3 +1,10 @@
+# Entrega 1.8.8 (tanda integ-bar-23): apertura de la portada
+
+Rama sobre la 1.8.7: ready/perf-frame-2 (68e68dbf). Sin bloques de migración.
+
+- warm_opening_page (rust-ui/src/bookshelf/flyout_motion.rs) llama a view.warmOpening() (book_view_warm_opening en book_view_host.rs, book-model.js): un render a medio abrir en tiempo libre, antes del dibujo normal de la pose actual en la misma tarea. Primer fotograma de la apertura: subidas de textura 2 (262 KB) -> 0, bufferData 23 -> 0, enlaces 0 -> 0; script 3,2-5,8 -> 1,8-2,5 ms (WebGL por software). Coste: un render más en reposo con el libro levantado.
+- Nueva prueba tests/e2e/book-opening-first-frame.spec.mjs (falla en la 1.8.7, pasa aquí). El 45-55 ms citado antes no se reproduce en la apertura: está en la salida del libro (toque del lomo 45-78 ms a dpr 3), en curso aparte.
+
 # Entrega 1.8.7 (tanda integ-bar-22): memoria del catálogo y Drive
 
 Ramas sobre la 1.8.6: ready/perf-memory-2 (1eab4d12), ready/ci-reds-7 (2ab27624). Sin bloques de migración; barra estimada 77,84 % Rust, 771 KB de JS.
