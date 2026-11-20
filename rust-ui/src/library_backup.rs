@@ -153,6 +153,14 @@ impl Core{
   let mut uploaded=0;
   let errors=Array::new();
   let observed=Map::new();
+  // Books this device had removed when the sync read the library. Only an explicit restore (opening the
+  // book from Drive) deletes a removal, so one of them on the shelf later, without its removal, was restored
+  // by the user while this sync ran: that restore is newer than the removal the sync is about to apply.
+  let removed_at_start=Set::new(&JsValue::UNDEFINED);
+  for removal in Array::from(&settle(call(&self.library,"listRemoved",&[])).await?).iter(){
+   if get(&removal,"driveFileId").is_truthy()&&get(&removal,"cloudAccountId")==account_id{removed_at_start.add(&get(&removal,"driveFileId"));}
+  }
+  self.guard(generation)?;
   let mut records=Array::from(&settle(call(&self.library,"listAll",&[])).await?);self.guard(generation)?;
   for mut book in records.iter(){
    let linked=get(&book,"cloudAccountId");
@@ -243,13 +251,31 @@ impl Core{
     if get(removal,"removedAt").gt(&or(get(&get(&fields,"visible"),"at"),0.into())){
      set(&fields,"visible",&object(&[("value",JsValue::FALSE),("at",get(removal,"removedAt")),("device",self.device.clone())]));
     }
+   }else if removed_at_start.has(&id.clone().into())&&get(&get(&fields,"visible"),"value")==JsValue::FALSE{
+    // Its removal is gone since this sync started. When the book is on the shelf again, the user restored it
+    // (see removed_at_start): publish it as visible and leave the record to the opening that restored it; the
+    // next sync merges its fields as usual. Without a record (a cleared library) the removal stands.
+    let shelf=Array::from(&settle(call(&self.library,"listAll",&[])).await?);self.guard(generation)?;
+    let restored=shelf.iter().any(|record|get(&record,"driveFileId").as_string().as_deref()==Some(id.as_str())
+     &&{let linked=get(&record,"cloudAccountId");!linked.is_truthy()||linked==account_id});
+    if restored{
+     set(&fields,"visible",&self.stamp(&get(&fields,"visible"),&JsValue::TRUE,&js_sys::Date::now().into())?);
+     continue;
+    }
    }
    if get(&get(&fields,"visible"),"value")==JsValue::FALSE{
     let options=object(&[("removedAt",get(&get(&fields,"visible"),"at"))]);
     if book.is_truthy(){settle(self.cloud("removeFromShelf",&[&book,&options])).await?;}
     else{
+     // Checked again in the removal's own transaction: the user may open the book from Drive (restoring it)
+     // between the shelf read above and this write. That copy is newer than the removal; keep and publish it.
+     set(&options,"ifAbsent",&JsValue::TRUE);
      let source=object(&[("id",format!("drive:{id}").into()),("driveFileId",id.clone().into()),("cloudAccountId",account_id.clone())]);
-     settle(call(&self.library,"removeFromShelf",&[&source,&options])).await?;
+     let removal=settle(call(&self.library,"removeFromShelf",&[&source,&options])).await?;self.guard(generation)?;
+     if !removal.is_truthy(){
+      set(&fields,"visible",&self.stamp(&get(&fields,"visible"),&JsValue::TRUE,&js_sys::Date::now().into())?);
+      continue;
+     }
     }
     self.guard(generation)?;set(&applied_books,&id,&fields);continue;
    }
