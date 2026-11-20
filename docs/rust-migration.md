@@ -1,3 +1,10 @@
+# Entrega 1.8.6: ci-reds-6
+
+Rama sobre la 1.8.5: ready/ci-reds-6 (0f6f6598). Sin bloques de migración.
+
+- Arreglo de la app: RustRoomMotion::clear (rust-ui/src/room_motion.rs) dice si quitó algo y clearRoomMotion (src/js/bookshelf-scene.js) no repinta cuando no había nada de ese par; antes cada desconexión de un par repintaba la sala (render remote-motion-ended de más, visto en el CI de la 1.8.4).
+- Pruebas: native-aligned/legacy-shelf-return-contract, live-room-stability:27 y live-room-sync:11 miden su presupuesto (mismo valor) en el reloj de fotogramas (tests/e2e/helpers/frame-clock.mjs: cada hueco entre fotogramas cuenta hasta 100 ms, el script y las esperas sin fotograma cuentan enteros). Con GPU real es el reloj de pared. Cada una tiene un control negativo que sigue fallando.
+
 # Entrega 1.8.5 (tanda integ-bar-20): movimiento del libro y apertura del PDF
 
 Ramas sobre la 1.8.4: ready/book-model-29 (9758236a, incluye la 28 en 3126b468), ready/readers-voice-31 (fe496055).

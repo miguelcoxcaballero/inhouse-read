@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.8.6 — Sala compartida sin repintados de más
+
+En una sala compartida, cuando otro dispositivo se desconectaba, la estantería
+se volvía a dibujar aunque no hubiera cambiado nada; ya no. Las pruebas que
+dejaban siempre en rojo el CI miden ahora la app y no la velocidad de la
+máquina de pruebas.
+
 ## 1.8.5 — Más Rust en el libro y el lector de PDF
 
 El movimiento del libro abierto se calcula dentro de Rust (un fotograma de

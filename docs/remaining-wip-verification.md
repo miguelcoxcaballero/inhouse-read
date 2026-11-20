@@ -1,3 +1,9 @@
+# 1.8.6 — ci-reds-6
+
+- Unitarias: 0 fallos (9.495). Navegador en local: smoke, animation-continuity, live-room*, native-*, shelf-*, lamp-* y plant-catalog, 74 pasan y 0 fallan. Con carga (3 bucles en 4 núcleos): live-room-stability y live-room-sync 6 de 6 (antes 0 de 3 y 1 de 3).
+- El CI de la 1.8.5 ya salió verde; estos fallos dependen de la velocidad del runner.
+- Sin capturas: no cambia nada dibujado en reposo.
+
 # 1.8.5 — tanda integ-bar-20
 
 - Unitarias: 0 fallos (9.495). Capturas: 26 estados contra la 1.8.4, 16 idénticos bit a bit, máximo 1/255.
