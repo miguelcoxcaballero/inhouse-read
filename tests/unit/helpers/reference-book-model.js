@@ -1699,6 +1699,23 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     try { return await prepareProgramUniforms(gpu, materials, { idle, current:() => !disposed && current() }); }
     catch { return false; /* Drivers without reflection retain the original first draw. */ }
   }
+  // The opening's hidden meshes drawn once at half opening; the caller draws the current pose next, in the same task.
+  function warmOpening() {
+    const setOpen = model?.userData.setCoverOpen, opening = current?.coverOpen ?? 0;
+    if (disposed || externalPresentation || waitingForFirstDraw || !displayedFrame || !setOpen || opening > 0) return false;
+    let anisotropy;
+    model.traverse(object => {
+      for (const material of [object.material].flat()) if (material) for (const key of SAMPLED_MAPS) {
+        const map = material[key];
+        if (map) map.anisotropy = anisotropy ??= Math.min(16, gpu.capabilities.getMaxAnisotropy());
+      }
+    });
+    setOpen(.5);
+    try { withRendererPresentation(gpu, null, () => gpu.render(scene, camera)); }
+    finally { setOpen(opening); }
+    snapshotDirty = true;
+    return true;
+  }
   function uploadPageTexture(texture) {
     if (disposed || !pageTextures().includes(texture)) return false;
     texture.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy()); // what draw() would set first
@@ -1748,7 +1765,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); }, holdNativeMotionFrame,
     updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateEditorAppearance, updateBookmark,
-    setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, preparePagePrograms, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
+    setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, preparePagePrograms, warmOpening, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,

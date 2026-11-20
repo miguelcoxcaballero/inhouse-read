@@ -794,20 +794,7 @@ function draw(v, pose, { redraw = true } = {}) {
   const previousOwner=present ? null : presentation.owner;
   if (!present && presentation.owner === owner) { owner.suspend(); gpu.domElement.remove(); presentation.owner=null; }
   configureFrame(v, frame);
-  // Every frame re-applies the renderer's sampling quality to whatever maps the materials hold now,
-  // without allocating a list per object (the limit is read once, when a first map needs it).
-  let anisotropy;
-  const sample = material => {
-    for (const key of SAMPLED_MAPS) {
-      const map = material[key];
-      if (map) map.anisotropy = anisotropy ??= Math.min(16, gpu.capabilities.getMaxAnisotropy());
-    }
-  };
-  model.traverse(object => {
-    const material = object.material;
-    if (Array.isArray(material)) for (const item of material) sample(item);
-    else if (material) sample(material);
-  });
+  sampleMaps(model, gpu);
   withRendererPresentation(gpu,null,() => {
     gpu.render(v.scene, frame.camera);
     v.displayedFrame=frame; v.snapshotDirty=true;
@@ -821,6 +808,36 @@ function draw(v, pose, { redraw = true } = {}) {
   canvas.dataset.pageTheme = String(v.pageTheme);
   canvas.dataset.bookmarkWithdraw = String(v.current.bookmarkWithdraw);
   canvas.dataset.boardBounds = JSON.stringify(projectBookBoardBounds(v.model,v.camera,v.viewportWidth,v.viewportHeight));
+}
+// Every frame re-applies the renderer's sampling quality to whatever maps the materials hold now,
+// without allocating a list per object (the limit is read once, when a first map needs it).
+function sampleMaps(model, gpu) {
+  let anisotropy;
+  const sample = material => {
+    for (const key of SAMPLED_MAPS) {
+      const map = material[key];
+      if (map) map.anisotropy = anisotropy ??= Math.min(16, gpu.capabilities.getMaxAnisotropy());
+    }
+  };
+  model.traverse(object => {
+    const material = object.material;
+    if (Array.isArray(material)) for (const item of material) sample(item);
+    else if (material) sample(material);
+  });
+}
+// The opening's hidden meshes drawn once over the current frame, which the caller's draw of the current pose
+// then replaces in the same task (rust-ui/src/book_view_host.rs book_view_warm_opening). The full-view camera
+// keeps every one of them inside the frustum whatever compact window the frame uses.
+function warmOpening(v) {
+  const { model, gpu } = v, setCoverOpen = model?.userData.setCoverOpen, opening = v.current?.coverOpen ?? 0;
+  if (v.disposed || v.externalPresentation || v.waitingForFirstDraw || !v.displayedFrame || !setCoverOpen || opening > 0) return false;
+  // Uploaded here, a map keeps the sampling it is uploaded with: the same as draw() gives it.
+  sampleMaps(model, gpu);
+  setCoverOpen(.5);
+  try { withRendererPresentation(gpu, null, () => gpu.render(v.scene, v.camera)); }
+  finally { setCoverOpen(opening); }
+  v.snapshotDirty = true;
+  return true;
 }
 // A retained native frame is usable only while its model, exact painted
 // pose and context still belong to this view. Unknown states redraw.
@@ -864,7 +881,7 @@ function viewHost() {
     spread:(a, b, c) => ({ ...a, ...b, ...c }),
     lease:(gpu, callbacks, canvas, context) => createNativeRendererPresentation(gpu, { ...callbacks, canvas, context }),
     lazyExports, draw, capture:captureSnapshot, position:positionPresentation, compactBounds, positionModel, measure:measureModel,
-    suspend:suspendPresentation, repaint:repaintPresentation, nativeFrame:hasCurrentNativeFrame, bookmarkFrame:updateBookmarkFrame,
+    suspend:suspendPresentation, repaint:repaintPresentation, warmOpening, nativeFrame:hasCurrentNativeFrame, bookmarkFrame:updateBookmarkFrame,
     bookmarkPoseKeys, state:viewState
   };
 }

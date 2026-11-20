@@ -132,6 +132,8 @@ impl Flyout{
   }
   settle(call(&idle,"idle",&[])?).await?;
   if stale(&self)||!has_page(&self)?{return Ok(JsValue::FALSE);}
+  // The opening's own meshes once, hidden by the draw below (book_view_host.rs `book_view_warm_opening`).
+  if crate::host::flag(&self.view,"warmOpening"){method(&self.view,"warmOpening",&[])?;}
   // links the page's programs and renders the covered page once
   method(&self.view,"draw",&[&method(&self.view,"getPose",&[])?])?;
   self.ctx.env("markTiming",&[&s("textures-uploaded")])?;
