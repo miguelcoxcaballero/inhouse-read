@@ -123,10 +123,18 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
   // Here each frame interval counts up to the same 100 ms step, and waits that are
   // not frames (timers, promises, watchdogs, idle gaps) count in full: a stuck or
   // waiting close still exhausts the budget, and finishes no sooner on a fast runner.
+  // Script that holds the main thread is app time, not compositor time: the Long
+  // Animation Frames API attributes it, and an interval counts at least the script
+  // run inside it, so a close stalled by its own JavaScript still fails.
   await page.evaluate(id => {
     const result = { clickedAt:null, endedAt:null, closingSeen:false, motionClock:0, samples:[], phases:[], errors:[] }
     const shelf = document.querySelector('.ihr-bookshelf-scene')
     let insertionNode = null, insertionContext = null, frame = 0, stopped = false, lastFrameAt = null
+    const frames = [], scripts = []
+    const loaf = new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) for (const script of entry.scripts) scripts.push([script.startTime, script.startTime + script.duration])
+    })
+    loaf.observe({ type:'long-animation-frame' })
     const painted = node => {
       if (!node?.isConnected) return false
       for (let current = node; current instanceof Element; current = current.parentElement) {
@@ -173,7 +181,7 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
       if (result.clickedAt != null && result.endedAt == null) {
         // The same per-frame step limit as the motions being measured.
         result.motionClock += Math.min(100, now - (lastFrameAt ?? result.clickedAt))
-        lastFrameAt = now
+        lastFrameAt = now; frames.push(now)
       }
       sample(); if (!stopped) frame = requestAnimationFrame(tick)
     }
@@ -186,6 +194,20 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
       result,
       finish() {
         sample(); stopped = true; cancelAnimationFrame(frame); observer.disconnect()
+        for (const entry of loaf.takeRecords()) for (const script of entry.scripts) scripts.push([script.startTime, script.startTime + script.duration])
+        loaf.disconnect()
+        if (result.clickedAt != null && result.endedAt != null) {
+          // Final close clock: each frame interval counts up to the 100 ms motion step,
+          // or the script that ran inside it when that is longer.
+          const marks = [result.clickedAt, ...frames.filter(at => at < result.endedAt), result.endedAt]
+          let clock = 0, scriptHeld = 0
+          for (let i = 1; i < marks.length; i++) {
+            const from = marks[i - 1], to = marks[i]
+            const held = scripts.reduce((sum, [start, end]) => sum + Math.max(0, Math.min(end, to) - Math.max(start, from)), 0)
+            clock += Math.max(Math.min(100, to - from), held); scriptHeld += held
+          }
+          result.motionClock = clock; result.scriptHeld = scriptHeld
+        }
         document.removeEventListener('click', click, true)
         return { ...result, final:{
           roomCount:document.querySelectorAll('.ihr-bookshelf-native-room-canvas').length,
