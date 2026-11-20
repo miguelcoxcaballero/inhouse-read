@@ -1,3 +1,10 @@
+# Entrega 1.8.7 (tanda integ-bar-22): memoria del catálogo y Drive
+
+Ramas sobre la 1.8.6: ready/perf-memory-2 (1eab4d12), ready/ci-reds-7 (2ab27624). Sin bloques de migración; barra estimada 77,84 % Rust, 771 KB de JS.
+
+- Memoria 2: los estudios del catálogo (rust-ui/src/catalog_studio.rs) encogen sus búferes 8 s después de quedar inactivos y redibujan en la misma pulsación al volver (catalog_camera.rs, CatalogPreviewFrame::forget). Asignador WebGL 89,0 -> 63,2 MB; GPU retenida 15 s tras cerrar +48,5 -> +32,5 MB. Coste: reabrir 4-15 ms más en SwiftShader, sin fotogramas en blanco.
+- CI 7: Core::run_sync (rust-ui/src/library_backup.rs) conserva un libro restaurado mientras la sincronización aplicaba su retirada (library_remove_from_shelf con ifAbsent); live-room-sync:103 mide en el reloj de fotogramas.
+
 # Entrega 1.8.6: ci-reds-6
 
 Rama sobre la 1.8.5: ready/ci-reds-6 (0f6f6598). Sin bloques de migración.

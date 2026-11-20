@@ -1,3 +1,9 @@
+# 1.8.7 — tanda integ-bar-22
+
+- Unitarias: 0 fallos (9.497 pasan). Capturas: 26 estados contra la 1.8.4, 15 idénticos bit a bit, máximo 1/255.
+- Navegador en local, todos los specs menos neural-voice*, supertonic, natural-voice y neural-page-follow (21 tandas): 549 pasan y 3 fallan. bookshelf-resource-reuse:125 pasa a solas; cover-editor:206 (límite de 900 ms en reloj de pared, 932-1572 ms en esta máquina; ya fallaba en tandas anteriores y pasa en CI); shelf-light-effect:7 inestable conocido (espera de 8 s; falló también antes de la 1.8.x), 5 de 5 a solas.
+- Sin verificar: teléfono real, WebView de Android.
+
 # 1.8.6 — ci-reds-6
 
 - Unitarias: 0 fallos (9.495). Navegador en local: smoke, animation-continuity, live-room*, native-*, shelf-*, lamp-* y plant-catalog, 74 pasan y 0 fallan. Con carga (3 bucles en 4 núcleos): live-room-stability y live-room-sync 6 de 6 (antes 0 de 3 y 1 de 3).

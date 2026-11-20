@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.8.7 — Menos memoria en el catálogo y arreglo de Drive
+
+El catálogo de muebles suelta su memoria de dibujo 8 s después de cerrarlo
+(unos 26 MB menos en el navegador) y al reabrirlo se ve igual, sin fotogramas
+en blanco. Si sacabas un libro de la papelera mientras se sincronizaba Drive,
+la sincronización podía volver a quitarlo de la estantería; ya no.
+
 ## 1.8.6 — Sala compartida sin repintados de más
 
 En una sala compartida, cuando otro dispositivo se desconectaba, la estantería
