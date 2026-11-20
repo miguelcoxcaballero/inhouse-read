@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.8.9 — Sacar libros sin tirones
+
+Al tocar el lomo de un libro, el lienzo del libro que sale se prepara una
+sola vez y a su tamaño final, en el mismo toque; el primer fotograma de la
+salida ya no espera a la GPU (antes 24-370 ms, ahora unos 2 ms). Se ve
+exactamente igual.
+
 ## 1.8.8 — Portada que se abre sin carga extra
 
 Al abrir la portada de un libro sacado de la estantería, la textura de las

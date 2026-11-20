@@ -1,3 +1,9 @@
+# 1.8.9 — tanda integ-bar-24
+
+- Unitarias: 0 fallos (9.498 pasan). Capturas: 26 estados contra la 1.8.4, 15 idénticos bit a bit, máximo 1/255.
+- Navegador en local (bookshelf-*, book-*, animation-continuity, plant-catalog, native-*, shelf-*): 103 pasan, 0 fallan.
+- Sin verificar: teléfono real, WebView de Android.
+
 # 1.8.8 — tanda integ-bar-23
 
 - Unitarias: 0 fallos (9.497). Capturas: 24 estados contra la 1.8.4, 14 idénticos bit a bit, máximo 1/255.

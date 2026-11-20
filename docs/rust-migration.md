@@ -1,3 +1,11 @@
+# Entrega 1.8.9 (tanda integ-bar-24): salida del libro
+
+Rama sobre la 1.8.8: ready/perf-pullout-1 (520a4329). Sin bloques de migración; barra estimada 77,83 % Rust, 773 KB de JS.
+
+- reveal (rust-ui/src/bookshelf/flyout.rs) arranca primero la salida, que reserva su ventana, y después pinta la pose inicial, oculta el lomo en reposo y enfoca el diálogo en la misma tarea; view.restartMotion() (book_view_host.rs, book_view_motion.rs, book_sampler::restart) reinicia el reloj tras ese pintado. El búfer del lienzo se dimensiona una vez, en el toque. Primer fotograma: 2 redimensionados -> 0; script 24-29 -> 1,4-2,1 ms (libro sin abrir) y 332-370 -> 1,2-1,7 ms (libro ya leído), dpr 3, WebGL por software.
+- bookshelf-scene.js reutiliza el impacto del rayo de una pulsación táctil entre los oyentes del mismo evento: un raycast menos por toque (pointerdown 62-67 -> 50-52 ms).
+- Nueva prueba tests/e2e/book-pullout-first-frame.spec.mjs. Pendiente en el toque: subidas de texturas (~30 ms), modelo levantado (~20 ms), sonido (~10 ms).
+
 # Entrega 1.8.8 (tanda integ-bar-23): apertura de la portada
 
 Rama sobre la 1.8.7: ready/perf-frame-2 (68e68dbf). Sin bloques de migración.
