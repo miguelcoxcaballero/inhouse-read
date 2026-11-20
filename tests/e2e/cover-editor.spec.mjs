@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
+import { watchFrames, waitOnFrameClock, frameClockSince } from './helpers/frame-clock.mjs'
 
 if (process.env.IHR_TEST_URL) test.use({ baseURL: process.env.IHR_TEST_URL })
 
@@ -206,6 +207,7 @@ for(const colors of [['#2350b5'],['#2350b5','#fffaf0']]) test(`relieve: muestra 
 test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   await page.setViewportSize({ width: 390, height: 844 })
+  await watchFrames(page)
   const errors = await openShelfEditor(page)
   await enterCover(page)
   const input = await page.context().newCDPSession(page)
@@ -254,10 +256,21 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   await expect.poll(() => inputDelivered, { timeout: 8000 }).toBe(true)
   // Default checks the sub-second return. A software-GL observation profile
   // can extend its deadline without changing the 240 ms animation contract.
+  // The return is a 240 ms motion that advances at most 100 ms per animation
+  // frame (rust-core/src/book_motion.rs), and the pointerdown starts it in the
+  // same dispatch. Headless software GL composites late, so frames there come
+  // 0.1-0.5 s apart with the page idle: the deadline is kept on the page's
+  // frame clock (helpers/frame-clock.mjs: each frame gap counts up to 100 ms,
+  // script in full), where an ignored gesture still fails.
   const interruptDeadline = Number(process.env.COVER_EDITOR_INTERRUPT_TIMEOUT_MS || 900)
-  await page.waitForFunction(() => window.coverInterruption.returnedAt !== null, undefined, { polling: 'raf', timeout: interruptDeadline })
+  await waitOnFrameClock([page], () => page.evaluate(() => window.coverInterruption.returnedAt !== null), interruptDeadline, 'the cover back at rest after the gesture')
   await page.waitForTimeout(500)
-  const interruption = await page.evaluate(() => window.finishCoverInterruption())
+  const interruption = await page.evaluate(() => {
+    const record = window.finishCoverInterruption()
+    // Epoch times for the frame clock, next to the page's own.
+    record.epoch = { gesture: record.gesture && performance.timeOrigin + record.gesture.time, returned: record.returnedAt === null ? null : performance.timeOrigin + record.returnedAt }
+    return record
+  })
   await testInfo.attach('cover-interruption', { body: JSON.stringify(interruption, null, 2), contentType: 'application/json' })
   expect(interruption.gesture?.isTrusted).toBe(true)
   expect(Math.abs(interruption.gesture.angle)).toBeGreaterThan(3)
@@ -269,7 +282,8 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   expect(lobes[0]).toBe(1)
   expect(lobes.length).toBeLessThanOrEqual(2)
   expect(interruption.returnedAt).toBeGreaterThan(interruption.gesture.time)
-  expect(interruption.returnedAt - interruption.gesture.time).toBeLessThanOrEqual(interruptDeadline)
+  const returnClock = await frameClockSince([page], interruption.epoch.gesture, interruption.epoch.returned)
+  expect(returnClock, `back at rest ${Math.round(returnClock)} ms of frame clock after the gesture (${Math.round(interruption.returnedAt - interruption.gesture.time)} ms wall)`).toBeLessThanOrEqual(interruptDeadline)
   // A cancellation returns monotonically to rest; another oscillation or a
   // natural finish after the remaining cycles does not satisfy this contract.
   let previousAngle = Math.abs(interruption.gesture.angle)

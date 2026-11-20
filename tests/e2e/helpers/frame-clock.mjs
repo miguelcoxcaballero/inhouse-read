@@ -46,9 +46,10 @@ function overlap(a, b) {
   return merge(out)
 }
 
-/** Milliseconds on the watched pages' clock since `since` (a Date.now() value). */
-export async function frameClockSince(pages, since) {
-  const now = Date.now(), stalls = [], scripts = []
+/** Milliseconds on the watched pages' clock since `since` (a Date.now() value), until now or until `until`
+ * (a Date.now() value in the past, for a span the pages already timed). */
+export async function frameClockSince(pages, since, until = Date.now()) {
+  const now = until, stalls = [], scripts = []
   for (const page of pages) {
     const { frames, spans } = await page.evaluate(since => {
       const clock = globalThis.__frameClock
