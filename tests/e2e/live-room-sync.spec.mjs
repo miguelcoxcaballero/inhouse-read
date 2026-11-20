@@ -7,6 +7,7 @@ const row=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('inhouse-read-
 const book=page=>page.evaluate(async()=>{const db=await new Promise(resolve=>{const r=indexedDB.open('inhouse-read');r.onsuccess=()=>resolve(r.result)});const result=await new Promise(resolve=>{const r=db.transaction('books').objectStore('books').getAll();r.onsuccess=()=>resolve(r.result[0])});db.close();return result&&{id:result.id,driveFileId:result.driveFileId,shelfVisualId:result.shelfVisualId,title:result.title,shelfPosition:result.shelfPosition,spineColorOverride:result.spineColorOverride,progressFraction:result.progressFraction,locator:result.locator,progressUpdatedAt:result.progressUpdatedAt}});
 
 import {roomProbe} from './helpers/live-room-probe.mjs';
+import {watchFrames,waitOnFrameClock} from './helpers/frame-clock.mjs';
 
 test('mobile and desktop stream held-book movement and converge poses and reading progress while open',async({browser},info)=>{
  test.setTimeout(240000);let delayLibrary=false,libraryWrites=0,pendingWrites=0;const drive=driveServer({beforeUpload:async metadata=>{if(metadata.name?.startsWith('library-v1-')){libraryWrites++;pendingWrites++;try{if(delayLibrary)await new Promise(r=>setTimeout(r,5000))}finally{pendingWrites--}}}}),contexts=[],errors=[];
@@ -34,11 +35,14 @@ test('mobile and desktop stream held-book movement and converge poses and readin
   expect(Math.abs(Number(await b.locator('.ihr-spine').getAttribute('data-scene-lean')))).toBeLessThan(.01);
   expect(await b.locator('.ihr-bookshelf-scene').getAttribute('data-snapshot-render-count')).toBe(stillCount);
   await expect(a.locator('.ihr-spine')).toHaveClass(/is-lifted/);
+  await watchFrames(a);await watchFrames(b);
   const heldBefore=await b.locator('.ihr-spine').boundingBox();
   const direction=initial[7]<0?-1:1,stamp=await a.evaluate(()=>Date.now()/1000);
   for(let i=1;i<=8;i++)await touch.send('Input.dispatchTouchEvent',{type:'touchMove',timestamp:stamp+i*.016,touchPoints:[{x:point.x+direction*i*3,y:point.y,id:1}]});
   const liveStarted=Date.now();
-  try { await expect.poll(async()=>b.locator('.ihr-spine').boundingBox().then(p=>Math.hypot(p.x-heldBefore.x,p.y-heldBefore.y)),{timeout:3000,intervals:[30,50,100]}).toBeGreaterThan(3) }
+  // The held book is read, sent and drawn once per frame on each device: its 3 s latency budget is on both
+  // pages' frame clock (helpers/frame-clock.mjs), which is the wall clock unless software GL stalls frames.
+  try { await waitOnFrameClock([a,b],()=>b.locator('.ihr-spine').boundingBox().then(p=>Math.hypot(p.x-heldBefore.x,p.y-heldBefore.y)>3),3000,'held movement on the other device') }
   catch(error){
     for(const [name,page]of [['source',a],['target',b]])await info.attach(name+'-motion-state',{body:JSON.stringify(await page.evaluate(()=>({node:document.querySelector('.ihr-spine')?.className,rect:document.querySelector('.ihr-spine')?.getBoundingClientRect().toJSON(),sent:globalThis.__roomSentMotions?.slice(-6),received:globalThis.__roomMotionPackets?.slice(-6),canvas:document.querySelector('.ihr-bookshelf-scene')?.dataset}))),contentType:'application/json'});
     throw error;

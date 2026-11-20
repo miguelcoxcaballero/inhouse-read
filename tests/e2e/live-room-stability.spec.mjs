@@ -3,6 +3,7 @@ import {test,expect} from '@playwright/test';
 import {driveServer,SYNCED_FIRST_SHELF} from './helpers/drive-server.mjs';
 import {seedShelf,quietShelf,visibleMiddleBookPoint} from './helpers/reader-layout-fixture.mjs';
 import {roomProbe} from './helpers/live-room-probe.mjs';
+import {watchFrames,waitOnFrameClock} from './helpers/frame-clock.mjs';
 const URL=process.env.IHR_TEST_URL||'/inhouse-read/';
 async function state(page){return page.evaluate(async()=>{
  const db=await new Promise(resolve=>{const r=indexedDB.open('inhouse-read');r.onsuccess=()=>resolve(r.result)});
@@ -29,8 +30,11 @@ test('full mobile room stays identical in Chrome across OAuth clients, live gest
  try{
   const mobile=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:1});contexts.push(mobile);a=await mobile.newPage();await roomProbe(a);await paintedRoomProbe(a);a.on('pageerror',e=>errors.push(e.message));
   await seedShelf(a);await drive.connect(mobile);await a.reload();await quietShelf(a.locator('.ihr-bookshelf-scene'));await expect.poll(()=>drive.manifests().some(m=>m.books.length===6&&m.settings['inhouse-read-shelf-physics-v1']),{timeout:30000}).toBe(true);
-  const desktop=await browser.newContext({serviceWorkers:'block',viewport:{width:1240,height:900},deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);b=await desktop.newPage();await roomProbe(b);await paintedRoomProbe(b);b.on('pageerror',e=>errors.push(e.message));await b.goto(URL);
-  await expect(b.locator('.ihr-spine')).toHaveCount(6,{timeout:SYNCED_FIRST_SHELF});await expect(b.locator('.ihr-plant')).toHaveCount(1);await expect(b.locator('.ihr-lamp')).toHaveCount(1);
+  const desktop=await browser.newContext({serviceWorkers:'block',viewport:{width:1240,height:900},deviceScaleFactor:1});contexts.push(desktop);await drive.connect(desktop);b=await desktop.newPage();await roomProbe(b);await paintedRoomProbe(b);await watchFrames(b);b.on('pageerror',e=>errors.push(e.message));await b.goto(URL);
+  // The synced first shelf is held behind the restored view's turn (stepped per frame) and built in frame
+  // callbacks; its budget is on the page's frame clock (helpers/frame-clock.mjs), not the runner's GPU wait.
+  await waitOnFrameClock([b],async()=>await b.locator('.ihr-spine').count()===6,SYNCED_FIRST_SHELF,'six synced spines on the second client');
+  await expect(b.locator('.ihr-spine')).toHaveCount(6);await expect(b.locator('.ihr-plant')).toHaveCount(1);await expect(b.locator('.ihr-lamp')).toHaveCount(1);
   await quietShelf(a.locator('.ihr-bookshelf-scene'));await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await info.attach('initial-painted-pair',{body:JSON.stringify({a:await paintedRoom(a),b:await paintedRoom(b)}),contentType:'application/json'});
   await info.attach('initial-room-pair',{body:JSON.stringify({a:await state(a),b:await state(b)}),contentType:'application/json'});
