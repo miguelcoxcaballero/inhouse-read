@@ -1,12 +1,14 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
+import { watchFrames, waitOnFrameClock } from './helpers/frame-clock.mjs';
 
 test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceScaleFactor:1 });
 
 test('la luz cálida ilumina las superficies de nogal y de la BAGGEBO abierta, y la escena descansa', async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await watchFrames(page);
   await page.goto(process.env.IHR_TEST_URL || '/');
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
@@ -30,6 +32,30 @@ test('la luz cálida ilumina las superficies de nogal y de la BAGGEBO abierta, y
     { key:'lamp:tripod', lampId:'tripod', shelf:2, x:.72 }
   ];
   const scene = page.locator('.ihr-bookshelf-scene');
+  // A reload rebuilds the room. The lamps' lights belong to its first painted
+  // frame: the frame that writes data-render-count 1 also writes
+  // data-active-lamp-lights, so a lamp lit late shows up as a first frame
+  // without it. How long that frame takes is start-up, not lighting: on a
+  // software-GL runner its program links block for 4-10 s (SwiftShader has no
+  // KHR_parallel_shader_compile) and the compositor then asks for no frames for
+  // 5-10 s more with the page idle, so a wall-clock 8 s there timed the runner.
+  // The first painted frame is recorded in the page; the room then settles on
+  // the page's frame clock (helpers/frame-clock.mjs) within the same 8 s.
+  await page.addInitScript(() => {
+    new MutationObserver((records, observer) => {
+      const canvas = document.querySelector('canvas.ihr-bookshelf-scene');
+      if (!canvas?.dataset.renderCount) return;
+      observer.disconnect();
+      window.firstRoomPaint = { renders:canvas.dataset.renderCount, lampLights:canvas.dataset.activeLampLights ?? null };
+    }).observe(document, { subtree:true, childList:true, attributes:true, attributeFilter:['data-render-count'] });
+  });
+  async function firstPaint(lampLights) {
+    await expect.poll(() => page.evaluate(() => window.firstRoomPaint ?? null), { timeout:60_000 }).not.toBeNull();
+    expect(await page.evaluate(() => window.firstRoomPaint)).toEqual({ renders:'1', lampLights });
+    await waitOnFrameClock([page], () => page.evaluate(() => document.querySelector('canvas.ihr-bookshelf-scene').dataset.animating === 'false'),
+      8_000, 'the reloaded room at rest');
+    await expect(scene).toHaveAttribute('data-active-lamp-lights', lampLights);
+  }
   async function warmth() {
     return scene.evaluate(canvas => {
       // An empty receiving surface below the puck, away from its emissive
@@ -51,8 +77,7 @@ test('la luz cálida ilumina las superficies de nogal y de la BAGGEBO abierta, y
       localStorage.setItem('inhouse-read-shelf-lamps', JSON.stringify(lamps));
     }, { shelfType, lamps });
     await page.reload();
-    await expect(scene).toHaveAttribute('data-active-lamp-lights', '3');
-    await expect(scene).toHaveAttribute('data-animating', 'false');
+    await firstPaint('3');
     const warm = await warmth();
     await testInfo.attach(`${shelfType}-warm-receivers`, { body:await page.screenshot(), contentType:'image/png' });
     const renders = await scene.getAttribute('data-snapshot-render-count');
@@ -60,8 +85,7 @@ test('la luz cálida ilumina las superficies de nogal y de la BAGGEBO abierta, y
     expect(await scene.getAttribute('data-snapshot-render-count')).toBe(renders);
     await page.evaluate(() => localStorage.setItem('inhouse-read-shelf-lamps', '[]'));
     await page.reload();
-    await expect(scene).toHaveAttribute('data-active-lamp-lights', '0');
-    await expect(scene).toHaveAttribute('data-animating', 'false');
+    await firstPaint('0');
     expect(warm - await warmth()).toBeGreaterThan(10);
   }
   expect(errors).toEqual([]);
