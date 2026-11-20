@@ -211,7 +211,7 @@ pub fn book_view_create(environment:&JsValue,node:&JsValue,book:&JsValue,style:&
   ("prepareCoverRelief","book_view_prepare_relief"),("setCoverRelief","book_view_set_relief"),("updateEdgeAppearance","book_view_edges"),
   ("updateEditorAppearance","book_view_editor"),("updateBookmark","book_view_bookmark"),("setPageSnapshot","book_view_page_snapshot"),
   ("commitPreparedPage","book_view_commit_page"),("pageTextures","book_view_page_textures"),("uploadPageTexture","book_view_upload_texture"),
-  ("compilePage","book_view_compile_page"),("preparePagePrograms","book_view_prepare_programs"),("hasPageSnapshot","book_view_has_snapshot"),
+  ("compilePage","book_view_compile_page"),("preparePagePrograms","book_view_prepare_programs"),("warmOpening","book_view_warm_opening"),("hasPageSnapshot","book_view_has_snapshot"),
   ("setPageTheme","book_view_page_theme"),("animatePageTheme","book_view_animate_theme"),("getPageTheme","book_view_get_theme"),
   ("getPageBounds","book_view_page_bounds"),("getPose","book_view_pose"),("setBookmarkWithdraw","book_view_withdraw"),
   ("animateCoverOpen","book_view_open"),("animateCoverClose","book_view_close"),("animateBookmark","book_view_animate_bookmark"),
@@ -759,6 +759,16 @@ pub fn book_view_declined(_v:&JsValue,resolve:&JsValue){let _=crate::host::call(
 pub fn book_view_still_current(v:&JsValue,current:&JsValue)->R<JsValue>{
  if disposed(v){return Ok(JsValue::FALSE);}
  crate::host::call(current,"current",&[])
+}
+/// `warmOpening()`: the meshes only an open board shows (its inside, the endpaper, the page paper and print, the
+/// leaves already read) are drawn once with the board half open, in idle time, so their buffers, the endpaper's
+/// texture and the driver's first draw with their programs do not land on the opening's first frame. The caller
+/// draws the current pose right after, in the same task: nothing of this draw is ever presented. False when
+/// the board is already open or there is no presented frame to draw over.
+#[wasm_bindgen]
+pub fn book_view_warm_opening(v:&JsValue)->R<bool>{
+ if disposed(v){return Ok(false);}
+ Ok(truthy(&call(&env(v),"warmOpening",&[v])?))
 }
 #[wasm_bindgen]
 pub fn book_view_upload_texture(v:&JsValue,texture:&JsValue)->R<bool>{

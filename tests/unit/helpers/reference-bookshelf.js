@@ -3643,6 +3643,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       await idle();
       if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.warmOpening?.(); // the opening's own meshes once, hidden by the draw below
       view.draw(view.getPose()); // links the page's programs and renders the covered page once
       markTiming('textures-uploaded');
       return true;
