@@ -77,6 +77,51 @@ test('el catálogo conserva tres vistas perezosas, una única página visible y 
   expect(errors).toEqual([]);
 });
 
+test('el catálogo cerrado suelta sus búferes de dibujo y al reabrir dibuja cada vista en la misma pulsación, idéntica',async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = []; page.on('pageerror',error => errors.push(error.message));
+  const trigger = page.getByRole('button',{ name:/Abrir catálogo IKEA/ });
+  const dialog = page.getByTestId('plant-catalog');
+  const tabs = [['Plantas y macetas','.ihr-plant-catalog__drawing:not(.ihr-plant-catalog__shelf-drawing):not(.ihr-plant-catalog__lamp-drawing)'],
+    ['Estanterías','.ihr-plant-catalog__shelf-drawing'],['Iluminación','.ihr-plant-catalog__lamp-drawing']];
+  const shown = {};
+  await trigger.click();
+  for (const [label,selector] of tabs) {
+    await dialog.getByRole('button',{ name:label,exact:true }).click();
+    const drawing = dialog.locator(selector);
+    await expect(drawing).toHaveAttribute('data-preview-active','true');
+    await expect.poll(() => drawing.getAttribute('data-render-count'),{ timeout:30_000 }).not.toBeNull();
+    await page.waitForTimeout(500);
+    shown[label] = { pixels:await drawing.locator('canvas').screenshot(),size:await drawing.locator('canvas').evaluate(canvas => [canvas.width,canvas.height]) };
+  }
+  await dialog.evaluate(node => { window.__catalogWarm = { ...window.__resourceReuse,longTasks:[] }; window.__catalogCanvases = [...node.querySelectorAll('canvas')]; });
+  await dialog.getByRole('button',{ name:'Cerrar catálogo' }).click();
+  await expect(dialog).toBeHidden();
+  const sizes = () => dialog.evaluate(node => [...node.querySelectorAll('canvas')].map(canvas => canvas.width * canvas.height));
+  // Still held for a quick return, then let go.
+  expect((await sizes()).every(area => area > 4)).toBe(true);
+  await expect.poll(async () => (await sizes()).every(area => area <= 4),{ timeout:20_000,intervals:[1000] }).toBe(true);
+  // Reopening (the plants' page) and each other tab draw the full-size view before the click's task ends: no frame shows the shrunk buffer.
+  const activate = (handle,selector) => page.evaluate(([button,selector]) => {
+    const drawing = document.querySelector(selector), before = Number(drawing.dataset.renderCount || 0);
+    button.click();
+    const canvas = drawing.querySelector('canvas');
+    return { drawn:Number(drawing.dataset.renderCount || 0) > before,size:[canvas.width,canvas.height] };
+  },[handle,selector]);
+  for (const [index,[label,selector]] of tabs.entries()) {
+    const button = index ? dialog.getByRole('button',{ name:label,exact:true }) : trigger;
+    expect(await activate(await button.elementHandle(),selector)).toEqual({ drawn:true,size:shown[label].size });
+    await page.waitForTimeout(500);
+    expect((await dialog.locator(selector).locator('canvas').screenshot()).equals(shown[label].pixels),`${label} looks the same`).toBe(true);
+  }
+  const metrics = await dialog.evaluate(node => ({ before:window.__catalogWarm,after:window.__resourceReuse,
+    same:[...node.querySelectorAll('canvas')].every((canvas,index) => canvas === window.__catalogCanvases[index]) }));
+  expect(metrics.same).toBe(true);
+  expect(metrics.after.contexts).toBe(metrics.before.contexts);
+  expect(metrics.after.links).toBe(metrics.before.links);
+  expect(errors).toEqual([]);
+});
+
 test('al cerrar conserva el tomo del handoff, la página PDF real y todas las fases sin reconstruir su canvas',async ({ page },testInfo) => {
   test.setTimeout(120_000);
   const errors = []; page.on('pageerror',error => errors.push(error.message));

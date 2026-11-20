@@ -174,6 +174,8 @@ describe.each(Object.keys(factories))('%s studio against the frozen JavaScript',
       const expected = run(kind, frozen, seed, 80), actual = run(kind, production, seed, 80);
       for (let step = 0; step < expected.length; step++) expect(actual[step], `${kind} seed ${seed} step ${step} ${expected[step][0]}`).toEqual(expected[step]);
       for (const step of actual.slice(1)) for (const [name] of step[2]) if (name in seen) seen[name]++;
+      // A closed studio's idle release (shrinking to one pixel) and the redraw when it reopens were compared too.
+      for (const step of actual.slice(1)) for (const [name, ...args] of step[2]) if (name === 'setSize' && args[0] === 1 && args[1] === 1) seen.shrink = (seen.shrink || 0) + 1;
       // What the lamp's set-up leaves was really in the compared scenes: textures given the renderer's
       // anisotropy, glass that no longer casts, a cone aimed at its target, a bulb, and the stand.
       if (kind === 'lamp') for (const step of actual.slice(1)) for (const row of step[1].graph) {
@@ -188,7 +190,7 @@ describe.each(Object.keys(factories))('%s studio against the frozen JavaScript',
     }
     // Not an empty comparison: models were built, drawn, resized, replaced (and tinted or recoloured).
     console.log(kind, JSON.stringify(seen)); expect(seen.render).toBeGreaterThan(100); expect(seen.create).toBeGreaterThan(40);
-    expect(seen['model.dispose']).toBeGreaterThan(20); expect(seen.setSize).toBeGreaterThan(20);
+    expect(seen['model.dispose']).toBeGreaterThan(20); expect(seen.setSize).toBeGreaterThan(20); expect(seen.shrink).toBeGreaterThan(5);
     if (kind === 'lamp') expect(seen.setTint).toBeGreaterThan(40);
     if (kind === 'lamp') { console.log(JSON.stringify(set)); for (const count of Object.values(set)) expect(count).toBeGreaterThan(20); }
     if (kind === 'plant') expect(seen.recolour).toBeGreaterThan(5);

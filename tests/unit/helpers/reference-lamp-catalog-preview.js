@@ -1,5 +1,6 @@
 // Frozen original from before the catalogue studios' loop, lights and stand moved to Rust
 // (rust-ui/src/catalog_studio.rs). Do not update to match the Rust implementation.
+import { RELEASE_MS, shrinkStudio } from './reference-catalog-release.js';
 import { createCatalogPreviewFrame } from '../../../src/js/catalog-preview-frame.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -17,7 +18,10 @@ await ensureAreaLights().catch(() => {});
 /** The actual shelf lamp, with its own warm light and reflected studio lighting. */
 export function createLampCatalogPreview(host) {
   let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, active = true, selected;
+  let keyLight;
   const framing = createCatalogPreviewFrame();
+  let idle = 0, released = false;
+  const releaseIdle = () => { idle = 0; if (disposed || active || !renderer || released) return; released = shrinkStudio(renderer, framing, keyLight); };
   // The chosen lamp is built after its button has painted; until its shaders
   // are linked (in parallel) the canvas keeps showing the previous picture.
   // The light's colour temperature eases in ~300 ms; only colours change.
@@ -169,7 +173,7 @@ export function createLampCatalogPreview(host) {
     environment = pmrem.fromScene(room,.035); room.dispose(); pmrem.dispose();
     scene.environment = environment.texture; scene.environmentIntensity = .55;
     scene.add(new THREE.HemisphereLight('#fffaf4','#767988',.72));
-    const key = new THREE.DirectionalLight('#fff7ee',1.65); key.position.set(-350,600,550);
+    const key = keyLight = new THREE.DirectionalLight('#fff7ee',1.65); key.position.set(-350,600,550);
     key.castShadow = true; key.shadow.mapSize.set(1024,1024);
     Object.assign(key.shadow.camera,{ left:-500,right:500,top:500,bottom:-500,near:1,far:1700 });
     key.shadow.bias = -.0003; key.shadow.normalBias = .3; scene.add(key);
@@ -186,8 +190,12 @@ export function createLampCatalogPreview(host) {
       host.dataset.previewActive = String(next);
       if (active === next) return;
       active = next;
-      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
-      else invalidate();
+      // Amended (reference-catalog-release.js): closed, the buffers go after a while; reopened, a released studio draws at once.
+      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; if (renderer && !idle) idle = setTimeout(releaseIdle, RELEASE_MS); return; }
+      if (idle) clearTimeout(idle); idle = 0;
+      if (!released) { invalidate(); return; } // redraw at the current visible size even with the same selection
+      released = false; dirty = true; render();
+      if (dirty) request();
     },
     update({ lampId,kelvin = DEFAULT_LAMP_KELVIN }) {
       const lamp = getCatalogLamp(lampId);
@@ -205,6 +213,7 @@ export function createLampCatalogPreview(host) {
       if (disposed) return; disposed = true; framing.dispose();
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);
+      if (idle) clearTimeout(idle);
       cancelLink?.(); observer?.disconnect(); removeModel();
       scene.traverse(object => { if (object.isLight) object.dispose(); });
       environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();

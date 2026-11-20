@@ -15,6 +15,8 @@ type R<T> = Result<T, JsValue>;
 const PLANT: f64 = 0.0;
 const SHELF: f64 = 1.0;
 const LAMP: f64 = 2.0;
+/// How long a closed studio keeps its frame-sized drawing buffer and its key light's shadow map.
+const RELEASE_MS: f64 = 8000.0;
 
 fn kind(state: &JsValue) -> f64 { get(state, "kind").as_f64().unwrap_or(-1.0) }
 fn flag(state: &JsValue, key: &str) -> bool { crate::host::flag(state, key) }
@@ -37,11 +39,14 @@ pub fn studio_open(kind: f64, host: JsValue, element: JsValue, drawable: bool, e
         ("frame", 0.0.into()), ("building", 0.0.into()), ("disposed", false.into()), ("active", true.into()), ("dirty", true.into()),
         ("pending", JsValue::NULL), ("shown", false.into()), ("incoming", JsValue::NULL), ("linking", JsValue::NULL),
         ("model", JsValue::NULL), ("cancelLink", JsValue::NULL), ("selected", JsValue::UNDEFINED),
-        ("selectionKey", JsValue::UNDEFINED), ("shapeKey", JsValue::UNDEFINED)] { set(&state, key, &value)?; }
+        ("selectionKey", JsValue::UNDEFINED), ("shapeKey", JsValue::UNDEFINED), ("idle", 0.0.into()), ("released", false.into())] { set(&state, key, &value)?; }
     for name in ["render", "build", "visibility", "invalidate", "reveal", "swap"] {
         let function = read(&exports, name)?;
         set(&state, name, &bound(&function, &state)?)?;
     }
+    // A host that can shrink its drawing buffer hands over the idle release.
+    let release = read(&exports, "release")?;
+    if !absent(&release) { set(&state, "release", &bound(&release, &state)?)?; }
     method(&get(&global(), "document"), "addEventListener", &[&"visibilitychange".into(), &get(&state, "visibility")])?;
     Ok(state)
 }
@@ -159,7 +164,9 @@ pub fn studio_visibility(state: &JsValue) -> R<()> {
     Ok(())
 }
 
-/// The catalogue page holding the studio opens or closes; reopening redraws at the current size.
+/// The catalogue page holding the studio opens or closes; reopening redraws at the current size. A closed
+/// studio lets its large buffers go after `RELEASE_MS` (studio_release_idle); reopening a released one draws
+/// at once, in the same task, so no frame shows the one-pixel buffer.
 #[wasm_bindgen]
 pub fn studio_set_active(state: &JsValue, value: &JsValue) -> R<()> {
     if flag(state, "disposed") { return Ok(()); }
@@ -171,8 +178,30 @@ pub fn studio_set_active(state: &JsValue, value: &JsValue) -> R<()> {
         let frame = get(state, "frame");
         if truthy(&frame) { cancel_frame(&frame)?; }
         put(state, "frame", 0.0)?;
-    } else { studio_invalidate(state)?; }
+        let release = get(state, "release");
+        if flag(state, "drawable") && !absent(&release) && !flag(state, "idle") { put(state, "idle", set_timeout(&release, RELEASE_MS)?)?; }
+        return Ok(());
+    }
+    let idle = get(state, "idle");
+    if truthy(&idle) { clear_timeout(&idle)?; }
+    put(state, "idle", 0.0)?;
+    if !flag(state, "released") { return studio_invalidate(state); }
+    put(state, "released", false)?;
+    put(state, "dirty", true)?;
+    studio_render(state)?;
+    // Nothing to show yet, or the page is hidden: the next frame or the shown model draws.
+    if flag(state, "dirty") { studio_request(state)?; }
     Ok(())
+}
+
+/// A studio still closed `RELEASE_MS` after it closed asks its host to shrink its drawing buffer and let its
+/// shadow map go; programs, geometry, textures and the studio environment stay for the next opening.
+#[wasm_bindgen]
+pub fn studio_release_idle(state: &JsValue) -> R<()> {
+    put(state, "idle", 0.0)?;
+    if flag(state, "disposed") || flag(state, "active") || !flag(state, "drawable") || flag(state, "released") { return Ok(()); }
+    let shrunk = crate::host::method_opt(&host(state), "shrink", &[])?.is_some_and(|value| truthy(&value));
+    put(state, "released", shrunk)
 }
 
 /// A new plant selection: recolouring the shown plant needs no rebuild; anything else is built anew.
@@ -264,6 +293,8 @@ pub fn studio_dispose(state: &JsValue) -> R<()> {
     if truthy(&frame) { cancel_frame(&frame)?; }
     let building = get(state, "building");
     if truthy(&building) { clear_timeout(&building)?; }
+    let idle = get(state, "idle");
+    if truthy(&idle) { clear_timeout(&idle)?; }
     call_optional(&get(state, "cancelLink"))?;
     let incoming = get(state, "incoming");
     if !absent(&incoming) { method(&get(&incoming, "userData"), "dispose", &[])?; }
@@ -499,14 +530,15 @@ pub fn studio_open_three(kind: f64, host: JsValue, adapter: JsValue, three: JsVa
     // record (1), the plant's builder (2), the cabinet's rig (3).
     let plant = read(&adapter, "createShelfPlant")?;
     let own = if !absent(&lamp) { 1.0 } else if !absent(&plant) { 2.0 } else if !absent(&rig) { 3.0 } else { 0.0 };
-    for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish")] {
+    for (name, export) in [("link", "studio_three_link"), ("draw", "studio_three_draw"), ("unframe", "studio_three_unframe"), ("finish", "studio_three_finish"),
+        ("shrink", "studio_three_shrink")] {
         let bound = if name == "draw" { method(&read(&exports, export)?, "bind", &[&JsValue::UNDEFINED, &record, &own.into()])? }
             else { bind_export(&exports, export, &record)? };
         set(&studio, name, &bound)?;
     }
     let callbacks = field_object(&[("render", read(&exports, "studio_render")?), ("build", read(&exports, "studio_build")?),
         ("visibility", read(&exports, "studio_visibility")?), ("invalidate", read(&exports, "studio_invalidate")?),
-        ("reveal", read(&exports, "studio_shown")?), ("swap", read(&exports, "studio_swap")?)])?;
+        ("reveal", read(&exports, "studio_shown")?), ("swap", read(&exports, "studio_swap")?), ("release", read(&exports, "studio_release_idle")?)])?;
     let state = studio_open(kind, studio, host.clone(), truthy(&renderer), callbacks)?;
     set(&record, "state", &state)?;
     if !absent(&lamp) { set(&record, "lamp", &lamp)?; crate::catalog_lamp::opened(&record, &lamp, &state)?; }
@@ -576,6 +608,29 @@ pub fn studio_three_draw(record: &JsValue, own: u32, model: JsValue) -> R<()> {
     let count = read(&dataset, "renderCount")?;
     let count = if truthy(&count) { crate::host::num(&count) } else { 0.0 };
     set(&dataset, "renderCount", &crate::host::number_string(count + 1.0).into())
+}
+
+/// The closed studio's drawing buffer shrinks to one pixel and its key light's shadow map goes: its framing
+/// forgets the size, so the next draw sizes the buffer again before rendering, and the shadow is drawn again
+/// once (the stationary casters give the same map). Whether it shrank.
+#[wasm_bindgen]
+pub fn studio_three_shrink(record: &JsValue) -> R<bool> {
+    let renderer = get(record, "renderer");
+    if absent(&renderer) { return Ok(false); }
+    let canvas = read(&renderer, "domElement")?;
+    if crate::host::num(&read(&canvas, "width")?) * crate::host::num(&read(&canvas, "height")?) <= 4.0 { return Ok(false); }
+    let parts = get(record, "parts");
+    method(&read(&parts, "framing")?, "forget", &[])?;
+    method(&renderer, "setSize", &[&1.0.into(), &1.0.into(), &false.into()])?;
+    let key = read(&read(&parts, "lights")?, "key")?;
+    let shadow = if absent(&key) { JsValue::UNDEFINED } else { read(&key, "shadow")? };
+    let map = if absent(&shadow) { JsValue::UNDEFINED } else { read(&shadow, "map")? };
+    if !absent(&map) {
+        method(&map, "dispose", &[])?;
+        set(&shadow, "map", &JsValue::NULL)?;
+        set(&read(&renderer, "shadowMap")?, "needsUpdate", &true.into())?;
+    }
+    Ok(true)
 }
 
 /// The preview's framing is released.

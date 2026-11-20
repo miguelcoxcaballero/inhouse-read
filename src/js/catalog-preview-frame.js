@@ -11,6 +11,7 @@ export function createCatalogPreviewFrame() {
       camera.updateProjectionMatrix();
       if (next[6]) renderer.setSize(next[0],next[1],false);
     },
+    forget:() => frame.forget(),
     dispose:() => frame.free()
   };
 }

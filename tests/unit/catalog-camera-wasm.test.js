@@ -116,4 +116,16 @@ describe('real Rust catalogue camera', () => {
     }
     expect(rust.shelf_live_handles()).toBe(baseline);
   });
+
+  it('sizes the drawing buffer again after a closed studio shrank it', () => {
+    const camera=new THREE.OrthographicCamera(), renderer={setSize:vi.fn()}, frame=createCatalogPreviewFrame();
+    try {
+      frame.apply(camera,renderer,{width:200,height:300},{x:60,y:100},1.14);
+      frame.apply(camera,renderer,{width:200,height:300},{x:60,y:100},1.14);
+      expect(renderer.setSize).toHaveBeenCalledTimes(1);
+      frame.forget();
+      frame.apply(camera,renderer,{width:200,height:300},{x:60,y:100},1.14);
+      expect(renderer.setSize.mock.calls).toEqual([[200,300,false],[200,300,false]]);
+    } finally { frame.dispose(); }
+  });
 });

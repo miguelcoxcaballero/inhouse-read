@@ -1,5 +1,6 @@
 // Frozen original from before the catalogue studios' loop, lights and stand moved to Rust
 // (rust-ui/src/catalog_studio.rs). Do not update to match the Rust implementation.
+import { RELEASE_MS, shrinkStudio } from './reference-catalog-release.js';
 import { createCatalogPreviewFrame } from '../../../src/js/catalog-preview-frame.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -13,7 +14,10 @@ import { configureShaderDiagnostics } from '../../../src/js/shader-diagnostics.j
 export function createPlantCatalogPreview(host) {
   let renderer, environment, model, observer, frame = 0, disposed = false, active = true;
   let modelSize = null;
+  let keyLight;
   const framing = createCatalogPreviewFrame();
+  let idle = 0, released = false;
+  const releaseIdle = () => { idle = 0; if (disposed || active || !renderer || released) return; released = shrinkStudio(renderer, framing, keyLight); };
   let pending = null, building = 0, incoming = null, cancelLink = null, dirty = true;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-80,80,90,-90,1,1000);
@@ -75,7 +79,7 @@ export function createPlantCatalogPreview(host) {
     environment = pmrem.fromScene(room,.04); room.dispose(); pmrem.dispose();
     scene.environment = environment.texture; scene.environmentIntensity = .65;
     scene.add(new THREE.HemisphereLight('#fff8ee','#817c70',1.8));
-    const key = new THREE.DirectionalLight('#fff4e3',3); key.position.set(-90,140,180); scene.add(key);
+    const key = keyLight = new THREE.DirectionalLight('#fff4e3',3); key.position.set(-90,140,180); scene.add(key);
     const fill = new THREE.DirectionalLight('#e7efff',1.2); fill.position.set(100,40,140); scene.add(fill);
     host.replaceChildren(renderer.domElement); host.dataset.renderer = 'three-mesh';
     observer = new ResizeObserver(invalidate); observer.observe(host);
@@ -91,8 +95,12 @@ export function createPlantCatalogPreview(host) {
       host.dataset.previewActive = String(next);
       if (active === next) return;
       active = next;
-      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
-      else invalidate(); // redraw at the current visible size even with the same selection
+      // Amended (reference-catalog-release.js): closed, the buffers go after a while; reopened, a released studio draws at once.
+      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; if (renderer && !idle) idle = setTimeout(releaseIdle, RELEASE_MS); return; }
+      if (idle) clearTimeout(idle); idle = 0;
+      if (!released) { invalidate(); return; } // redraw at the current visible size even with the same selection
+      released = false; dirty = true; render();
+      if (dirty) request();
     },
     update(selection) {
       const key = JSON.stringify(selection);
@@ -118,6 +126,7 @@ export function createPlantCatalogPreview(host) {
       if (disposed) return; disposed = true; framing.dispose();
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);
+      if (idle) clearTimeout(idle);
       cancelLink?.(); incoming?.userData.dispose();
       observer?.disconnect(); model?.userData.dispose();
       environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();

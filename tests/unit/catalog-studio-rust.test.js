@@ -120,6 +120,7 @@ function run(open, { kind, fail = -1, webgl = true, ratio, variant = 0, width = 
         () => studio.draw(world.node('model')),
         () => { host.clientWidth = 0; studio.draw(world.node('model')) },
         () => { for (const listener of world.ctx.listeners) listener({ preventDefault:() => world.ctx.log.push(['preventDefault']) }) },
+        () => world.ctx.log.push(['shrink', studio.shrink()]),
         () => studio.unframe(),
         () => studio.finish(world.node('model'))
       ]

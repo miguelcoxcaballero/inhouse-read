@@ -72,4 +72,6 @@ impl CatalogPreviewFrame {
         self.output.copy_from(&[width,height,-half*aspect,half*aspect,half,-half,if resize{1.0}else{0.0}]);
         self.output.clone().into()
     }
+    /// The drawing buffer was shrunk while closed: the next update reframes and resizes it.
+    pub fn forget(&mut self) { self.last=None; }
 }

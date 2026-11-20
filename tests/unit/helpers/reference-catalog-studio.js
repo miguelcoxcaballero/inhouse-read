@@ -2,6 +2,7 @@
 // rust-ui/src/catalog_studio.rs (studio_open_three). The three namespace, RoomEnvironment, the other modules'
 // functions and the shelf module are read from `env`, so the differential test can hand both the same
 // recording three.
+import { RELEASE_MS, shrinkStudio } from './reference-catalog-release.js';
 export function openStudio(env, kind, host, adapter) {
   const { THREE, RoomEnvironment, createCatalogPreviewFrame, retainPrograms, whenProgramsReady, configureShaderDiagnostics, needRustShelf } = env;
   const shelf = needRustShelf(), plan = shelf.studio_plan(kind);
@@ -70,11 +71,13 @@ export function openStudio(env, kind, host, adapter) {
       parts.observer?.disconnect(); adapter.release(model, parts);
       parts.environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
       host.replaceChildren();
-    }
+    },
+    // Amended (reference-catalog-release.js): the idle release.
+    shrink:() => shrinkStudio(renderer, parts.framing, parts.lights.key)
   };
   const state = shelf.studio_open(kind, studio, host, Boolean(renderer), {
     render:shelf.studio_render, build:shelf.studio_build, visibility:shelf.studio_visibility,
-    invalidate:shelf.studio_invalidate, reveal:shelf.studio_shown, swap:shelf.studio_swap });
+    invalidate:shelf.studio_invalidate, reveal:shelf.studio_shown, swap:shelf.studio_swap, release:shelf.studio_release_idle });
   if (renderer) { parts.observer = new ResizeObserver(state.invalidate); parts.observer.observe(host); }
   return { state, parts, shelf };
 }

@@ -1,5 +1,6 @@
 // Frozen original from before the catalogue studios' loop, lights and stand moved to Rust
 // (rust-ui/src/catalog_studio.rs). Do not update to match the Rust implementation.
+import { RELEASE_MS, shrinkStudio } from './reference-catalog-release.js';
 import { createCatalogPreviewFrame } from '../../../src/js/catalog-preview-frame.js';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -17,6 +18,8 @@ export function createShelfCatalogPreview(host) {
   let renderer, environment, model, observer, hemisphere, key, fill, frame = 0, disposed = false, active = true, selected;
   let modelSize = null;
   const framing = createCatalogPreviewFrame();
+  let idle = 0, released = false;
+  const releaseIdle = () => { idle = 0; if (disposed || active || !renderer || released) return; released = shrinkStudio(renderer, framing, key); };
   // Built after the tapped choice paints; shown once its shaders are linked.
   let pending = null, building = 0, cancelLink = null, shown = false, dirty = true;
   const scene = new THREE.Scene();
@@ -144,8 +147,12 @@ export function createShelfCatalogPreview(host) {
       host.dataset.previewActive = String(next);
       if (active === next) return;
       active = next;
-      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
-      else invalidate();
+      // Amended (reference-catalog-release.js): closed, the buffers go after a while; reopened, a released studio draws at once.
+      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; if (renderer && !idle) idle = setTimeout(releaseIdle, RELEASE_MS); return; }
+      if (idle) clearTimeout(idle); idle = 0;
+      if (!released) { invalidate(); return; } // redraw at the current visible size even with the same selection
+      released = false; dirty = true; render();
+      if (dirty) request();
     },
     update({ shelfType }) {
       const type = normalizeShelfType(shelfType);
@@ -160,6 +167,7 @@ export function createShelfCatalogPreview(host) {
       if (disposed) return; disposed = true; framing.dispose();
       if (frame) cancelAnimationFrame(frame);
       if (building) clearTimeout(building);
+      if (idle) clearTimeout(idle);
       cancelLink?.(); observer?.disconnect(); removeModel();
       for (const material of materials) material.dispose();
       for (const texture of textures) texture.dispose();
