@@ -111,9 +111,15 @@ test('duplicate local tabs stream the held book even when RTC cannot open',async
   const p=await visibleMiddleBookPoint(a),touch=await context.newCDPSession(a);expect(p).toBeTruthy()
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:p.x,y:p.y,id:1}]});await expect(a.locator('.ihr-spine')).toHaveClass(/is-lifted/)
   await expect.poll(async()=>Math.abs(Number(await b.locator('.ihr-spine').getAttribute('data-scene-lean'))),{timeout:3000}).toBeLessThan(.01)
+  await watchFrames(a);await watchFrames(b)
   const before=await b.locator('.ihr-spine').boundingBox()
   for(let i=1;i<=8;i++)await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:p.x+i*3,y:p.y,id:1}]})
-  await expect.poll(async()=>b.locator('.ihr-spine').boundingBox().then(p=>Math.hypot(p.x-before.x,p.y-before.y)),{timeout:3000}).toBeGreaterThan(3)
+  // As in the RTC case above, the held book is read, posted and drawn once per frame in each tab: its 3 s
+  // budget is on both tabs' frame clock (helpers/frame-clock.mjs), the wall clock unless software GL stalls frames.
+  // That wait may outlast the held preview's 3.5 s lease in wall time, and a lapsed lease also moves the book
+  // (it falls back to its resting lean): only a move while it is still held upright is the streamed one.
+  const heldMove=async()=>{const p=await b.locator('.ihr-spine').boundingBox(),lean=Math.abs(Number(await b.locator('.ihr-spine').getAttribute('data-scene-lean')));return Math.hypot(p.x-before.x,p.y-before.y)>3&&lean<.01}
+  await waitOnFrameClock([a,b],heldMove,3000,'held movement in the other tab')
   await expect(a.locator('.ihr-spine')).toHaveClass(/is-dragging/)
   await info.attach('same-origin-held-preview',{body:await b.screenshot(),contentType:'image/png'})
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touch.detach()
