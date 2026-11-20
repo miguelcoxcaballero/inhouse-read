@@ -24,7 +24,10 @@ describe('Rust live room gesture previews',()=>{
   expect(room.receive(frame({sequence:4,phase:'end'}),20)).toBe(true)
   expect(room.receive(frame({sequence:5}),30)).toBe(false)
   expect(room.active(5021)).toBe(false);expect(room.pose('book:drive:one',5021,out)).toBe(false)
-  expect(room.receive(frame({gesture:'new',sequence:6}),6000)).toBe(true);room.clear('peer-b');expect(room.active(6001)).toBe(false);room.free()
+  expect(room.receive(frame({gesture:'new',sequence:6}),6000)).toBe(true)
+  // A peer without a preview leaving removes nothing (the scene then skips its render).
+  expect(room.clear('peer-stale')).toBe(false);expect(room.active(6001)).toBe(true)
+  expect(room.clear('peer-b')).toBe(true);expect(room.active(6001)).toBe(false);expect(room.clear('peer-b')).toBe(false);room.free()
  })
  it('uses a shortest quaternion arc and handles cancelled gestures',()=>{
   const room=new ui.RustRoomMotion(),out=new Float64Array(9)
@@ -104,8 +107,8 @@ it('finishes a careful put-back at the unchanged physical revision without holdi
 it('retains a committed end preview during disconnect, while explicit local takeover can clear it',()=>{
  const room=new ui.RustRoomMotion();room.acknowledge('room-base')
  room.receive(frame({base:'room-base',commit:'room-final',phase:'end'}),0)
- room.clear('peer-b');expect(room.active(20000)).toBe(true)
- room.clear('');expect(room.active(20001)).toBe(false);room.free()
+ expect(room.clear('peer-b')).toBe(false);expect(room.active(20000)).toBe(true)
+ expect(room.clear('')).toBe(true);expect(room.active(20001)).toBe(false);expect(room.clear('')).toBe(false);room.free()
 })
 it('converges simultaneous previews to the installed physical revision and fences the losing branch',()=>{
  const room=new ui.RustRoomMotion();room.acknowledge('room-base')

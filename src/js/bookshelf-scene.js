@@ -313,7 +313,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     native.bays(packRows(rows), width, pixelsPerMetre);
   }
   function clearRoomMotion(source = '') {
-    roomMotion.clear(source); clearTimeout(motionExpiry); motionExpiry = null;
+    // A peer that leaves without a preview on screen (a stale tab, another device) changes nothing:
+    // no render, and the expiry of a preview another peer still holds stays as it was.
+    if (!roomMotion.clear(source)) return;
+    clearTimeout(motionExpiry); motionExpiry = null;
     if (roomMotion.active(performance.now())) motionExpiry = setTimeout(() => invalidate(true, false, 'remote-motion-expired'), 5050);
     invalidate(true, false, 'remote-motion-ended');
   }

@@ -101,7 +101,13 @@ fn sample(p:&Pose,now:f64)->[f64;8]{
   self.actors.retain(|_,a|a.commit!=revision&&(a.base==revision||a.ancestors.contains(&revision)));
   self.revision=revision;self.changed=true;
  }
- pub fn clear(&mut self,source:String){if source.is_empty(){for actor in self.actors.values_mut(){actor.poses.clear();actor.ended=true;}}else if let Some(actor)=self.actors.get_mut(&source){if actor.expires.is_finite(){actor.poses.clear();}}}
+ /// Ends a disconnected peer's previews (every peer's for an empty source). Returns whether a preview
+ /// was removed: a peer that leaves without one, such as a stale tab of a device, changes nothing on
+ /// screen and must not cost a render while another peer still holds a book.
+ pub fn clear(&mut self,source:String)->bool{
+  if source.is_empty(){let mut removed=false;for actor in self.actors.values_mut(){removed|=!actor.poses.is_empty();actor.poses.clear();actor.ended=true;}removed}
+  else if let Some(actor)=self.actors.get_mut(&source){if actor.expires.is_finite()&&!actor.poses.is_empty(){actor.poses.clear();true}else{false}}else{false}
+ }
 }
 
 /// Short visual handoff from the painted room to a committed remote room.
