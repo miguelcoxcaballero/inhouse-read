@@ -1,3 +1,13 @@
+# Entrega 1.8.5 (tanda integ-bar-20): movimiento del libro y apertura del PDF
+
+Ramas sobre la 1.8.4: ready/book-model-29 (9758236a, incluye la 28 en 3126b468), ready/readers-voice-31 (fe496055).
+Barra estimada en local: 77,82 % Rust; quedan unos 771 KB de JavaScript (1.8.4: 77,67 %, 777 KB).
+
+- Libro 28: el muestreador Hermite y el reloj de cada movimiento viven en rust-ui/src/book_sampler.rs; salen book-motion.js y book-motion-wasm.js (-3.064 B de JS; wasm +6.214 B, 2,0x). Fotograma de una vista 1.646 -> 1.231 ns (0,75x). Coste: abrir y cerrar un movimiento pasa de 0,4-2,5 us a 2,2-15 us (una vez por toque) y arrancar uno de 16 claves 27,7 -> 36,2 us.
+- Libro 29: la estantería pide la pose de lectura y el encaje de portada a sus propios núcleos; salen planReadingBookPose, fitCoverImage y sus regiones (-1.329 B; wasm -837 B).
+- Lector 31: PdfReader.open, su tabla de gestos y el mapa de la capa de texto en Rust; reading-preferences ya no tiene copia JS de la hoja ni de la velocidad (-2.170 B; wasm +5.385 B, 2,5x). Cambio: sin núcleo, readingCSS y nearestRate lanzan coreRequired en vez de caer al JS (en producción el núcleo siempre está).
+- Ambas unidades se declaran en su suelo: lo que queda se midió más lento en Rust (cableado de three.js por libro, rutas por fotograma o por palabra) o está reservado (bloque 7 del lector).
+
 # Entrega 1.8.4 (tanda integ-bar-19): rendimiento en el móvil
 
 Ramas sobre la 1.8.3: ready/perf-frame-1 (db40d813), ready/perf-memory-1 (ac3daec1), ready/ci-neural-1 (e4072e3a).

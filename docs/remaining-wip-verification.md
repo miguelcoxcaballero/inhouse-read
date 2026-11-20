@@ -1,3 +1,10 @@
+# 1.8.5 — tanda integ-bar-20
+
+- Unitarias: 0 fallos (9.495). Capturas: 26 estados contra la 1.8.4, 16 idénticos bit a bit, máximo 1/255.
+- Navegador en local: parte 1, 65 pasan y 1 falla (live-room-stability:27, inestable conocido; pasa a solas); partes 2 y 3 por tandas tras dos reinicios del contenedor, 485 pasan y 0 fallan. Fuera: neural-voice*, supertonic, natural-voice y neural-page-follow (piden modelos reales que esta máquina no tiene; los cubre el CI).
+- rust-book-motion.spec.mjs se editó (la importación ya no existe) y pasa.
+- Sin verificar: teléfono real, WebView de Android.
+
 # 1.8.4 — tanda integ-bar-19
 
 - Unitarias: 0 fallos (9.495). Capturas: 24 estados contra la 1.8.3, 12 idénticos bit a bit, máximo 1/255.

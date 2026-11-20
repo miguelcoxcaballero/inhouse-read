@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.8.5 — Más Rust en el libro y el lector de PDF
+
+El movimiento del libro abierto se calcula dentro de Rust (un fotograma de
+ese movimiento cuesta un 20-25 % menos) y la apertura de un PDF, su mapa de
+texto y los estilos de lectura pasan a Rust. No cambia el aspecto
+(estimación local: 77,8 % Rust).
+
 ## 1.8.4 — Estantería más fluida en el móvil y menos memoria
 
 Al girar la estantería o arrastrar un libro en el móvil, cada fotograma en
