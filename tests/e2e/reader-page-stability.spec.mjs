@@ -20,9 +20,18 @@ const fromBottom = page => page.evaluate(() => {
 })
 
 async function reopen(page) {
+  // With reduced motion the close can begin and end between two polls, so the
+  // page records that it passed through is-closing-reader.
+  await page.evaluate(() => {
+    window.__closingSeen = false
+    const observer = new MutationObserver(() => {
+      if (document.body.classList.contains('is-closing-reader')) { window.__closingSeen = true; observer.disconnect() }
+    })
+    observer.observe(document.body, { attributes:true, attributeFilter:['class'] })
+  })
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
-  await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:30_000})
+  await expect.poll(() => page.evaluate(() => window.__closingSeen)).toBe(true)
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:30_000})
   await page.locator('.ihr-spine').first().click()
   await page.getByRole('button', { name:/Toca para leer/ }).click()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0,{timeout:20_000})
