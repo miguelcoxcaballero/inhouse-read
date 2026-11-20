@@ -98,8 +98,10 @@ test('el catálogo cerrado suelta sus búferes de dibujo y al reabrir dibuja cad
   await dialog.getByRole('button',{ name:'Cerrar catálogo' }).click();
   await expect(dialog).toBeHidden();
   const sizes = () => dialog.evaluate(node => [...node.querySelectorAll('canvas')].map(canvas => canvas.width * canvas.height));
-  // Still held for a quick return, then let go.
-  expect((await sizes()).every(area => area > 4)).toBe(true);
+  // The tab shown at close is still held for a quick return, then everything lets go. (The tabs left
+  // earlier started their 8 s countdown when they were left, so on a slow runner they may already be shrunk.)
+  const lastSelector = tabs[tabs.length - 1][1];
+  expect(await dialog.locator(lastSelector).locator('canvas').evaluate(canvas => canvas.width * canvas.height)).toBeGreaterThan(4);
   await expect.poll(async () => (await sizes()).every(area => area <= 4),{ timeout:20_000,intervals:[1000] }).toBe(true);
   // Reopening (the plants' page) and each other tab draw the full-size view before the click's task ends: no frame shows the shrunk buffer.
   const activate = (handle,selector) => page.evaluate(([button,selector]) => {
