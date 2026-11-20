@@ -87,6 +87,10 @@ pub fn start(id: u32, milliseconds: f64, now: f64) {
     with(id, |sampler| { sampler.duration = milliseconds; unsafe { kernel::book_motion_clock_start(sampler.clock.as_mut_ptr(), milliseconds, now); } });
 }
 /// One frame of the clock: the motion's progress, 1 for a motion already closed.
+/// The clock started again at `now`, with the same duration: the motion is back at its beginning.
+pub fn restart(id: u32, now: f64) {
+    with(id, |sampler| unsafe { kernel::book_motion_clock_start(sampler.clock.as_mut_ptr(), sampler.duration, now); });
+}
 pub fn step(id: u32, now: f64) -> f64 {
     with(id, |sampler| unsafe { kernel::book_motion_clock_step(sampler.clock.as_mut_ptr(), sampler.duration, now) }).unwrap_or(1.0)
 }

@@ -3465,14 +3465,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       view.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll }, { redraw:false });
     }
     document.body.append(flyout);
-    // The cover is ready and the final shelf pose is known. Paint once in its
-    // connected stage before replacing the resting book; detached setup needs
-    // no GPU draw or full-screen readback.
-    view?.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
-    spineEl.classList.add('is-away','is-reader-origin');
-    state.shelfScene?.flush();
-    state.shelfScene?.setModalBackgroundDeferred?.(spineEl);
-    flyout.focus?.();
+    // The connected first paint and the resting book's replacement come once the pull-out has reserved its
+    // framebuffer, below.
 
     const reduce = prefersReducedMotion();
     const duration = reduce ? 1 : opts.revealDuration;
@@ -3505,6 +3499,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // además se pone uno global, se componen y la coreografía se come el
     // último tercio de la animación (queda quieta mientras corre el reloj).
     const reveal = animateBook(frames, { duration, easing: 'linear', fill: 'both' });
+    // The cover is ready and the final shelf pose is known. Paint once in its connected stage before replacing the
+    // resting book. The pull-out started first has reserved its flight's largest window: this paint sizes the drawing
+    // buffer once, and the pull-out's first frame resizes nothing. All of it is one task: nothing is shown between.
+    view?.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
+    spineEl.classList.add('is-away','is-reader-origin');
+    state.shelfScene?.flush();
+    state.shelfScene?.setModalBackgroundDeferred?.(spineEl);
+    flyout.focus?.();
+    // The pull-out's clock starts again now, as it did when it was started after this paint.
+    view?.restartMotion?.();
     animate(scrim, [{ opacity: 0 }, { opacity: 1 }], {
       duration: Math.min(280, duration),
       easing: EASE,

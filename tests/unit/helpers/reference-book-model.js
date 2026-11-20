@@ -1769,7 +1769,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
-    animate:animateMotion,
+    animate:animateMotion, restartMotion:() => !disposed && motionNative.book_view_motion_restart(motionState),
     dispose(removeCanvas = true) { motionNative.book_view_motion_dispose(motionState); if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();
       gpu.domElement.removeEventListener('webglcontextlost', invalidatePresentation);

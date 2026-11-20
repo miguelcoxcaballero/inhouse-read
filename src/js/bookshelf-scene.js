@@ -1678,14 +1678,26 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   // A press is validated by the semantic button, drag controller and grip.
   // Reuse its exact ray hit within this event task, not across animation frames.
+  // A touch's pointerdown asks from two listeners (the spine's button and the
+  // drag controller): a microtask checkpoint runs between them, so the hit
+  // also holds for every listener of the event it was taken in (the event
+  // being dispatched, `window.event`). Any scene draw drops it (draw()).
   let pointerHit = null;
   function rememberPointerHit(clientX, clientY, node, point = null) {
-    const hit = pointerHit = { clientX, clientY, node, point };
-    queueMicrotask(() => { if (pointerHit === hit) pointerHit = null; });
+    const hit = pointerHit = { clientX, clientY, node, point, event:globalThis.event, task:true };
+    queueMicrotask(() => { hit.task = false; if (pointerHit === hit && !hit.event) pointerHit = null; });
     return node;
   }
+  function currentPointerHit(clientX, clientY) {
+    const hit = pointerHit;
+    if (!hit || hit.clientX !== clientX || hit.clientY !== clientY) return null;
+    if (hit.task || hit.event && hit.event === globalThis.event) return hit;
+    pointerHit = null;
+    return null;
+  }
   function objectAtPoint(clientX, clientY) {
-    if (pointerHit?.clientX === clientX && pointerHit.clientY === clientY) return pointerHit.node;
+    const remembered = currentPointerHit(clientX, clientY);
+    if (remembered) return remembered.node;
     const ray = pointerRay(clientX, clientY);
     pickableScratch.length = 0;
     for (const object of furniture.children) if (object.visible && !object.userData.dropMarker &&
@@ -2706,8 +2718,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!entry?.model || isDecor(entry)) return;
       // Three owns only the ray/matrix conversion. The native solver clamps
       // the local grip and computes its leverage, swing and release torque.
-      const hitPoint = pointerHit?.node === node && pointerHit.clientX === clientX && pointerHit.clientY === clientY
-        ? pointerHit.point : pointerRay(clientX, clientY).intersectObject(entry.model, true)[0]?.point;
+      const remembered = currentPointerHit(clientX, clientY);
+      const hitPoint = remembered?.node === node
+        ? remembered.point : pointerRay(clientX, clientY).intersectObject(entry.model, true)[0]?.point;
       rust.scene_object_grip(entry, node, clientY, hitPoint); entry.stale = true;
     },
     getObjectAtPoint(clientX, clientY) {

@@ -215,7 +215,8 @@ pub fn book_view_create(environment:&JsValue,node:&JsValue,book:&JsValue,style:&
   ("setPageTheme","book_view_page_theme"),("animatePageTheme","book_view_animate_theme"),("getPageTheme","book_view_get_theme"),
   ("getPageBounds","book_view_page_bounds"),("getPose","book_view_pose"),("setBookmarkWithdraw","book_view_withdraw"),
   ("animateCoverOpen","book_view_open"),("animateCoverClose","book_view_close"),("animateBookmark","book_view_animate_bookmark"),
-  ("alignToPage","book_view_align"),("animateToPage","book_view_animate_page"),("animate","book_view_animate"),("dispose","book_view_dispose")]{
+  ("alignToPage","book_view_align"),("animateToPage","book_view_animate_page"),("animate","book_view_animate"),("restartMotion","book_view_restart_motion"),
+  ("dispose","book_view_dispose")]{
   put(&api,key,&own(&v,export,&[])?)?;
  }
  Ok(api)
@@ -236,6 +237,12 @@ pub fn book_view_compact(v:&JsValue,enabled:&JsValue)->R<()>{put(v,"compactRetur
 pub fn book_view_hold(v:&JsValue)->R<JsValue>{
  if disposed(v){return read(&env(v),"noop");}
  crate::book_view_motion::book_view_motion_hold(state(v,"motionState"),state(v,"displayedFrame"),motion_options(v)?)
+}
+/// `restartMotion()`: the running motion's clock starts again now (book_view_motion.rs `book_view_motion_restart`).
+#[wasm_bindgen]
+pub fn book_view_restart_motion(v:&JsValue)->R<bool>{
+ if disposed(v){return Ok(false);}
+ crate::book_view_motion::book_view_motion_restart(state(v,"motionState"))
 }
 /// `releaseToSnapshot({ resume = false } = {})`: the export canvas shows the last frame again.
 #[wasm_bindgen]

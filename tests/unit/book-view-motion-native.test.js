@@ -29,7 +29,7 @@ function fixture(native=true){
     :legacy.start(input,{duration,onFrame},pose,options);
   return{host,state,trace,samplers,run,queue,open:()=>rustShelf.book_samplers_open()-opened,
     step(time){now=time;const callbacks=[...queue.values()];queue.clear();callbacks.forEach(fn=>fn(time-20));},
-    capacity:()=>native?state.motionCapacity:legacy.motionCapacity,
+    capacity:()=>native?state.motionCapacity:legacy.motionCapacity,at(time){now=time;},
     dispose:()=>native?rustShelf.book_view_motion_dispose(state):legacy.dispose(),
   };
 }
@@ -64,6 +64,21 @@ it('a stale cancellation handle cannot clear a newer reservation or schedule ano
   second.cancel();await Promise.all([first.finished,second.finished]);
   expect(f.capacity()).toBeNull();expect(f.queue.size).toBe(0);
   expect(f.samplers).toHaveLength(0);expect(f.open()).toBe(0);f.dispose();
+});
+
+// The pull-out starts its motion to reserve the flight's framebuffer, paints its first pose, then restarts the clock
+// (rust-ui/src/bookshelf/flyout.rs reveal): its frames are those of a motion started after the paint.
+it('restarts a running motion\'s clock as if it had started now',async()=>{
+  const runs=[];
+  for(const restarted of[false,true]){
+    const f=fixture(),animation=restarted?f.run():null;f.at(300);
+    const motion=restarted?animation:f.run();if(restarted)expect(rustShelf.book_view_motion_restart(f.state)).toBe(true);
+    const capacity=f.capacity(),drawn=f.trace.length,started=motion.lastFrameTime;
+    for(let time=316;f.queue.size&&time<5000;time+=time<400?17:90)f.step(time);
+    await motion.finished;runs.push({capacity,started,frames:f.trace.slice(drawn)});
+    expect(rustShelf.book_view_motion_restart(f.state)).toBe(false);expect(f.open()).toBe(0);f.dispose();vi.restoreAllMocks();vi.unstubAllGlobals();
+  }
+  expect(runs[1]).toEqual(runs[0]);expect(runs[0].frames.length).toBeGreaterThan(2);
 });
 
 it('releases nested framebuffer tokens once and ignores late release after disposal',()=>{

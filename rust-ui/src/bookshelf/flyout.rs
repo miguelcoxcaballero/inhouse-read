@@ -568,14 +568,8 @@ impl Flyout{
    method(&self.view,"draw",&[&start.pose(),&obj(&[("redraw",&JsValue::FALSE)])])?;
   }
   append(&get(&document(),"body"),&self.flyout);
-  // The cover is ready and the final shelf pose is known. Paint once in its connected stage before replacing
-  // the resting book; detached setup needs no GPU draw or full-screen readback.
-  let pose=self.start.borrow().pose();
-  self.view_do("draw",&[&pose])?;
-  cls_add(&self.spine(),&["is-away","is-reader-origin"]);
-  self.scene_do("flush",&[])?;
-  self.scene_opt("setModalBackgroundDeferred",&[&self.spine()])?;
-  method_opt(&self.flyout,"focus",&[])?;
+  // The connected first paint and the resting book's replacement come once the pull-out has reserved its
+  // framebuffer, below.
 
   let reduce=prefers_reduced_motion();
   let revealed=num(&self.ctx.opts_get("revealDuration"));
@@ -592,6 +586,18 @@ impl Flyout{
   // Linear timing on purpose: each keyframe brings its own easing and, if a global one is set too, they
   // compose and the choreography eats the last third of the animation (it stands still while the clock runs).
   let revealing=self.animate_book(&frames,&obj(&[("duration",&f(duration)),("easing",&s("linear")),("fill",&s("both"))]))?;
+  // The cover is ready and the final shelf pose is known. Paint once in its connected stage before replacing the
+  // resting book; detached setup needs no GPU draw or full-screen readback. Starting the pull-out first reserves the
+  // largest window of its flight (book_view_motion.rs `motionCapacity`): this paint sizes the drawing buffer once at
+  // that size, and the first frame of the pull-out resizes nothing. All of it is one task: nothing is shown between.
+  let pose=self.start.borrow().pose();
+  self.view_do("draw",&[&pose])?;
+  cls_add(&self.spine(),&["is-away","is-reader-origin"]);
+  self.scene_do("flush",&[])?;
+  self.scene_opt("setModalBackgroundDeferred",&[&self.spine()])?;
+  method_opt(&self.flyout,"focus",&[])?;
+  // The pull-out's clock starts again now, as it did when it was started after this paint.
+  if self.has_view(){self.view_opt("restartMotion",&[])?;}
   animate(&self.scrim,&arr(&[&obj(&[("opacity",&f(0.0))]),&obj(&[("opacity",&f(1.0))])]),&obj(&[("duration",&f(min(280.0,duration))),("easing",&s(EASE)),("fill",&s("both"))]))?;
   let entrance=animate(&self.meta,&arr(&[&obj(&[("opacity",&f(0.0)),("transform",&s("translateY(12px)"))]),&obj(&[("opacity",&f(1.0)),("transform",&s("translateY(0)"))])]),
    &obj(&[("duration",&f(min(260.0,duration))),("delay",&f(duration*0.62)),("easing",&s(EASE)),("fill",&s("both"))]))?;

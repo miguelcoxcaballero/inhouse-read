@@ -68,6 +68,19 @@ pub fn book_view_motion_dispose(owner:JsValue)->R<()> {
     // Completed lease tokens can still be released without retaining a model.
     set(&owner,"host",&JsValue::NULL)?;Ok(())
 }
+/// The active motion's clock started again from now, before its first frame: a caller that starts a motion to reserve
+/// its framebuffer (`motionCapacity`) and then paints the first pose restarts it once that paint is done, so the
+/// motion's first frame is timed as if it had started after the paint. False when no motion is running.
+#[wasm_bindgen]
+pub fn book_view_motion_restart(owner:JsValue)->R<bool> {
+    if truthy(&read(&owner,"disposed")?){return Ok(false);}
+    let job=read(&owner,"active")?;
+    if absent(&job)||truthy(&read(&job,"done")?){return Ok(false);}
+    let now=clock()?;
+    crate::book_sampler::restart(num(&read(&job,"sampler")?) as u32,now);
+    set(&read(&job,"animation")?,"lastFrameTime",&now.into())?;
+    Ok(true)
+}
 #[wasm_bindgen]
 pub fn book_view_motion_tick(job:JsValue)->R<()> {
     if truthy(&read(&job,"done")?){return Ok(());}
