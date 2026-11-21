@@ -1,6 +1,5 @@
 import {getRustUI} from './rust-ui.js'
 import {createPlantCatalogNative} from './plant-catalog-native.js'
-export {plantCatalogIllustration} from './plant-catalog-art.js'
 // The catalogue is built by the Rust view only. plant-catalog-lazy.js waits for
 // the module before it creates one, so a missing module is a real failure.
 export function createPlantCatalog(options={}){

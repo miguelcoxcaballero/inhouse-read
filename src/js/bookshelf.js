@@ -65,7 +65,6 @@ import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-dat
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 import { shelfScale, plantDimensions, bookSpineOptions } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
-import { lampCatalogIllustration } from './lamp-illustration.js';
 import { readerBookTiming } from './reader-book-timing.js';
 import { needRustShelf } from './rust-shelf.js';
 
@@ -130,7 +129,6 @@ const shelfEnv = {
   prepareShelfFonts,
   notifyCloudSettingsChanged: (...args) => notifyCloudSettingsChanged(...args),
   getCatalogLamp: (...args) => getCatalogLamp(...args),
-  lampCatalogIllustration: (...args) => lampCatalogIllustration(...args),
   normalizeShelfLamp: (...args) => normalizeShelfLamp(...args),
   getCatalogPlant: (...args) => getCatalogPlant(...args),
   resolveCatalogPlant: (...args) => resolveCatalogPlant(...args),

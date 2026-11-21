@@ -3,20 +3,18 @@ import { createPlantCatalogPreview } from './plant-catalog-preview.js';
 import { createShelfCatalogPreview } from './shelf-catalog-preview.js';
 import { createLampCatalogPreview } from './lamp-catalog-preview.js';
 import { LAMP_CATALOG, getCatalogLamp } from './lamp-catalog-data.js';
-import { lampCatalogIllustration } from './lamp-illustration.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 import { SHELF_TYPES, getShelfType, normalizeShelfType } from './shelf-types.js';
 import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, kelvinSwatch } from './lamp-kelvin.js';
 import { plantSizeLabel } from './plant-dimensions.js';
 import { CATALOG_CAMERA_EASING, CATALOG_CAMERA_MS, IDENTITY, bookletRect, catalogCameraFrames } from './catalog-camera.js';
 
-import {plantCatalogIllustration} from './plant-catalog-art.js';
 // These are host catalogue/Three bindings. Rust owns rows, presentation,
 // selection defaults and all flight policy; browser callbacks stay GC-owned.
 const catalogueHost = {
   PLANT_CATALOG, POT_CATALOG, SHELF_TYPES, LAMP_CATALOG, LAMP_KELVINS, DEFAULT_LAMP_KELVIN,
   getCatalogPlant, getCatalogPot, getPotColors, getPotColor, getShelfType, getCatalogLamp,
-  plantCatalogIllustration, lampCatalogIllustration, kelvinSwatch, plantSizeLabel
+  kelvinSwatch, plantSizeLabel
 };
 
 /** Rust owns selection, pages, presentation, actions and flight state. */

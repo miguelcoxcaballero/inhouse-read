@@ -10,6 +10,7 @@ thread_local!{static OPTIONS:RefCell<Option<String>>=const{RefCell::new(None)};s
 fn s(value:&str)->JsValue{JsValue::from_str(value)}
 fn optional(value:&JsValue,key:&str)->R<JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{read(value,key)}}
 fn or_empty(value:JsValue)->JsValue{if truthy(&value){value}else{s("")}}
+fn art(drawing:Option<String>)->R<JsValue>{drawing.map(|svg|s(&svg)).ok_or_else(||js_sys::Error::new("El módulo Rust de interfaz no pudo dibujar la ilustración del catálogo").into())}
 fn dimensions(value:&JsValue)->R<JsValue>{
  if !truthy(value){return Ok(s("A medida"));}
  let values=["width","depth","height"].map(|key|read(value,key).map(|v|string(&JsValue::from_f64(num(&v)/10.0))));
@@ -44,12 +45,12 @@ pub fn catalog_options(host:JsValue)->R<String>{
  let mut fields=Vec::new();let plants=Array::from(&read(&host,"PLANT_CATALOG")?);let first=plants.get(0);
  for plant in plants.iter(){
   let id=read(&plant,"id")?;let name=read(&plant,"name")?;
-  let drawing=method(&host,"plantCatalogIllustration",&[&id,&read(&plant,"defaultPotId")?,&object(&[("compact",JsValue::TRUE)])])?;
+  let drawing=art(crate::catalog_art::plant_illustration(&id,&read(&plant,"defaultPotId")?,false,true))?;
   row(&mut fields,&[s("plant"),id,s(&format!("{}, {}",string(&name),string(&read(&plant,"subtitle")?))),drawing,option_name(name),s(""),s(""),s(""),s("")]);
  }
  for pot in Array::from(&read(&host,"POT_CATALOG")?).iter(){
   let id=read(&pot,"id")?;let name=read(&pot,"name")?;
-  let drawing=method(&host,"plantCatalogIllustration",&[&optional(&first,"id")?,&id,&object(&[("potOnly",JsValue::TRUE),("compact",JsValue::TRUE)])])?;
+  let drawing=art(crate::catalog_art::plant_illustration(&optional(&first,"id")?,&id,true,true))?;
   row(&mut fields,&[s("pot"),id,s(&format!("{}, {}",string(&name),string(&read(&pot,"subtitle")?))),drawing,option_name(name),s(""),s(""),s(""),s("")]);
  }
  for shelf in Array::from(&read(&host,"SHELF_TYPES")?).iter(){
@@ -59,7 +60,7 @@ pub fn catalog_options(host:JsValue)->R<String>{
  for lamp in Array::from(&read(&host,"LAMP_CATALOG")?).iter(){
   let id=read(&lamp,"id")?;let name=read(&lamp,"name")?;
   let subtitle=if read(&lamp,"mount")?==s("undershelf"){"foco bajo balda"}else{"lámpara de sobremesa"};
-  row(&mut fields,&[s("lamp"),id.clone(),s(&format!("{}, {}",string(&name),subtitle)),method(&host,"lampCatalogIllustration",&[&id])?,name,read(&lamp,"subtitle")?,s(""),mount(&lamp)?,s("")]);
+  row(&mut fields,&[s("lamp"),id.clone(),s(&format!("{}, {}",string(&name),subtitle)),s(&crate::lamp_art::lamp_illustration(&id)),name,read(&lamp,"subtitle")?,s(""),mount(&lamp)?,s("")]);
  }
  for kelvin in Array::from(&read(&host,"LAMP_KELVINS")?).iter(){
   row(&mut fields,&[s("kelvin"),s(&string(&kelvin)),s(""),s(""),s(&format!("{} K",string(&kelvin))),s(""),s(""),s(""),method(&host,"kelvinSwatch",&[&kelvin])?]);

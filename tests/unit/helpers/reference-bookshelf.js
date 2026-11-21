@@ -131,7 +131,7 @@ import { getCatalogPlant, getCatalogPot, getPotColor } from '../../../src/js/pla
 import { normalizeShelfPlant, resolveCatalogPlant } from '../../../src/js/plant-records.js';
 import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from '../../../src/js/plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from '../../../src/js/lamp-catalog-data.js';
-import { lampCatalogIllustration } from '../../../src/js/lamp-illustration.js';
+import { lampCatalogIllustration } from './reference-lamp-illustration.js';
 import { readerBookTiming } from '../../../src/js/reader-book-timing.js';
 import { persistablePosition } from '../../../src/js/readers/persistable-position.js';
 
