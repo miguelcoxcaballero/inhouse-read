@@ -1,3 +1,11 @@
+# Entrega 1.8.10 (tanda integ-bar-25): toque del lomo
+
+Rama sobre la 1.8.9: ready/perf-pullout-2 (718df77c). Sin bloques de migración; barra estimada 77,75 % Rust, 779 KB de JS (+6 KB: src/js/scene-ray-order.js, glue de three.js).
+
+- scene-ray-order.js (usado por objectAtPoint en bookshelf-scene.js) entrega los impactos del rayo del más cercano al más lejano, en el mismo orden que intersectObjects, y para en el primero que decide la pulsación; una malla cuya caja de vértices queda detrás no se prueba triángulo a triángulo (BAGGEBO: ~62.000 triángulos del fondo de acero, 8-13 ms por pulsación).
+- rust-ui/src/cozy_transport.rs y cozy-sounds.js (deferredUnlock): el AudioContext (~22 ms) se crea en un timeout de 0 ms dentro del gesto y los sonidos pedidos mientras tanto se encolan y suenan en orden. Gemelo reference-cozy-sounds.js al día.
+- Toque (pointerdown+pointerup+click, dpr 3): libro sin abrir 54-62 -> 13-18 ms; libro ya leído sin mejora clara (lo domina el primer pintado del libro levantado).
+
 # Entrega 1.8.9 (tanda integ-bar-24): salida del libro
 
 Rama sobre la 1.8.8: ready/perf-pullout-1 (520a4329). Sin bloques de migración; barra estimada 77,83 % Rust, 773 KB de JS.

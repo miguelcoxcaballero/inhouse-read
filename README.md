@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.8.10 — Toque de lomo más ligero
+
+Al tocar un lomo, la estantería deja de comprobar piezas ocultas detrás del
+libro tocado y el sonido se prepara justo después del toque, no dentro. En
+un libro sin abrir, el toque pasa de 54-62 ms a 13-18 ms. Se ve y suena igual.
+
 ## 1.8.9 — Sacar libros sin tirones
 
 Al tocar el lomo de un libro, el lienzo del libro que sale se prepara una
