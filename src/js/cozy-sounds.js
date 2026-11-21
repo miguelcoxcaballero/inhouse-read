@@ -20,6 +20,7 @@ const persistPreference=()=>{try{localStorage.setItem(KEY,muted?'off':'on');}cat
 const host={
  global:globalThis,document,ignore:()=>{},loadAtlas,buffer:resolveBuffer,clearBuffers:()=>buffers.clear(),persistPreference,
  park:()=>engine().cozy_transport_park(host,state),idle:()=>engine().cozy_transport_idle(host,state),
+ deferredUnlock:()=>engine().cozy_transport_deferred_unlock(host,state),
  unlockFailed:()=>engine().cozy_transport_failed(host,state,false),playFailed:()=>engine().cozy_transport_failed(host,state,true),
  primeEnded:source=>()=>engine().cozy_transport_prime_ended(source),
  voiceEnded:voice=>()=>engine().cozy_transport_voice_ended(host,state,voice),

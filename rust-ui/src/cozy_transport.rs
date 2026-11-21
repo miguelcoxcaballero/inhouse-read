@@ -1,6 +1,12 @@
 //! Short shelf cues: admission, voice ownership and audio-device sleeping.
 //! Browser objects and callback cycles are GC-owned; no Rust closure or native
 //! allocation survives a call. Recorded-buffer selection remains a host port.
+//!
+//! The first gesture does not build the audio device in its own handler: creating an AudioContext costs tens of
+//! milliseconds (the browser's audio output starts up), which a tap on a spine paid in its pointerdown. The gesture
+//! queues it for the next task (`deferred`, a 0 ms timeout, which WebKit and Chromium still count as part of the
+//! gesture), normally run while the finger is still down. Cues asked for before it runs (`queued`) play right
+//! after it, in order, so the first tap is still heard; an explicit unlock runs it at once.
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Promise,Reflect,Set};
 use crate::host::{absent,call,method,num,read,set,truthy,jmin,jmax};
@@ -29,6 +35,7 @@ fn equals(value:&JsValue,number:f64)->bool{value.as_f64()==Some(number)}
 pub fn cozy_transport_new(muted:bool)->JsValue{object(&[
  ("context",JsValue::NULL),("master",JsValue::NULL),("unlocked",false.into()),("muted",muted.into()),
  ("serial",0.into()),("idle",0.into()),("owners",0.into()),("viewUntil",f64::NEG_INFINITY.into()),
+ ("deferred",0.into()),("queued",Array::new().into()),
  ("voices",Set::new(&JsValue::UNDEFINED).into()),("tails",Set::new(&JsValue::UNDEFINED).into()),
 ])}
 
@@ -80,12 +87,43 @@ pub fn cozy_transport_failed(host:JsValue,state:JsValue,playing:bool)->R<()>{
 }
 
 #[wasm_bindgen]
-pub fn cozy_transport_unlock(host:JsValue,state:JsValue)->R<()>{unlock(&host,&state)}
-fn unlock(host:&JsValue,state:&JsValue)->R<()>{
- if !truthy(&read(state,"owners")?)||truthy(&read(state,"muted")?)||hidden(host)?{return Ok(());}
+pub fn cozy_transport_unlock(host:JsValue,state:JsValue)->R<()>{if pending(&state)?{deferred_unlock(&host,&state)}else{unlock(&host,&state)}}
+fn pending(state:&JsValue)->R<bool>{Ok(truthy(&read(state,"deferred")?))}
+/// The audio constructor, when one exists and the shelf may sound.
+fn admitted(host:&JsValue,state:&JsValue)->R<Option<JsValue>>{
+ if !truthy(&read(state,"owners")?)||truthy(&read(state,"muted")?)||hidden(host)?{return Ok(None);}
  let global=global(host)?;let constructor=read(&global,"AudioContext")?;
  let constructor=if truthy(&constructor){constructor}else{read(&global,"webkitAudioContext")?};
- if !truthy(&constructor){return Ok(());}
+ Ok(if truthy(&constructor){Some(constructor)}else{None})
+}
+/// A gesture that would build the audio device leaves it to the next task; any other unlocks at once.
+fn gesture_unlock(host:&JsValue,state:&JsValue)->R<()>{
+ if pending(state)?{return Ok(());}
+ if admitted(host,state)?.is_some(){
+  let old=read(state,"context")?;
+  if !truthy(&old)||state_is(&old,"closed")?{
+   set(state,"deferred",&window(host,"setTimeout",&[&read(host,"deferredUnlock")?,&0.into()])?)?;return Ok(());
+  }
+ }
+ unlock(host,state)
+}
+/// The deferred unlock of the first gesture, then the cues asked for meanwhile.
+#[wasm_bindgen]
+pub fn cozy_transport_deferred_unlock(host:JsValue,state:JsValue)->R<()>{deferred_unlock(&host,&state)}
+fn deferred_unlock(host:&JsValue,state:&JsValue)->R<()>{
+ window(host,"clearTimeout",&[&read(state,"deferred")?])?;set(state,"deferred",&0.into())?;
+ let queued:Array=read(state,"queued")?.unchecked_into();set(state,"queued",&Array::new())?;
+ unlock(host,state)?;
+ // Out of the asking call: a cue that fails to convert its values is dropped, as it would have thrown there.
+ for cue in queued{let cue:Array=cue.unchecked_into();let _=play(host,state,cue.get(0),cue.get(1),cue.get(2),cue.get(3));}
+ Ok(())
+}
+fn drop_deferred(host:&JsValue,state:&JsValue)->R<()>{
+ if pending(state)?{window(host,"clearTimeout",&[&read(state,"deferred")?])?;set(state,"deferred",&0.into())?;}
+ set(state,"queued",&Array::new())
+}
+fn unlock(host:&JsValue,state:&JsValue)->R<()>{
+ let Some(constructor)=admitted(host,state)? else{return Ok(())};
  let result=(||->R<()>{
   let old=read(state,"context")?;
   if !truthy(&old)||state_is(&old,"closed")?{
@@ -115,6 +153,12 @@ pub fn cozy_transport_voice_ended(host:JsValue,state:JsValue,voice:JsValue)->R<(
 #[wasm_bindgen]
 pub fn cozy_transport_play(host:JsValue,state:JsValue,kind:JsValue,material:JsValue,strength:JsValue,pan:JsValue)->R<()>{
  if [4.0,8.0,11.0,18.0].iter().any(|value|equals(&kind,*value)){return Ok(());}
+ // The first gesture's audio device is built in the next task: the cue waits for it there.
+ if pending(&state)?{read(&state,"queued")?.unchecked_into::<Array>().push(&[kind,material,strength,pan].iter().collect::<Array>());return Ok(());}
+ play(&host,&state,kind,material,strength,pan)
+}
+fn play(host:&JsValue,state:&JsValue,kind:JsValue,material:JsValue,strength:JsValue,pan:JsValue)->R<()>{
+ let (host,state)=(host.clone(),state.clone());
  if !enabled(&host,&state)?||!truthy(&read(&state,"context")?){return Ok(());}
  if (equals(&kind,31.0)||equals(&kind,32.0))&&now(&host)?<num(&read(&state,"viewUntil")?){return Ok(());}
  if equals(&kind,33.0)||equals(&kind,34.0){set(&state,"viewUntil",&(now(&host)?+550.0).into())?;}
@@ -152,7 +196,7 @@ pub fn cozy_transport_play(host:JsValue,state:JsValue,kind:JsValue,material:JsVa
 #[wasm_bindgen]
 pub fn cozy_transport_muted(host:JsValue,state:JsValue,muted:bool)->R<()>{
  set(&state,"muted",&muted.into())?;invoke(&host,"persistPreference",&[])?;
- if muted{stop(&host,&state)}else{unlock(&host,&state)}
+ if muted{stop(&host,&state)}else{cozy_transport_unlock(host,state)}
 }
 
 #[wasm_bindgen]
@@ -169,7 +213,7 @@ pub fn cozy_transport_attach(host:JsValue,state:JsValue,root:JsValue)->R<JsValue
 }
 
 #[wasm_bindgen]
-pub fn cozy_transport_gesture(host:JsValue,state:JsValue,event:JsValue)->R<()>{if truthy(&read(&event,"isTrusted")?){unlock(&host,&state)?;}Ok(())}
+pub fn cozy_transport_gesture(host:JsValue,state:JsValue,event:JsValue)->R<()>{if truthy(&read(&event,"isTrusted")?){gesture_unlock(&host,&state)?;}Ok(())}
 
 #[wasm_bindgen]
 pub fn cozy_transport_hidden(host:JsValue,state:JsValue)->R<()>{if hidden(&host)?{stop(&host,&state)?;}Ok(())}
@@ -184,7 +228,7 @@ pub fn cozy_transport_dispose(host:JsValue,state:JsValue,registration:JsValue)->
  window(&host,"removeEventListener",&[&s("pagehide"),&read(&callbacks,"pageHidden")?])?;
  let owners=num(&read(&state,"owners")?)-1.0;set(&state,"owners",&owners.into())?;
  if owners==0.0{
-  stop(&host,&state)?;let audio=read(&state,"context")?;
+  drop_deferred(&host,&state)?;stop(&host,&state)?;let audio=read(&state,"context")?;
   set(&state,"master",&JsValue::NULL)?;set(&state,"context",&JsValue::NULL)?;invoke(&host,"clearBuffers",&[])?;set(&state,"unlocked",&false.into())?;
   let _=(||->R<()>{if !absent(&audio){let result=method(&audio,"close",&[])?;if !absent(&result){silence(&host,&result)?;}}Ok(())})();
  }Ok(())

@@ -25,6 +25,7 @@ import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js'
 import { MINIMUM_LAMP_TAP_SIZE } from './plant-dimensions.js';
 import { needRustShelf } from './rust-shelf.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { visitRayHits } from './scene-ray-order.js';
 import { createNativeRendererPresentation, currentNativeRendererPresentation, registerCanvasSnapshot, withRendererPresentation } from './native-renderer-presentation.js';
 import { createNativeFramebufferCache } from './native-room-cache.js';
 import { applyShelfOccluders, clearShelfOccluders, shelfOccluders } from './shelf-light-occlusion.js';
@@ -1702,14 +1703,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     pickableScratch.length = 0;
     for (const object of furniture.children) if (object.visible && !object.userData.dropMarker &&
         !object.userData.entry?.node?.classList.contains('is-away')) pickableScratch.push(object);
-    for (const hit of ray.intersectObjects(pickableScratch, true)) {
+    // The hits nearest first, as intersectObjects sorts them, up to the first that decides (scene-ray-order.js).
+    const decided = visitRayHits(ray, pickableScratch, hit => {
       let object = hit.object;
       while (object && !object.userData.entry) object = object.parent;
-      if (object?.userData.entry?.node && object.visible) return rememberPointerHit(clientX, clientY, object.userData.entry.node, hit.point.clone());
+      if (object?.userData.entry?.node && object.visible) return [rememberPointerHit(clientX, clientY, object.userData.entry.node, hit.point.clone())];
       // Solid wood in front blocks the object behind it, but a book's padded tap
       // rectangle or a lamp's square still wins over the wood around them.
-      if (!object?.userData.entry) return rememberPointerHit(clientX, clientY, tapTargetNear(clientX, clientY));
-    }
+      if (!object?.userData.entry) return [rememberPointerHit(clientX, clientY, tapTargetNear(clientX, clientY))];
+      return undefined;
+    });
+    if (decided) return decided[0];
     return rememberPointerHit(clientX, clientY, tapTargetNear(clientX, clientY));
   }
 

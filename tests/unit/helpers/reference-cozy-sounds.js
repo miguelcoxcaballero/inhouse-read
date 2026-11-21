@@ -1,4 +1,6 @@
 // Frozen before the transport-policy migration; WebAudio trace oracle.
+// Since the deferred first unlock (rust-ui/src/cozy_transport.rs): a gesture that would build the audio device
+// leaves it to a 0 ms timeout, and cues asked for meanwhile play right after it.
 // Web Audio transport. Rust names each event's recorded clips (cozy_clip), synthesises a fallback (cozy_sound)
 // and reports the real contact events; no oscillator, polling loop or audio context runs on an idle shelf.
 // The clip atlas (src/assets/sfx: 16-bit PCM plus an index) is fetched once after the first gesture; until it has
@@ -9,7 +11,7 @@ const KEY='inhouse-read-shelf-sounds',RETRY_MS=60000;
 // offline shell cannot pair a new index with its cached low-bandwidth binary.
 const ATLAS_BIN=new URL('../../../src/assets/sfx/atlas.bin',import.meta.url).href;
 const ATLAS_INDEX=new URL('../../../src/assets/sfx/atlas.json',import.meta.url).href;
-let context=null,master=null,unlocked=false,muted=false,serial=0,idle=0,owners=0;
+let context=null,master=null,unlocked=false,muted=false,serial=0,idle=0,owners=0,deferred=0,queued=[];
 let atlas=null,atlasState='idle',atlasRetry=0,viewUntil=-Infinity;
 const buffers=new Map(),voices=new Set(),tails=new Set(),groups=new Map(),routes=new Map(),lastTake=new Map();
 try{muted=localStorage.getItem(KEY)==='off';}catch{}
@@ -60,7 +62,20 @@ function clipBuffer(audio,clip){
  const pcm=new Float32Array(clip.length);for(let i=0;i<clip.length;i++)pcm[i]=atlas[clip.offset+i]/32768;
  buffer=audio.createBuffer(1,clip.length,clip.rate);buffer.copyToChannel(pcm,0);buffers.set(key,buffer);return buffer;
 }
-export function unlockShelfSounds(){
+export function unlockShelfSounds(){if(deferred)deferredUnlock();else unlock();}
+function gestureUnlock(){
+ if(deferred)return;
+ if(owners&&!muted&&document.visibilityState!=='hidden'&&(globalThis.AudioContext||globalThis.webkitAudioContext)&&(!context||context.state==='closed')){
+  deferred=setTimeout(deferredUnlock,0);return;
+ }
+ unlock();
+}
+function deferredUnlock(){
+ clearTimeout(deferred);deferred=0;const cues=queued;queued=[];
+ unlock();
+ for(const cue of cues){try{play(...cue);}catch{}}
+}
+function unlock(){
  if(!owners||muted||document.visibilityState==='hidden')return;
  const Constructor=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Constructor)return;
  try{
@@ -80,6 +95,10 @@ export function unlockShelfSounds(){
 export function playShelfSound(kind,material=0,strength=1,pan=0){
  // Dragging stays silent, including older/native callers and offline synthesis.
  if(kind===4||kind===8||kind===11||kind===18)return;
+ if(deferred){queued.push([kind,material,strength,pan]);return;}
+ play(kind,material,strength,pan);
+}
+function play(kind,material,strength,pan){
  if(!shelfSoundsEnabled()||!context)return;
  // A view switch (33, 34) owns its whoosh: zoom whooshes (31, 32) wait until it has played.
  if((kind===31||kind===32)&&performance.now()<viewUntil)return;
@@ -123,7 +142,7 @@ export function setShelfSoundsEnabled(enabled){
 }
 export function attachShelfSounds(root){
  if(!root)return()=>{};owners++;
- const gesture=event=>{if(event.isTrusted)unlockShelfSounds();};
+ const gesture=event=>{if(event.isTrusted)gestureUnlock();};
  const hidden=()=>{if(document.visibilityState==='hidden')stop();},pageHidden=()=>stop();
  root.addEventListener('pointerdown',gesture,{capture:true,passive:true});root.addEventListener('keydown',gesture,true);
  document.addEventListener('visibilitychange',hidden);
@@ -133,7 +152,7 @@ export function attachShelfSounds(root){
   if(disposed)return;disposed=true;root.removeEventListener('pointerdown',gesture,true);root.removeEventListener('keydown',gesture,true);
   document.removeEventListener('visibilitychange',hidden);
   globalThis.removeEventListener('pagehide',pageHidden);
-  if(--owners===0){stop();const audio=context;context=master=null;buffers.clear();unlocked=false;try{audio?.close()?.catch(()=>{});}catch{}}
+  if(--owners===0){if(deferred){clearTimeout(deferred);deferred=0;}queued=[];stop();const audio=context;context=master=null;buffers.clear();unlocked=false;try{audio?.close()?.catch(()=>{});}catch{}}
  };
 }
 export const shelfSoundPreference=()=>!muted;
