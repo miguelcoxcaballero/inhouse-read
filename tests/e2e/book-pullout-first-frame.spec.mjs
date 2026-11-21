@@ -86,6 +86,19 @@ function instrument() {
       if (before !== value && probe.contexts.has(this.__probeContext)) log('resize', start, { args:`${this.className || 'canvas'}.${key}=${before}->${value}` })
     } })
   }
+  // The shelf's audio device and its cues: the event being dispatched when each was made or started.
+  probe.audio = []
+  const Audio = window.AudioContext
+  if (Audio) {
+    window.AudioContext = class extends Audio {
+      constructor(...args) { const start = now(); super(...args); probe.audio.push({ kind:'context', during:window.event?.type ?? null, ms:now() - start }) }
+    }
+    const start = AudioBufferSourceNode.prototype.start
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      probe.audio.push({ kind:'start', during:window.event?.type ?? null, samples:this.buffer?.length ?? 0 })
+      return start.apply(this, args)
+    }
+  }
   const raf = window.requestAnimationFrame.bind(window)
   window.requestAnimationFrame = callback => raf(time => {
     let record = probe.on && probe.frames.at(-1)?.time === time ? probe.frames.at(-1) : null
@@ -175,7 +188,8 @@ const report = page => page.evaluate(() => {
     firstFrameWork:frames[0] ? work(frames[0].gl) : [],
     all:summary(probe.events.filter(event => event.start >= tap)),
     frames:frames.map(frame => ({ at:Math.round(frame.time - tap), script:+frame.script.toFixed(1), ...summary(frame.gl) })),
-    longFrames:probe.loaf.filter(entry => entry.start >= tap - 1).map(entry => ({ ...entry, start:Math.round(entry.start - tap) }))
+    longFrames:probe.loaf.filter(entry => entry.start >= tap - 1).map(entry => ({ ...entry, start:Math.round(entry.start - tap) })),
+    audio:probe.audio.map(entry => ({ ...entry, ms:entry.ms === undefined ? undefined : +entry.ms.toFixed(1) }))
   }
 })
 
@@ -234,5 +248,11 @@ for (const [kind, setup] of [['never opened, lit BAGGEBO', seededShelf], ['read 
     expect(result.frames.length).toBeGreaterThan(0)
     expect(result.firstFrameWork, 'the pull-out\'s first frame found its drawing buffer and programs ready').toEqual([])
     expect(result.frames.filter(frame => frame.resizes), 'no frame of the pull-out resizes a drawing buffer').toEqual([])
+    // The tap is the page's first gesture: its audio device is built after its handlers (rust-ui/src/cozy_transport.rs
+    // `deferred`), and the pull-out's cue still plays, after the silent prime.
+    const contexts = result.audio.filter(entry => entry.kind === 'context'), starts = result.audio.filter(entry => entry.kind === 'start')
+    expect(contexts.map(entry => entry.during), 'one audio device, built outside the tap\'s handlers').toEqual([null])
+    expect(starts.length, 'the silent prime and the pull-out\'s cue').toBeGreaterThanOrEqual(2)
+    expect(starts.at(-1).samples, 'the pull-out\'s cue is a real sound').toBeGreaterThan(1)
   })
 }

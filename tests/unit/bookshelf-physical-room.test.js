@@ -67,7 +67,8 @@ afterEach(()=>{shelf?.dispose();shelf=null;document.body.innerHTML='';vi.restore
 
 describe('fractional room presentation and lazy original 2D exports',()=>{
   it('reuses a press ray within the task and invalidates it after a paint or task boundary',async()=>{
-    const rays=vi.spyOn(THREE.Raycaster.prototype,'intersectObjects').mockReturnValue([]);
+    // One ray per press: pointerRay aims the raycaster once per cast (scene-ray-order.js tests the hits).
+    const rays=vi.spyOn(THREE.Raycaster.prototype,'setFromCamera');
     shelf.getObjectAtPoint(50,150);shelf.getBookAtPoint(50,150);
     expect(rays).toHaveBeenCalledTimes(1);
     await Promise.resolve();shelf.getObjectAtPoint(50,150);

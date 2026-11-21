@@ -19,7 +19,12 @@ const cases=[
  ['last owner closes; new owner creates a new device and PCM cache',async h=>{const dispose=h.own();h.api.unlockShelfSounds();await flush();h.api.playShelfSound(2);dispose();h.own();h.api.unlockShelfSounds();await flush();h.api.playShelfSound(2);}],
  ['hidden page and pagehide stop without closing another owner',async h=>{await h.start();h.api.playShelfSound(0);h.visibility('hidden');document.dispatchEvent(new Event('visibilitychange'));h.snapshot();h.api.playShelfSound(1);h.api.unlockShelfSounds();h.visibility('visible');h.api.unlockShelfSounds();await flush();h.api.playShelfSound(2);globalThis.dispatchEvent(new Event('pagehide'));h.snapshot();}],
  ['untrusted gestures cannot unlock',async h=>{h.own();document.body.dispatchEvent(new Event('pointerdown',{bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'a'}));h.snapshot();}],
- ['trusted gesture unlocks synchronously and detached handlers do not linger',async h=>{const dispose=h.own();h.trusted();h.api.playShelfSound(0);await flush();dispose();h.trusted();h.snapshot();}],
+ ['trusted gesture defers its device and detached handlers do not linger',async h=>{const dispose=h.own();h.trusted();h.api.playShelfSound(0);await flush();dispose();h.trusted();h.snapshot();}],
+ ['first gesture builds the device in the next task and then plays the cues asked meanwhile, in order',async h=>{h.own();h.trusted();h.snapshot();h.api.playShelfSound(17,0,.65);h.api.playShelfSound(4);h.api.playShelfSound(3,1,.5,.2);h.trusted();h.snapshot();await h.advance(0);h.snapshot();await flush();h.trusted();h.api.playShelfSound(2);h.snapshot();}],
+ ['a gesture on a live device unlocks at once',async h=>{await h.start();h.contexts[0].state='suspended';h.trusted();h.api.playShelfSound(17,0,.65);await flush();h.snapshot();}],
+ ['explicit unlock runs a deferred one at once',async h=>{h.own();h.trusted();h.api.playShelfSound(1);h.api.unlockShelfSounds();h.snapshot();await h.advance(0);h.api.playShelfSound(2);await flush();}],
+ ['mute, hidden page and failed values while the device is deferred',async h=>{h.own();h.trusted();h.api.playShelfSound(3,1,{valueOf(){h.record('coerce');throw Error('invalid');}});h.api.playShelfSound(3);h.api.setShelfSoundsEnabled(false);h.api.playShelfSound(2);await h.advance(0);h.snapshot();h.api.setShelfSoundsEnabled(true);h.trusted();h.visibility('hidden');await h.advance(0);h.snapshot();h.visibility('visible');h.trusted();await h.advance(0);h.api.playShelfSound(3);await flush();}],
+ ['the last owner leaving cancels a deferred device',async h=>{const dispose=h.own();h.trusted();h.api.playShelfSound(17);dispose();await h.advance(10);h.snapshot();h.own();h.trusted();await h.advance(0);h.api.playShelfSound(17);}],
  ['missing audio implementation is optional',async h=>{h.own();vi.stubGlobal('AudioContext',undefined);h.api.unlockShelfSounds();h.api.playShelfSound(1);h.snapshot();}],
  ['webkit audio constructor remains supported',async h=>{h.own();vi.stubGlobal('webkitAudioContext',h.Context);vi.stubGlobal('AudioContext',undefined);h.api.unlockShelfSounds();await flush();h.api.playShelfSound(1);}],
  ['closed device replacement',async h=>{await h.start();h.api.playShelfSound(0);h.contexts[0].state='closed';h.api.unlockShelfSounds();await flush();h.api.playShelfSound(0);}],
@@ -127,3 +132,18 @@ it('returns native handles and timer ownership to baseline across repeated shelf
  });
  expect(native.shelf_live_handles()).toBe(before);
 },30000);
+
+it('a first gesture leaves the audio device to the next task and its cues still play, in order',async()=>{
+ const trace=await harness('native',async h=>{
+  h.own();h.trusted();h.record('mark','after gesture');
+  h.api.playShelfSound(17,0,.65);h.api.playShelfSound(3,1,.5,.2);h.record('mark','after cues');
+  await h.advance(0);h.record('mark','after task');
+ });
+ const at=label=>trace.findIndex(event=>event[1]==='mark'&&event[2]===label);
+ const context=trace.findIndex(event=>event[1]==='context');
+ expect(context).toBeGreaterThan(at('after cues'));
+ expect(context).toBeLessThan(at('after task'));
+ expect(trace.filter(event=>event[1]==='synth').map(event=>event[2])).toEqual([17,3]);
+ // The silent prime, then both cues.
+ expect(trace.filter(event=>event[1]==='start').length).toBe(3);
+});
