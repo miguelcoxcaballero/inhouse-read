@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { readerBookTiming } from '../../src/js/reader-book-timing.js';
+import { rustShelf } from './helpers/rust-shelf-ready.js';
+// Frozen JS original of the schedule, now rust-ui/src/bookshelf/book_timing.rs.
+import { readerBookTiming as original } from './helpers/reference-reader-book-timing.js';
+const readerBookTiming = (reduced = false) => rustShelf.reader_book_timing(Boolean(reduced));
 
 describe('responsive physical reader transitions', () => {
+  it('is the frozen JavaScript schedule, key order included, with and without reduced motion', () => {
+    for (const reduced of [false, true]) {
+      const ours = readerBookTiming(reduced), theirs = original(reduced);
+      expect(ours).toEqual(theirs);
+      expect(Object.keys(ours)).toEqual(Object.keys(theirs));
+      for (const phase of ['opening', 'closing']) expect(Object.keys(ours[phase])).toEqual(Object.keys(theirs[phase]));
+    }
+  });
   it('keeps every physical phase while reducing the blocking opening time', () => {
     expect(readerBookTiming().opening).toEqual({ cover:480, bookmark:240, zoom:520, handoff:140 });
     expect(Object.values(readerBookTiming().opening).reduce((a,b) => a+b,0)).toBe(1380);
@@ -24,15 +35,13 @@ describe('responsive physical reader transitions', () => {
     const opening=rust.slice(rust.indexOf('async fn transition_inner'));
     const returning=readFileSync('rust-ui/src/bookshelf/returning.rs','utf8');
     const closing=returning.slice(returning.indexOf('async fn return_to_shelf'));
-    expect(rust).toContain('ctx.env("readerBookTiming",&[&b(prefers_reduced_motion())])');
-    expect(rust).toContain('let durations=get(&timing,"opening")');
+    expect(rust).toContain('let durations=super::book_timing::opening(prefers_reduced_motion());');
     expect(opening).toContain('let bookmark_duration=get(durations,"bookmark")');
     expect(opening).toContain('("duration",&bookmark_duration)');
     expect(opening).toContain('wait_for_motion(&motion,num(&bookmark_duration))');
     expect(opening).toContain('("duration",&get(durations,"zoom"))');
     expect(opening).toContain('wait_for_motion(&opening,num(&cover_duration))');
-    expect(closing).toContain('ctx.env("readerBookTiming",&[&b(prefers_reduced_motion())])');
-    expect(closing).toContain('let durations=get(&timing,"closing")');
+    expect(closing).toContain('let durations=super::book_timing::closing(prefers_reduced_motion());');
     for (const phase of ['zoom','bookmark','cover']) {
       expect(closing).toContain(`let ${phase}=num(&get(&durations,"${phase}"))`);
       expect(closing).toContain(`wait_for_motion(&animation,${phase}).await?`);

@@ -79,6 +79,7 @@ mod pieces;
 mod flyout;
 mod flyout_motion;
 mod returning;
+mod book_timing;
 mod covers;
 mod objects;
 mod drag;

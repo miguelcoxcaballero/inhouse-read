@@ -65,7 +65,6 @@ import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-dat
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 import { shelfScale, plantDimensions, bookSpineOptions } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
-import { readerBookTiming } from './reader-book-timing.js';
 import { needRustShelf } from './rust-shelf.js';
 
 
@@ -117,7 +116,6 @@ const shelfEnv = {
   readCoverAspectRatio: (...args) => readCoverAspectRatio(...args),
   markTiming: (...args) => markTiming(...args),
   resetTimeline: (...args) => resetTimeline(...args),
-  readerBookTiming: (...args) => readerBookTiming(...args),
   readerReturnCanvas: (...args) => readerReturnCanvas(...args),
   coverAspectRatio: (...args) => coverAspectRatio(...args),
   analyzeCoverAppearance: (url,title,options) => {

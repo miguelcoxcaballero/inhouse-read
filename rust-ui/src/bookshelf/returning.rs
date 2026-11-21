@@ -139,8 +139,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  // `{ pageSnapshot, book:latestBook, onPageReady } = {}`
  let options=if options.is_undefined(){obj(&[])}else{options};
  let page_snapshot=read(&options,"pageSnapshot")?;let latest_book=read(&options,"book")?;let on_page_ready=read(&options,"onPageReady")?;
- let timing=ctx.env("readerBookTiming",&[&b(prefers_reduced_motion())])?;
- let durations=get(&timing,"closing");
+ let durations=super::book_timing::closing(prefers_reduced_motion());
  let wanted=book_id_text(&book_id);
  let books=array_of(&ctx.st("books"));
  let record=books.iter().find(|book|string_value(&get(book,"id"))==wanted).cloned();

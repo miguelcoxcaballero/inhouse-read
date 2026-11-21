@@ -132,7 +132,7 @@ import { normalizeShelfPlant, resolveCatalogPlant } from '../../../src/js/plant-
 import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from '../../../src/js/plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from '../../../src/js/lamp-catalog-data.js';
 import { lampCatalogIllustration } from './reference-lamp-illustration.js';
-import { readerBookTiming } from '../../../src/js/reader-book-timing.js';
+import { readerBookTiming } from './reference-reader-book-timing.js';
 import { persistablePosition } from '../../../src/js/readers/persistable-position.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
