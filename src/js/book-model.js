@@ -568,6 +568,10 @@ export function getPresentationBookRenderer() {
     const studio = createStudioRenderer(true);
     if (!studio) return null;
     presentationRenderer = studio.renderer;
+    // A new canvas holds the browser's 300 × 150 buffer: the first flight would then grow it in two steps (its
+    // width at 150 rows, then its height), each a reallocation of the antialiased buffers. One pixel, as the idle
+    // release leaves it: every draw, repaint and capture sizes the frame before rendering.
+    presentationRenderer.setSize?.(1, 1, false);
   }
   return presentationRenderer;
 }
@@ -592,7 +596,11 @@ function preparationHost() {
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 10000);
       camera.position.z = 3000;
       const objects = { traverse:callback => model.traverse(callback), traverseVisible() {} };
-      return gpu.compile(objects, camera, scene);
+      const materials = gpu.compile(objects, camera, scene);
+      // Enable anisotropic filtering, which draw() asks for: the extension's first lookup otherwise lands in the
+      // first lifted book's paint. No texture is uploaded here: the studio stays off the GPU until a book is lifted.
+      gpu.capabilities?.getMaxAnisotropy?.();
+      return materials;
     },
     entered:rust.book_presentation_enter, compile:rust.book_presentation_compile,
     dispose:rust.book_presentation_dispose, finished:rust.book_presentation_finished,

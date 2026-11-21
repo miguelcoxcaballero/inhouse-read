@@ -116,7 +116,7 @@ function play(kind,material,strength,pan){
    }else{
     const key=`${kind}:${material}:${level}:${variant}`;buffer=buffers.get(key);
     if(!buffer){
-     const pcm=needRustShelf().cozy_sound(kind,material,variant,level);if(!pcm.length)return;
+     const pcm=preparedPcm.get(key)??needRustShelf().cozy_sound(kind,material,variant,level);if(!pcm.length)return;
      buffer=audio.createBuffer(1,pcm.length,needRustShelf().cozy_sample_rate());buffer.copyToChannel(pcm,0);buffers.set(key,buffer);
     }
    }
@@ -140,8 +140,17 @@ export function setShelfSoundsEnabled(enabled){
  muted=!enabled;try{localStorage.setItem(KEY,muted?'off':'on');}catch{}
  if(muted)stop();else unlockShelfSounds();
 }
+// The first cue a fresh page plays when a spine is tapped (the pull-out, variant 0), synthesised while the shelf idles.
+const preparedPcm=new Map();let pcmScheduled=false;
+function preparePcm(){
+ const level=shelfSoundLevel(.65),key=`17:0:${level}:0`;
+ if(!preparedPcm.has(key))preparedPcm.set(key,needRustShelf().cozy_sound(17,0,0,level));
+}
 export function attachShelfSounds(root){
  if(!root)return()=>{};owners++;
+ if(!pcmScheduled&&!muted&&typeof globalThis.requestIdleCallback==='function'&&(globalThis.AudioContext||globalThis.webkitAudioContext)){
+  pcmScheduled=true;globalThis.requestIdleCallback(()=>{try{preparePcm();}catch{}});
+ }
  const gesture=event=>{if(event.isTrusted)gestureUnlock();};
  const hidden=()=>{if(document.visibilityState==='hidden')stop();},pageHidden=()=>stop();
  root.addEventListener('pointerdown',gesture,{capture:true,passive:true});root.addEventListener('keydown',gesture,true);

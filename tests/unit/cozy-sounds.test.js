@@ -157,3 +157,38 @@ it('never plays or allocates a drag sound, including when the atlas is unavailab
  module.playShelfSound(17,0,.65);expect(started(contexts[0])).toHaveLength(1);
  module.playShelfSound(3,1,.7);expect(started(contexts[0])).toHaveLength(2);
 });
+
+it('synthesises the pull-out cue of a fresh page while the shelf idles, once, and plays exactly those samples',async()=>{
+ const idle=[];vi.stubGlobal('requestIdleCallback',callback=>{idle.push(callback);return idle.length;});
+ vi.resetModules();module=await import('../../src/js/cozy-sounds.js');
+ own();own();expect(idle).toHaveLength(1);expect(synth).not.toHaveBeenCalled();
+ idle[0]();expect(synth).toHaveBeenCalledTimes(1);expect(synth).toHaveBeenCalledWith(17,0,0,1);
+ const prepared=synth.mock.results[0].value;
+ module.unlockShelfSounds();await flush();
+ module.playShelfSound(17,0,.65);
+ expect(synth).toHaveBeenCalledTimes(1);
+ const voice=started(contexts[0]).at(-1);expect(voice.buffer.copyToChannel).toHaveBeenCalledWith(prepared,0);
+ expect(voice.buffer.length).toBe(prepared.length);
+ // The next variants and other cues are synthesised when asked for, as before.
+ module.playShelfSound(17,0,.65);expect(synth).toHaveBeenLastCalledWith(17,0,1,1);
+ // A new audio device makes its first buffer of that cue from the same samples.
+ for(const f of disposed.splice(0))f();
+ own();module.unlockShelfSounds();await flush();expect(contexts).toHaveLength(2);
+ module.playShelfSound(17,0,.65);
+ expect(synth.mock.calls.filter(call=>call[2]===0)).toHaveLength(1);
+ expect(started(contexts[1]).at(-1).buffer.copyToChannel).toHaveBeenCalledWith(prepared,0);
+});
+
+it('prepares nothing when muted or without an audio implementation',async()=>{
+ const idle=[];vi.stubGlobal('requestIdleCallback',callback=>{idle.push(callback);return idle.length;});
+ module.setShelfSoundsEnabled(false);vi.resetModules();module=await import('../../src/js/cozy-sounds.js');own();
+ localStorage.clear();vi.stubGlobal('AudioContext',undefined);vi.resetModules();module=await import('../../src/js/cozy-sounds.js');own();
+ expect(idle).toHaveLength(0);
+});
+
+it('synthesises the same samples for the same cue every time, so the prepared copy is that cue',async()=>{
+ const {readFileSync}=await import('node:fs');const native=await import('../../src/wasm/shelf/inhouse_read_shelf.js');
+ native.initSync({module:readFileSync('src/wasm/shelf/inhouse_read_shelf_bg.wasm')});
+ const level=native.cozy_level(.65),first=native.cozy_sound(17,0,0,level);
+ expect(first.length).toBeGreaterThan(1000);expect(Array.from(native.cozy_sound(17,0,0,level))).toEqual(Array.from(first));
+});

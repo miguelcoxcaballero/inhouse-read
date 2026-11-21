@@ -187,6 +187,8 @@ const report = page => page.evaluate(() => {
     resizes:probe.events.filter(event => event.start >= tap && event.kind === 'resize').map(event => `${Math.round(event.start - tap)}: ${event.args} ${event.duration.toFixed(1)} ms`),
     firstFrameWork:frames[0] ? work(frames[0].gl) : [],
     all:summary(probe.events.filter(event => event.start >= tap)),
+    // When the pull-out's first frame callback ran, from the tap: everything the tap and its continuations did first.
+    firstFrameRanMs:frames[0] ? Math.round(frames[0].ran - tap) : null,
     frames:frames.map(frame => ({ at:Math.round(frame.time - tap), script:+frame.script.toFixed(1), ...summary(frame.gl) })),
     longFrames:probe.loaf.filter(entry => entry.start >= tap - 1).map(entry => ({ ...entry, start:Math.round(entry.start - tap) })),
     audio:probe.audio.map(entry => ({ ...entry, ms:entry.ms === undefined ? undefined : +entry.ms.toFixed(1) }))

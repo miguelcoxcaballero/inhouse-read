@@ -11,6 +11,12 @@ const ATLAS_INDEX=new URL('../assets/sfx/atlas.json',import.meta.url).href;
 let muted=false,state=null,core=null;
 let atlas=null,atlasState='idle',atlasRetry=0;
 const buffers=new Map(),groups=new Map(),routes=new Map(),lastTake=new Map();
+// A page's first cue is synthesised in its first gesture's deferred unlock, the task just before a lifted book's
+// first paint (7-10 ms, mostly the synthesiser's first run). Its PCM depends only on the cue, so the one a fresh
+// transport plays first when a spine is tapped (the pull-out, kind 17 at .65: variant 0) is made while the attached
+// shelf idles (~105 KB of samples, kept for the page) and every audio device's first buffer of that cue reads it.
+const FIRST_CUE=[17,0,.65],preparedPcm=new Map();
+let pcmScheduled=false;
 try{muted=localStorage.getItem(KEY)==='off';}catch{}
 // The first shelf already awaits Rust. Settings can bind before that bootstrap,
 // without constructing a context or making the module a startup dependency.
@@ -71,7 +77,7 @@ function resolveBuffer(audio,kind,material,level,variant){
  }else{
   const key=`${kind}:${material}:${level}:${variant}`;buffer=buffers.get(key);
   if(!buffer){
-   const pcm=needRustShelf().cozy_sound(kind,material,variant,level);if(!pcm.length)return null;
+   const pcm=preparedPcm.get(key)??needRustShelf().cozy_sound(kind,material,variant,level);if(!pcm.length)return null;
    buffer=audio.createBuffer(1,pcm.length,needRustShelf().cozy_sample_rate());buffer.copyToChannel(pcm,0);buffers.set(key,buffer);
   }
  }
@@ -83,9 +89,17 @@ export function setShelfSoundsEnabled(enabled){
  muted=!enabled;
  if(state)engine().cozy_transport_muted(host,state,muted);else persistPreference();
 }
+function preparePcm(){
+ const [kind,material,strength]=FIRST_CUE,level=shelfSoundLevel(strength),key=`${kind}:${material}:${level}:0`;
+ if(!preparedPcm.has(key))preparedPcm.set(key,needRustShelf().cozy_sound(kind,material,0,level));
+}
 export function attachShelfSounds(root){
  if(!root)return()=>{};
- return engine().cozy_transport_attach(host,transport(),root);
+ const detach=engine().cozy_transport_attach(host,transport(),root);
+ if(!pcmScheduled&&!muted&&typeof globalThis.requestIdleCallback==='function'&&(globalThis.AudioContext||globalThis.webkitAudioContext)){
+  pcmScheduled=true;globalThis.requestIdleCallback(()=>{try{preparePcm();}catch{}});
+ }
+ return detach;
 }
 export const shelfSoundPreference=()=>!muted;
 

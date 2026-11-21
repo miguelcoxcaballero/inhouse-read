@@ -1052,6 +1052,8 @@ export function getPresentationBookRenderer() {
     const studio = createStudioRenderer(true);
     if (!studio) return null;
     presentationRenderer = studio.renderer;
+    // One pixel, as the idle release leaves it, instead of the browser's 300 × 150 (src/js/book-model.js).
+    presentationRenderer.setSize?.(1, 1, false);
   }
   return presentationRenderer;
 }
@@ -1087,7 +1089,10 @@ function preparationHost() {
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 10000);
       camera.position.z = 3000;
       const objects = { traverse:callback => model.traverse(callback), traverseVisible() {} };
-      return gpu.compile(objects, camera, scene);
+      const materials = gpu.compile(objects, camera, scene);
+      // Anisotropic filtering enabled before any lifted book's first paint (src/js/book-model.js).
+      gpu.capabilities?.getMaxAnisotropy?.();
+      return materials;
     },
     entered:rust.book_presentation_enter, compile:rust.book_presentation_compile,
     dispose:rust.book_presentation_dispose, finished:rust.book_presentation_finished,
