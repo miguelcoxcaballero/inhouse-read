@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.8.12 — Dibujos del catálogo en Rust
+
+Los dibujos de lámparas y plantas del catálogo y los tiempos del libro al
+abrirlo y cerrarlo pasan de JavaScript a Rust; el catálogo construye sus
+dibujos algo más rápido. Se ve exactamente igual.
+
 ## 1.8.11 — Libro levantado más rápido
 
 El lienzo del libro que sale empieza en un píxel y el sonido de sacarlo se

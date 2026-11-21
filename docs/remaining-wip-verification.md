@@ -1,3 +1,10 @@
+# 1.8.12 — tanda integ-bar-27
+
+- Unitarias: 0 fallos (9.511 pasan). Capturas: 26 estados contra la 1.8.4, 17 idénticos bit a bit, máximo 1/255.
+- Navegador en local (bookshelf-*, book-*, animation-continuity, plant-catalog, native-*, shelf-*, reader-return*): 107 pasan, 0 fallan.
+- Barra: 77,81 % Rust, 776 KB de JS.
+- Sin verificar: teléfono real, WebView de Android.
+
 # 1.8.11 — tanda integ-bar-26
 
 - Unitarias: 0 fallos (9.513 pasan). Capturas: 26 estados contra la 1.8.4, 17 idénticos bit a bit, máximo 1/255.
