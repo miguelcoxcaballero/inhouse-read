@@ -1,7 +1,6 @@
 //! Exact static silhouettes from the original drawing functions. Browser
 //! layout, colours and the studios retain their existing ownership.
 use wasm_bindgen::prelude::*;
-use js_sys::Float64Array;
 fn plant_body(id:&str,compact:bool)->&'static str{match(id,compact){
 ("sansevieria",false)=>include_str!("art/plant-sansevieria-0.svg"),
 ("sansevieria",true)=>include_str!("art/plant-sansevieria-1.svg"),
@@ -37,27 +36,39 @@ pub fn catalog_illustration(plant:&str,pot:&str,pot_only:bool,compact:bool)->Opt
  Some(wrap_svg(plant_body(plant,compact),pot,pot_only,compact))
 }
 fn pairs(fern:bool,compact:bool)->usize{if fern{if compact{7}else{10}}else if compact{6}else{8}}
-#[wasm_bindgen]
-pub fn catalog_frond_fractions(fern:bool,compact:bool)->Float64Array{
- let pairs=pairs(fern,compact);let values:Vec<f64>=(1..=pairs).map(|index|index as f64/(pairs+1)as f64).collect();Float64Array::from(values.as_slice())
-}
-#[wasm_bindgen]
-pub fn catalog_frond_numbers(sizes:&[f64])->Option<Float64Array>{
- if sizes.len()>10||sizes.iter().any(|size|!size.is_finite()){return None;}
- let mut values=Vec::with_capacity(sizes.len()*9);for &height in sizes{let width=height*0.23;values.extend_from_slice(&[-width*0.85,-height*0.22,-width*0.75,-height*0.73,-height,width*0.66,-height*0.76,width*0.8,-height*0.24]);}
- Some(Float64Array::from(values.as_slice()))
-}
-#[wasm_bindgen]
-pub fn catalog_frond_illustration(plant:&str,pot:&str,compact:bool,numbers:&str)->Option<String>{
+// The leaf heights of each frond, `Math.sin(i / (pairs + 1) * Math.PI) ** .7 * (fern ? 15 : 23)` for i in 1..=pairs,
+// as the browser's Math rounds them (V8's fdlibm sin and pow), kept bit for bit: the drawing prints every digit.
+// Order: palm, palm compact, fern, fern compact.
+const FRONDS:[&[u64];4]=[
+ &[0x4025b4eaf8022af8,0x4030e14e688da796,0x4034cc03c17201f6,0x4036c13d7049fda0,0x4036c13d7049fda0,0x4034cc03c17201f7,0x4030e14e688da797,0x4025b4eaf8022afb],
+ &[0x4029a3db93d7f8e3,0x40335c2de69174f5,0x403698451c8f6d49,0x403698451c8f6d49,0x40335c2de69174f6,0x4029a3db93d7f8e4],
+ &[0x4018b827cddaef05,0x4023816979b901d0,0x4028a8daabb89aa6,0x402c1352f8b0140c,0x402dc932373d58f4,0x402dc932373d58f5,0x402c1352f8b0140c,0x4028a8daabb89aa7,0x4023816979b901cf,0x4018b827cddaef0c],
+ &[0x401ea122c6f30909,0x4027899b1a6ad8a0,0x402c61f14db11290,0x402e000000000000,0x402c61f14db11290,0x4027899b1a6ad8a1,0x401ea122c6f3090b]];
+fn frond_illustration(plant:&str,pot:&str,compact:bool)->Option<String>{
+ let fern=plant=="nephrolepis";
  let template=match(plant,compact){
  ("chamaedorea",false)=>include_str!("art/frond-chamaedorea-0.svg"),("chamaedorea",true)=>include_str!("art/frond-chamaedorea-1.svg"),
  ("nephrolepis",false)=>include_str!("art/frond-nephrolepis-0.svg"),("nephrolepis",true)=>include_str!("art/frond-nephrolepis-1.svg"),_=>return None};
- if numbers.len()>8192{return None;}let numbers:Vec<&str>=numbers.split('\0').collect();
- if numbers.len()!=pairs(plant=="nephrolepis",compact)*9||numbers.iter().any(|number|number.parse::<f64>().map_or(true,|number|!number.is_finite())){return None;}
- let paths:Vec<String>=numbers.chunks_exact(9).map(|leaf|format!("M0 0C{} {} {} {} 0 {}C{} {} {} {} 0 0Z",leaf[0],leaf[1],leaf[2],leaf[3],leaf[4],leaf[5],leaf[6],leaf[7],leaf[8])).collect();
+ let sizes=FRONDS[fern as usize*2+compact as usize];debug_assert_eq!(sizes.len(),pairs(fern,compact));
+ // A finite f64 of these magnitudes prints with the same shortest digits in Rust and in JavaScript's String(number).
+ let paths:Vec<String>=sizes.iter().map(|bits|{let height=f64::from_bits(*bits);let width=height*0.23;
+  format!("M0 0C{} {} {} {} 0 {}C{} {} {} {} 0 0Z",-width*0.85,-height*0.22,-width*0.75,-height*0.73,-height,width*0.66,-height*0.76,width*0.8,-height*0.24)}).collect();
  let mut body=String::with_capacity(template.len()+paths.iter().map(|path|path.len()).sum::<usize>()*12);let mut remaining=template;
  while let Some(start)=remaining.find("__LEAF_"){
   body.push_str(&remaining[..start]);remaining=&remaining[start+7..];let end=remaining.find("__")?;let index:usize=remaining[..end].parse().ok()?;
   body.push_str(paths.get(index)?);remaining=&remaining[end+2..];
  }body.push_str(remaining);Some(wrap_svg(&body,pot,false,compact))
 }
+const PLANTS:[&str;8]=["sansevieria","monstera","chamaedorea","nephrolepis","hedera","zamioculcas","succulent","cactus"];
+const POTS:[&str;4]=["muskot","akerbar","muskotblomma","gradvis"];
+/// A catalogue drawing (moved from src/js/plant-catalog-art.js): an unknown plant is the monstera and an unknown or
+/// absent pot the MUSKOT; ferns are drawn frond by frond, every other plant from its silhouette.
+pub fn plant_illustration(plant:&JsValue,pot:&JsValue,pot_only:bool,compact:bool)->Option<String>{
+ let plant=plant.as_string().filter(|id|PLANTS.contains(&id.as_str())).unwrap_or_else(||"monstera".into());
+ let pot=pot.as_string().filter(|id|POTS.contains(&id.as_str())).unwrap_or_else(||"muskot".into());
+ if !pot_only&&(plant=="chamaedorea"||plant=="nephrolepis"){frond_illustration(&plant,&pot,compact)}
+ else{catalog_illustration(&plant,&pot,pot_only,compact)}
+}
+/// The same drawing for the differential tests.
+#[wasm_bindgen]
+pub fn catalog_plant_illustration(plant:JsValue,pot:JsValue,pot_only:bool,compact:bool)->Option<String>{plant_illustration(&plant,&pot,pot_only,compact)}

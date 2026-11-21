@@ -176,8 +176,7 @@ impl Flyout{
  pub(super) async fn finish_reader_transition(self:Rc<Self>,options:JsValue)->R<JsValue>{
   let page_snapshot=get(&options,"pageSnapshot");let animate_page=get(&options,"animatePage");
   if self.cancelled()||self.destroyed(){return Ok(JsValue::FALSE);}
-  let timing=self.ctx.env("readerBookTiming",&[&b(prefers_reduced_motion())])?;
-  let durations=get(&timing,"opening");
+  let durations=super::book_timing::opening(prefers_reduced_motion());
   let release=self.view_opt("holdNativeMotionFrame",&[])?;
   let outcome=self.transition_inner(&page_snapshot,&animate_page,&durations).await;
   if truthy(&release){call(&release,"release",&[])?;}

@@ -10,6 +10,9 @@ include!("ui_lib.rs");
 include!("shelf_lib.rs");
 
 #[cfg(any(feature = "ui", feature = "shelf"))]
+mod lamp_art;
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
 mod length_metadata;
 
 #[cfg(any(feature = "ui", feature = "shelf"))]

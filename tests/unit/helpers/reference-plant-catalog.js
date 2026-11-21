@@ -6,7 +6,7 @@ import { createPlantCatalogPreview } from '../../../src/js/plant-catalog-preview
 import { createShelfCatalogPreview } from '../../../src/js/shelf-catalog-preview.js';
 import { createLampCatalogPreview } from '../../../src/js/lamp-catalog-preview.js';
 import { LAMP_CATALOG, getCatalogLamp } from '../../../src/js/lamp-catalog-data.js';
-import { lampCatalogIllustration } from '../../../src/js/lamp-illustration.js';
+import { lampCatalogIllustration } from './reference-lamp-illustration.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from '../../../src/js/plant-catalog-data.js';
 import { SHELF_TYPES, getShelfType, normalizeShelfType } from '../../../src/js/shelf-types.js';
 import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, kelvinSwatch } from '../../../src/js/lamp-kelvin.js';

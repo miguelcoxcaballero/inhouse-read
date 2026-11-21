@@ -111,7 +111,7 @@ pub fn build_lamp(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
   .style(&format!("--ihr-lamp-w:{}px;--ihr-lamp-h:{}px",text(&get(item,"width")),text(&get(item,"height")))).done();
  objects::update_lamp_control(ctx,&node,item)?;
  if !ctx.st_true("useScene"){
-  put(&node,"innerHTML",&ctx.env("lampCatalogIllustration",&[&get(&lamp,"id")])?);
+  put(&node,"innerHTML",&JsValue::from_str(&crate::lamp_art::lamp_illustration(&get(&lamp,"id"))));
   method(&qs(&node,"svg"),"setAttribute",&[&s("preserveAspectRatio"),&s("none")])?;
  }
  let data=input_data(&node,item);

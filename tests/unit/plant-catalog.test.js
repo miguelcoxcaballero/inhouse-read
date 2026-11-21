@@ -1,7 +1,9 @@
 import {readFileSync} from 'node:fs';
 import * as catalogueUI from '../../src/wasm/ui/inhouse_read_ui.js';
 import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { createPlantCatalog, plantCatalogIllustration } from '../../src/js/plant-catalog.js';
+import { createPlantCatalog } from '../../src/js/plant-catalog.js';
+// The drawings are rust-ui/src/catalog_art.rs (src/js/plant-catalog-art.js is gone).
+const plantCatalogIllustration = (plant, pot = 'muskot', { potOnly = false, compact = false } = {}) => catalogueUI.catalog_plant_illustration(plant, pot, Boolean(potOnly), Boolean(compact));
 // The frozen pre-Rust catalogue (tests only). 'legacy' and 'late' run it; 'rust' runs the shipped view.
 import { createPlantCatalogLegacy, plantCatalogIllustration as referenceIllustration } from './helpers/reference-plant-catalog.js';
 import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js';
