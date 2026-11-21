@@ -1,3 +1,13 @@
+# Bloque migrate-next-1: dibujos del catálogo y tiempos del lector
+
+Rama ready/migrate-next-1 sobre 032ac5f7. Barra local 77,72 % -> 77,81 % Rust; JS 780.505 -> 776.232 B (-4.273 B).
+
+- Inventario de src/js (201 archivos, 775 KB): 25 archivos de cableado de three.js (364 KB; bookshelf-scene.js 184 KB es un solo cierre de 174 KB con draw/updateEntries por fotograma), 145 cáscaras o anfitriones de Rust (366 KB; marshalling a arenas, callbacks y vida de objetos), 11 de DOM/plataforma (29 KB: OAuth, WebRTC, service worker) y 19 sueltos (16 KB). No quedan tablas ni lógica pura de tamaño: lo restante es pegamento por fotograma o por palabra, construcción de objetos JS (más lenta desde Rust) o respaldo deliberado mientras un módulo no ha llegado.
+- Lo que sí movía bytes: Rust pedía a JS datos fijos. lampCatalogIllustration (tres SVG) pasa a rust-ui/src/lamp_art.rs (módulos ui y shelf); plantCatalogIllustration (plant-catalog-art.js), que calculaba con Math del navegador las alturas de las frondas, pasa a catalog_art.rs con esas alturas guardadas bit a bit (V8); readerBookTiming (reader-book-timing.js) pasa a bookshelf/book_timing.rs. catalog_present.rs, screen_nodes.rs, flyout_motion.rs y returning.rs llaman a Rust directamente.
+- Gemelos congelados: reference-lamp-illustration.js y reference-reader-book-timing.js (nuevos), reference-plant-catalog-art.js (ya existía). catalog-art-wasm y reader-book-timing comparan contra ellos; catalog-reference-parity sigue igual.
+- Medida (Node, mediana de 15): el juego de dibujos del catálogo (12 planta/maceta + 3 lámparas) 71-85 -> 58-61 µs; cuatro frondas 154 -> 118 µs. Wasm: ui +2.018 B, shelf +2.139 B.
+- Descartado con motivo: foliage/book-projection-legacy y native-import-shelf-gate-legacy son respaldos probados de casos que Rust no cubre (NaN, exponentes, índices fuera de rango, módulo sin cargar); shelf-placement-wasm.js depende del orden de getters del anfitrión; DEFAULT_TEXTS son funciones que el llamador puede sustituir; los shims restantes (spine-styles, plant-rooftop-layout, plant-records...) son de 300-800 B, eligen en tiempo de ejecución entre los módulos shelf y ui, o los usa también JS fuera de la estantería.
+
 # Entrega 1.8.11 (tanda integ-bar-26): primer pintado del libro levantado
 
 Rama sobre la 1.8.10: ready/perf-pullout-3 (4512702d). Sin bloques de migración; barra estimada 77,72 % Rust, 781 KB de JS.
