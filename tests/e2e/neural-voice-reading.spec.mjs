@@ -483,13 +483,18 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     })
     expect(switching.previous.id).toBe(beforeSwitch.id)
     expect(switching.request).toMatchObject({ voiceId:DAVEFX_ID,rate:1.25,text:switching.previous.text })
-    await expect.poll(()=>neu(page,(n,id)=>n.events.some(event=>event.type==='start'&&event.id===id),switching.request.id),SLOW).toBe(true)
-    expect(await neu(page,(n,data)=>n.events.filter(event=>event.type==='start'&&data.oldIds.includes(event.id)&&event.at>data.request.at),switching)).toEqual([])
-    expect(await neu(page,n=>n.stops)).toBeGreaterThan(beforeSwitch.stops)
-    await expect.poll(()=>page.evaluate(()=>window.__speechHighlight()),SLOW).not.toBe('')
+    // Davefx re-speaks that fragment in about 4 s at 1.25x, so it holds more than 3 s of audio only during its first second.
+    // Watch for it from the pick on (the Voz list open, polling finely) and switch back at once; what happened in between
+    // is checked afterwards from the recorded events, which keep their order and timing.
     await openAudioMenu(page,'Voz')
     const beforeBack=await activePCM(page,DAVEFX_ID)
     await pickVoice(page,CLAUDE_ID)
+    const davefxStart=await neu(page,(n,id)=>n.events.find(event=>event.type==='start'&&event.id===id),switching.request.id)
+    expect(davefxStart?.at).toBeGreaterThan(switching.request.at)
+    expect(davefxStart.highlight).toBeTruthy() // painted at the new voice's start: the fragment it re-speaks
+    expect(squash(switching.request.text)).toContain(squash(davefxStart.highlight).replace(/\.$/, '').slice(0, 40))
+    expect(await neu(page,(n,data)=>n.events.filter(event=>event.type==='start'&&data.oldIds.includes(event.id)&&event.at>data.request.at),switching)).toEqual([])
+    expect(beforeBack.stops).toBeGreaterThan(beforeSwitch.stops)
     const resumed=await neu(page,(n,after)=>{
       const index=n.speak.findIndex(request=>request.voiceId==='piper:es_MX-claude-high'&&request.at>after)
       return { request:n.speak[index],previous:n.speak[index-1] }
