@@ -49,9 +49,13 @@ test('full mobile room stays identical in Chrome across OAuth clients, live gest
   // The full lit room compiles shaders under software GPU rendering. The
   // single-book regression measures latency; this checks delivery while held.
   await expect.poll(()=>b.evaluate(()=>__roomMotionPackets.length),{timeout:15000}).toBeGreaterThan(0);
-  await b.waitForTimeout(300);const before=await target.boundingBox();
+  await b.waitForTimeout(300);await watchFrames(a);const before=await target.boundingBox();
   for(let i=1;i<=8;i++)await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:point.x+i*3,y:point.y,id:1}]});
-  await expect.poll(async()=>{const p=await target.boundingBox();return Math.hypot(p.x-before.x,p.y-before.y)},{timeout:15000}).toBeGreaterThan(3);
+  // The held book is read and sent on the phone's frames and drawn on the desktop's. With the full lit room
+  // under software GL both compositors stall for seconds per frame with idle main threads (one phone frame
+  // per 2-5 s, a single boundingBox 15-25 s), so a wall-clock budget timed the runner: the 3 s latency budget
+  // is on both pages' frame clock (helpers/frame-clock.mjs), as in live-room-sync.
+  await waitOnFrameClock([a,b],async()=>{const p=await target.boundingBox();return Math.hypot(p.x-before.x,p.y-before.y)>3},3000,'held movement on the other client');
   await expect(a.locator(`.ihr-spine[data-book-id="${point.id}"]`)).toHaveClass(/is-dragging/);
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touch.detach();
   await quietShelf(a.locator('.ihr-bookshelf-scene'));await quietShelf(b.locator('.ihr-bookshelf-scene'));
@@ -64,7 +68,8 @@ test('full mobile room stays identical in Chrome across OAuth clients, live gest
   await expect.poll(()=>samePaint(a,b),{timeout:15000}).toBeLessThan(.00001);
   await b.setViewportSize({width:680,height:790});await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await expect.poll(()=>samePaint(a,b),{timeout:5000}).toBeLessThan(.00001);
-  await b.reload();await expect(b.locator('.ihr-spine')).toHaveCount(6);await quietShelf(b.locator('.ihr-bookshelf-scene'));
+  // The reloaded room is built in frame callbacks like the first one: its 8 s budget is on the frame clock too.
+  await b.reload();await waitOnFrameClock([b],async()=>await b.locator('.ihr-spine').count()===6,8000,'six spines after the reload');await quietShelf(b.locator('.ihr-bookshelf-scene'));
   await expect.poll(async()=>samePoses(await state(a),await state(b)),{timeout:15000}).toBe(true);
   await expect.poll(()=>samePaint(a,b),{timeout:15000}).toBeLessThan(.00001);expect(errors).toEqual([]);
  }finally{
