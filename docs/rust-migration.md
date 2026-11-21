@@ -1,3 +1,11 @@
+# Entrega 1.8.11 (tanda integ-bar-26): primer pintado del libro levantado
+
+Rama sobre la 1.8.10: ready/perf-pullout-3 (4512702d). Sin bloques de migración; barra estimada 77,72 % Rust, 781 KB de JS.
+
+- book-model.js (getPresentationBookRenderer): el lienzo del libro levantado empieza en 1x1, el estado que ya deja la liberación a los 8 s; el primer toque ya no pasa por 768x150 (2,2-3,3 -> 0,7-1,1 ms) y desaparece el búfer de 300x150. compileModel calienta getMaxAnisotropy() en tiempo libre (0,9 ms menos en el toque). No se sube nada a la GPU antes de levantar un libro (se descartó subir el estudio de 6 MB en reposo).
+- cozy-sounds.js: las muestras del sonido de sacar un libro (~105 KB de CPU) se sintetizan en requestIdleCallback; la tarea del desbloqueo de audio previa al pintado pasa de 7-10 ms de síntesis a 0. Gemelos reference-book-model.js y reference-cozy-sounds.js al día.
+- Sonda a dpr 3 (3 tandas, mediana): libro ya leído, fotograma largo del pintado 120 -> 96 ms y primer fotograma 174 -> 148 ms tras el toque; libro sin abrir 165 -> 146 ms. Queda: lomos (~25 ms de rasterizado), búfer antialias (14-19 ms), portada (~3,5 ms).
+
 # Entrega 1.8.10 (tanda integ-bar-25): toque del lomo
 
 Rama sobre la 1.8.9: ready/perf-pullout-2 (718df77c). Sin bloques de migración; barra estimada 77,75 % Rust, 779 KB de JS (+6 KB: src/js/scene-ray-order.js, glue de three.js).

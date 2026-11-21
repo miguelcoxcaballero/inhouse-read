@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.8.11 — Libro levantado más rápido
+
+El lienzo del libro que sale empieza en un píxel y el sonido de sacarlo se
+prepara en un rato libre; el primer dibujo del libro levantado hace menos
+trabajo, sin gastar memoria de GPU de antemano. Se ve y suena igual.
+
 ## 1.8.10 — Toque de lomo más ligero
 
 Al tocar un lomo, la estantería deja de comprobar piezas ocultas detrás del
